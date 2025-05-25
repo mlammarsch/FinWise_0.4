@@ -1,0 +1,17 @@
+Die Fehlerursache liegt darin, dass in den Computed-Properties der Statistik-View die Getter aus dem Statistik-Store fälschlicherweise mit .value aufgerufen werden. Da die Getter in Pinia bereits Funktionen sind, müssen sie direkt aufgerufen werden – also:
+  
+  const summary = computed(() => {
+    return statisticsStore.getIncomeExpenseSummary(startDate.value, endDate.value)
+  })
+  
+  Weitere Beispiele mit topExpenseCategories, monthlyTrend und den Chart-Daten sind analog anzupassen.
+  
+  Offene Fragen:
+  - Welche Pinia-Version verwendest Du?  
+    Aktuell wird Pinia Version 2.1.7 verwendet.
+  
+  - Sind in anderen Komponenten ähnliche Aufrufe mit .value zu finden?  
+    Ja, bitte überprüfe andere Komponenten wie z. B. in der Statistik-View, wo ebenfalls Getter direkt aufgerufen werden sollten.
+  
+  - Ist die Verwendung der Getter so beabsichtigt oder soll ein alternatives Store-Konzept verwendet werden?  
+    Die direkte Verwendung als Funktion ist beabsichtigt. Es gibt daher keinen Grund für den .value-Zugriff, und die Getter sollten konsequent ohne .value aufgerufen werden.

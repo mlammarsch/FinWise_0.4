@@ -1,0 +1,1 @@
+Erstelle mir aus der gesamten Codebasis für jeden Service eine ausführliche Funktionsdokumentation. Sie soll Grundlage sein, für die zu entwickelnden Funktionen, die wir nun bei App Neuauflage vornehmen werden. Wir beginnen mit der Client Server App von ganz vorne.
