@@ -60,7 +60,10 @@ nextTick(() => {
           </ul>
         </template>
 
-        <p v-else class="text-center opacity-70">
+        <p
+          v-else
+          class="text-center opacity-70"
+        >
           Noch kein Mandant vorhanden.
         </p>
 
@@ -71,7 +74,10 @@ nextTick(() => {
           {{ showCreate ? "Abbrechen" : "Neuen Mandanten anlegen" }}
         </button>
 
-        <div v-if="showCreate" class="space-y-3">
+        <div
+          v-if="showCreate"
+          class="space-y-3"
+        >
           <input
             v-model.trim="newTenantName"
             type="text"
@@ -79,7 +85,10 @@ nextTick(() => {
             class="input input-bordered w-full"
             autocomplete="off"
           />
-          <button class="btn btn-secondary w-full" @click="createTenant">
+          <button
+            class="btn btn-secondary w-full"
+            @click="createTenant"
+          >
             Anlegen & wechseln
           </button>
         </div>

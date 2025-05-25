@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "composite": true, // Hinzugefügt für referenzierte Projekte
     "target": "ES2020",
     "useDefineForClassFields": true,
     "module": "ESNext",
@@ -11,10 +12,9 @@
     "skipLibCheck": true,
     /* Bundler mode */
     "moduleResolution": "bundler", // Beibehalten oder auf "node" setzen, wenn "bundler" Probleme macht
-    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "noEmit": true,
+    // "noEmit": true, // Entfernt oder auf false setzen für "composite": true
     "jsx": "preserve",
     /* Path Aliases */
     "baseUrl": ".",

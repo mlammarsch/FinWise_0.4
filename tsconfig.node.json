@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "composite": true, // Hinzugefügt für referenzierte Projekte
     "target": "ES2022",
     "lib": ["ES2023"],
     "module": "ESNext",
@@ -7,10 +8,10 @@
 
     /* Bundler mode */
     "moduleResolution": "bundler",
-    "allowImportingTsExtensions": true,
+    // "allowImportingTsExtensions": true, // Entfernt, da noEmit nicht mehr true ist
     "isolatedModules": true,
     "moduleDetection": "force",
-    "noEmit": true,
+    // "noEmit": true, // Entfernt oder auf false setzen für "composite": true
 
     /* Linting */
     "strict": true,
