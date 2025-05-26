@@ -5,10 +5,9 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { useUserStore, LocalUser } from './userStore';
-import { useTenantStore, Tenant } from './tenantStore';
-import { debugLog } from '@/utils/logger';
-import { DataService } from '@/services/DataService'; // <-- NEU
+import { useUserStore, type LocalUser } from './userStore';
+import { useTenantStore } from './tenantStore';
+import { debugLog, warnLog } from '@/utils/logger';
 
 export const useSessionStore = defineStore('session', () => {
   /* ---------------------------------------------------------------- State */
@@ -20,66 +19,81 @@ export const useSessionStore = defineStore('session', () => {
   const tenantStore = useTenantStore();
 
   /* ------------------------------------------------------------- Getters */
-  const currentUser = computed<LocalUser | null>(() =>
-    currentUserId.value ? userStore.getUserById(currentUserId.value) : null,
+  const currentUser = computed<LocalUser | undefined>(() =>
+    currentUserId.value ? userStore.getUserById(currentUserId.value) : undefined,
   );
 
-  const currentTenant = computed<Tenant | null>(() =>
-    currentTenantId.value
-      ? tenantStore.tenants.find(t => t.id === currentTenantId.value) || null
-      : null,
+  const currentTenant = computed(() =>
+    tenantStore.activeTenant // Nutzt den activeTenant Getter aus tenantStore
   );
 
   /* ------------------------------------------------------------- Actions */
   function login(userId: string): void {
     currentUserId.value = userId;
     localStorage.setItem('finwise_currentUser', userId);
-    debugLog('[sessionStore] login', { userId });
+    debugLog('sessionStore', 'login', { userId });
   }
 
-  function logout(): void {
+  async function logout(): Promise<void> {
     currentUserId.value = null;
     currentTenantId.value = null;
     localStorage.removeItem('finwise_currentUser');
     localStorage.removeItem('finwise_activeTenant');
-    tenantStore.activeTenantId = null;
-    debugLog('[sessionStore] logout');
+    await tenantStore.setActiveTenant(null);
+    debugLog('sessionStore', 'logout');
   }
 
-  function logoutTenant(): void {
-    currentTenantId.value = null;
-    tenantStore.activeTenantId = null;
-    localStorage.removeItem('finwise_activeTenant');
-    debugLog('[sessionStore] logoutTenant');
-  }
+ async function logoutTenant(): Promise<void> {
+   currentTenantId.value = null;
+   await tenantStore.setActiveTenant(null);
+   debugLog('sessionStore', 'logoutTenant');
+ }
 
-  function switchTenant(tenantId: string): boolean {
-    const ok = tenantStore.setActiveTenant(tenantId);
+  async function switchTenant(tenantId: string): Promise<boolean> {
+    const ok = await tenantStore.setActiveTenant(tenantId);
     if (ok) {
-      currentTenantId.value = tenantId;
-      debugLog('[sessionStore] switchTenant', { tenantId });
-    }
-    return ok;
-  }
+     // currentTenantId is set by setActiveTenant
+     debugLog('sessionStore', 'switchTenant', { tenantId });
+   }
+   return ok;
+ }
 
   /* --------------------------------------------------------- Persistence */
-  function loadSession(): void {
+  async function loadSession(): Promise<void> {
     const uid = localStorage.getItem('finwise_currentUser');
-    if (uid && userStore.getUserById(uid)) currentUserId.value = uid;
+    // userStore.getUserById returns LocalUser | undefined. Ensure null if undefined.
+    const user = uid ? userStore.getUserById(uid) : null;
 
-    const tid = localStorage.getItem('finwise_activeTenant');
-    if (tid && tenantStore.tenants.find(t => t.id === tid)) {
-      currentTenantId.value = tid;
-      tenantStore.activeTenantId = tid;
+    if (user) {
+      currentUserId.value = user.id;
+      debugLog('sessionStore', 'loadSession - User geladen', { userId: user.id });
+
+      const tid = localStorage.getItem('finwise_activeTenant');
+      // tenantStore.setActiveTenant handles validation and setting activeTenantId
+      if (tid) {
+        const setActiveSuccess = await tenantStore.setActiveTenant(tid);
+        if (setActiveSuccess) {
+          // currentTenantId is set by setActiveTenant
+          debugLog('sessionStore', 'loadSession - Tenant geladen', { userId: user.id, tenantId: tid });
+        } else {
+          // Handle case where setActiveTenant failed (e.g., tenant not found or DB error)
+          currentTenantId.value = null; // Ensure state is clean
+          localStorage.removeItem('finwise_activeTenant'); // Clean up localStorage
+          warnLog('sessionStore', 'loadSession - Konnte aktiven Tenant nicht setzen', { userId: user.id, tenantId: tid });
+        }
+      } else {
+        debugLog('sessionStore', 'loadSession - Kein aktiver Tenant in localStorage gefunden', { userId: user.id });
+        currentTenantId.value = null; // Sicherstellen, dass kein alter Tenant aktiv ist
+      }
+    } else {
+      debugLog('sessionStore', 'loadSession - Kein User in localStorage gefunden oder User nicht im userStore', { uid });
+      currentUserId.value = null;
+      currentTenantId.value = null;
+      localStorage.removeItem('finwise_currentUser');
+      localStorage.removeItem('finwise_activeTenant');
+      // Ggf. auch tenantStore.setActiveTenant(null) aufrufen, falls ein Tenant aktiv war
+      await tenantStore.setActiveTenant(null);
     }
-
-    debugLog('[sessionStore] loadSession', { uid, tid });
-
-    // ----------- NEU: nach Initial-Login Tenant-Daten laden -----------
-    if (currentTenantId.value) {
-      DataService.reloadTenantData();
-    }
-    // ------------------------------------------------------------------
   }
 
   loadSession();
