@@ -13,6 +13,13 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { apiService, type UserFromApi, type TenantFromApi } from '@/services/apiService';
 
+// Schnittstelle für Daten, die zum Backend gepusht werden
+interface UserPushData {
+  name: string;
+  email: string;
+  hashed_password?: string; // Angepasst an Backend-Schema UserSyncPayload
+}
+
 // Schnittstellen
 export interface LocalUser { // Bleibt für den State und Methoden-Signaturen, die nicht direkt DB-Struktur widerspiegeln
   id: string; // uuid in der DB
@@ -32,7 +39,7 @@ export interface DbUser { // Struktur für die Dexie 'users' Tabelle
   createdAt: string;
   updatedAt: string;
   needsBackendSync?: boolean; // Flag, um lokale Erstellung/Änderung zu markieren
-  // passwordHash wird hier nicht gespeichert
+  passwordHash?: string; // Hinzugefügt für die persistente Speicherung des Hashes bei Offline-Registrierung
 }
 
 export interface DbTenant { // Struktur für die Dexie 'tenants' Tabelle
@@ -58,9 +65,9 @@ class FinwiseUserDB extends Dexie {
 
   constructor() {
     super('finwiseUserDB');
-    // Erhöhe die Versionsnummer, da wir eine neue Tabelle hinzufügen
-    this.version(2).stores({
-      dbUsers: '&uuid, username, email, createdAt, updatedAt, needsBackendSync', // name zu username geändert, needsBackendSync hinzugefügt
+    // Erhöhe die Versionsnummer, da wir eine neue Tabelle hinzufügen und dbUsers erweitern
+    this.version(3).stores({
+      dbUsers: '&uuid, username, email, passwordHash, createdAt, updatedAt, needsBackendSync', // passwordHash hinzugefügt
       dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt', // name zu tenantName geändert
       dbSession: '&id', // Neue Tabelle mit 'id' als Primärschlüssel
     });
@@ -197,18 +204,18 @@ export const useUserStore = defineStore('user', () => {
       errorLog('userStore', 'registerUser: Online-Registrierung fehlgeschlagen, versuche lokale Speicherung.', { error });
 
       // Lokale Speicherung mit needsBackendSync
+      const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
       const newDbUser: DbUser = {
         uuid: userId, // Frontend generierte UUID verwenden
         username: username.trim(),
         email: email.trim().toLowerCase(),
+        passwordHash: hash, // Passwort-Hash jetzt in DbUser speichern
         createdAt: now,
         updatedAt: now,
         needsBackendSync: true, // Muss noch mit Backend synchronisiert werden
       };
 
-      // Passwort-Hash wird NICHT in DbUser gespeichert.
-      // Für den LocalUser State generieren wir den Hash lokal.
-      const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+      // Für den LocalUser State verwenden wir den gleichen Hash.
       const newLocalUser: LocalUser = {
         id: newDbUser.uuid,
         username: newDbUser.username,
@@ -470,22 +477,33 @@ export const useUserStore = defineStore('user', () => {
 
         try {
           let backendUserResponse: UserFromApi;
-          const userDataToPush = {
+          const userDataToPush: UserPushData = {
             name: lUserToPush.username, // Mapping
             email: lUserToPush.email,
-            // Passwort wird hier NICHT gesendet
           };
 
           if (!bUser || lUserToPush.needsBackendSync) {
             // User existiert nur lokal ODER ist als needing sync markiert (neue lokale User)
             infoLog('userStore', `syncUsers: Versuche, neuen lokalen User ${lUserToPush.uuid} zum Backend zu pushen.`);
-            // apiService.createUser expects uuid, name, email
+            if (lUserToPush.passwordHash) {
+              // WICHTIG: Backend muss dieses Feld (jetzt 'hashed_password') akzeptieren.
+              // Dies wurde im Backend-Schema UserSyncPayload bereits so definiert.
+              userDataToPush.hashed_password = lUserToPush.passwordHash;
+              debugLog('userStore', `syncUsers: Sende hashed_password für neuen User ${lUserToPush.uuid}`);
+            }
             backendUserResponse = await apiService.createUser({
               uuid: lUserToPush.uuid,
-              ...userDataToPush
+              ...userDataToPush,
             });
             infoLog('userStore', `syncUsers: Neuer lokaler User ${lUserToPush.uuid} erfolgreich zum Backend gepusht.`, { backendResponse: backendUserResponse });
 
+            // Nach erfolgreichem Push: needsBackendSync auf false setzen und passwordHash aus lokaler DB entfernen
+            await db.dbUsers.update(lUserToPush.uuid, {
+              needsBackendSync: false,
+              passwordHash: undefined, // Entfernt das Feld aus dem Dexie-Objekt
+              updatedAt: backendUserResponse.updatedAt, // Backend-Zeitstempel verwenden
+            });
+            debugLog('userStore', `syncUsers: needsBackendSync auf false gesetzt und passwordHash für User ${lUserToPush.uuid} in lokaler DB entfernt/aktualisiert.`);
           } else {
             // User existiert lokal und im Backend, und lokale Version ist neuer (geänderte lokale User)
             infoLog('userStore', `syncUsers: Versuche, geänderten lokalen User ${lUserToPush.uuid} zum Backend zu pushen.`);

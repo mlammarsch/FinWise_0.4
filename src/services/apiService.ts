@@ -68,9 +68,10 @@ export const apiService = {
 
   // User-spezifische Methoden
   getUsers: () => apiService.get<UserFromApi[]>('/users'),
-  // createUser wird für den Sync von OFFLINE erstellten Usern verwendet (ohne Passwort)
-  createUser: (userData: Omit<UserFromApi, 'createdAt' | 'updatedAt'> & { uuid: string }) => // uuid wird vom Frontend gesendet
-    apiService.post<UserFromApi, Omit<UserFromApi, 'createdAt' | 'updatedAt'> & { uuid: string }>('/users', userData),
+  // createUser wird für den Sync von OFFLINE erstellten Usern verwendet
+  // Akzeptiert jetzt optional hashed_password
+  createUser: (userData: { uuid: string; name: string; email: string; hashed_password?: string }) =>
+    apiService.post<UserFromApi, { uuid: string; name: string; email: string; hashed_password?: string }>('/users', userData),
 
   // Neue Methode für Online-Registrierung mit Passwort
   registerUserWithPassword: (userData: RegisterUserPayload) =>
