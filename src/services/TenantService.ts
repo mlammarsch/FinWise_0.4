@@ -13,61 +13,46 @@ import { AccountService }   from '@/services/AccountService';
 import { BalanceService }   from '@/services/BalanceService';
 
 import { AccountType }      from '@/types';
-import { infoLog, debugLog } from '@/utils/logger';
+import { infoLog, debugLog, errorLog } from '@/utils/logger';
 import { DataService }      from './DataService';
 
 export const TenantService = {
-  /* ------------------------------------------- Create Tenant */
-  createTenant(tenantName: string) {
+  /**
+   * Erstellt einen neuen Tenant und legt Basis-Kategorien, Konten-Gruppen und Girokonto an.
+   */
+  async createTenant(tenantName: string) {
     const session = useSessionStore();
     if (!session.currentUserId)
       throw new Error('Kein eingeloggter User');
 
-    /* 1. Tenant-Objekt erstellen (TenantStore) */
-    const tenant = useTenantStore().addTenant(
-      tenantName,
-      session.currentUserId,
-    );
+    const tenant = await useTenantStore().addTenant(tenantName, session.currentUserId);
+    if (!tenant)
+      throw new Error('Fehler beim lokalen Anlegen des Tenants.');
 
-    /* 2. Tenant aktivieren + Stores neu laden */
-    this.switchTenant(tenant.id);
+    this.switchTenant(tenant.uuid);
 
-    /* 3. Stores erneut referenzieren */
     const catStore = useCategoryStore();
     const accStore = useAccountStore();
 
-    /* -------------------- Basis-Kategorien -------------------- */
-
-    // 1. Kategorie „Verfügbare Mittel“
     if (!catStore.categories.find(c => c.name === 'Verfügbare Mittel')) {
       CategoryService.addCategory({
         name: 'Verfügbare Mittel',
-        parentCategoryId: null,
+        parentCategoryId: undefined,
         sortOrder: 0,
         isActive: true,
         isIncomeCategory: true,
         isSavingsGoal: false,
-        categoryGroupId: null,
+        categoryGroupId: undefined,
       });
     }
 
-    // 2. Kategorie-Gruppen Einnahmen / Ausgaben
     const incomeGroup = catStore.categoryGroups.find(g => g.name === 'Einnahmen')
-      ?? catStore.addCategoryGroup({
-           name: 'Einnahmen',
-           sortOrder: 0,
-           isIncomeGroup: true,
-         });
+      ?? catStore.addCategoryGroup({ name: 'Einnahmen', sortOrder: 0, isIncomeGroup: true });
 
     const expenseGroup = catStore.categoryGroups.find(g => g.name === 'Ausgaben')
-      ?? catStore.addCategoryGroup({
-           name: 'Ausgaben',
-           sortOrder: 1,
-           isIncomeGroup: false,
-         });
+      ?? catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false });
 
-    // 3. Standard-Kategorien anlegen
-    [
+    for (const dc of [
       { name: 'Gehalt',             groupId: incomeGroup.id },
       { name: 'Sonstige Einnahmen', groupId: incomeGroup.id },
       { name: 'Freier Verbrauch',   groupId: expenseGroup.id },
@@ -76,11 +61,11 @@ export const TenantService = {
       { name: 'Hobby',              groupId: expenseGroup.id },
       { name: 'Fuhrpark',           groupId: expenseGroup.id },
       { name: 'Versicherung',       groupId: expenseGroup.id },
-    ].forEach(dc => {
+    ]) {
       if (!catStore.categories.some(c => c.name === dc.name)) {
         CategoryService.addCategory({
           name: dc.name,
-          parentCategoryId: null,
+          parentCategoryId: undefined,
           sortOrder: 0,
           isActive: true,
           isIncomeCategory: dc.groupId === incomeGroup.id,
@@ -88,27 +73,22 @@ export const TenantService = {
           categoryGroupId: dc.groupId,
         });
       }
-    });
-
-    /* ------------------ Basis-Konten-Gruppen ------------------ */
+    }
 
     const defaultGroups = [
       { name: 'Girokonten', sortOrder: 0 },
       { name: 'Sparkonten', sortOrder: 1 },
     ];
-    defaultGroups.forEach(gd => {
+    for (const gd of defaultGroups) {
       if (!accStore.accountGroups.find(g => g.name === gd.name)) {
-        accStore.addAccountGroup({
-          name: gd.name,
-          sortOrder: gd.sortOrder,
-        });
+        accStore.addAccountGroup({ name: gd.name, sortOrder: gd.sortOrder });
       }
-    });
+    }
 
-    /* ---------------------- Basis-Konto ----------------------- */
-
-    const giroGroup = accStore.accountGroups.find(g => g.name === 'Girokonten')!;
-    if (!accStore.accounts.find(a => a.name === 'Girokonto')) {
+    const giroGroup = accStore.accountGroups.find(g => g.name === 'Girokonten');
+    if (!giroGroup) {
+      errorLog('[TenantService]', 'Basis-Kontengruppe "Girokonten" nicht gefunden.');
+    } else if (!accStore.accounts.find(a => a.name === 'Girokonto')) {
       AccountService.addAccount({
         name: 'Girokonto',
         description: '',
@@ -125,47 +105,41 @@ export const TenantService = {
       });
     }
 
-    /* 4. Monats-Bilanzen initial berechnen */
     BalanceService.calculateMonthlyBalances();
 
     infoLog('[TenantService]', 'Tenant angelegt & initialisiert', {
-      tenantId: tenant.id,
+      tenantId: tenant.uuid,
       tenantName,
     });
     return tenant;
   },
 
-  /* ------------------------------------------- Rename Tenant */
-  renameTenant(tenantId: string, newName: string): boolean {
+  async renameTenant(tenantId: string, newName: string): Promise<boolean> {
     return useTenantStore().updateTenant(tenantId, newName);
   },
 
-  /* ------------------------------------------- Delete Tenant */
-  deleteTenant(tenantId: string): boolean {
+  async deleteTenant(tenantId: string): Promise<boolean> {
     return useTenantStore().deleteTenant(tenantId);
   },
 
-  /* ------------------------------------------- Switch Tenant */
-  switchTenant(tenantId: string): boolean {
-    const ok = useSessionStore().switchTenant(tenantId);
+  async switchTenant(tenantId: string): Promise<boolean> {
+    const ok = await useSessionStore().switchTenant(tenantId);
     if (ok) {
       DataService.reloadTenantData();
     }
     return ok;
   },
 
-  /* -------------------------------- Liste eigener Tenants */
   getOwnTenants() {
     const session = useSessionStore();
     if (!session.currentUserId) return [];
     return useTenantStore().getTenantsByUser(session.currentUserId);
   },
 
-  /* -------------------------------- ensure helper */
   ensureTenantSelected(): boolean {
     const session = useSessionStore();
     const ok = !!session.currentTenantId;
-    if (!ok) debugLog('[TenantService] Kein Tenant aktiv – Auswahl erforderlich');
+    if (!ok) debugLog('[TenantService]', 'Kein Tenant aktiv – Auswahl erforderlich');
     return ok;
   },
 };

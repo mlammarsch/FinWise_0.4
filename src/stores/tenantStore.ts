@@ -1,42 +1,19 @@
 // src/stores/tenantStore.ts
-/**
- * Pinia-Store für Mandanten (Tenants).
- * Verwendet Dexie für die Persistenz der Tenant-Liste (in finwiseUserDB)
- * und für dynamische, mandantenspezifische Datenbanken (finwiseTenantDB_<TENANT_UUID>).
- */
-
 import { defineStore } from 'pinia';
 import { ref, computed, onMounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
-import Dexie, { type Table } from 'dexie'; // DexieConstructor entfernt, da nicht direkt verwendet
+import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
-
-// Importiere DbTenant und DbUser Typen aus userStore
+import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
 
-// Schnittstelle für die mandantenspezifische Datenbank
 class FinwiseTenantSpecificDB extends Dexie {
-  // Hier werden Tabellen für den Mandanten definiert, z.B.
-  // transactions!: Table<any, string>;
-  // accounts!: Table<any, string>;
-  // categories!: Table<any, string>;
-  // ...
   constructor(databaseName: string) {
     super(databaseName);
-    this.version(1).stores({
-      // Vorerst leer, Struktur wird in separaten Tasks definiert.
-      // Beispiel:
-      // appSettings: '++id, key, value', // Für mandantenspezifische Einstellungen
-      // transactions: '&uuid, date, accountId, categoryId, amount, type, description, createdAt, updatedAt',
-      // accounts: '&uuid, name, type, balance, createdAt, updatedAt',
-      // categories: '&uuid, name, parentId, type, createdAt, updatedAt',
-    });
+    this.version(1).stores({});
   }
 }
 
-// Globale Instanz der User-DB (vereinfacht, besser über userStore beziehen)
-// Diese Lösung ist nicht ideal, da sie die DB-Definition dupliziert.
-// Eine bessere Lösung wäre, dass userStore eine Methode bereitstellt, um auf db.dbTenants zuzugreifen.
 class FinwiseUserDBGlobal extends Dexie {
   dbUsers!: Table<DbUser, string>;
   dbTenants!: Table<DbTenant, string>;
@@ -44,30 +21,22 @@ class FinwiseUserDBGlobal extends Dexie {
   constructor() {
     super('finwiseUserDB');
     this.version(1).stores({
-      dbUsers: '&uuid, username, email, createdAt, updatedAt', // Angepasst an userStore
-      dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt', // name zu tenantName
+      dbUsers: '&uuid, username, email, createdAt, updatedAt',
+      dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt',
     });
   }
 }
-const userDB = new FinwiseUserDBGlobal(); // Diese Instanz wird für Tenant-Metadaten verwendet
+const userDB = new FinwiseUserDBGlobal();
 
-// Importe für Store-Resets (bleiben vorerst)
 import { useAccountStore } from './accountStore';
 import { useCategoryStore } from './categoryStore';
-// import { CategoryService } from '@/services/CategoryService'; // Wird später für Basiskategorie benötigt
-import { useSessionStore } from './sessionStore'; // Hinzugefügt für sessionStore.currentTenantId
+import { useSessionStore } from './sessionStore';
 
 export const useTenantStore = defineStore('tenant', () => {
-  /* ---------------------------------------------------------------- State */
   const tenants = ref<DbTenant[]>([]);
   const activeTenantId = ref<string | null>(null);
-  /**
-   * Hält die aktive Dexie-Datenbankinstanz für den ausgewählten Mandanten.
-   * Notwendig für dynamische mandantenspezifische Datenbanken.
-   */
   const activeTenantDB = ref<FinwiseTenantSpecificDB | null>(null);
 
-  /* -------------------------------------------------------------- Getters */
   const getTenantsByUser = computed(() => (userId: string) =>
     tenants.value.filter(t => t.user_id === userId),
   );
@@ -76,31 +45,16 @@ export const useTenantStore = defineStore('tenant', () => {
     tenants.value.find(t => t.uuid === activeTenantId.value) || null,
   );
 
-  /* -------------------------------------------------------------- Actions */
-
-  /**
-   * Lädt die Tenant-Liste aus der finwiseUserDB und versucht, den zuletzt
-   * aktiven Mandanten wiederherzustellen.
-   * Wird bei der Initialisierung des Stores aufgerufen.
-   */
   async function loadTenants(): Promise<void> {
     try {
-      const storedTenants = await userDB.dbTenants.toArray();
-      tenants.value = storedTenants;
+      tenants.value = await userDB.dbTenants.toArray();
       debugLog('tenantStore', 'loadTenants: Tenants geladen', { count: tenants.value.length });
 
       const storedActiveTenantId = localStorage.getItem('finwise_activeTenant');
       if (storedActiveTenantId && tenants.value.some(t => t.uuid === storedActiveTenantId)) {
-        // setActiveTenant nicht direkt hier aufrufen, um Endlosschleifen bei Fehlern zu vermeiden.
-        // Der Aufruf erfolgt typischerweise durch die UI oder einen Router-Guard nach dem Laden.
-        // Für die reine Wiederherstellung des activeTenantId reicht das Setzen des Refs.
-        // Die DB-Verbindung wird dann bei Bedarf durch expliziten Aufruf von setActiveTenant hergestellt.
         activeTenantId.value = storedActiveTenantId;
         infoLog('tenantStore', 'loadTenants: Aktiver Tenant aus localStorage wiederhergestellt', { activeTenantId: storedActiveTenantId });
-        // Optional: Hier direkt setActiveTenant aufrufen, wenn das gewünschte Verhalten ist.
-        // await setActiveTenant(storedActiveTenantId);
       } else if (activeTenantId.value && !tenants.value.some(t => t.uuid === activeTenantId.value)) {
-        // Wenn ein activeTenantId gesetzt war, aber der Tenant nicht mehr existiert
         activeTenantId.value = null;
         localStorage.removeItem('finwise_activeTenant');
       }
@@ -110,9 +64,7 @@ export const useTenantStore = defineStore('tenant', () => {
     }
   }
 
-  onMounted(() => {
-    loadTenants();
-  });
+  onMounted(loadTenants);
 
   async function addTenant(tenantName: string, userId: string): Promise<DbTenant | null> {
     if (!tenantName.trim() || !userId) {
@@ -130,10 +82,9 @@ export const useTenantStore = defineStore('tenant', () => {
 
     try {
       await userDB.dbTenants.add(newTenant);
-      tenants.value.push(newTenant); // State aktualisieren
+      tenants.value.push(newTenant);
       infoLog('tenantStore', `Neuer Tenant "${newTenant.tenantName}" für User ${userId} lokal angelegt`, { tenantId: newTenant.uuid });
 
-      // Asynchrone Backend-Synchronisation, blockiert nicht den Rest der Funktion
       _syncTenantWithBackend(newTenant).then(syncSuccess => {
         if (syncSuccess) {
           infoLog('tenantStore', `Tenant ${newTenant.uuid} erfolgreich im Hintergrund mit Backend synchronisiert.`);
@@ -142,7 +93,6 @@ export const useTenantStore = defineStore('tenant', () => {
         }
       });
 
-      // Neuen Tenant direkt aktiv schalten
       await setActiveTenant(newTenant.uuid);
       return newTenant;
     } catch (err) {
@@ -156,16 +106,16 @@ export const useTenantStore = defineStore('tenant', () => {
     const now = new Date().toISOString();
     try {
       const updateCount = await userDB.dbTenants.update(id, {
-        tenantName: tenantName.trim(), // name zu tenantName
+        tenantName: tenantName.trim(),
         updatedAt: now,
       });
       if (updateCount > 0) {
         const idx = tenants.value.findIndex(t => t.uuid === id);
         if (idx !== -1) {
-          tenants.value[idx].tenantName = tenantName.trim(); // name zu tenantName
+          tenants.value[idx].tenantName = tenantName.trim();
           tenants.value[idx].updatedAt = now;
         }
-        debugLog('tenantStore', 'updateTenant: Tenant aktualisiert', { id, tenantName: tenantName }); // name zu tenantName
+        debugLog('tenantStore', 'updateTenant: Tenant aktualisiert', { id, tenantName });
         return true;
       }
       warnLog('tenantStore', 'updateTenant: Tenant nicht gefunden oder keine Änderungen', { id });
@@ -180,7 +130,7 @@ export const useTenantStore = defineStore('tenant', () => {
     try {
       await userDB.dbTenants.delete(id);
       const dbName = `finwiseTenantDB_${id}`;
-      await Dexie.delete(dbName); // Mandantenspezifische DB löschen
+      await Dexie.delete(dbName);
       infoLog('tenantStore', `Mandantenspezifische DB ${dbName} gelöscht.`);
 
       tenants.value = tenants.value.filter(t => t.uuid !== id);
@@ -192,8 +142,6 @@ export const useTenantStore = defineStore('tenant', () => {
         activeTenantId.value = null;
         localStorage.removeItem('finwise_activeTenant');
       }
-      // TODO: Reset für abhängige Stores, die mandantenspezifische Daten halten.
-      // useAccountStore().resetForTenant(id); // Beispiel
       infoLog('tenantStore', 'Tenant gelöscht', { tenantId: id });
       return true;
     } catch (err) {
@@ -202,71 +150,57 @@ export const useTenantStore = defineStore('tenant', () => {
     }
   }
 
+  /** Aktiviert einen Mandanten und verbindet dessen spezifische IndexedDB. */
   async function setActiveTenant(id: string | null): Promise<boolean> {
-    if (activeTenantId.value === id && activeTenantDB.value && activeTenantDB.value.isOpen()) {
-      // Bereits der aktive Tenant und DB ist offen
+    if (activeTenantId.value === id && activeTenantDB.value?.isOpen()) {
       debugLog('tenantStore', `Tenant ${id} ist bereits aktiv und DB verbunden.`);
       return true;
     }
 
-    // Vorherige DB schließen
     if (activeTenantDB.value) {
       activeTenantDB.value.close();
       activeTenantDB.value = null;
       debugLog('tenantStore', 'Vorherige aktive Mandanten-DB geschlossen.');
     }
 
-    if (!id) { // Keinen Tenant aktiv setzen
+    if (!id) {
       activeTenantId.value = null;
       localStorage.removeItem('finwise_activeTenant');
       infoLog('tenantStore', 'Kein Tenant aktiv.');
-      // Hier könnten globale Resets für mandantenabhängige Stores erfolgen
       return true;
     }
 
     const tenantExists = tenants.value.find(t => t.uuid === id);
     if (!tenantExists) {
       errorLog('tenantStore', `setActiveTenant: Tenant mit ID ${id} nicht gefunden.`);
-      activeTenantId.value = null; // Sicherstellen, dass kein ungültiger Tenant aktiv ist
+      activeTenantId.value = null;
       localStorage.removeItem('finwise_activeTenant');
       return false;
     }
 
     activeTenantId.value = id;
     localStorage.setItem('finwise_activeTenant', id);
-    const session = useSessionStore(); // sessionStore Instanz holen
+    const session = useSessionStore();
 
     try {
       const dbName = `finwiseTenantDB_${id}`;
       const tenantDB = new FinwiseTenantSpecificDB(dbName);
       await tenantDB.open();
       activeTenantDB.value = tenantDB;
-      session.currentTenantId = id; // SessionStore im Erfolgsfall aktualisieren
+      session.currentTenantId = id;
       infoLog('tenantStore', `Tenant "${tenantExists.tenantName}" (DB: ${dbName}) aktiviert und DB verbunden. SessionStore aktualisiert.`);
-
-      // TODO: Logik zum Initialisieren von Daten für den aktiven Mandanten (z.B. Basiskategorien)
-      // const catStore = useCategoryStore();
-      // if (activeTenantDB.value) {
-      //    const categoryService = new CategoryService(activeTenantDB.value);
-      //    // ... Logik für Basiskategorien ...
-      // }
-
-      // TODO: Benachrichtige andere Stores, die mandantenspezifische DB zu verwenden.
-      //       Dies kann über Events, direkte Aufrufe oder reaktive Abhängigkeiten geschehen.
-      //       z.B. useTransactionStore().setActiveTenantDB(activeTenantDB.value);
-
       return true;
     } catch (err) {
       errorLog('tenantStore', `Fehler beim Verbinden/Initialisieren der Mandanten-DB für ${id}`, err);
       activeTenantDB.value = null;
-      activeTenantId.value = null; // Bei Fehler auch activeTenantId zurücksetzen
+      activeTenantId.value = null;
       localStorage.removeItem('finwise_activeTenant');
-      session.currentTenantId = null; // SessionStore im Fehlerfall zurücksetzen
+      session.currentTenantId = null;
       return false;
     }
   }
 
-  async function reset(): Promise<void> { // Bezieht sich auf das Leeren der Tenant-Liste in finwiseUserDB
+  async function reset(): Promise<void> {
     try {
       await userDB.dbTenants.clear();
       tenants.value = [];
@@ -276,88 +210,70 @@ export const useTenantStore = defineStore('tenant', () => {
       activeTenantDB.value = null;
       activeTenantId.value = null;
       localStorage.removeItem('finwise_activeTenant');
-      const session = useSessionStore(); // Ist hier schon korrekt vorhanden
-      session.currentTenantId = null;
+      useSessionStore().currentTenantId = null;
       infoLog('tenantStore', 'Alle Tenant-Einträge in finwiseUserDB geleert und aktiver Tenant zurückgesetzt.');
     } catch (err) {
       errorLog('tenantStore', 'Fehler beim Reset des TenantStores (Tenant-Liste)', err);
     }
   }
 
-  // --- Sync Platzhalter ---
   async function syncCurrentTenantData(): Promise<void> {
     if (!activeTenantDB.value || !activeTenantId.value) {
       warnLog('tenantStore', 'syncCurrentTenantData: Kein aktiver Mandant oder DB-Verbindung.');
       return;
     }
     debugLog('tenantStore', `syncCurrentTenantData für Mandant ${activeTenantId.value} aufgerufen (Platzhalter)`);
-    // TODO: Implementierung der Synchronisationslogik mit dem Backend für den aktuellen Mandanten
   }
 
-  /**
-   * Private Hilfsfunktion zur Synchronisation eines einzelnen Mandanten mit dem Backend.
-   * @param tenant Das DbTenant-Objekt, das synchronisiert werden soll.
-   * @returns Promise<boolean> True bei Erfolg, false bei Fehler.
-   */
   async function _syncTenantWithBackend(tenant: DbTenant): Promise<boolean> {
-    debugLog('tenantStore', `Versuche Tenant ${tenant.uuid} mit Backend zu synchronisieren.`);
+    debugLog('tenantStore', `Versuche Tenant ${tenant.uuid} mit Backend zu synchronisieren via apiService.`);
     try {
-      // const sessionStore = useSessionStore(); // Falls Auth-Token benötigt wird
-      // const authToken = sessionStore.token; // Beispiel
+      const payload = {
+        uuid: tenant.uuid,
+        name: tenant.tenantName,
+        user_id: tenant.user_id,
+      };
+      await apiService.post('/tenants/', payload);
+      infoLog('tenantStore', `Tenant ${tenant.uuid} ("${tenant.tenantName}") erfolgreich mit Backend synchronisiert.`);
+      return true;
+    } catch (error: unknown) {
+      let errorMessage = 'Unbekannter Synchronisationsfehler';
 
-      const response = await fetch('/api/tenants/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // 'Authorization': `Bearer ${authToken}`, // Falls benötigt
-        },
-        body: JSON.stringify({
-          uuid: tenant.uuid,
-          name: tenant.tenantName, // Backend erwartet 'name'
-          user_id: tenant.user_id,
-          // createdAt und updatedAt könnten hier auch gesendet werden,
-          // falls das Backend diese Werte übernimmt und nicht selbst setzt.
-          // createdAt: tenant.createdAt,
-          // updatedAt: tenant.updatedAt,
-        }),
-      });
-
-      if (response.ok) {
-        // Optional: Antwort des Backends verarbeiten, falls nötig
-        // const syncedTenantData = await response.json();
-        infoLog('tenantStore', `Tenant ${tenant.uuid} ("${tenant.tenantName}") erfolgreich mit Backend synchronisiert.`);
-        return true;
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if (errorMessage.includes('already exists for this user')) {
+          warnLog(
+            'tenantStore',
+            `Tenant ${tenant.uuid} ("${tenant.tenantName}") existiert bereits im Backend oder ein anderer Fehler mit dieser Meldung ist aufgetreten.`,
+            { tenantUuid: tenant.uuid, originalErrorMessage: errorMessage },
+          );
+          return true;
+        }
+      } else if (typeof error === 'string') {
+        errorMessage = error;
       }
-      // else { // Dieser Else-Block ist laut Biome redundant, da der if-Block bereits mit return endet.
-      const errorText = await response.text();
-      errorLog('tenantStore', `Fehler bei der Synchronisation von Tenant ${tenant.uuid} mit Backend. Status: ${response.status}`, { details: errorText, tenantName: tenant.tenantName });
-      return false;
-      // }
-    } catch (error) {
-      errorLog('tenantStore', `Netzwerkfehler oder anderer Fehler bei der Synchronisation von Tenant ${tenant.uuid} mit Backend.`, { error, tenantName: tenant.tenantName });
+
+      errorLog(
+        'tenantStore',
+        `Fehler bei der Synchronisation von Tenant ${tenant.uuid} ("${tenant.tenantName}") mit Backend: ${errorMessage}`,
+        { rawError: error, tenantUuid: tenant.uuid },
+      );
       return false;
     }
   }
 
   return {
-    /* State */
     tenants,
     activeTenantId,
     activeTenantDB,
-
-    /* Getter */
     getTenantsByUser,
     activeTenant,
-
-    /* Actions */
-    loadTenants, // Beibehalten und exportiert
+    loadTenants,
     addTenant,
     updateTenant,
     deleteTenant,
     setActiveTenant,
     reset,
-
-    /* Sync Actions */
     syncCurrentTenantData,
   };
 });

@@ -12,6 +12,7 @@ import * as bcrypt from 'bcryptjs';
 import Dexie, { type Table } from 'dexie';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { apiService, type UserFromApi, type TenantFromApi } from '@/services/apiService';
+import { useSessionStore } from './sessionStore'; // Importiere sessionStore
 
 // Schnittstelle für Daten, die zum Backend gepusht werden
 interface UserPushData {
@@ -116,9 +117,12 @@ export const useUserStore = defineStore('user', () => {
     // Dies stellt sicher, dass bei leerem Cache Daten vom Backend geholt werden
     // und bei vorhandenen lokalen Daten diese mit dem Backend abgeglichen werden.
     await syncUsers();
-    // Optional könnte hier auch syncUserTenants für einen ggf. eingeloggten User aufgerufen werden,
-    // falls diese Information beim Store-Start bereits verfügbar ist.
-    // Fürs Erste fokussieren wir uns auf syncUsers.
+
+    // Nach erfolgreichem User-Sync, versuche Tenants zu synchronisieren, falls ein User angemeldet ist.
+    const sessionStore = useSessionStore();
+    if (sessionStore.currentUserId) {
+      await syncUserTenants(sessionStore.currentUserId);
+    }
   });
 
   /* ---------------------------------------------------------------- Getter */
@@ -623,31 +627,55 @@ export const useUserStore = defineStore('user', () => {
         infoLog('userStore', `syncUserTenants: Versuche, neuen lokalen Tenant ${lTenantToPush.uuid} für User ${userId} zum Backend zu pushen.`);
         try {
           const tenantDataToPush = {
+            uuid: lTenantToPush.uuid, // Füge lokale UUID hinzu
             name: lTenantToPush.tenantName, // Mapping
             user_id: lTenantToPush.user_id, // Muss korrekt sein
           };
 
-          const backendTenantResponse = await apiService.createTenant(tenantDataToPush);
-          infoLog('userStore', `syncUserTenants: Neuer lokaler Tenant ${lTenantToPush.uuid} erfolgreich zum Backend gepusht. Antwort erhalten.`, { backendResponse: backendTenantResponse });
+          // apiService.createTenant erwartet Omit<TenantFromApi, 'uuid' | 'createdAt' | 'updatedAt'>
+          // Wir müssen hier apiService.post direkt verwenden, da wir die UUID mitsenden.
+          // Alternativ könnte apiService.createTenant angepasst werden, um optional UUID zu akzeptieren.
+          // Für den Moment ist der direkte Aufruf klarer.
+          const backendTenantResponse = await apiService.post<TenantFromApi, typeof tenantDataToPush>('/tenants/', tenantDataToPush);
 
+          infoLog('userStore', `syncUserTenants: Lokaler Tenant ${lTenantToPush.uuid} für User ${userId} erfolgreich zum Backend gepusht. Antwort erhalten.`, { backendResponse: backendTenantResponse });
+
+          // Nach erfolgreichem Push: Lokalen Tenant mit Backend-Daten aktualisieren
+          // (falls Backend z.B. createdAt/updatedAt setzt)
           const updatedDbTenant: DbTenant = {
-            uuid: backendTenantResponse.uuid, // UUID vom Backend verwenden!
+            uuid: backendTenantResponse.uuid, // Sollte jetzt dieselbe sein wie lTenantToPush.uuid
             tenantName: backendTenantResponse.name, // Mapping
             user_id: backendTenantResponse.user_id,
             createdAt: backendTenantResponse.createdAt,
             updatedAt: backendTenantResponse.updatedAt,
           };
 
-          if (lTenantToPush.uuid !== backendTenantResponse.uuid) {
-            await db.dbTenants.delete(lTenantToPush.uuid);
-            infoLog('userStore', `syncUserTenants: Alten lokalen Tenant ${lTenantToPush.uuid} nach Push gelöscht, da Backend neue UUID ${backendTenantResponse.uuid} vergeben hat.`);
+          // Da wir die UUID mitsenden, sollte die Backend-UUID gleich der lokalen sein.
+          // Die Logik zum Löschen des alten lokalen Tenants ist dann nicht mehr nötig.
+          await db.dbTenants.put(updatedDbTenant); // put() aktualisiert den bestehenden Eintrag mit derselben UUID
+
+          infoLog('userStore', 'syncUserTenants: Lokaler Tenant nach Push mit Backend-Daten aktualisiert', { tenantUuid: updatedDbTenant.uuid });
+
+        } catch (error: unknown) { // error: any zu unknown
+          let errorMessage = 'Unbekannter Synchronisationsfehler beim Pushen des Tenants';
+          if (error instanceof Error) {
+            errorMessage = error.message;
+            // Spezifische Prüfung für den Fall, dass der Tenant bereits existiert.
+            // Backend-Fehlermeldung: "Tenant with name '{tenant.name}' already exists for this user."
+            if (errorMessage.includes('already exists for this user')) {
+               warnLog(
+                'userStore',
+                `syncUserTenants: Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") existiert bereits im Backend. Synchronisation wird als behandelt betrachtet.`,
+                { tenantUuid: lTenantToPush.uuid, originalErrorMessage: errorMessage },
+              );
+              continue; // Springe zum nächsten Tenant in der Schleife
+            }
+          } else if (typeof error === 'string') {
+            errorMessage = error;
           }
-          await db.dbTenants.put(updatedDbTenant);
 
-          infoLog('userStore', 'syncUserTenants: Lokaler Tenant nach Push mit Backend-Daten aktualisiert', { localUuid: lTenantToPush.uuid, backendUuid: updatedDbTenant.uuid });
-
-        } catch (error) {
-          errorLog('userStore', `syncUserTenants: Fehler beim Pushen des neuen lokalen Tenants ${lTenantToPush.uuid} zum Backend`, { error, dataSent: {name: lTenantToPush.tenantName, user_id: lTenantToPush.user_id} });
+          errorLog('userStore', `syncUserTenants: Fehler beim Pushen des lokalen Tenants ${lTenantToPush.uuid} zum Backend: ${errorMessage}`, { rawError: error, tenantUuid: lTenantToPush.uuid, dataSent: {name: lTenantToPush.tenantName, user_id: lTenantToPush.user_id} });
+          // Fehler wird geloggt, aber die Schleife läuft weiter, um andere Tenants zu versuchen.
         }
       }
       // Kein explizites Neuladen des Tenant-States hier, da Tenants nicht direkt im UserStore-State gehalten werden.
