@@ -31,6 +31,7 @@ export interface DbUser { // Struktur für die Dexie 'users' Tabelle
   email: string;
   createdAt: string;
   updatedAt: string;
+  needsBackendSync?: boolean; // Flag, um lokale Erstellung/Änderung zu markieren
   // passwordHash wird hier nicht gespeichert
 }
 
@@ -42,21 +43,31 @@ export interface DbTenant { // Struktur für die Dexie 'tenants' Tabelle
   updatedAt: string;
 }
 
-// Dexie Datenbankklasse für User- und globale Tenant-Daten
+// Schnittstelle für die Dexie 'session' Tabelle
+export interface DbSession {
+  id: string; // Fester Schlüssel, z.B. 'currentSession'
+  currentUserId: string | null;
+  currentTenantId: string | null;
+}
+
+// Dexie Datenbankklasse für User-, globale Tenant- und Session-Daten
 class FinwiseUserDB extends Dexie {
   dbUsers!: Table<DbUser, string>;
   dbTenants!: Table<DbTenant, string>;
+  dbSession!: Table<DbSession, string>; // Neue Tabelle für Session-Daten
 
   constructor() {
     super('finwiseUserDB');
-    this.version(1).stores({
-      dbUsers: '&uuid, username, email, createdAt, updatedAt', // name zu username geändert
+    // Erhöhe die Versionsnummer, da wir eine neue Tabelle hinzufügen
+    this.version(2).stores({
+      dbUsers: '&uuid, username, email, createdAt, updatedAt, needsBackendSync', // name zu username geändert, needsBackendSync hinzugefügt
       dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt', // name zu tenantName geändert
+      dbSession: '&id', // Neue Tabelle mit 'id' als Primärschlüssel
     });
   }
 }
 
-const db = new FinwiseUserDB();
+export const db = new FinwiseUserDB(); // Exportiere die db-Instanz
 
 /** Konstante SaltRounds gemäß Anforderung 1 = 9 */
 const SALT_ROUNDS = 9;
@@ -125,50 +136,99 @@ export const useUserStore = defineStore('user', () => {
       errorLog('userStore', 'registerUser: Ungültige Eingabe');
       return null;
     }
-    // Prüfen, ob User (Email) bereits existiert
+
+    // Prüfen, ob User (Email) bereits lokal existiert
     const existingDbUserByEmail = await db.dbUsers.get({ email: email.trim().toLowerCase() });
     if (existingDbUserByEmail) {
-      infoLog('userStore', 'registerUser: E-Mail bereits registriert', { email });
+      infoLog('userStore', 'registerUser: E-Mail bereits lokal registriert', { email });
       return null;
     }
-    // Prüfen, ob Username bereits existiert
+    // Prüfen, ob Username bereits lokal existiert
     const existingDbUserByUsername = await db.dbUsers.where('username').equalsIgnoreCase(username.trim()).first();
      if (existingDbUserByUsername) {
-       infoLog('userStore', 'registerUser: Username bereits registriert', { username });
+       infoLog('userStore', 'registerUser: Username bereits lokal registriert', { username });
        return null; // Gemäß alter Logik: Username muss unique sein
      }
 
-    const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
     const now = new Date().toISOString();
-    const userId = uuidv4();
-
-    const newDbUser: DbUser = {
-      uuid: userId,
-      username: username.trim(), // Feldname hier korrigiert
-      email: email.trim().toLowerCase(),
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const newLocalUser: LocalUser = {
-      id: userId,
-      username: username.trim(), // Bleibt username
-      email: email.trim().toLowerCase(),
-      passwordHash: hash,
-      createdAt: now,
-      updatedAt: now,
-      accessToken: '',
-      refreshToken: '',
-    };
+    const userId = uuidv4(); // Frontend generiert UUID
 
     try {
-      await db.dbUsers.add(newDbUser);
+      // Versuche Online-Registrierung mit Passwort
+      infoLog('userStore', 'registerUser: Versuche Online-Registrierung...');
+      const backendUser = await apiService.registerUserWithPassword({
+        name: username.trim(), // Backend erwartet 'name'
+        email: email.trim().toLowerCase(),
+        password: plainPassword, // Klartext-Passwort für Registrierungs-Endpoint
+      });
+
+      // Erfolgreiche Online-Registrierung
+      const newDbUser: DbUser = {
+        uuid: backendUser.uuid, // Backend UUID verwenden
+        username: backendUser.name, // Mapping
+        email: backendUser.email,
+        createdAt: backendUser.createdAt,
+        updatedAt: backendUser.updatedAt,
+        needsBackendSync: false, // Erfolgreich synchronisiert
+      };
+
+      // Passwort-Hash wird NICHT in DbUser gespeichert.
+      // Der LocalUser State kann den Hash temporär halten, falls nötig (z.B. für Offline-Login-Versuch nach Online-Login)
+      // Für diesen Plan speichern wir den Hash lokal im State, aber nicht in der DB.
+      const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+      const newLocalUser: LocalUser = {
+        id: newDbUser.uuid,
+        username: newDbUser.username,
+        email: newDbUser.email,
+        passwordHash: hash, // Lokal gehashter Passwort für State
+        createdAt: newDbUser.createdAt,
+        updatedAt: newDbUser.updatedAt,
+        accessToken: '', // Tokens vom Backend könnten hier gesetzt werden, falls der Register-Endpoint sie zurückgibt
+        refreshToken: '',
+      };
+
+      await db.dbUsers.put(newDbUser); // put() statt add() falls Backend dieselbe UUID zurückgibt
       users.value.push(newLocalUser); // State aktualisieren
-      infoLog('userStore', 'registerUser: User erfolgreich registriert und in DB gespeichert', { id: userId, email: newLocalUser.email });
+      infoLog('userStore', 'registerUser: User erfolgreich online registriert und lokal gespeichert', { id: newDbUser.uuid, email: newDbUser.email });
       return newLocalUser;
-    } catch (err) {
-      errorLog('userStore', 'registerUser: Fehler beim Speichern des Users in DB', { error: err });
-      return null;
+
+    } catch (error) {
+      // Fehler bei Online-Registrierung (z.B. Offline, Backend-Fehler)
+      errorLog('userStore', 'registerUser: Online-Registrierung fehlgeschlagen, versuche lokale Speicherung.', { error });
+
+      // Lokale Speicherung mit needsBackendSync
+      const newDbUser: DbUser = {
+        uuid: userId, // Frontend generierte UUID verwenden
+        username: username.trim(),
+        email: email.trim().toLowerCase(),
+        createdAt: now,
+        updatedAt: now,
+        needsBackendSync: true, // Muss noch mit Backend synchronisiert werden
+      };
+
+      // Passwort-Hash wird NICHT in DbUser gespeichert.
+      // Für den LocalUser State generieren wir den Hash lokal.
+      const hash = await bcrypt.hash(plainPassword, SALT_ROUNDS);
+      const newLocalUser: LocalUser = {
+        id: newDbUser.uuid,
+        username: newDbUser.username,
+        email: newDbUser.email,
+        passwordHash: hash, // Lokal gehashter Passwort für State
+        createdAt: newDbUser.createdAt,
+        updatedAt: newDbUser.updatedAt,
+        accessToken: '',
+        refreshToken: '',
+      };
+
+      try {
+        await db.dbUsers.add(newDbUser); // add() verwenden, da es eine neue lokale UUID ist
+        users.value.push(newLocalUser); // State aktualisieren
+        warnLog('userStore', 'registerUser: Online-Registrierung fehlgeschlagen, User lokal gespeichert (needsBackendSync=true)', { id: newDbUser.uuid, email: newDbUser.email });
+        return newLocalUser;
+      } catch (dbError) {
+        errorLog('userStore', 'registerUser: Fehler beim lokalen Speichern des Users nach fehlgeschlagener Online-Registrierung', { error: dbError });
+        return null;
+      }
     }
   }
 
@@ -176,44 +236,93 @@ export const useUserStore = defineStore('user', () => {
     usernameOrEmail: string, // Kann Username oder Email sein
     plainPassword: string,
   ): Promise<LocalUser | null> {
-    let dbUser: DbUser | undefined;
     const inputLower = usernameOrEmail.toLowerCase();
 
-    // Versuche als E-Mail zu finden
-    dbUser = await db.dbUsers.where('email').equalsIgnoreCase(inputLower).first();
+    try {
+      // Versuche Online-Login über API
+      infoLog('userStore', 'validateLogin: Versuche Online-Login...');
+      const backendUser = await apiService.login({
+        username_or_email: inputLower,
+        password: plainPassword,
+      });
 
-    if (!dbUser) {
-      // Versuche als Username zu finden (vorher 'name')
-      dbUser = await db.dbUsers.where('username').equalsIgnoreCase(inputLower).first();
-    }
+      // Erfolgreicher Online-Login
+      infoLog('userStore', 'validateLogin: Online-Login erfolgreich', { userId: backendUser.uuid });
 
-    if (!dbUser) {
-      infoLog('userStore', 'validateLogin: User nicht gefunden', { usernameOrEmail });
-      return null;
-    }
+      // Benutzerdaten vom Backend in IndexedDB speichern/aktualisieren
+      const dbUser: DbUser = {
+        uuid: backendUser.uuid,
+        username: backendUser.name, // Mapping
+        email: backendUser.email,
+        createdAt: backendUser.createdAt,
+        updatedAt: backendUser.updatedAt,
+        needsBackendSync: false, // Erfolgreich synchronisiert
+      };
+      await db.dbUsers.put(dbUser); // put() aktualisiert oder fügt hinzu
 
-    // Da passwordHash nicht in DbUser ist, müssen wir den LocalUser aus dem State `users` finden,
-    // um den Hash zu bekommen. Das ist ein Workaround, da die DB-Struktur keinen Hash vorsieht.
-    if (!dbUser || !dbUser.uuid) { // Sicherstellen, dass dbUser und dbUser.uuid existieren
-      errorLog('userStore', 'validateLogin: dbUser oder dbUser.uuid ist undefiniert nach der Suche.');
-      return null;
-    }
-    const localUser = users.value.find(u => u.id === dbUser.uuid);
-    if (!localUser || !localUser.passwordHash) {
-      errorLog('userStore', 'validateLogin: LocalUser oder passwordHash nicht im State gefunden. Login nicht möglich.', { userId: dbUser.uuid });
-      // Hier könnte man alternativ einen Fehler werfen oder eine Meldung geben,
-      // dass die lokale Passwortprüfung nicht mehr unterstützt wird und Backend-Login nötig ist.
-      return null;
-    }
+      // State aktualisieren
+      const localUser: LocalUser = {
+        id: dbUser.uuid,
+        username: dbUser.username,
+        email: dbUser.email,
+        passwordHash: '', // Passwort-Hash wird nicht persistent gespeichert
+        createdAt: dbUser.createdAt,
+        updatedAt: dbUser.updatedAt,
+        accessToken: backendUser.accessToken, // Tokens vom Backend übernehmen
+        refreshToken: backendUser.refreshToken,
+      };
+      // Finde und ersetze den Benutzer im State oder füge ihn hinzu
+      const userIndex = users.value.findIndex(u => u.id === localUser.id);
+      if (userIndex > -1) {
+        users.value[userIndex] = localUser;
+      } else {
+        users.value.push(localUser);
+      }
 
-    const ok = await bcrypt.compare(plainPassword, localUser.passwordHash);
-    if (ok) {
-      infoLog('userStore', 'validateLogin: Login erfolgreich', { userId: localUser.id });
       return localUser;
+
+    } catch (error) {
+      // Fehler bei Online-Login (z.B. Offline, falsche Credentials)
+      errorLog('userStore', 'validateLogin: Online-Login fehlgeschlagen.', { error });
+
+      // Bei Netzwerkfehlern (Offline-Szenario) versuchen, lokal zu finden
+      // Beachte: Lokale Passwortvalidierung wird hier NICHT durchgeführt.
+      // Ein Offline-Login ist nur eine "Daten-Verfügbarkeitsprüfung" für zuvor synchronisierte User.
+      // Echte Offline-Authentifizierung würde Tokens oder andere Mechanismen erfordern.
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+         warnLog('userStore', 'validateLogin: Netzwerkfehler (vermutlich offline), versuche lokalen Lookup.');
+         let dbUser: DbUser | undefined;
+
+         // Versuche als E-Mail zu finden
+         dbUser = await db.dbUsers.where('email').equalsIgnoreCase(inputLower).first();
+
+         if (!dbUser) {
+           // Versuche als Username zu finden
+           dbUser = await db.dbUsers.where('username').equalsIgnoreCase(inputLower).first();
+         }
+
+         if (dbUser) {
+           infoLog('userStore', 'validateLogin: User lokal gefunden (Offline-Modus)', { userId: dbUser.uuid });
+            // Erstelle LocalUser aus DbUser (ohne Passwort-Hash)
+            const localUser: LocalUser = {
+              id: dbUser.uuid,
+              username: dbUser.username,
+              email: dbUser.email,
+              passwordHash: '', // Kein Hash im Offline-Lookup
+              createdAt: dbUser.createdAt,
+              updatedAt: dbUser.updatedAt,
+              accessToken: '', // Keine Tokens im Offline-Lookup
+              refreshToken: '',
+            };
+           return localUser; // Rückgabe des lokalen Users (ohne Authentifizierung)
+         }
+         warnLog('userStore', 'validateLogin: User lokal nicht gefunden (Offline-Modus)', { usernameOrEmail });
+         return null;
+      }
+      // Andere API-Fehler (z.B. falsche Credentials)
+      infoLog('userStore', 'validateLogin: Login fehlgeschlagen (falsche Credentials oder anderer API-Fehler).', { usernameOrEmail });
+      return null;
     }
-    // Else kann weggelassen werden, da der vorherige if-Block mit return endet.
-    infoLog('userStore', 'validateLogin: Falsches Passwort', { userId: localUser.id });
-    return null;
   }
 
   async function changePassword(
@@ -329,19 +438,20 @@ export const useUserStore = defineStore('user', () => {
       // 2. Datenabgleich: Lokale Daten mit Backend-Daten vergleichen (für Push-Kandidaten)
       for (const lUser of localDbUsers) {
         const bUser = backendUsers.find(u => u.uuid === lUser.uuid);
+        const localUpdatedAt = new Date(lUser.updatedAt).getTime();
+
         if (!bUser) {
-          // User existiert nur lokal -> zum Backend pushen
-          // Bedingung: "seit createdAt nicht mit Backend synchronisiert"
-          // Einfache Annahme hier: Wenn User nur lokal existiert, wurde er lokal erstellt und noch nicht gepusht.
-          // Eine robustere Lösung könnte ein `lastSyncedAt` Feld oder eine Prüfung, ob die `uuid` vom Backend stammt, beinhalten.
-          // Für diese Stufe: Alle rein lokalen User sind Push-Kandidaten.
+          // User existiert nur lokal -> zum Backend pushen (neue lokale User)
           usersToPushToBackend.push(lUser);
+        } else {
+          // User existiert lokal und im Backend
+          const backendUpdatedAt = new Date(bUser.updatedAt).getTime();
+          if (localUpdatedAt > backendUpdatedAt) {
+            // Lokale Version ist neuer -> zum Backend pushen (geänderte lokale User)
+            usersToPushToBackend.push(lUser);
+          }
+          // Wenn Backend neuer oder gleich, wird er im ersten Loop gehandhabt (Pull).
         }
-        // Fall: User existiert lokal und im Backend, aber lokal ist neuer.
-        // Dieser Fall wird hier nicht explizit für einen Push markiert, da die Anforderung
-        // "Datensatz nur lokal ... Per POST /users ans Backend senden" lautet.
-        // Ein Update eines existierenden Users würde eher PUT /users/{uuid} erfordern.
-        // Die aktuelle Logik pusht nur komplett neue lokale User.
       }
 
       // 3. Lokale DB-Operationen ausführen
@@ -354,54 +464,58 @@ export const useUserStore = defineStore('user', () => {
         infoLog('userStore', 'syncUsers: Neue User lokal hinzugefügt', { count: usersToAddToDb.length, users: usersToAddToDb.map(u => u.uuid) });
       }
 
-      // 4. Push zum Backend (für neue lokale User)
+      // 4. Push zum Backend (für neue und geänderte lokale User)
       for (const lUserToPush of usersToPushToBackend) {
-        infoLog('userStore', `syncUsers: Versuche, neuen lokalen User ${lUserToPush.uuid} zum Backend zu pushen.`);
+        const bUser = backendUsers.find(u => u.uuid === lUserToPush.uuid); // Find backend counterpart
+
         try {
-          // Das Backend erwartet 'name' und 'email'. 'password' ist im UserCreate Schema, aber wir haben es hier nicht.
-          // Gemäß Anforderung: "Per POST /users ans Backend senden".
-          // Wir gehen davon aus, dass der Backend-Endpunkt so konfiguriert ist, dass er User ohne Passwort
-          // für diesen Synchronisationsfall akzeptieren kann, oder dieser Push fehlschlägt und geloggt wird.
+          let backendUserResponse: UserFromApi;
           const userDataToPush = {
             name: lUserToPush.username, // Mapping
             email: lUserToPush.email,
-            // WICHTIG: Das Passwort fehlt hier. Wenn das Backend es zwingend erfordert, schlägt dieser Aufruf fehl.
-            // Die Anforderung, per POST zu senden, ohne das Passwort-Handling hier zu spezifizieren, ist eine Herausforderung.
+            // Passwort wird hier NICHT gesendet
           };
 
-          warnLog('userStore', 'syncUsers: Push eines neuen lokalen Users zum Backend ohne Passwort. Backend muss dies unterstützen.', { userId: lUserToPush.uuid, data: userDataToPush });
+          if (!bUser || lUserToPush.needsBackendSync) {
+            // User existiert nur lokal ODER ist als needing sync markiert (neue lokale User)
+            infoLog('userStore', `syncUsers: Versuche, neuen lokalen User ${lUserToPush.uuid} zum Backend zu pushen.`);
+            // apiService.createUser expects uuid, name, email
+            backendUserResponse = await apiService.createUser({
+              uuid: lUserToPush.uuid,
+              ...userDataToPush
+            });
+            infoLog('userStore', `syncUsers: Neuer lokaler User ${lUserToPush.uuid} erfolgreich zum Backend gepusht.`, { backendResponse: backendUserResponse });
 
-          const backendUserResponse = await apiService.createUser(userDataToPush);
-          infoLog('userStore', `syncUsers: Neuer lokaler User ${lUserToPush.uuid} erfolgreich zum Backend gepusht. Antwort erhalten.`, { backendResponse: backendUserResponse });
+          } else {
+            // User existiert lokal und im Backend, und lokale Version ist neuer (geänderte lokale User)
+            infoLog('userStore', `syncUsers: Versuche, geänderten lokalen User ${lUserToPush.uuid} zum Backend zu pushen.`);
+            // apiService.updateUser expects uuid and data (name, email)
+            backendUserResponse = await apiService.updateUser(lUserToPush.uuid, userDataToPush);
+            infoLog('userStore', `syncUsers: Geänderter lokaler User ${lUserToPush.uuid} erfolgreich zum Backend gepusht.`, { backendResponse: backendUserResponse });
+          }
 
           // Lokalen User mit der Antwort vom Backend aktualisieren
-          // Wichtig: Die lokale UUID könnte sich ändern, wenn das Backend eine neue UUID generiert und zurückgibt.
-          // Die Anforderung sagt "insbesondere uuid und updatedAt".
-          // Wir müssen den alten lokalen User entfernen und den neuen (vom Backend bestätigten) hinzufügen/aktualisieren.
-
+          // Wichtig: Die lokale UUID sollte nach einem erfolgreichen Push/Update die Backend-UUID sein.
+          // Da wir Frontend-generierte UUIDs für neue User senden, sollte die Backend-UUID gleich sein.
+          // Aber wir aktualisieren sicherheitshalber mit der Antwort.
           const updatedDbUser: DbUser = {
             uuid: backendUserResponse.uuid, // UUID vom Backend verwenden!
             username: backendUserResponse.name, // Mapping
             email: backendUserResponse.email,
             createdAt: backendUserResponse.createdAt,
             updatedAt: backendUserResponse.updatedAt,
+            needsBackendSync: false, // Erfolgreich synchronisiert
           };
 
-          // Wenn die UUID gleich geblieben ist, können wir put verwenden.
-          // Wenn die UUID sich geändert hat (Backend hat eine neue generiert), müssen wir den alten löschen und den neuen hinzufügen.
-          // Sicherer ist, immer den alten (falls er unter der alten UUID existierte) zu löschen und den neuen zu speichern.
-          // Da lUserToPush die alte lokale UUID hat:
-          if (lUserToPush.uuid !== backendUserResponse.uuid) {
-            await db.dbUsers.delete(lUserToPush.uuid);
-            infoLog('userStore', `syncUsers: Alten lokalen User ${lUserToPush.uuid} nach Push gelöscht, da Backend neue UUID ${backendUserResponse.uuid} vergeben hat.`);
-          }
-          await db.dbUsers.put(updatedDbUser); // Speichert oder aktualisiert basierend auf der neuen UUID
+          await db.dbUsers.put(updatedDbUser); // Speichert oder aktualisiert basierend auf der Backend-UUID
 
-          infoLog('userStore', 'syncUsers: Lokaler User nach Push mit Backend-Daten aktualisiert', { localUuid: lUserToPush.uuid, backendUuid: updatedDbUser.uuid });
+          infoLog('userStore', 'syncUsers: Lokaler User nach Push/Update mit Backend-Daten aktualisiert', { localUuid: lUserToPush.uuid, backendUuid: updatedDbUser.uuid });
 
         } catch (error) {
-          errorLog('userStore', `syncUsers: Fehler beim Pushen des neuen lokalen Users ${lUserToPush.uuid} zum Backend`, { error, dataSent: {name: lUserToPush.username, email: lUserToPush.email} });
-          // Hier könnte man den User für einen späteren erneuten Versuch markieren.
+          errorLog('userStore', `syncUsers: Fehler beim Pushen/Updaten des lokalen Users ${lUserToPush.uuid} zum Backend`, { error, dataSent: {name: lUserToPush.username, email: lUserToPush.email} });
+          // Hier könnte man den User für einen späteren erneuten Versuch markieren,
+          // z.B. durch Beibehalten von needsBackendSync oder Hinzufügen eines retryCount.
+          // Für diesen Plan belassen wir es beim Logging.
         }
       }
 

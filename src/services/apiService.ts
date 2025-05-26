@@ -68,8 +68,22 @@ export const apiService = {
 
   // User-spezifische Methoden
   getUsers: () => apiService.get<UserFromApi[]>('/users'),
-  createUser: (userData: Omit<UserFromApi, 'uuid' | 'createdAt' | 'updatedAt'>) =>
-    apiService.post<UserFromApi, Omit<UserFromApi, 'uuid' | 'createdAt' | 'updatedAt'>>('/users', userData),
+  // createUser wird für den Sync von OFFLINE erstellten Usern verwendet (ohne Passwort)
+  createUser: (userData: Omit<UserFromApi, 'createdAt' | 'updatedAt'> & { uuid: string }) => // uuid wird vom Frontend gesendet
+    apiService.post<UserFromApi, Omit<UserFromApi, 'createdAt' | 'updatedAt'> & { uuid: string }>('/users', userData),
+
+  // Neue Methode für Online-Registrierung mit Passwort
+  registerUserWithPassword: (userData: RegisterUserPayload) =>
+    apiService.post<UserFromApi, RegisterUserPayload>('/register', userData),
+
+  // Neue Methode für Online-Login
+  login: (credentials: LoginPayload) =>
+    apiService.post<UserFromApi, LoginPayload>('/login', credentials), // Annahme: Login gibt UserFromApi zurück
+
+  // Neue Methode für User-Updates (ohne Passwort)
+  updateUser: (uuid: string, userData: Omit<UserFromApi, 'uuid' | 'createdAt' | 'updatedAt'>) =>
+    apiService.put<UserFromApi, Omit<UserFromApi, 'uuid' | 'createdAt' | 'updatedAt'>>(`/users/${uuid}`, userData),
+
 
   // Tenant-spezifische Methoden
   getTenantsForUser: (userId: string) =>
@@ -79,12 +93,29 @@ export const apiService = {
 };
 
 // Beispiel für Typen, die vom Backend erwartet/zurückgegeben werden (ggf. in types/ Verzeichnis auslagern)
+
+// Schnittstellen für API-Request-Bodies
+export interface RegisterUserPayload {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginPayload {
+  username_or_email: string;
+  password: string;
+}
+
+// Schnittstellen für API-Responses
 export interface UserFromApi {
   uuid: string;
   name: string;
   email: string;
   createdAt: string; // ISO 8601 String
   updatedAt: string; // ISO 8601 String
+  // Tokens könnten hier auch enthalten sein, je nach Login-Endpoint
+  accessToken?: string;
+  refreshToken?: string;
 }
 
 export interface TenantFromApi {
