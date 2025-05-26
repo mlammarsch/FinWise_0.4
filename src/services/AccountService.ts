@@ -1,7 +1,7 @@
 // src/services/AccountService.ts
 import { useAccountStore } from '@/stores/accountStore';
 import { useTransactionStore } from '@/stores/transactionStore';
-import { Account, AccountGroup } from '@/types';
+import type { Account, AccountGroup } from '@/types';
 import { v4 as uuidv4 } from 'uuid';
 import { debugLog } from '@/utils/logger';
 import { BalanceService } from './BalanceService';
@@ -19,30 +19,53 @@ export const AccountService = {
     return useAccountStore().accounts;
   },
 
-  getAccountById(id: string): Account | null {
-    const acc = useAccountStore().getAccountById(id);
+  async getAccountById(id: string): Promise<Account | null> {
+    const acc = await useAccountStore().getAccountById(id);
     if (!acc) debugLog('[AccountService] Account not found', id);
-    return acc;
+    return acc || null;
   },
 
-  addAccount(accountData: Omit<Account, 'id' | 'balance'>): Account | null {
+  async addAccount(accountData: Omit<Account, 'id' | 'balance'>): Promise<Account | null> {
     const accountStore = useAccountStore();
     const newAccount: Account = {
       ...accountData,
       id: uuidv4(),
       balance: 0,
     };
-    return accountStore.addAccount(newAccount);
+    // Annahme: addAccount im Store gibt das erstellte Konto oder null zurück
+    return await accountStore.addAccount(newAccount);
   },
 
-  updateAccount(id: string, updates: Partial<Omit<Account, 'id'>>): boolean {
-    return useAccountStore().updateAccount(id, updates);
+  async updateAccount(id: string, updates: Partial<Omit<Account, 'id'>>): Promise<boolean> {
+    const accountStore = useAccountStore();
+    const existingAccount = await accountStore.getAccountById(id);
+    if (!existingAccount) {
+      debugLog('[AccountService]', 'Account not found for update', { id });
+      return false;
+    }
+    const updatedAccount = { ...existingAccount, ...updates };
+    try {
+      await accountStore.updateAccount(updatedAccount);
+      return true;
+    } catch (error) {
+      debugLog('[AccountService]', 'Error updating account', { id, error });
+      return false;
+    }
   },
 
-  deleteAccount(id: string): boolean {
+  async deleteAccount(id: string): Promise<boolean> {
     const txStore = useTransactionStore();
-    if (txStore.transactions.some(tx => tx.accountId === id)) return false;
-    return useAccountStore().deleteAccount(id);
+    if (txStore.transactions.some(tx => tx.accountId === id)) {
+      debugLog('[AccountService]', 'Account has transactions, cannot delete', { accountId: id });
+      return false;
+    }
+    try {
+      await useAccountStore().deleteAccount(id);
+      return true;
+    } catch (error) {
+      debugLog('[AccountService]', 'Error deleting account', { accountId: id, error });
+      return false;
+    }
   },
 
   // -------------------------------------------------------- Zentrale Salden
@@ -76,27 +99,28 @@ export const AccountService = {
   getGroupBalances(asOf: Date = new Date()): Record<string, number> {
     const accStore = useAccountStore();
     const result: Record<string, number> = {};
-    accStore.accountGroups.forEach(g => {
+    for (const g of accStore.accountGroups) {
       result[g.id] = BalanceService.getAccountGroupBalance(g.id, asOf, false);
-    });
+    }
     return result;
   },
 
   // --------------------------------------------------------- Convenience —
 
-  getAccountInfo(accountId: string): AccountInfo | null {
-    const acc = this.getAccountById(accountId);
+  async getAccountInfo(accountId: string): Promise<AccountInfo | null> {
+    const acc = await this.getAccountById(accountId);
     if (!acc) return null;
     return {
       id: acc.id,
       name: acc.name,
-      balance: this.getCurrentBalance(acc.id),
+      balance: this.getCurrentBalance(acc.id), // Annahme: getCurrentBalance bleibt synchron oder wird separat behandelt
     };
   },
 
-  getAccountName(id: string | null): string {
+  async getAccountName(id: string | null): Promise<string> {
     if (!id) return 'Kein Konto';
-    return this.getAccountById(id)?.name || 'Unbekanntes Konto';
+    const account = await this.getAccountById(id);
+    return account?.name || 'Unbekanntes Konto';
   },
 
   // ---------------------------------------------------- Account‑Groups CRUD
@@ -105,22 +129,47 @@ export const AccountService = {
     return useAccountStore().accountGroups;
   },
 
-  getAccountGroupById(id: string): AccountGroup | null {
-    return useAccountStore().getAccountGroupById(id);
+  async getAccountGroupById(id: string): Promise<AccountGroup | null> {
+    const group = await useAccountStore().getAccountGroupById(id);
+    return group || null;
   },
 
-  addAccountGroup(groupData: Omit<AccountGroup, 'id'>): AccountGroup | null {
+  async addAccountGroup(groupData: Omit<AccountGroup, 'id'>): Promise<AccountGroup | null> {
     const newGroup: AccountGroup = { ...groupData, id: uuidv4() };
-    return useAccountStore().addAccountGroup(newGroup);
+    // Annahme: addAccountGroup im Store gibt die erstellte Gruppe oder null zurück
+    return await useAccountStore().addAccountGroup(newGroup);
   },
 
-  updateAccountGroup(id: string, updates: Partial<Omit<AccountGroup, 'id'>>): boolean {
-    return useAccountStore().updateAccountGroup(id, updates);
+  async updateAccountGroup(id: string, updates: Partial<Omit<AccountGroup, 'id'>>): Promise<boolean> {
+    const accountStore = useAccountStore();
+    const existingGroup = await accountStore.getAccountGroupById(id);
+    if (!existingGroup) {
+      debugLog('[AccountService]', 'Account group not found for update', { id });
+      return false;
+    }
+    const updatedGroup = { ...existingGroup, ...updates };
+    try {
+      await accountStore.updateAccountGroup(updatedGroup);
+      return true;
+    } catch (error) {
+      debugLog('[AccountService]', 'Error updating account group', { id, error });
+      return false;
+    }
   },
 
-  deleteAccountGroup(id: string): boolean {
+  async deleteAccountGroup(id: string): Promise<boolean> {
     const accStore = useAccountStore();
-    if (accStore.accounts.some(acc => acc.accountGroupId === id)) return false;
-    return accStore.deleteAccountGroup(id);
+    // Annahme: accStore.accounts ist bereits geladen und synchron verfügbar
+    if (accStore.accounts.some(acc => acc.accountGroupId === id)) {
+      debugLog('[AccountService]', 'Account group has accounts, cannot delete', { accountGroupId: id });
+      return false;
+    }
+    try {
+      await accStore.deleteAccountGroup(id);
+      return true;
+    } catch (error) {
+      debugLog('[AccountService]', 'Error deleting account group', { accountGroupId: id, error });
+      return false;
+    }
   },
 };

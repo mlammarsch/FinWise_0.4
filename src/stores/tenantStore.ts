@@ -1,16 +1,23 @@
 // src/stores/tenantStore.ts
 import { defineStore } from 'pinia';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, type Ref, type ComputedRef } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
+import type { Account, AccountGroup } from '../types'; // Importiere die Typen
 
-class FinwiseTenantSpecificDB extends Dexie {
+export class FinwiseTenantSpecificDB extends Dexie {
+  accounts!: Table<Account, string>; // Deklariere die Tabelle 'accounts' mit Typen
+  accountGroups!: Table<AccountGroup, string>; // Deklariere die Tabelle 'accountGroups' mit Typen
+
   constructor(databaseName: string) {
     super(databaseName);
-    this.version(1).stores({});
+    this.version(1).stores({
+      accounts: '&id, name, accountType, isActive, accountGroupId',
+      accountGroups: '&id, name',
+    });
   }
 }
 
@@ -32,7 +39,23 @@ import { useAccountStore } from './accountStore';
 import { useCategoryStore } from './categoryStore';
 import { useSessionStore } from './sessionStore';
 
-export const useTenantStore = defineStore('tenant', () => {
+// Definiere den expliziten Typ für den Store-State
+interface TenantStoreState {
+  tenants: Ref<DbTenant[]>;
+  activeTenantId: Ref<string | null>;
+  activeTenantDB: Ref<FinwiseTenantSpecificDB | null>;
+  getTenantsByUser: ComputedRef<(userId: string) => DbTenant[]>;
+  activeTenant: ComputedRef<DbTenant | null>;
+  loadTenants: () => Promise<void>;
+  addTenant: (tenantName: string, userId: string) => Promise<DbTenant | null>;
+  updateTenant: (id: string, tenantName: string) => Promise<boolean>;
+  deleteTenant: (id: string) => Promise<boolean>;
+  setActiveTenant: (id: string | null) => Promise<boolean>;
+  reset: () => Promise<void>;
+  syncCurrentTenantData: () => Promise<void>;
+}
+
+export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
   const tenants = ref<DbTenant[]>([]);
   const activeTenantId = ref<string | null>(null);
   const activeTenantDB = ref<FinwiseTenantSpecificDB | null>(null);

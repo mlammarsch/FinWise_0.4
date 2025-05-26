@@ -12,9 +12,10 @@ import { CategoryService }  from '@/services/CategoryService';
 import { AccountService }   from '@/services/AccountService';
 import { BalanceService }   from '@/services/BalanceService';
 
-import { AccountType }      from '@/types';
+import { AccountType, type AccountGroup }      from '@/types'; // AccountGroup als Typ importiert
 import { infoLog, debugLog, errorLog } from '@/utils/logger';
 import { DataService }      from './DataService';
+import { v4 as uuidv4 } from 'uuid'; // Import uuid
 
 export const TenantService = {
   /**
@@ -37,12 +38,16 @@ export const TenantService = {
     if (!catStore.categories.find(c => c.name === 'Verfügbare Mittel')) {
       CategoryService.addCategory({
         name: 'Verfügbare Mittel',
-        parentCategoryId: undefined,
+        // parentCategoryId: undefined, // Entfernt, da es den Fehler verursacht
         sortOrder: 0,
         isActive: true,
         isIncomeCategory: true,
-        isSavingsGoal: false,
+        // isSavingsGoal: false, // Entfernt, da es den Fehler verursacht
         categoryGroupId: undefined,
+        budgeted: 0, // Hinzugefügt
+        activity: 0, // Hinzugefügt
+        available: 0, // Hinzugefügt
+        isHidden: false, // Hinzugefügt
       });
     }
 
@@ -65,12 +70,16 @@ export const TenantService = {
       if (!catStore.categories.some(c => c.name === dc.name)) {
         CategoryService.addCategory({
           name: dc.name,
-          parentCategoryId: undefined,
+          // parentCategoryId: undefined, // Entfernt, da es den Fehler verursacht
           sortOrder: 0,
           isActive: true,
           isIncomeCategory: dc.groupId === incomeGroup.id,
-          isSavingsGoal: false,
+          // isSavingsGoal: false, // Entfernt, da es den Fehler verursacht
           categoryGroupId: dc.groupId,
+          budgeted: 0, // Hinzugefügt
+          activity: 0, // Hinzugefügt
+          available: 0, // Hinzugefügt
+          isHidden: false, // Hinzugefügt
         });
       }
     }
@@ -81,7 +90,14 @@ export const TenantService = {
     ];
     for (const gd of defaultGroups) {
       if (!accStore.accountGroups.find(g => g.name === gd.name)) {
-        accStore.addAccountGroup({ name: gd.name, sortOrder: gd.sortOrder });
+        const newGroup: AccountGroup = {
+          id: uuidv4(),
+          name: gd.name,
+          sortOrder: gd.sortOrder,
+          // Weitere optionale Felder von AccountGroup könnten hier initialisiert werden, falls nötig
+          // z.B. tenantId, falls es nicht automatisch vom addAccountGroup gesetzt wird
+        };
+        accStore.addAccountGroup(newGroup);
       }
     }
 

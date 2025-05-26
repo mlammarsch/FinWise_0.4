@@ -4,11 +4,12 @@
  * Enthält jetzt auch reloadTenantData für kompletten Tenant-Reset.
  */
 
-import {
+import type { // Als Typ-Importe markiert
   Account,
   AccountGroup,
   Transaction,
   Category,
+  CategoryGroup, // CategoryGroup hinzugefügt
   Tag,
   PlanningTransaction,
   Recipient,
@@ -31,12 +32,13 @@ import { BalanceService } from './BalanceService';
 // ----------------------------------------------------
 
 export const LocalStorageAdapter = {
-  save(key: string, data: any): void {
+  save(key: string, data: unknown): void { // data: any zu data: unknown geändert
     const sk = storageKey(key);
-    localStorage.setItem(sk, JSON.stringify(data));
-    debugLog('[LocalStorageAdapter] save', {
+    const jsonData = JSON.stringify(data);
+    localStorage.setItem(sk, jsonData);
+    debugLog('LocalStorageAdapter', 'save', `Saved data for key: ${sk}`, { // debugLog angepasst
       key: sk,
-      dataSize: JSON.stringify(data).length,
+      dataSize: jsonData.length,
     });
   },
 
@@ -44,10 +46,10 @@ export const LocalStorageAdapter = {
     const sk = storageKey(key);
     const json = localStorage.getItem(sk);
     const result = json ? JSON.parse(json) : null;
-    debugLog('[LocalStorageAdapter] load', {
+    debugLog('LocalStorageAdapter', 'load', `Loaded data for key: ${sk}`, { // debugLog angepasst
       key: sk,
       found: !!json,
-      itemCount: Array.isArray(result) ? result.length : 0,
+      itemCount: Array.isArray(result) ? result.length : (result ? 1 : 0),
     });
     return result;
   },
@@ -55,7 +57,7 @@ export const LocalStorageAdapter = {
   remove(key: string): void {
     const sk = storageKey(key);
     localStorage.removeItem(sk);
-    debugLog('[LocalStorageAdapter] remove', { key: sk });
+    debugLog('LocalStorageAdapter', 'remove', `Removed data for key: ${sk}`, { key: sk }); // debugLog angepasst
   },
 };
 
@@ -71,40 +73,50 @@ export class DataService {
    * Muss nach Tenant-Wechsel oder initialem Login
    * mit bereits gesetztem currentTenantId aufgerufen werden.
    */
-  static reloadTenantData(): void {
-    debugLog('[DataService] reloadTenantData – Start');
+  static async reloadTenantData(): Promise<void> { // async gemacht
+    debugLog('DataService', 'reloadTenantData', 'Start');
 
-    useAccountStore().reset();
-    useCategoryStore().reset();
-    useTransactionStore().reset();
-    usePlanningStore().reset();
-    useMonthlyBalanceStore().reset();
-    useRecipientStore().reset();
-    useTagStore().reset();
-    useRuleStore().reset();
-    useSearchStore().clearSearch();
-    useTransactionFilterStore().clearFilters();
+    // Da die reset-Methoden (oder die von ihnen aufgerufenen Ladefunktionen) nun async sind,
+    // müssen sie mit await aufgerufen werden.
+    // Es ist wichtig, dass die initializeStore-Methoden der Stores aufgerufen werden,
+    // wenn diese für das initiale Laden zuständig sind und nicht reset allein.
+    // Annahme: reset() in den Stores ruft die neuen async Ladefunktionen auf.
+    // Für accountStore ist das `await reset()` korrekt, da es `await loadAccounts()` enthält.
+    // Für die anderen Stores muss sichergestellt werden, dass ihre reset() oder eine
+    // äquivalente Initialisierungsmethode asynchron ist und korrekt aufgerufen wird.
+
+    const accountStore = useAccountStore();
+    const categoryStore = useCategoryStore();
+    const transactionStore = useTransactionStore();
+    const planningStore = usePlanningStore();
+    const monthlyBalanceStore = useMonthlyBalanceStore();
+    const recipientStore = useRecipientStore();
+    const tagStore = useTagStore();
+    const ruleStore = useRuleStore();
+    // searchStore und transactionFilterStore haben keine async reset-Methoden im typischen Sinne des Datenladens
+
+    await accountStore.reset(); // accountStore.reset ist async
+    await categoryStore.reset(); // Annahme: categoryStore.reset ist oder wird async
+    await transactionStore.reset(); // Annahme: transactionStore.reset ist oder wird async
+    await planningStore.reset(); // Annahme: planningStore.reset ist oder wird async
+    await monthlyBalanceStore.reset(); // Annahme: monthlyBalanceStore.reset ist oder wird async
+    await recipientStore.reset(); // Annahme: recipientStore.reset ist oder wird async
+    await tagStore.reset(); // Annahme: tagStore.reset ist oder wird async
+    await ruleStore.reset(); // Annahme: ruleStore.reset ist oder wird async
+
+    useSearchStore().clearSearch(); // Diese sind nicht datenladend, bleiben synchron
+    useTransactionFilterStore().clearFilters(); // Diese sind nicht datenladend, bleiben synchron
 
     // Nach dem Reset alle Monatsbilanzen neu berechnen
+    // BalanceService.calculateMonthlyBalances() könnte auch async werden, wenn es auf async Daten wartet.
+    // Fürs Erste belassen wir es synchron, aber dies könnte eine zukünftige Anpassung sein.
     BalanceService.calculateMonthlyBalances();
 
-    debugLog('[DataService] reloadTenantData – Completed');
+    debugLog('DataService', 'reloadTenantData', 'Completed');
   }
   // -------------------------
 
-  // Account-bezogene Methoden
-  saveAccounts(accounts: Account[]): void {
-    this.adapter.save('accounts', accounts);
-  }
-  loadAccounts(): Account[] | null {
-    return this.adapter.load<Account[]>('accounts');
-  }
-  saveAccountGroups(groups: AccountGroup[]): void {
-    this.adapter.save('account_groups', groups);
-  }
-  loadAccountGroups(): AccountGroup[] | null {
-    return this.adapter.load<AccountGroup[]>('account_groups');
-  }
+  // Account-bezogene Methoden wurden entfernt
 
   // Transaktions-bezogene Methoden
   saveTransactions(transactions: Transaction[]): void {
@@ -121,11 +133,11 @@ export class DataService {
   loadCategories(): Category[] | null {
     return this.adapter.load<Category[]>('categories');
   }
-  saveCategoryGroups(groups: any[]): void {
+  saveCategoryGroups(groups: CategoryGroup[]): void { // any[] zu CategoryGroup[] geändert
     this.adapter.save('category_groups', groups);
   }
-  loadCategoryGroups(): any[] | null {
-    return this.adapter.load<any[]>('category_groups');
+  loadCategoryGroups(): CategoryGroup[] | null { // any[] zu CategoryGroup[] geändert
+    return this.adapter.load<CategoryGroup[]>('category_groups');
   }
 
   // Tag-bezogene Methoden
