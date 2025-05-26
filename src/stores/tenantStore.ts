@@ -122,7 +122,7 @@ export const useTenantStore = defineStore('tenant', () => {
     const now = new Date().toISOString();
     const newTenant: DbTenant = {
       uuid: uuidv4(),
-      tenantName: tenantName.trim(), // name zu tenantName
+      tenantName: tenantName.trim(),
       user_id: userId,
       createdAt: now,
       updatedAt: now,
@@ -131,7 +131,17 @@ export const useTenantStore = defineStore('tenant', () => {
     try {
       await userDB.dbTenants.add(newTenant);
       tenants.value.push(newTenant); // State aktualisieren
-      infoLog('tenantStore', `Neuer Tenant "${newTenant.tenantName}" für User ${userId} angelegt`, { tenantId: newTenant.uuid }); // name zu tenantName
+      infoLog('tenantStore', `Neuer Tenant "${newTenant.tenantName}" für User ${userId} lokal angelegt`, { tenantId: newTenant.uuid });
+
+      // Asynchrone Backend-Synchronisation, blockiert nicht den Rest der Funktion
+      _syncTenantWithBackend(newTenant).then(syncSuccess => {
+        if (syncSuccess) {
+          infoLog('tenantStore', `Tenant ${newTenant.uuid} erfolgreich im Hintergrund mit Backend synchronisiert.`);
+        } else {
+          warnLog('tenantStore', `Hintergrund-Synchronisation für Tenant ${newTenant.uuid} mit Backend fehlgeschlagen. Lokale Anlage bleibt bestehen.`);
+        }
+      });
+
       // Neuen Tenant direkt aktiv schalten
       await setActiveTenant(newTenant.uuid);
       return newTenant;
@@ -282,6 +292,51 @@ export const useTenantStore = defineStore('tenant', () => {
     }
     debugLog('tenantStore', `syncCurrentTenantData für Mandant ${activeTenantId.value} aufgerufen (Platzhalter)`);
     // TODO: Implementierung der Synchronisationslogik mit dem Backend für den aktuellen Mandanten
+  }
+
+  /**
+   * Private Hilfsfunktion zur Synchronisation eines einzelnen Mandanten mit dem Backend.
+   * @param tenant Das DbTenant-Objekt, das synchronisiert werden soll.
+   * @returns Promise<boolean> True bei Erfolg, false bei Fehler.
+   */
+  async function _syncTenantWithBackend(tenant: DbTenant): Promise<boolean> {
+    debugLog('tenantStore', `Versuche Tenant ${tenant.uuid} mit Backend zu synchronisieren.`);
+    try {
+      // const sessionStore = useSessionStore(); // Falls Auth-Token benötigt wird
+      // const authToken = sessionStore.token; // Beispiel
+
+      const response = await fetch('/api/tenants/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // 'Authorization': `Bearer ${authToken}`, // Falls benötigt
+        },
+        body: JSON.stringify({
+          uuid: tenant.uuid,
+          name: tenant.tenantName, // Backend erwartet 'name'
+          user_id: tenant.user_id,
+          // createdAt und updatedAt könnten hier auch gesendet werden,
+          // falls das Backend diese Werte übernimmt und nicht selbst setzt.
+          // createdAt: tenant.createdAt,
+          // updatedAt: tenant.updatedAt,
+        }),
+      });
+
+      if (response.ok) {
+        // Optional: Antwort des Backends verarbeiten, falls nötig
+        // const syncedTenantData = await response.json();
+        infoLog('tenantStore', `Tenant ${tenant.uuid} ("${tenant.tenantName}") erfolgreich mit Backend synchronisiert.`);
+        return true;
+      }
+      // else { // Dieser Else-Block ist laut Biome redundant, da der if-Block bereits mit return endet.
+      const errorText = await response.text();
+      errorLog('tenantStore', `Fehler bei der Synchronisation von Tenant ${tenant.uuid} mit Backend. Status: ${response.status}`, { details: errorText, tenantName: tenant.tenantName });
+      return false;
+      // }
+    } catch (error) {
+      errorLog('tenantStore', `Netzwerkfehler oder anderer Fehler bei der Synchronisation von Tenant ${tenant.uuid} mit Backend.`, { error, tenantName: tenant.tenantName });
+      return false;
+    }
   }
 
   return {
