@@ -1,84 +1,110 @@
 // src/services/SyncService.ts
-import { useTenantStore, type FinwiseTenantSpecificDB, type SyncQueueItem, type SyncMetadataItem } from '@/stores/tenantStore';
+import { useTenantStore, type FinwiseTenantSpecificDB, type SyncQueueItem as LocalSyncQueueItem } from '@/stores/tenantStore';
 import type { Account, AccountGroup, SyncableEntity } from '@/types';
 import { TenantDbService } from './TenantDbService';
 import { errorLog, warnLog, debugLog, infoLog } from '@/utils/logger';
-
-// Platzhalter-Typen für Backend-Antworten
-export interface SyncResult {
-  success: boolean;
-  processed_ids: (number | string)[]; // IDs der erfolgreich verarbeiteten SyncQueueItems oder Entitäts-IDs
-  errors?: { entity_id: string; message: string }[];
-}
-
-export interface BackendChanges<T extends SyncableEntity> {
-  new_or_updated: T[];
-  deleted_ids: string[];
-  new_last_synced_timestamp: string;
-}
+import { syncApi, type PushResponse, type PullResponse, type EntityType as ApiEntityType, type SyncQueueItem as ApiSyncQueueItem } from '@/api/syncApi';
+import { v4 as uuidv4 } from 'uuid';
 
 const MAX_SYNC_ATTEMPTS = 5;
-const INITIAL_RETRY_DELAY_MS = 1000 * 60; // 1 Minute
+
+const SERVICE_ENTITY_TYPES: ApiEntityType[] = ['accounts', 'account_groups'];
+
+// Mapping von lokalen Operationstypen zu API-Aktionstypen
+const operationToAction = (operation: LocalSyncQueueItem['operation']): ApiSyncQueueItem['action'] => {
+  switch (operation) {
+    case 'CREATE': return 'created';
+    case 'UPDATE': return 'updated';
+    case 'DELETE': return 'deleted';
+    default: throw new Error(`Unknown operation type: ${operation}`);
+  }
+};
+
+// Mapping von lokalen Entitätstypen zu API-Entitätstypen
+const localEntityTypeToApiEntityType = (localType: LocalSyncQueueItem['entity_type']): ApiEntityType => {
+  if (localType === 'Account') return 'accounts';
+  if (localType === 'AccountGroup') return 'account_groups';
+  // Hier weitere Mappings hinzufügen, falls nötig
+  throw new Error(`Unknown local entity type for API mapping: ${localType}`);
+};
+
 
 export class SyncService {
   private tenantStore = useTenantStore();
-  private tenantDbService = new TenantDbService(); // Instanz für DB-Operationen
+  private tenantDbService = new TenantDbService();
 
   private get db(): FinwiseTenantSpecificDB | null {
     return this.tenantStore.activeTenantDB;
   }
 
-  constructor() {
-    debugLog('SyncService', 'SyncService initialisiert.');
-    // Hier könnten Listener für Online/Offline-Status oder periodische Syncs eingerichtet werden.
+  private get tenantId(): string | null {
+    return this.tenantStore.activeTenantId;
   }
 
-  // PLATZHALTER für Backend-Kommunikation
-  private async syncLocalChangesToBackend(changes: SyncQueueItem[]): Promise<SyncResult> {
-    debugLog('SyncService', 'syncLocalChangesToBackend aufgerufen (PLATZHALTER)', { count: changes.length });
-    // Hier würde der API-Aufruf an das Backend erfolgen, z.B. POST /sync/changes
-    // Annahme: Backend verarbeitet Batch und gibt Ergebnis zurück
-    await new Promise(resolve => setTimeout(resolve, 1000)); // Simuliere Netzwerk-Latenz
+  constructor() {
+    debugLog('SyncService', 'SyncService initialisiert.');
+  }
 
-    // Simuliertes Ergebnis: Alle erfolgreich
+  private mapLocalQueueItemToApiQueueItem(localItem: LocalSyncQueueItem, tenantId: string): ApiSyncQueueItem {
     return {
-      success: true,
-      processed_ids: changes.map(c => c.id).filter(id => id !== undefined) as number[],
+      id: uuidv4(),
+      entityType: localEntityTypeToApiEntityType(localItem.entity_type),
+      entityId: localItem.entity_id,
+      action: operationToAction(localItem.operation),
+      payload: localItem.payload as Partial<SyncableEntity>, // Annahme: Payload ist bereits korrekt strukturiert
+      timestamp: localItem.timestamp || new Date().toISOString(),
+      tenantId: tenantId, // tenantId wird jetzt übergeben
     };
+  }
+
+  private async syncLocalChangesToBackend(localChanges: LocalSyncQueueItem[]): Promise<PushResponse | { success: false; error: string }> {
+    const currentTenantId = this.tenantId;
+    if (!currentTenantId) {
+      const errorMsg = 'Keine aktive Mandanten-ID für Backend-Sync.';
+      warnLog('SyncService', `syncLocalChangesToBackend: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+    debugLog('SyncService', 'syncLocalChangesToBackend aufgerufen', { count: localChanges.length });
+
+    const apiChanges = localChanges.map(item => this.mapLocalQueueItemToApiQueueItem(item, currentTenantId));
+
+    const response = await syncApi.pushChanges(apiChanges);
+    if (!response.success) {
+      errorLog('SyncService', 'Fehler beim Pushen von Änderungen zum Backend.', { error: (response as { error: string }).error });
+    }
+    return response;
   }
 
   private async fetchRemoteChangesFromBackend<T extends SyncableEntity>(
-    entityType: 'Account' | 'AccountGroup',
+    entityType: ApiEntityType,
     lastSyncTimestamp?: string | null,
-  ): Promise<BackendChanges<T>> {
-    debugLog('SyncService', `fetchRemoteChangesFromBackend für ${entityType} aufgerufen (PLATZHALTER)`, { lastSyncTimestamp });
-    // Hier würde der API-Aufruf an das Backend erfolgen, z.B. GET /sync/changes/{tenantId}?entityType=...&since=...
-    await new Promise(resolve => setTimeout(resolve, 1500)); // Simuliere Netzwerk-Latenz
+  ): Promise<PullResponse<T> | { success: false; error: string }> {
+    const currentTenantId = this.tenantId;
+    if (!currentTenantId) {
+      const errorMsg = 'Keine aktive Mandanten-ID für Backend-Sync.';
+      warnLog('SyncService', `fetchRemoteChangesFromBackend: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+    debugLog('SyncService', `fetchRemoteChangesFromBackend für ${entityType} aufgerufen`, { lastSyncTimestamp });
+    const response = await syncApi.pullChanges<T>(entityType, currentTenantId, lastSyncTimestamp || undefined);
 
-    // Simuliertes Ergebnis: Keine Änderungen
-    return {
-      new_or_updated: [],
-      deleted_ids: [],
-      new_last_synced_timestamp: lastSyncTimestamp || new Date(0).toISOString(),
-    };
+    if (!response.success) {
+      errorLog('SyncService', `Fehler beim Pullen von Änderungen für ${entityType} vom Backend.`, { error: (response as { error: string }).error });
+    }
+    return response;
   }
 
   private async fetchInitialDataFromBackend<T extends SyncableEntity>(
-    entityType: 'Account' | 'AccountGroup',
-  ): Promise<T[]> {
-    debugLog('SyncService', `fetchInitialDataFromBackend für ${entityType} aufgerufen (PLATZHALTER)`);
-    // Hier würde der API-Aufruf an das Backend erfolgen, z.B. GET /sync/initial/{tenantId}?entityType=...
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Simuliere Netzwerk-Latenz
-    // Simuliertes Ergebnis: Leeres Array
-    return [];
+    entityType: ApiEntityType,
+  ): Promise<PullResponse<T> | { success: false; error: string }> {
+    debugLog('SyncService', `fetchInitialDataFromBackend für ${entityType} aufgerufen`);
+    return this.fetchRemoteChangesFromBackend<T>(entityType, null);
   }
 
-  /**
-   * Verarbeitet die Synchronisierungs-Queue und sendet lokale Änderungen an das Backend.
-   */
   public async processSyncQueue(): Promise<void> {
-    if (!this.db) {
-      warnLog('SyncService', 'processSyncQueue: Keine aktive Mandanten-DB.');
+    const currentTenantId = this.tenantId;
+    if (!this.db || !currentTenantId) {
+      warnLog('SyncService', 'processSyncQueue: Keine aktive Mandanten-DB oder Mandanten-ID.');
       return;
     }
     debugLog('SyncService', 'Starte Verarbeitung der SyncQueue.');
@@ -89,72 +115,60 @@ export class SyncService {
       .toArray();
 
     if (itemsToSync.length === 0) {
-      debugLog('SyncService', 'SyncQueue ist leer oder alle Items haben maximale Versuche erreicht.');
+      debugLog('SyncService', 'SyncQueue ist leer oder alle Items haben maximale Versuche erreicht für aktuellen Mandant.');
       return;
     }
 
-    // TODO: Gruppieren nach Entitätstyp oder alle zusammen senden?
-    // Fürs Erste senden wir alle zusammen, wenn das Backend Batch-Operationen über verschiedene Typen unterstützt.
-    // Andernfalls müsste hier nach entity_type gruppiert und separat gesendet werden.
+    const pushResult = await this.syncLocalChangesToBackend(itemsToSync);
 
-    try {
-      const result = await this.syncLocalChangesToBackend(itemsToSync);
+    if (pushResult.success) {
+      infoLog('SyncService', `Erfolgreich ${pushResult.results?.length || 'einige'} Änderungen zum Backend synchronisiert.`);
+      const processedDexieIds = itemsToSync.map(item => item.id).filter(id => id !== undefined) as number[];
+      await this.db.syncQueue.bulkDelete(processedDexieIds);
+      debugLog('SyncService', 'Erfolgreich synchronisierte Items aus SyncQueue entfernt.');
 
-      if (result.success) {
-        infoLog('SyncService', `Erfolgreich ${result.processed_ids.length} Änderungen zum Backend synchronisiert.`);
-        await this.db.syncQueue.bulkDelete(result.processed_ids as number[]);
-        debugLog('SyncService', 'Erfolgreich synchronisierte Items aus SyncQueue entfernt.');
-      } else {
-        warnLog('SyncService', 'Teilweise oder keine erfolgreiche Synchronisation zum Backend.', { result });
-        // Fehlerbehandlung für nicht verarbeitete Items
-        const failedItems = itemsToSync.filter(item => item.id && !result.processed_ids.includes(item.id));
-        for (const item of failedItems) {
-          if (item.id) {
-            const newAttempts = item.attempts + 1;
-            await this.db.syncQueue.update(item.id, {
-              attempts: newAttempts,
-              last_attempt_at: new Date().toISOString(),
-            });
-            warnLog('SyncService', `Sync-Versuch für Item ${item.id} (${item.entity_type} ${item.entity_id}) fehlgeschlagen. Versuch ${newAttempts}/${MAX_SYNC_ATTEMPTS}.`);
-          }
-        }
-        if (result.errors) {
-          for (const err of result.errors) {
-            errorLog('SyncService', `Backend-Fehler für Entity ${err.entity_id}: ${err.message}`);
+      if (pushResult.results) {
+        for (const res of pushResult.results) {
+          const processedItem = itemsToSync.find(i => i.entity_id === res.entityId);
+          if (processedItem && res.new_updated_at) {
+            const apiEntityType = localEntityTypeToApiEntityType(processedItem.entity_type);
+            const updatePayload = { id: res.entityId, updated_at: res.new_updated_at };
+            if (apiEntityType === 'accounts') {
+              await this.tenantDbService.updateAccountInternal(updatePayload as Account, true);
+            } else if (apiEntityType === 'account_groups') {
+              await this.tenantDbService.updateAccountGroupInternal(updatePayload as AccountGroup, true);
+            }
           }
         }
       }
-    } catch (err) {
-      errorLog('SyncService', 'Schwerer Fehler beim Senden von Änderungen an das Backend.', { error: err });
-      // Alle als fehlgeschlagen markieren für diesen Batch
+
+    } else {
+      const errorDetails = (pushResult as { success: false; error: string }).error;
+      warnLog('SyncService', 'Synchronisation zum Backend fehlgeschlagen oder teilweise fehlgeschlagen.', { error: errorDetails });
       const now = new Date().toISOString();
       for (const item of itemsToSync) {
         if (item.id) {
+          const newAttempts = (item.attempts || 0) + 1;
           await this.db.syncQueue.update(item.id, {
-            attempts: item.attempts + 1,
+            attempts: newAttempts,
             last_attempt_at: now,
           });
+          warnLog('SyncService', `Sync-Versuch für Item ${item.id} (${item.entity_type} ${item.entity_id}) fehlgeschlagen. Versuch ${newAttempts}/${MAX_SYNC_ATTEMPTS}.`);
         }
       }
     }
     debugLog('SyncService', 'Verarbeitung der SyncQueue abgeschlossen.');
   }
 
-  /**
-   * Führt eine Erstsynchronisierung für den aktuellen Mandanten durch, falls notwendig.
-   * Ruft alle Daten vom Backend ab und speichert sie lokal.
-   */
   public async performInitialSync(): Promise<void> {
-    if (!this.db) {
-      warnLog('SyncService', 'performInitialSync: Keine aktive Mandanten-DB.');
+    if (!this.db || !this.tenantId) {
+      warnLog('SyncService', 'performInitialSync: Keine aktive Mandanten-DB oder Mandanten-ID.');
       return;
     }
     infoLog('SyncService', 'Starte Prüfung für Erstsynchronisierung.');
 
-    const entityTypesToSync: ('Account' | 'AccountGroup')[] = ['Account', 'AccountGroup'];
     let initialSyncNeeded = false;
-
-    for (const entityType of entityTypesToSync) {
+    for (const entityType of SERVICE_ENTITY_TYPES) {
       const metadata = await this.db.syncMetadata.get(entityType);
       if (!metadata || !metadata.last_synced_at) {
         initialSyncNeeded = true;
@@ -165,101 +179,109 @@ export class SyncService {
 
     if (!initialSyncNeeded) {
       infoLog('SyncService', 'Keine Erstsynchronisierung erforderlich. Metadaten vorhanden.');
-      // Optional: Hier Delta-Sync anstoßen, falls gewünscht
-      // await this.syncDownstreamChanges();
+      await this.syncDownstreamChanges();
       return;
     }
 
     infoLog('SyncService', 'Führe Erstsynchronisierung durch...');
     try {
-      for (const entityType of entityTypesToSync) {
+      for (const entityType of SERVICE_ENTITY_TYPES) {
         debugLog('SyncService', `Rufe initiale Daten für ${entityType} vom Backend ab.`);
-        const remoteData = await this.fetchInitialDataFromBackend<Account | AccountGroup>(entityType); // Typisierung anpassen
+
+        const pullResponse = await this.fetchInitialDataFromBackend<SyncableEntity>(entityType);
+        let remoteData: SyncableEntity[] = [];
+        let serverTimestamp: string | undefined;
+
+        if (pullResponse.success) {
+            remoteData = pullResponse.data;
+            serverTimestamp = pullResponse.server_last_sync_timestamp;
+        } else {
+            // Expliziter Cast, um auf 'error' zugreifen zu können
+            const errorResponse = pullResponse as { success: false; error: string };
+            warnLog('SyncService', `Fehler beim Abrufen initialer Daten für ${entityType}`, { error: errorResponse.error });
+        }
+
         infoLog('SyncService', `${remoteData.length} ${entityType}-Einträge vom Backend erhalten.`);
 
         if (remoteData.length > 0) {
-          if (entityType === 'Account') {
-            await this.tenantDbService.bulkAddAccounts(remoteData as Account[], true); // skipSyncQueue = true
-          } else if (entityType === 'AccountGroup') {
-            await this.tenantDbService.bulkAddAccountGroups(remoteData as AccountGroup[], true); // skipSyncQueue = true
+          if (entityType === 'accounts') {
+            await this.tenantDbService.bulkAddAccounts(remoteData as Account[], true);
+          } else if (entityType === 'account_groups') {
+            await this.tenantDbService.bulkAddAccountGroups(remoteData as AccountGroup[], true);
           }
         }
+
         const now = new Date().toISOString();
-        await this.db.syncMetadata.put({ entity_type: entityType, last_synced_at: now });
-        debugLog('SyncService', `Metadaten für ${entityType} nach Erstsynchronisierung aktualisiert auf ${now}.`);
+        await this.db.syncMetadata.put({
+          entity_type: entityType,
+          last_synced_at: pullResponse.success ? (serverTimestamp || now) : now,
+        });
+        debugLog('SyncService', `Metadaten für ${entityType} nach Erstsynchronisierung aktualisiert.`);
       }
       infoLog('SyncService', 'Erstsynchronisierung erfolgreich abgeschlossen.');
     } catch (err) {
       errorLog('SyncService', 'Fehler während der Erstsynchronisierung.', { error: err });
-      // Hier könnte man entscheiden, ob Metadaten teilweise aktualisiert werden oder nicht.
     }
   }
 
-  /**
-   * Ruft Änderungen vom Backend ab (Delta-Sync) und wendet sie lokal an.
-   */
   public async syncDownstreamChanges(): Promise<void> {
-    if (!this.db) {
-      warnLog('SyncService', 'syncDownstreamChanges: Keine aktive Mandanten-DB.');
+    if (!this.db || !this.tenantId) {
+      warnLog('SyncService', 'syncDownstreamChanges: Keine aktive Mandanten-DB oder Mandanten-ID.');
       return;
     }
     infoLog('SyncService', 'Starte Downstream-Synchronisierung (Backend -> Frontend).');
 
-    const entityTypesToSync: ('Account' | 'AccountGroup')[] = ['Account', 'AccountGroup'];
-
     try {
-      for (const entityType of entityTypesToSync) {
+      for (const entityType of SERVICE_ENTITY_TYPES) {
         const metadata = await this.db.syncMetadata.get(entityType);
         const lastSyncTimestamp = metadata?.last_synced_at;
 
         debugLog('SyncService', `Rufe Änderungen für ${entityType} seit ${lastSyncTimestamp || 'Anfang'} vom Backend ab.`);
-        const backendChanges = await this.fetchRemoteChangesFromBackend<Account | AccountGroup>(entityType, lastSyncTimestamp);
 
-        infoLog('SyncService', `${entityType}: ${backendChanges.new_or_updated.length} neue/aktualisierte, ${backendChanges.deleted_ids.length} gelöschte Einträge vom Backend erhalten.`);
+        const backendResponse = await this.fetchRemoteChangesFromBackend<SyncableEntity>(entityType, lastSyncTimestamp);
 
-        // Gelöschte Entitäten verarbeiten
-        if (backendChanges.deleted_ids.length > 0) {
-          if (entityType === 'Account') {
-            await this.tenantDbService.bulkDeleteAccounts(backendChanges.deleted_ids, true); // skipSyncQueue = true
-          } else if (entityType === 'AccountGroup') {
-            await this.tenantDbService.bulkDeleteAccountGroups(backendChanges.deleted_ids, true); // skipSyncQueue = true
-          }
-          debugLog('SyncService', `${backendChanges.deleted_ids.length} ${entityType}-Einträge lokal gelöscht (via Backend-Sync).`);
+        if (!backendResponse.success) {
+          const errorDetails = (backendResponse as { success: false; error: string }).error;
+          warnLog('SyncService', `Fehler beim Abrufen von Änderungen für ${entityType}.`, { error: errorDetails });
+          continue;
         }
 
-        // Neue oder aktualisierte Entitäten verarbeiten
-        for (const remoteEntity of backendChanges.new_or_updated) {
-          const localEntity = await (entityType === 'Account'
+        const backendChangesData = backendResponse.data;
+        const serverLastSync = backendResponse.server_last_sync_timestamp;
+
+        infoLog('SyncService', `${entityType}: ${backendChangesData.length} neue/aktualisierte Einträge vom Backend erhalten.`);
+
+        for (const remoteEntity of backendChangesData) {
+          const localEntity = await (entityType === 'accounts'
             ? this.db.accounts.get(remoteEntity.id)
             : this.db.accountGroups.get(remoteEntity.id));
 
           if (localEntity) {
-            // Update - Konfliktlösung: Last Write Wins (LWW)
             if (new Date(remoteEntity.updated_at) > new Date(localEntity.updated_at)) {
-              // Remote ist neuer, lokales Update
               debugLog('SyncService', `LWW: Remote ${entityType} ${remoteEntity.id} ist neuer. Update lokal.`);
-              if (entityType === 'Account') {
-                await this.tenantDbService.updateAccountInternal(remoteEntity as Account, true); // skipSyncQueue = true
+              if (entityType === 'accounts') {
+                await this.tenantDbService.updateAccountInternal(remoteEntity as Account, true);
               } else {
-                await this.tenantDbService.updateAccountGroupInternal(remoteEntity as AccountGroup, true); // skipSyncQueue = true
+                await this.tenantDbService.updateAccountGroupInternal(remoteEntity as AccountGroup, true);
               }
             } else {
-              // Lokal ist neuer oder gleich alt, nichts tun (lokale Änderung wird ggf. via processSyncQueue gesendet)
               debugLog('SyncService', `LWW: Lokal ${entityType} ${localEntity.id} ist neuer oder gleich alt. Remote-Änderung ignoriert.`);
             }
           } else {
-            // Create - Entität existiert lokal nicht, neu anlegen
             debugLog('SyncService', `Neue Entität ${entityType} ${remoteEntity.id} vom Backend. Lokal anlegen.`);
-            if (entityType === 'Account') {
-              await this.tenantDbService.addAccountInternal(remoteEntity as Account, true); // skipSyncQueue = true
+            if (entityType === 'accounts') {
+              await this.tenantDbService.addAccountInternal(remoteEntity as Account, true);
             } else {
-              await this.tenantDbService.addAccountGroupInternal(remoteEntity as AccountGroup, true); // skipSyncQueue = true
+              await this.tenantDbService.addAccountGroupInternal(remoteEntity as AccountGroup, true);
             }
           }
         }
-        // Metadaten aktualisieren
-        await this.db.syncMetadata.put({ entity_type: entityType, last_synced_at: backendChanges.new_last_synced_timestamp });
-        debugLog('SyncService', `Metadaten für ${entityType} nach Downstream-Sync aktualisiert auf ${backendChanges.new_last_synced_timestamp}.`);
+        if (serverLastSync) {
+          await this.db.syncMetadata.put({ entity_type: entityType, last_synced_at: serverLastSync });
+          debugLog('SyncService', `Metadaten für ${entityType} nach Downstream-Sync aktualisiert auf ${serverLastSync}.`);
+        } else {
+            warnLog('SyncService', `Kein server_last_sync_timestamp für ${entityType} erhalten.`);
+        }
       }
       infoLog('SyncService', 'Downstream-Synchronisierung erfolgreich abgeschlossen.');
     } catch (err) {
@@ -267,38 +289,33 @@ export class SyncService {
     }
   }
 
-   /**
-   * Triggert den gesamten Synchronisierungsprozess:
-   * 1. Sende lokale Änderungen (Upstream).
-   * 2. Hole Änderungen vom Server (Downstream).
-   */
   public async synchronize(): Promise<void> {
+    if (!navigator.onLine) {
+      infoLog('SyncService', 'Offline. Synchronisierung wird übersprungen.');
+      return;
+    }
+    if (!this.tenantId) {
+        warnLog('SyncService', 'Keine aktive Mandanten-ID. Synchronisierung wird übersprungen.');
+        return;
+    }
     infoLog('SyncService', 'Starte vollständigen Synchronisierungsprozess.');
-    // TODO: Online-Status prüfen, bevor API-Aufrufe gemacht werden.
-    // navigator.onLine
-
-    await this.processSyncQueue(); // Lokale Änderungen zuerst senden
-    await this.syncDownstreamChanges(); // Dann Änderungen vom Server holen
-
+    await this.processSyncQueue();
+    await this.syncDownstreamChanges();
     infoLog('SyncService', 'Vollständiger Synchronisierungsprozess abgeschlossen.');
   }
 
-  /**
-   * Wird aufgerufen, wenn eine lokale Änderung stattgefunden hat,
-   * um die Verarbeitung der SyncQueue anzustoßen (falls online).
-   */
   public triggerProcessSyncQueue(): void {
-    // TODO: Online-Status prüfen
-    // if (navigator.onLine) {
+    if (!navigator.onLine) {
+      debugLog('SyncService', 'triggerProcessSyncQueue: Offline, Queue wird nicht sofort verarbeitet.');
+      return;
+    }
+    if (!this.tenantId) {
+        warnLog('SyncService', 'triggerProcessSyncQueue: Keine aktive Mandanten-ID.');
+        return;
+    }
     debugLog('SyncService', 'triggerProcessSyncQueue aufgerufen.');
     this.processSyncQueue().catch(err => {
       errorLog('SyncService', 'Fehler in triggerProcessSyncQueue beim Aufruf von processSyncQueue', { error: err });
     });
-    // } else {
-    //   debugLog('SyncService', 'triggerProcessSyncQueue: Offline, Queue wird nicht sofort verarbeitet.');
-    // }
   }
 }
-
-// Globale Instanz des SyncService, falls benötigt oder über Pinia Plugin/Injection bereitstellen
-// export const syncService = new SyncService();
