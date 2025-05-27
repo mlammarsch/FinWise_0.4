@@ -1,28 +1,37 @@
 // src/types/index.ts
 
-// Account-Modelle
-export interface Account {
-  id: string
-  name: string
-  description?: string
-  note?: string
-  accountType: AccountType
-  isActive: boolean
-  isOfflineBudget: boolean
-  accountGroupId: string
-  sortOrder: number
-  iban?: string
-  balance: number
-  creditLimit?: number
-  offset: number
-  image?: string
+// Basis-Interface für synchronisierbare Entitäten
+export interface SyncableEntity {
+  id: string;
+  created_at: string; // ISO 8601 datetime string
+  updated_at: string; // ISO 8601 datetime string
 }
 
-export interface AccountGroup {
-  id: string
-  name: string
-  sortOrder: number
-  image?: string
+// Account-Modelle
+export interface Account extends SyncableEntity {
+  // id: string; // kommt von SyncableEntity
+  name: string;
+  description?: string;
+  note?: string;
+  accountType: AccountType;
+  isActive: boolean;
+  isOfflineBudget: boolean;
+  accountGroupId: string;
+  sortOrder: number;
+  iban?: string;
+  balance: number;
+  creditLimit?: number;
+  offset: number;
+  image?: string;
+  // created_at und updated_at kommen von SyncableEntity
+}
+
+export interface AccountGroup extends SyncableEntity {
+  // id: string; // kommt von SyncableEntity
+  name: string;
+  sortOrder: number;
+  image?: string;
+  // created_at und updated_at kommen von SyncableEntity
 }
 
 // Kategorie-Modelle

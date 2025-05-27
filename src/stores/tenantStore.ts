@@ -6,17 +6,70 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
-import type { Account, AccountGroup } from '../types'; // Importiere die Typen
+import type { Account, AccountGroup, SyncableEntity } from '../types'; // Importiere die Typen
+
+// Typen für die Synchronisierungstabellen
+export interface SyncQueueItem {
+  id?: number; // Auto-incrementing primary key
+  entity_type: string; // z.B. 'Account', 'AccountGroup'
+  entity_id: string; // ID der Entität
+  operation: 'CREATE' | 'UPDATE' | 'DELETE';
+  payload?: Partial<SyncableEntity>; // Die Daten für CREATE/UPDATE, spezifischer als any
+  timestamp: string; // ISO 8601 Zeitstempel der lokalen Änderung
+  attempts: number;
+  last_attempt_at?: string; // ISO 8601 Zeitstempel des letzten Sync-Versuchs
+}
+
+export interface SyncMetadataItem {
+  entity_type: string; // z.B. 'Account', 'AccountGroup' (Primary Key)
+  last_synced_at: string | null; // ISO 8601 Zeitstempel der letzten erfolgreichen Synchronisierung vom Backend
+}
 
 export class FinwiseTenantSpecificDB extends Dexie {
-  accounts!: Table<Account, string>; // Deklariere die Tabelle 'accounts' mit Typen
-  accountGroups!: Table<AccountGroup, string>; // Deklariere die Tabelle 'accountGroups' mit Typen
+  accounts!: Table<Account, string>;
+  accountGroups!: Table<AccountGroup, string>;
+  syncQueue!: Table<SyncQueueItem, number>;
+  syncMetadata!: Table<SyncMetadataItem, string>;
 
   constructor(databaseName: string) {
     super(databaseName);
     this.version(1).stores({
       accounts: '&id, name, accountType, isActive, accountGroupId',
       accountGroups: '&id, name',
+      // Alte Version ohne Sync-Felder und Tabellen
+    });
+    this.version(2).stores({
+      accounts: '&id, name, accountType, isActive, accountGroupId, created_at, updated_at', // Hinzugefügt: created_at, updated_at
+      accountGroups: '&id, name, created_at, updated_at', // Hinzugefügt: created_at, updated_at
+      syncQueue: '++id, entity_type, entity_id, operation, timestamp, last_attempt_at', // Neue Tabelle
+      syncMetadata: '&entity_type, last_synced_at', // Neue Tabelle
+    }).upgrade(tx => {
+      // Upgrade-Logik für Version 2
+      // Für neu hinzugefügte Felder in 'accounts' und 'accountGroups' (created_at, updated_at)
+      // müssen bestehende Einträge möglicherweise initialisiert werden, falls erforderlich.
+      // Dexie fügt die Felder hinzu, sie sind dann 'undefined'.
+      // Wenn wir sie mit einem Default-Wert (z.B. aktuelles Datum für bestehende Einträge) füllen wollen,
+      // könnten wir das hier tun. Fürs Erste lassen wir sie 'undefined' oder setzen sie später.
+      // Für die neuen Tabellen 'syncQueue' und 'syncMetadata' ist keine explizite Migration nötig,
+      // da sie leer starten.
+      debugLog('FinwiseTenantSpecificDB', 'Upgrade auf Version 2 durchgeführt.');
+      return tx.table('accounts').toCollection().modify(account => {
+        if (account.created_at === undefined) {
+          account.created_at = new Date(0).toISOString(); // Epoch als Fallback
+        }
+        if (account.updated_at === undefined) {
+          account.updated_at = new Date(0).toISOString(); // Epoch als Fallback
+        }
+      }).then(() => {
+        return tx.table('accountGroups').toCollection().modify(ag => {
+          if (ag.created_at === undefined) {
+            ag.created_at = new Date(0).toISOString(); // Epoch als Fallback
+          }
+          if (ag.updated_at === undefined) {
+            ag.updated_at = new Date(0).toISOString(); // Epoch als Fallback
+          }
+        });
+      });
     });
   }
 }
