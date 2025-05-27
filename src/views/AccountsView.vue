@@ -236,27 +236,41 @@ const createAccountGroup = () => {
 };
 
 const onAccountSaved = async (accountData: any) => {
-  if (selectedAccount.value?.id) {
-    accountStore.updateAccount(selectedAccount.value.id, accountData);
+  const isUpdate = selectedAccount.value?.id;
+
+  if (isUpdate) {
+    debugLog(
+      "[AccountView] onAccountSaved: Updating account with data",
+      accountData
+    );
+    // Bei Update an Service delegieren. selectedAccount bleibt gesetzt.
+    await AccountService.updateAccount(selectedAccount.value.id, accountData);
   } else {
-    AccountService.addAccount(accountData);
+    debugLog(
+      "[AccountView] onAccountSaved: Adding new account with data",
+      accountData
+    );
+    // Bei neuem Konto an Service delegieren.
+    await AccountService.addAccount(accountData);
+    // selectedAccount wird von createAccount auf null gesetzt, hier nicht ändern
   }
+
   showNewAccountModal.value = false;
-  selectedAccount.value = null;
-  debugLog("[AccountView] onAccountSaved executed");
+  debugLog("[AccountView]", "onAccountSaved executed");
 };
 
-const onGroupSaved = async (groupData: any) => {
+const onGroupSaved = async (groupData: Omit<AccountGroup, "id">) => {
   const group = accountStore.accountGroups.find(
-    (g) => g.name === groupData.name
+    (g: AccountGroup) => g.name === groupData.name
   );
   if (group) {
-    accountStore.updateAccountGroup(group.id, groupData);
+    // Assuming updateAccountGroup in service takes id and partial updates
+    await AccountService.updateAccountGroup(group.id, groupData);
   } else {
-    accountStore.addAccountGroup(groupData);
+    await AccountService.addAccountGroup(groupData);
   }
   showNewGroupModal.value = false;
-  debugLog("[AccountView] onGroupSaved executed");
+  debugLog("[AccountView]", "onGroupSaved executed"); // Correct debugLog call
 };
 
 const onSelectAccount = (account: any) => {

@@ -63,7 +63,8 @@ const onReconciled = async () => {
 
 const onAccountSaved = async (accountData) => {
   showEditModal.value = false;
-  await accountStore.updateAccount(props.account.id, accountData);
+  // Delegate update to AccountService
+  await AccountService.updateAccount(props.account.id, accountData);
 };
 
 // Handler für CSV-Import (neu)
@@ -87,8 +88,14 @@ const selectAccount = () => {
     @click="selectAccount"
   >
     <!-- Dropdown-Menü -->
-    <div class="dropdown dropdown-end absolute top-1 right-1" @click.stop>
-      <button tabindex="0" class="btn btn-ghost border-none btn-sm btn-circle">
+    <div
+      class="dropdown dropdown-end absolute top-1 right-1"
+      @click.stop
+    >
+      <button
+        tabindex="0"
+        class="btn btn-ghost border-none btn-sm btn-circle"
+      >
         <Icon icon="mdi:dots-vertical" />
       </button>
       <ul
@@ -99,7 +106,13 @@ const selectAccount = () => {
         <li><a @click="showImportModal = true">Import</a></li>
         <!-- Eintrag für CSV-Import -->
         <li><a @click="showEditModal = true">Bearbeiten</a></li>
-        <li><a @click="deleteAccount" class="text-error">Löschen</a></li>
+        <li>
+          <a
+            @click="deleteAccount"
+            class="text-error"
+            >Löschen</a
+          >
+        </li>
       </ul>
     </div>
 
@@ -162,7 +175,10 @@ const selectAccount = () => {
         @reconciled="onReconciled"
       />
 
-      <div v-if="showEditModal" class="modal modal-open">
+      <div
+        v-if="showEditModal"
+        class="modal modal-open"
+      >
         <div class="modal-box max-w-2xl">
           <h3 class="font-bold text-lg mb-4">Konto bearbeiten</h3>
           <AccountForm
@@ -172,7 +188,10 @@ const selectAccount = () => {
             @cancel="showEditModal = false"
           />
         </div>
-        <div class="modal-backdrop" @click="showEditModal = false"></div>
+        <div
+          class="modal-backdrop"
+          @click="showEditModal = false"
+        ></div>
       </div>
 
       <!-- Neues Import-Modal -->

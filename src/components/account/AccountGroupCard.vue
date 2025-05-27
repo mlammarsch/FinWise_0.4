@@ -48,7 +48,8 @@ const deleteAccountGroup = async () => {
 // Modal Handler
 const onGroupSaved = async (groupData) => {
   showEditModal.value = false;
-  await accountStore.updateAccountGroup(props.group.id, groupData);
+  // Delegate update to AccountService
+  await AccountService.updateAccountGroup(props.group.id, groupData);
 };
 
 // Account Selection Handler
@@ -61,7 +62,10 @@ const onAccountSelect = (account) => emit("selectAccount", account);
   >
     <!-- Dropdown -->
     <div class="dropdown dropdown-end absolute top-1 right-1">
-      <label tabindex="0" class="btn btn-ghost btn-sm btn-circle border-none">
+      <label
+        tabindex="0"
+        class="btn btn-ghost btn-sm btn-circle border-none"
+      >
         <Icon icon="mdi:dots-vertical" />
       </label>
       <ul
@@ -69,7 +73,13 @@ const onAccountSelect = (account) => emit("selectAccount", account);
         class="dropdown-content menu p-2 shadow bg-base-100 border border-base-300 rounded-box w-52"
       >
         <li><a @click="showEditModal = true">Bearbeiten</a></li>
-        <li><a @click="deleteAccountGroup" class="text-error">Löschen</a></li>
+        <li>
+          <a
+            @click="deleteAccountGroup"
+            class="text-error"
+            >Löschen</a
+          >
+        </li>
       </ul>
     </div>
 
@@ -83,7 +93,10 @@ const onAccountSelect = (account) => emit("selectAccount", account);
             alt="Gruppenbild"
             class="w-full h-full object-cover"
           />
-          <div v-else class="w-full h-full bg-base-200" />
+          <div
+            v-else
+            class="w-full h-full bg-base-200"
+          />
         </div>
       </div>
 
@@ -123,7 +136,10 @@ const onAccountSelect = (account) => emit("selectAccount", account);
 
     <!-- Modal -->
     <Teleport to="body">
-      <div v-if="showEditModal" class="modal modal-open">
+      <div
+        v-if="showEditModal"
+        class="modal modal-open"
+      >
         <div class="modal-box max-w-2xl">
           <h3 class="font-bold text-lg mb-4">Kontogruppe bearbeiten</h3>
           <AccountGroupForm
@@ -133,7 +149,10 @@ const onAccountSelect = (account) => emit("selectAccount", account);
             @cancel="showEditModal = false"
           />
         </div>
-        <div class="modal-backdrop" @click="showEditModal = false"></div>
+        <div
+          class="modal-backdrop"
+          @click="showEditModal = false"
+        ></div>
       </div>
     </Teleport>
   </div>

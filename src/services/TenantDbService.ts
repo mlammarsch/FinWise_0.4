@@ -37,6 +37,7 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
+      debugLog('TenantDbService', 'updateAccount', 'Putting account into DB', account);
       await this.db.accounts.put(account);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) aktualisiert.`);
     } catch (err) {

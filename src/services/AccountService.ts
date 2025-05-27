@@ -38,6 +38,7 @@ export const AccountService = {
   },
 
   async updateAccount(id: string, updates: Partial<Omit<Account, 'id'>>): Promise<boolean> {
+    debugLog('[AccountService]', 'updateAccount', 'Updating account with id and updates', { id, updates });
     const accountStore = useAccountStore();
     const existingAccount = await accountStore.getAccountById(id);
     if (!existingAccount) {
@@ -136,7 +137,7 @@ export const AccountService = {
   },
 
   async addAccountGroup(groupData: Omit<AccountGroup, 'id'>): Promise<AccountGroup | null> {
-    const newGroup: AccountGroup = { ...groupData, id: uuidv4() };
+    const newGroup: AccountGroup = { ...groupData, id: uuidv4() }; // Generate UUID here
     // Annahme: addAccountGroup im Store gibt die erstellte Gruppe oder null zurück
     return await useAccountStore().addAccountGroup(newGroup);
   },

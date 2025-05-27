@@ -34,6 +34,7 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   async function updateAccount(accountUpdates: Account): Promise<boolean> {
+    debugLog('accountStore', 'updateAccount', 'Updating account with data', accountUpdates);
     await tenantDbService.updateAccount(accountUpdates);
     const idx = accounts.value.findIndex(a => a.id === accountUpdates.id);
     if (idx !== -1) {

@@ -116,11 +116,12 @@ const createAccountGroup = () => {
 };
 
 // Gruppe speichern
-const saveAccountGroup = (groupData: Omit<AccountGroup, "id">) => {
+const saveAccountGroup = async (groupData: Omit<AccountGroup, "id">) => {
   if (isGroupEditMode.value && selectedGroup.value) {
-    accountStore.updateAccountGroup(selectedGroup.value.id, groupData);
+    // Assuming updateAccountGroup in service takes id and partial updates
+    await AccountService.updateAccountGroup(selectedGroup.value.id, groupData);
   } else {
-    accountStore.addAccountGroup(groupData);
+    await AccountService.addAccountGroup(groupData);
   }
   showGroupModal.value = false;
 };
