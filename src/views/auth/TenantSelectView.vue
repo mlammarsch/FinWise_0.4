@@ -21,6 +21,7 @@ const showCreate = ref(false);
 const tenants = computed(() => TenantService.getOwnTenants());
 
 function selectTenant(id: string) {
+  debugLog("[TenantSelectView] selectTenant", JSON.stringify({ tenantId: id }));
   TenantService.switchTenant(id);
   router.push("/");
 }
@@ -51,8 +52,8 @@ nextTick(() => {
           <ul class="menu w-full">
             <li
               v-for="t in tenants"
-              :key="t.id"
-              @click="selectTenant(t.id)"
+              :key="t.uuid"
+              @click="selectTenant(t.uuid)"
               class="rounded-box cursor-pointer hover:bg-base-200"
             >
               <span>{{ t.tenantName }}</span>

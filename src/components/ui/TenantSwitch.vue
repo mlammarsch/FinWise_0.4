@@ -47,8 +47,14 @@ function fullLogout() {
 
 <template>
   <div class="relative">
-    <button class="btn btn-ghost" @click="toggle">
-      <Icon icon="mdi:office-building" class="mr-2" />
+    <button
+      class="btn btn-ghost"
+      @click="toggle"
+    >
+      <Icon
+        icon="mdi:office-building"
+        class="mr-2"
+      />
       <span>{{ session.currentTenant?.tenantName || "Mandant wählen" }}</span>
       <Icon icon="mdi:chevron-down" />
     </button>
@@ -59,21 +65,27 @@ function fullLogout() {
     >
       <li
         v-for="t in tenants"
-        :key="t.id"
-        @click="switchTenant(t.id)"
+        :key="t.uuid"
+        @click="switchTenant(t.uuid)"
         class="rounded-box"
       >
-        <a :class="{ active: t.id === session.currentTenantId }">
+        <a :class="{ active: t.uuid === session.currentTenantId }">
           {{ t.tenantName }}
         </a>
       </li>
 
       <li class="divider my-1"></li>
 
-      <li @click="logoutFromTenant" class="rounded-box hover:bg-base-200">
+      <li
+        @click="logoutFromTenant"
+        class="rounded-box hover:bg-base-200"
+      >
         <a class="text-base-content">Mandant abmelden</a>
       </li>
-      <li @click="fullLogout" class="rounded-box hover:bg-base-200">
+      <li
+        @click="fullLogout"
+        class="rounded-box hover:bg-base-200"
+      >
         <a class="text-base-content">Logout</a>
       </li>
     </ul>

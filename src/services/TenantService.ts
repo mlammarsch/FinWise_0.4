@@ -109,6 +109,7 @@ export const TenantService = {
   },
 
   async switchTenant(tenantId: string): Promise<boolean> {
+    debugLog('[TenantService] switchTenant', JSON.stringify({ tenantId }));
     const ok = await useSessionStore().switchTenant(tenantId);
     if (ok) {
       DataService.reloadTenantData();
@@ -118,8 +119,13 @@ export const TenantService = {
 
   getOwnTenants() {
     const session = useSessionStore();
-    if (!session.currentUserId) return [];
-    return useTenantStore().getTenantsByUser(session.currentUserId);
+    if (!session.currentUserId) {
+      debugLog('[TenantService] getOwnTenants', 'Kein eingeloggter User, gibt leeres Array zurück');
+      return [];
+    }
+    const tenants = useTenantStore().getTenantsByUser(session.currentUserId);
+    debugLog('[TenantService] getOwnTenants', JSON.stringify({ tenantCount: tenants.length, tenants: tenants.map(t => ({ id: t.uuid, name: t.tenantName })) }));
+    return tenants;
   },
 
   ensureTenantSelected(): boolean {
