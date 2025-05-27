@@ -5,6 +5,7 @@ import { TenantDbService } from './TenantDbService';
 import { errorLog, warnLog, debugLog, infoLog } from '@/utils/logger';
 import { syncApi, type PushResponse, type PullResponse, type EntityType as ApiEntityType, type SyncQueueItem as ApiSyncQueueItem } from '@/api/syncApi';
 import { v4 as uuidv4 } from 'uuid';
+import { ref, readonly, type Ref } from 'vue'; // Hinzugefügt für Reaktivität
 
 const MAX_SYNC_ATTEMPTS = 5;
 
@@ -33,6 +34,14 @@ export class SyncService {
   private tenantStore = useTenantStore();
   private tenantDbService = new TenantDbService();
 
+  // Reaktive Zustände
+  private readonly _isQueueEmpty = ref(true);
+  public readonly isQueueEmpty: Readonly<Ref<boolean>> = readonly(this._isQueueEmpty);
+
+  private readonly _isCurrentlySyncing = ref(false);
+  public readonly isCurrentlySyncing: Readonly<Ref<boolean>> = readonly(this._isCurrentlySyncing);
+
+
   private get db(): FinwiseTenantSpecificDB | null {
     return this.tenantStore.activeTenantDB;
   }
@@ -43,6 +52,26 @@ export class SyncService {
 
   constructor() {
     debugLog('SyncService', 'SyncService initialisiert.');
+    this.updateQueueStatus(); // Initialen Status der Queue setzen
+    // Überwache Änderungen am aktiven Mandanten, um den Queue-Status neu zu bewerten
+    this.tenantStore.$subscribe(() => {
+        this.updateQueueStatus();
+    });
+  }
+
+  public async updateQueueStatus(): Promise<void> {
+    if (!this.db) {
+      this._isQueueEmpty.value = true;
+      return;
+    }
+    try {
+      const count = await this.db.syncQueue.count();
+      this._isQueueEmpty.value = count === 0;
+      debugLog('SyncService', `Queue status updated: isEmpty = ${this._isQueueEmpty.value} (count: ${count})`);
+    } catch (err) {
+      errorLog('SyncService', 'Fehler beim Aktualisieren des Queue-Status.', { error: err });
+      this._isQueueEmpty.value = true; // Im Fehlerfall als leer annehmen
+    }
   }
 
   private mapLocalQueueItemToApiQueueItem(localItem: LocalSyncQueueItem, tenantId: string): ApiSyncQueueItem {
@@ -116,6 +145,7 @@ export class SyncService {
 
     if (itemsToSync.length === 0) {
       debugLog('SyncService', 'SyncQueue ist leer oder alle Items haben maximale Versuche erreicht für aktuellen Mandant.');
+      this.updateQueueStatus(); // Status aktualisieren
       return;
     }
 
@@ -126,6 +156,7 @@ export class SyncService {
       const processedDexieIds = itemsToSync.map(item => item.id).filter(id => id !== undefined) as number[];
       await this.db.syncQueue.bulkDelete(processedDexieIds);
       debugLog('SyncService', 'Erfolgreich synchronisierte Items aus SyncQueue entfernt.');
+      this.updateQueueStatus(); // Status aktualisieren
 
       if (pushResult.results) {
         for (const res of pushResult.results) {
@@ -158,6 +189,7 @@ export class SyncService {
       }
     }
     debugLog('SyncService', 'Verarbeitung der SyncQueue abgeschlossen.');
+    this.updateQueueStatus(); // Status aktualisieren
   }
 
   public async performInitialSync(): Promise<void> {
@@ -290,6 +322,10 @@ export class SyncService {
   }
 
   public async synchronize(): Promise<void> {
+    if (this._isCurrentlySyncing.value) {
+      warnLog('SyncService', 'Synchronisierung läuft bereits. Überspringe erneuten Aufruf von synchronize.');
+      return;
+    }
     if (!navigator.onLine) {
       infoLog('SyncService', 'Offline. Synchronisierung wird übersprungen.');
       return;
@@ -298,10 +334,55 @@ export class SyncService {
         warnLog('SyncService', 'Keine aktive Mandanten-ID. Synchronisierung wird übersprungen.');
         return;
     }
+
+    this._isCurrentlySyncing.value = true;
     infoLog('SyncService', 'Starte vollständigen Synchronisierungsprozess.');
-    await this.processSyncQueue();
-    await this.syncDownstreamChanges();
-    infoLog('SyncService', 'Vollständiger Synchronisierungsprozess abgeschlossen.');
+    try {
+      await this.processSyncQueue();
+      await this.syncDownstreamChanges();
+      infoLog('SyncService', 'Vollständiger Synchronisierungsprozess abgeschlossen.');
+    } catch (err) {
+      errorLog('SyncService', 'Fehler während des Synchronisierungsprozesses.', { error: err });
+    } finally {
+      this._isCurrentlySyncing.value = false;
+      this.updateQueueStatus(); // Queue-Status nach Sync aktualisieren
+    }
+  }
+
+  public async triggerManualSync(): Promise<void> {
+    if (this._isCurrentlySyncing.value) {
+      warnLog('SyncService', 'Manuelle Synchronisierung angefordert, aber eine Synchronisierung läuft bereits.');
+      return;
+    }
+    if (!navigator.onLine) {
+      infoLog('SyncService', 'Manuelle Synchronisierung angefordert, aber offline.');
+      // Hier könnte man dem Benutzer eine Meldung anzeigen
+      return;
+    }
+     if (!this.tenantId) {
+        warnLog('SyncService', 'Manuelle Synchronisierung angefordert, aber keine aktive Mandanten-ID.');
+        return;
+    }
+
+    infoLog('SyncService', 'Manuelle Synchronisierung gestartet.');
+    this._isCurrentlySyncing.value = true;
+    try {
+      await this.synchronize(); // Ruft die bestehende Methode auf, die nun isCurrentlySyncing intern verwaltet
+      infoLog('SyncService', 'Manuelle Synchronisierung erfolgreich abgeschlossen.');
+    } catch (error) {
+      errorLog('SyncService', 'Fehler bei der manuellen Synchronisierung.', { error });
+      // Ggf. spezifische Fehlerbehandlung für manuelle Synchronisation
+    } finally {
+      // synchronize() setzt isCurrentlySyncing bereits auf false, aber zur Sicherheit hier auch,
+      // falls synchronize() vorzeitig abbricht, bevor es das Flag selbst zurücksetzt.
+      // Dies ist doppelt gemoppelt, wenn synchronize() sauber durchläuft.
+      // Besser ist es, wenn synchronize() das Flag zuverlässig selbst verwaltet.
+      // Da synchronize jetzt das Flag selbst setzt und zurücksetzt, ist das hier nicht mehr nötig.
+      // this._isCurrentlySyncing.value = false;
+      infoLog('SyncService', 'Manuelle Synchronisierung beendet (finaler Block).');
+      // Der Status von isCurrentlySyncing wird durch synchronize() selbst verwaltet.
+      // Der Queue-Status wird ebenfalls in synchronize() oder processSyncQueue() aktualisiert.
+    }
   }
 
   public triggerProcessSyncQueue(): void {
@@ -314,8 +395,15 @@ export class SyncService {
         return;
     }
     debugLog('SyncService', 'triggerProcessSyncQueue aufgerufen.');
+    // processSyncQueue sollte nicht direkt _isCurrentlySyncing setzen,
+    // da es Teil von synchronize() ist, welches das Flag verwaltet.
+    // Wenn processSyncQueue unabhängig aufgerufen wird, sollte es sein eigenes Sync-Flag haben
+    // oder der Aufrufer sollte dafür verantwortlich sein.
+    // Für den Moment belassen wir es so, dass synchronize() der Haupttreiber für isCurrentlySyncing ist.
     this.processSyncQueue().catch(err => {
       errorLog('SyncService', 'Fehler in triggerProcessSyncQueue beim Aufruf von processSyncQueue', { error: err });
+    }).finally(() => {
+        this.updateQueueStatus(); // Status nach Verarbeitung aktualisieren
     });
   }
 }
