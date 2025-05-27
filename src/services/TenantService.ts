@@ -5,17 +5,16 @@
 
 import { useTenantStore }   from '@/stores/tenantStore';
 import { useCategoryStore } from '@/stores/categoryStore';
-import { useAccountStore }  from '@/stores/accountStore';
-import { useSessionStore }  from '@/stores/sessionStore';
+import { useSessionStore }  from '@/stores/sessionStore'; // useAccountStore entfernt, da nicht mehr direkt hier genutzt
 
 import { CategoryService }  from '@/services/CategoryService';
 import { AccountService }   from '@/services/AccountService';
 import { BalanceService }   from '@/services/BalanceService';
 
-import { AccountType, type AccountGroup }      from '@/types'; // AccountGroup als Typ importiert
+// AccountType, AccountGroup und uuidv4 entfernt, da Logik in AccountService verschoben
 import { infoLog, debugLog, errorLog } from '@/utils/logger';
 import { DataService }      from './DataService';
-import { v4 as uuidv4 } from 'uuid'; // Import uuid
+// import { v4 as uuidv4 } from 'uuid'; // Entfernt
 
 export const TenantService = {
   /**
@@ -30,32 +29,31 @@ export const TenantService = {
     if (!tenant)
       throw new Error('Fehler beim lokalen Anlegen des Tenants.');
 
-    this.switchTenant(tenant.uuid);
+    await this.switchTenant(tenant.uuid); // Warten bis switchTenant abgeschlossen ist
 
     const catStore = useCategoryStore();
-    const accStore = useAccountStore();
+    // const accStore = useAccountStore(); // Entfernt, Logik in AccountService
 
+    // Initialisierung der Standard-Kategorien (bleibt hier)
     if (!catStore.categories.find(c => c.name === 'Verfügbare Mittel')) {
       CategoryService.addCategory({
         name: 'Verfügbare Mittel',
-        // parentCategoryId: undefined, // Entfernt, da es den Fehler verursacht
         sortOrder: 0,
         isActive: true,
         isIncomeCategory: true,
-        // isSavingsGoal: false, // Entfernt, da es den Fehler verursacht
         categoryGroupId: undefined,
-        budgeted: 0, // Hinzugefügt
-        activity: 0, // Hinzugefügt
-        available: 0, // Hinzugefügt
-        isHidden: false, // Hinzugefügt
+        budgeted: 0,
+        activity: 0,
+        available: 0,
+        isHidden: false,
       });
     }
 
     const incomeGroup = catStore.categoryGroups.find(g => g.name === 'Einnahmen')
-      ?? catStore.addCategoryGroup({ name: 'Einnahmen', sortOrder: 0, isIncomeGroup: true });
+      ?? await catStore.addCategoryGroup({ name: 'Einnahmen', sortOrder: 0, isIncomeGroup: true }); // await hinzugefügt
 
     const expenseGroup = catStore.categoryGroups.find(g => g.name === 'Ausgaben')
-      ?? catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false });
+      ?? await catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false }); // await hinzugefügt
 
     for (const dc of [
       { name: 'Gehalt',             groupId: incomeGroup.id },
@@ -68,60 +66,32 @@ export const TenantService = {
       { name: 'Versicherung',       groupId: expenseGroup.id },
     ]) {
       if (!catStore.categories.some(c => c.name === dc.name)) {
-        CategoryService.addCategory({
+        CategoryService.addCategory({ // Annahme: addCategory ist asynchron oder synchronisiert den Store korrekt
           name: dc.name,
-          // parentCategoryId: undefined, // Entfernt, da es den Fehler verursacht
           sortOrder: 0,
           isActive: true,
           isIncomeCategory: dc.groupId === incomeGroup.id,
-          // isSavingsGoal: false, // Entfernt, da es den Fehler verursacht
           categoryGroupId: dc.groupId,
-          budgeted: 0, // Hinzugefügt
-          activity: 0, // Hinzugefügt
-          available: 0, // Hinzugefügt
-          isHidden: false, // Hinzugefügt
+          budgeted: 0,
+          activity: 0,
+          available: 0,
+          isHidden: false,
         });
       }
     }
 
-    const defaultGroups = [
-      { name: 'Girokonten', sortOrder: 0 },
-      { name: 'Sparkonten', sortOrder: 1 },
-    ];
-    for (const gd of defaultGroups) {
-      if (!accStore.accountGroups.find(g => g.name === gd.name)) {
-        const newGroup: AccountGroup = {
-          id: uuidv4(),
-          name: gd.name,
-          sortOrder: gd.sortOrder,
-          // Weitere optionale Felder von AccountGroup könnten hier initialisiert werden, falls nötig
-          // z.B. tenantId, falls es nicht automatisch vom addAccountGroup gesetzt wird
-        };
-        accStore.addAccountGroup(newGroup);
-      }
+    // Initialisierung der Standard-Kontogruppen und des Girokontos über den AccountService
+    // Dies geschieht nach switchTenant und der Initialisierung der Kategorien
+    try {
+      await AccountService.initializeDefaultAccountsAndGroups();
+      debugLog('[TenantService]', 'Standardkonten und -gruppen erfolgreich initialisiert.');
+    } catch (err) {
+      errorLog('[TenantService]', 'Fehler bei der Initialisierung der Standardkonten und -gruppen.', { error: err });
+      // Hier könnte man überlegen, ob der Tenant trotzdem als "erstellt" gilt oder ob ein Rollback nötig ist.
+      // Fürs Erste wird der Fehler geloggt und der Prozess fortgesetzt.
     }
 
-    const giroGroup = accStore.accountGroups.find(g => g.name === 'Girokonten');
-    if (!giroGroup) {
-      errorLog('[TenantService]', 'Basis-Kontengruppe "Girokonten" nicht gefunden.');
-    } else if (!accStore.accounts.find(a => a.name === 'Girokonto')) {
-      AccountService.addAccount({
-        name: 'Girokonto',
-        description: '',
-        note: '',
-        accountType: AccountType.CHECKING,
-        isActive: true,
-        isOfflineBudget: false,
-        accountGroupId: giroGroup.id,
-        sortOrder: 0,
-        iban: '',
-        creditLimit: 0,
-        offset: 0,
-        image: '',
-      });
-    }
-
-    BalanceService.calculateMonthlyBalances();
+    BalanceService.calculateMonthlyBalances(); // Bleibt hier, da es nach allen Datenänderungen erfolgen sollte
 
     infoLog('[TenantService]', 'Tenant angelegt & initialisiert', {
       tenantId: tenant.uuid,

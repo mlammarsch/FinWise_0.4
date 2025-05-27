@@ -1,9 +1,9 @@
 // src/services/AccountService.ts
 import { useAccountStore } from '@/stores/accountStore';
 import { useTransactionStore } from '@/stores/transactionStore';
-import type { Account, AccountGroup } from '@/types';
+import { AccountType, type Account, type AccountGroup } from '@/types'; // AccountType und AccountGroup als Typ importiert
 import { v4 as uuidv4 } from 'uuid';
-import { debugLog } from '@/utils/logger';
+import { debugLog, errorLog } from '@/utils/logger'; // errorLog importiert
 import { BalanceService } from './BalanceService';
 
 interface AccountInfo {
@@ -173,5 +173,74 @@ export const AccountService = {
       debugLog('[AccountService]', 'Error deleting account group', { accountGroupId: id, error });
       return false;
     }
+  },
+
+  // ---------------------------------------------------- Initialisierung Standardkonten/-gruppen
+  async initializeDefaultAccountsAndGroups(): Promise<void> {
+    const accountStore = useAccountStore();
+    debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Starte Initialisierung der Standardkonten und -gruppen');
+
+    const defaultGroupsData = [
+      { name: 'Girokonten', sortOrder: 0 },
+      { name: 'Sparkonten', sortOrder: 1 },
+    ];
+
+    let giroGroupId: string | undefined;
+
+    for (const groupData of defaultGroupsData) {
+      let group = accountStore.accountGroups.find(g => g.name === groupData.name);
+      if (!group) {
+        debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', `Kontogruppe "${groupData.name}" nicht im Store gefunden, versuche Erstellung.`);
+        const newGroup = await this.addAccountGroup({ name: groupData.name, sortOrder: groupData.sortOrder });
+        if (newGroup) {
+          debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', `Kontogruppe "${newGroup.name}" erfolgreich erstellt.`);
+          group = newGroup;
+        } else {
+          errorLog('[AccountService]', 'initializeDefaultAccountsAndGroups', `Fehler beim Erstellen der Kontogruppe "${groupData.name}".`);
+          // Fahre fort, vielleicht existiert sie doch schon oder ein anderer Fehler ist aufgetreten
+        }
+      } else {
+        debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', `Kontogruppe "${groupData.name}" bereits im Store vorhanden.`);
+      }
+      if (group && groupData.name === 'Girokonten') {
+        giroGroupId = group.id;
+      }
+    }
+
+    if (!giroGroupId) {
+      // Versuch, die Girokonten-Gruppe erneut aus dem Store zu laden, falls sie gerade erst hinzugefügt wurde
+      // und der Store noch nicht synchron war.
+      const potentiallyCreatedGiroGroup = accountStore.accountGroups.find(g => g.name === 'Girokonten');
+      if (potentiallyCreatedGiroGroup) {
+        giroGroupId = potentiallyCreatedGiroGroup.id;
+        debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Girokonten-Gruppe nach erneutem Check im Store gefunden.');
+      } else {
+        errorLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Basis-Kontengruppe "Girokonten" konnte nicht gefunden oder erstellt werden. Initiales Girokonto wird nicht angelegt.');
+        return; // Ohne Girokonten-Gruppe kann kein Girokonto angelegt werden.
+      }
+    }
+
+    const existingGiroAccount = accountStore.accounts.find(a => a.name === 'Girokonto' && a.accountGroupId === giroGroupId);
+    if (!existingGiroAccount) {
+      debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Initiales "Girokonto" nicht im Store gefunden, versuche Erstellung.');
+      await this.addAccount({
+        name: 'Girokonto',
+        description: 'Initiales Girokonto',
+        note: '',
+        accountType: AccountType.CHECKING,
+        isActive: true,
+        isOfflineBudget: false,
+        accountGroupId: giroGroupId, // Hier die ID der zuvor gefundenen/erstellten Gruppe verwenden
+        sortOrder: 0,
+        iban: '',
+        creditLimit: 0,
+        offset: 0,
+        image: '',
+      });
+      debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Initiales "Girokonto" erfolgreich zur Erstellung angestoßen.');
+    } else {
+      debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Initiales "Girokonto" bereits im Store vorhanden.');
+    }
+    debugLog('[AccountService]', 'initializeDefaultAccountsAndGroups', 'Initialisierung abgeschlossen.');
   },
 };

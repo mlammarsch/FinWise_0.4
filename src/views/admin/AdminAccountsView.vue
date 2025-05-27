@@ -3,12 +3,13 @@ import { ref, computed } from "vue";
 import { useAccountStore } from "../../stores/accountStore";
 import AccountForm from "../../components/account/AccountForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
-import { Account, AccountType, AccountGroup } from "../../types";
+import { type Account, AccountType, type AccountGroup } from "../../types"; // Remove 'type' for AccountType
 import AccountGroupForm from "../../components/account/AccountGroupForm.vue";
 import { useRouter } from "vue-router";
 import { Icon } from "@iconify/vue";
 import { BalanceService } from "../../services/BalanceService";
 import { AccountService } from "../../services/AccountService"; // Add AccountService import
+import { debugLog } from "../../utils/logger"; // Import debugLog
 
 // Stores
 const accountStore = useAccountStore();
@@ -34,15 +35,15 @@ const accountGroups = computed(() => accountStore.accountGroups);
 
 // Gibt den Namen der Kontogruppe zurück
 const getGroupName = (groupId: string) => {
-  const group = accountGroups.value.find((g) => g.id === groupId);
+  const group = accountGroups.value.find((g: AccountGroup) => g.id === groupId); // Add type for g
   return group ? group.name : "Unbekannt";
 };
 
 // Berechnet den Gesamtbetrag der Konten innerhalb einer Gruppe
 const getGroupBalance = (groupId: string) => {
   return accounts.value
-    .filter((account) => account.accountGroupId === groupId)
-    .reduce((sum, account) => sum + account.balance, 0);
+    .filter((account: Account) => account.accountGroupId === groupId) // Add type for account
+    .reduce((sum: number, account: Account) => sum + account.balance, 0); // Add types for sum and account
 };
 
 // Formatiert den Kontotyp für die Anzeige
@@ -127,9 +128,28 @@ const saveAccountGroup = async (groupData: Omit<AccountGroup, "id">) => {
 };
 
 // Gruppe löschen
-const deleteAccountGroup = (groupId: string) => {
-  if (confirm(`Möchten Sie die Kontogruppe wirklich löschen?`)) {
-    accountStore.deleteAccountGroup(groupId);
+const deleteAccountGroup = async (groupId: string) => {
+  if (confirm("Möchten Sie die Kontogruppe wirklich löschen?")) {
+    // Replace template literal with string
+    debugLog(
+      "[AdminAccountsView]",
+      "deleteAccountGroup",
+      "Versuche Kontogruppe zu löschen",
+      { groupId }
+    );
+    const success = await AccountService.deleteAccountGroup(groupId);
+    debugLog(
+      "[AdminAccountsView]",
+      "deleteAccountGroup",
+      "Löschvorgang abgeschlossen",
+      { groupId, success }
+    );
+    if (!success) {
+      // Optional: Zeige eine Fehlermeldung an, wenn das Löschen fehlschlägt (z.B. weil die Gruppe noch Konten hat)
+      alert(
+        "Kontogruppe konnte nicht gelöscht werden. Stellen Sie sicher, dass keine Konten mehr in dieser Gruppe vorhanden sind."
+      );
+    }
   }
 };
 
