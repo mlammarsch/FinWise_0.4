@@ -5,7 +5,8 @@ import { useThemeStore } from "../stores/themeStore";
 import MainNavigation from "../components/ui/MainNavigation.vue";
 import ThemeToggle from "../components/ui/ThemeToggle.vue";
 import { Icon } from "@iconify/vue";
-import TenantSwitch from "@/components/ui/TenantSwitch.vue";
+import TenantSwitch from "../components/ui/TenantSwitch.vue";
+import SyncButton from "../components/ui/sync_button.vue"; // <-- NEU: SyncButton importieren
 
 const router = useRouter();
 const themeStore = useThemeStore();
@@ -29,8 +30,14 @@ const toggleMobileMenu = () => {
         <div class="navbar-start">
           <template v-if="showNavigation">
             <div class="dropdown">
-              <button class="btn btn-ghost lg:hidden" @click="toggleMobileMenu">
-                <Icon icon="mdi:menu" class="h-5 w-5" />
+              <button
+                class="btn btn-ghost lg:hidden"
+                @click="toggleMobileMenu"
+              >
+                <Icon
+                  icon="mdi:menu"
+                  class="h-5 w-5"
+                />
               </button>
               <ul
                 v-if="isMobileMenuOpen"
@@ -56,7 +63,10 @@ const toggleMobileMenu = () => {
           </div>
         </div>
 
-        <div v-if="showNavigation" class="navbar-center hidden lg:flex p-2">
+        <div
+          v-if="showNavigation"
+          class="navbar-center hidden lg:flex p-2"
+        >
           <ul class="menu menu-md menu-horizontal">
             <MainNavigation />
           </ul>
@@ -64,6 +74,8 @@ const toggleMobileMenu = () => {
 
         <div class="navbar-end p-3">
           <TenantSwitch v-if="showNavigation" />
+          <SyncButton v-if="showNavigation" />
+          <!-- <-- NEU: SyncButton hier platziert -->
           <ThemeToggle />
         </div>
       </div>

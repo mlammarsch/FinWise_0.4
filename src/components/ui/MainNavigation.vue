@@ -116,7 +116,10 @@ function clearAndReseedData() {
 </script>
 
 <template>
-  <template v-for="route in routes" :key="route.path">
+  <template
+    v-for="route in routes"
+    :key="route.path"
+  >
     <li @click="$emit('closeMenu')">
       <router-link
         :to="route.path"
@@ -127,7 +130,10 @@ function clearAndReseedData() {
         class="rounded-box"
       >
         <span class="flex items-center">
-          <Icon class="mr-2 text-lg" :icon="route.icon" />
+          <Icon
+            class="mr-2 text-lg"
+            :icon="route.icon"
+          />
           {{ route.name }}
         </span>
       </router-link>
@@ -139,9 +145,15 @@ function clearAndReseedData() {
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
   >
-    <a tabindex="0" class="rounded-box cursor-default">
+    <a
+      tabindex="0"
+      class="rounded-box cursor-default"
+    >
       <span class="flex items-center">
-        <Icon class="mr-2 text-lg" icon="mdi:tools" />
+        <Icon
+          class="mr-2 text-lg"
+          icon="mdi:tools"
+        />
         Administration
       </span>
     </a>
@@ -150,7 +162,10 @@ function clearAndReseedData() {
         v-if="dropdownOpen"
         class="dropdown-content menu p-2 bg-base-100 border border-base-300 rounded-box"
       >
-        <template v-for="route in adminRoutes" :key="route.path">
+        <template
+          v-for="route in adminRoutes"
+          :key="route.path"
+        >
           <li @click="handleItemClick">
             <router-link
               :to="route.path"
@@ -161,16 +176,25 @@ function clearAndReseedData() {
               class="rounded-box"
             >
               <span class="flex items-center w-50">
-                <Icon class="mr-2 text-lg" :icon="route.icon" />
+                <Icon
+                  class="mr-2 text-lg"
+                  :icon="route.icon"
+                />
                 {{ route.name }}
               </span>
             </router-link>
           </li>
         </template>
         <li>
-          <button class="rounded-box" @click="clearAndReseedData">
+          <button
+            class="rounded-box"
+            @click="clearAndReseedData"
+          >
             <span class="flex items-center">
-              <Icon class="mr-2 text-lg" icon="mdi:database-refresh" />
+              <Icon
+                class="mr-2 text-lg"
+                icon="mdi:database-refresh"
+              />
               Daten löschen & neu laden
             </span>
           </button>
