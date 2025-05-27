@@ -19,11 +19,11 @@ import TransactionForm from "../components/transaction/TransactionForm.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import { formatDate } from "../utils/formatters";
 import { TransactionType } from "../types";
-import { TransactionService } from "@/services/TransactionService";
-import { AccountService } from "@/services/AccountService";
-import { BalanceService } from "@/services/BalanceService";
+import { TransactionService } from "../services/TransactionService";
+import { AccountService } from "../services/AccountService";
+import { BalanceService } from "../services/BalanceService";
 import { Icon } from "@iconify/vue";
-import { debugLog } from "@/utils/logger";
+import { debugLog } from "../utils/logger";
 import MonthSelector from "../components/ui/MonthSelector.vue";
 
 // Stores
@@ -239,7 +239,7 @@ const onAccountSaved = async (accountData: any) => {
   if (selectedAccount.value?.id) {
     accountStore.updateAccount(selectedAccount.value.id, accountData);
   } else {
-    accountStore.addAccount(accountData);
+    AccountService.addAccount(accountData);
   }
   showNewAccountModal.value = false;
   selectedAccount.value = null;
@@ -266,7 +266,7 @@ const onSelectAccount = (account: any) => {
 
 const handleDateRangeUpdate = (payload: { start: string; end: string }) => {
   dateRange.value = payload;
-  debugLog("[AccountView] Date range updated", payload);
+  debugLog("[AccountView]", "Date range updated", payload); // Correct debugLog call
 };
 
 const createTransaction = () => {
@@ -311,7 +311,7 @@ const handleTransactionSave = (payload: any) => {
 };
 
 // Kontoabgleich starten
-const startReconcile = (account: any) => {
+const startReconcile = (account: Account) => {
   selectedAccount.value = account;
   showReconcileModal.value = true;
 };
@@ -336,14 +336,20 @@ const onReconcileComplete = () => {
                 class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
                 @click="createAccountGroup"
               >
-                <Icon icon="mdi:folder-plus" class="mr-2" />
+                <Icon
+                  icon="mdi:folder-plus"
+                  class="mr-2"
+                />
                 Neue Gruppe
               </button>
               <button
                 class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
                 @click="createAccount"
               >
-                <Icon icon="mdi:plus" class="mr-2" />
+                <Icon
+                  icon="mdi:plus"
+                  class="mr-2"
+                />
                 Neues Konto
               </button>
             </div>
@@ -406,7 +412,10 @@ const onReconcileComplete = () => {
                   {{ formatDate(group.date) }}
                 </div>
               </div>
-              <Icon icon="mdi:square-medium" class="text-base opacity-40" />
+              <Icon
+                icon="mdi:square-medium"
+                class="text-base opacity-40"
+              />
               <div class="flex justify-end items-center">
                 <Icon
                   icon="mdi:scale-balance"
@@ -427,7 +436,10 @@ const onReconcileComplete = () => {
                 @click="editTransaction(transaction)"
                 class="cursor-pointer"
               >
-                <TransactionCard :transaction="transaction" clickable />
+                <TransactionCard
+                  :transaction="transaction"
+                  clickable
+                />
               </div>
             </div>
           </div>
@@ -436,7 +448,10 @@ const onReconcileComplete = () => {
     </div>
     <!-- Modale -->
     <Teleport to="body">
-      <div v-if="showNewAccountModal" class="modal modal-open">
+      <div
+        v-if="showNewAccountModal"
+        class="modal modal-open"
+      >
         <div class="modal-box max-w-2xl">
           <h3 class="font-bold text-lg mb-4">Neues Konto erstellen</h3>
           <AccountForm
@@ -444,11 +459,17 @@ const onReconcileComplete = () => {
             @cancel="showNewAccountModal = false"
           />
         </div>
-        <div class="modal-backdrop" @click="showNewAccountModal = false"></div>
+        <div
+          class="modal-backdrop"
+          @click="showNewAccountModal = false"
+        ></div>
       </div>
     </Teleport>
     <Teleport to="body">
-      <div v-if="showNewGroupModal" class="modal modal-open">
+      <div
+        v-if="showNewGroupModal"
+        class="modal modal-open"
+      >
         <div class="modal-box max-w-2xl">
           <h3 class="font-bold text-lg mb-4">Neue Kontogruppe erstellen</h3>
           <AccountGroupForm
@@ -456,11 +477,17 @@ const onReconcileComplete = () => {
             @cancel="showNewGroupModal = false"
           />
         </div>
-        <div class="modal-backdrop" @click="showNewGroupModal = false"></div>
+        <div
+          class="modal-backdrop"
+          @click="showNewGroupModal = false"
+        ></div>
       </div>
     </Teleport>
     <Teleport to="body">
-      <div v-if="showTransactionFormModal" class="modal modal-open">
+      <div
+        v-if="showTransactionFormModal"
+        class="modal modal-open"
+      >
         <div class="modal-box overflow-visible max-w-2xl">
           <TransactionForm
             :transaction="selectedTransaction"

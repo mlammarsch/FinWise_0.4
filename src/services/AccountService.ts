@@ -25,12 +25,13 @@ export const AccountService = {
     return acc || null;
   },
 
-  async addAccount(accountData: Omit<Account, 'id' | 'balance'>): Promise<Account | null> {
+  async addAccount(accountData: Omit<Account, 'id' | 'uuid' | 'balance'>): Promise<Account | null> {
     const accountStore = useAccountStore();
+    const newId = uuidv4(); // Generate a single UUID
     const newAccount: Account = {
       ...accountData,
-      id: uuidv4(),
-      balance: 0,
+      id: newId, // Use the generated UUID for id
+      balance: 0, // Set initial balance to 0
     };
     // Annahme: addAccount im Store gibt das erstellte Konto oder null zurück
     return await accountStore.addAccount(newAccount);

@@ -55,7 +55,8 @@ const saveAccount = () => {
     );
     // Keine Dateioperation nötig
   }
-  const accountData: Omit<Account, "id"> = {
+  const accountData = {
+    // Use a more generic type or Omit<Account, 'id' | 'uuid' | 'balance'> if preferred
     name: name.value,
     description: description.value,
     note: note.value,
@@ -66,9 +67,7 @@ const saveAccount = () => {
     image: image.value || undefined,
     isActive: props.account?.isActive ?? true,
     isOfflineBudget: props.account?.isOfflineBudget ?? false,
-    balance: 0,
-    sortOrder: props.account?.sortOrder ?? 0,
-    accountType: undefined,
+    // balance, uuid, and id will be added by the service
   };
   emit("save", accountData);
 };
@@ -77,7 +76,10 @@ const accountGroups = computed(() => accountStore.accountGroups);
 </script>
 
 <template>
-  <form @submit.prevent="saveAccount" class="space-y-4">
+  <form
+    @submit.prevent="saveAccount"
+    class="space-y-4"
+  >
     <div class="form-control">
       <label class="label"
         ><span class="label-text">Name</span
@@ -111,7 +113,11 @@ const accountGroups = computed(() => accountStore.accountGroups);
         class="select select-bordered w-full"
         required
       >
-        <option v-for="g in accountGroups" :key="g.id" :value="g.id">
+        <option
+          v-for="g in accountGroups"
+          :key="g.id"
+          :value="g.id"
+        >
           {{ g.name }}
         </option>
       </select>
@@ -133,13 +139,19 @@ const accountGroups = computed(() => accountStore.accountGroups);
             >Offset (Nulllinie für Statistiken)</span
           ></label
         >
-        <CurrencyInput v-model="offset" placeholder="0,00" />
+        <CurrencyInput
+          v-model="offset"
+          placeholder="0,00"
+        />
       </div>
     </div>
 
     <div class="form-control">
       <label class="label"><span class="label-text">Kreditlimit</span></label>
-      <CurrencyInput v-model="creditLimit" placeholder="0,00" />
+      <CurrencyInput
+        v-model="creditLimit"
+        placeholder="0,00"
+      />
     </div>
 
     <div class="form-control">
@@ -161,8 +173,15 @@ const accountGroups = computed(() => accountStore.accountGroups);
         class="file-input file-input-bordered w-full"
         @change="handleImageUpload"
       />
-      <div v-if="image" class="mt-2">
-        <img :src="image" alt="Vorschau" class="rounded-md max-h-32" />
+      <div
+        v-if="image"
+        class="mt-2"
+      >
+        <img
+          :src="image"
+          alt="Vorschau"
+          class="rounded-md max-h-32"
+        />
         <button
           class="btn btn-error btn-sm mt-2"
           type="button"
@@ -174,10 +193,19 @@ const accountGroups = computed(() => accountStore.accountGroups);
     </div>
 
     <div class="flex justify-end space-x-2 pt-4">
-      <button type="button" class="btn" @click="emit('cancel')">
+      <button
+        type="button"
+        class="btn"
+        @click="emit('cancel')"
+      >
         Abbrechen
       </button>
-      <button type="submit" class="btn btn-primary">Speichern</button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+      >
+        Speichern
+      </button>
     </div>
   </form>
 </template>

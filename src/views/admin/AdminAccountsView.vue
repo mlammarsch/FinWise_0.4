@@ -7,7 +7,8 @@ import { Account, AccountType, AccountGroup } from "../../types";
 import AccountGroupForm from "../../components/account/AccountGroupForm.vue";
 import { useRouter } from "vue-router";
 import { Icon } from "@iconify/vue";
-import { BalanceService } from "@/services/BalanceService";
+import { BalanceService } from "../../services/BalanceService";
+import { AccountService } from "../../services/AccountService"; // Add AccountService import
 
 // Stores
 const accountStore = useAccountStore();
@@ -75,11 +76,15 @@ const createAccount = () => {
 };
 
 // Konto speichern
-const saveAccount = (accountData: Omit<Account, "id">) => {
+const saveAccount = async (
+  accountData: Omit<Account, "id" | "uuid" | "balance">
+) => {
   if (isEditMode.value && selectedAccount.value) {
-    accountStore.updateAccount(selectedAccount.value.id, accountData);
+    // Pass the full account object including the id for updates
+    await AccountService.updateAccount(selectedAccount.value.id, accountData);
   } else {
-    accountStore.addAccount(accountData);
+    // For new accounts, the service will generate the id and uuid
+    await AccountService.addAccount(accountData);
   }
   showAccountModal.value = false;
 };
@@ -146,14 +151,20 @@ const updateMonthlyBalances = () => {
             class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
             @click="createAccountGroup"
           >
-            <Icon icon="mdi:folder-plus" class="mr-2 text-base" />
+            <Icon
+              icon="mdi:folder-plus"
+              class="mr-2 text-base"
+            />
             Neue Gruppe
           </button>
           <button
             class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
             @click="createAccount"
           >
-            <Icon icon="mdi:plus" class="mr-2 text-base" />
+            <Icon
+              icon="mdi:plus"
+              class="mr-2 text-base"
+            />
             Neues Konto
           </button>
         </div>
@@ -162,7 +173,10 @@ const updateMonthlyBalances = () => {
           class="btn btn-soft btn-sm ml-4 border border-base-300"
           @click="updateMonthlyBalances"
         >
-          <Icon icon="mdi:refresh" class="mr-2 text-base" />
+          <Icon
+            icon="mdi:refresh"
+            class="mr-2 text-base"
+          />
           Monatssalden aktualisieren
         </button>
       </div>
@@ -185,13 +199,21 @@ const updateMonthlyBalances = () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="account in accounts" :key="account.id">
+              <tr
+                v-for="account in accounts"
+                :key="account.id"
+              >
                 <td>{{ account.name }}</td>
                 <td>
                   <select
                     class="select select-sm w-full rounded-full border border-base-300"
                     :value="account.accountGroupId"
-                    @change="updateAccountGroup(account, ($event.target as HTMLSelectElement).value)"
+                    @change="
+                      updateAccountGroup(
+                        account,
+                        ($event.target as HTMLSelectElement).value
+                      )
+                    "
                   >
                     <option
                       v-for="group in accountGroups"
@@ -224,13 +246,19 @@ const updateMonthlyBalances = () => {
                     class="btn btn-ghost btn-xs"
                     @click="editAccount(account)"
                   >
-                    <Icon icon="mdi:pencil" class="text-base" />
+                    <Icon
+                      icon="mdi:pencil"
+                      class="text-base"
+                    />
                   </button>
                   <button
                     class="btn btn-ghost btn-xs text-error"
                     @click="deleteAccount(account)"
                   >
-                    <Icon icon="mdi:trash-can" class="text-base" />
+                    <Icon
+                      icon="mdi:trash-can"
+                      class="text-base"
+                    />
                   </button>
                 </td>
               </tr>
@@ -256,12 +284,17 @@ const updateMonthlyBalances = () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="group in accountGroups" :key="group.id">
+              <tr
+                v-for="group in accountGroups"
+                :key="group.id"
+              >
                 <td>{{ group.name }}</td>
                 <td class="text-center">{{ group.sortOrder }}</td>
                 <td class="text-center">
                   {{
-                    accounts.filter((a) => a.accountGroupId === group.id).length
+                    accounts.filter(
+                      (a: Account) => a.accountGroupId === group.id
+                    ).length
                   }}
                 </td>
                 <td class="text-right">
@@ -277,13 +310,19 @@ const updateMonthlyBalances = () => {
                     class="btn btn-ghost btn-xs"
                     @click="editAccountGroup(group)"
                   >
-                    <Icon icon="mdi:pencil" class="text-base" />
+                    <Icon
+                      icon="mdi:pencil"
+                      class="text-base"
+                    />
                   </button>
                   <button
                     class="btn btn-ghost btn-xs text-error"
                     @click="deleteAccountGroup(group.id)"
                   >
-                    <Icon icon="mdi:trash-can" class="text-base" />
+                    <Icon
+                      icon="mdi:trash-can"
+                      class="text-base"
+                    />
                   </button>
                 </td>
               </tr>
@@ -294,7 +333,10 @@ const updateMonthlyBalances = () => {
     </div>
 
     <!-- Konto-Modal -->
-    <div v-if="showAccountModal" class="modal modal-open">
+    <div
+      v-if="showAccountModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-2xl">
         <h3 class="font-bold text-lg mb-4">
           {{ isEditMode ? "Konto bearbeiten" : "Neues Konto" }}
@@ -307,11 +349,17 @@ const updateMonthlyBalances = () => {
           @cancel="showAccountModal = false"
         />
       </div>
-      <div class="modal-backdrop" @click="showAccountModal = false"></div>
+      <div
+        class="modal-backdrop"
+        @click="showAccountModal = false"
+      ></div>
     </div>
 
     <!-- AccountGroup-Modal -->
-    <div v-if="showGroupModal" class="modal modal-open">
+    <div
+      v-if="showGroupModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-2xl">
         <h3 class="font-bold text-lg mb-4">
           {{ isGroupEditMode ? "Kontogruppe bearbeiten" : "Neue Kontogruppe" }}
@@ -323,7 +371,10 @@ const updateMonthlyBalances = () => {
           @cancel="showGroupModal = false"
         />
       </div>
-      <div class="modal-backdrop" @click="showGroupModal = false"></div>
+      <div
+        class="modal-backdrop"
+        @click="showGroupModal = false"
+      ></div>
     </div>
   </div>
 </template>
