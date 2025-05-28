@@ -13,6 +13,8 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { apiService, type UserFromApi, type TenantFromApi } from '@/services/apiService';
 import { useSessionStore } from './sessionStore'; // Importiere sessionStore
+import { decodeJwt } from '@/utils/auth'; // Importiere decodeJwt
+import type { Token, JwtPayload } from '@/types'; // Korrigierter Import für Typen
 
 // Schnittstelle für Daten, die zum Backend gepusht werden
 interface UserPushData {
@@ -252,15 +254,72 @@ export const useUserStore = defineStore('user', () => {
     try {
       // Versuche Online-Login über API
       infoLog('userStore', 'validateLogin: Versuche Online-Login...');
-      const backendUser = await apiService.login({
+      const tokenResponse: Token = await apiService.login({ // Erwarte Token-Antwort
         username_or_email: inputLower,
         password: plainPassword,
       });
 
-      // Erfolgreicher Online-Login
-      infoLog('userStore', 'validateLogin: Online-Login erfolgreich', { userId: backendUser.uuid });
+      // Erfolgreicher Online-Login - Token erhalten
+      infoLog('userStore', 'validateLogin: Online-Login erfolgreich - Token erhalten.');
 
-      // Benutzerdaten vom Backend in IndexedDB speichern/aktualisieren
+      // Extrahiere Benutzer-ID aus dem Token
+      const decodedToken = decodeJwt(tokenResponse.access_token);
+      if (!decodedToken || typeof decodedToken !== 'object' || !('sub' in decodedToken) || typeof decodedToken.sub !== 'string') {
+          errorLog('userStore', 'validateLogin: Konnte Benutzer-ID nicht aus Token extrahieren oder Token ungültig.');
+          return null;
+      }
+      const userIdFromToken = decodedToken.sub as string; // Sicherer Zugriff nach Prüfung
+      infoLog('userStore', 'validateLogin: Benutzer-ID aus Token extrahiert.', { userId: userIdFromToken });
+
+
+      // Rufe vollständige Benutzerdaten vom Backend ab (optional, falls nicht im Token)
+      // Annahme: Es gibt einen /users/{user_id} Endpunkt, der UserFromApi zurückgibt
+      let backendUser: UserFromApi | undefined;
+      try {
+          backendUser = await apiService.get<UserFromApi>(`/users/${userIdFromToken}`);
+          infoLog('userStore', 'validateLogin: Vollständige Benutzerdaten vom Backend abgerufen.', { userId: userIdFromToken });
+      } catch (fetchError) {
+          errorLog('userStore', 'validateLogin: Fehler beim Abrufen vollständiger Benutzerdaten vom Backend.', { userId: userIdFromToken, error: fetchError });
+          // Versuche, den Benutzer lokal zu finden, falls Backend nicht erreichbar ist
+          const localDbUser = await db.dbUsers.get(userIdFromToken);
+          if (localDbUser) {
+              warnLog('userStore', 'validateLogin: Konnte Benutzerdaten nicht vom Backend abrufen, verwende lokale Daten.', { userId: userIdFromToken });
+              // Erstelle LocalUser aus lokalen DB-Daten und dem neuen Token
+              const localUser: LocalUser = {
+                  id: localDbUser.uuid,
+                  username: localDbUser.username,
+                  email: localDbUser.email,
+                  passwordHash: localDbUser.passwordHash || '', // Verwende lokalen Hash, falls vorhanden
+                  createdAt: localDbUser.createdAt,
+                  updatedAt: localDbUser.updatedAt,
+                  accessToken: tokenResponse.access_token, // Neues Token verwenden
+                  refreshToken: tokenResponse.token_type, // token_type hier als refreshToken speichern (ggf. anpassen)
+              };
+              debugLog('userStore', 'validateLogin: LocalUser object created from local DB and token:', JSON.stringify(localUser));
+              // Finde und ersetze den Benutzer im State oder füge ihn hinzu
+              const userIndex = users.value.findIndex(u => u.id === localUser.id);
+              if (userIndex > -1) {
+                  users.value[userIndex] = localUser;
+              } else {
+                  users.value.push(localUser);
+              }
+              return localUser; // Rückgabe des lokalen Users mit neuem Token
+          }
+          // Dieser else-Block wird entfernt, da der vorherige if-Block mit return endet.
+          errorLog('userStore', 'validateLogin: Konnte Benutzerdaten weder vom Backend abrufen noch lokal finden.', { userId: userIdFromToken });
+          return null; // Login fehlgeschlagen
+      }
+
+      // Wenn backendUser nicht definiert ist (weil fetchError aufgetreten ist und kein lokaler User gefunden wurde),
+      // sollte dieser Block nicht erreicht werden, da wir vorher null zurückgegeben haben.
+      // Füge eine Prüfung hinzu, um TypeScript zu beruhigen, obwohl die Logik dies verhindern sollte.
+      if (!backendUser) {
+          errorLog('userStore', 'validateLogin: Unerwarteter Fehler: backendUser ist nach Abruf/Fallback nicht definiert.');
+          return null;
+      }
+
+      // Benutzerdaten vom Backend und Token in IndexedDB speichern/aktualisieren
+      // Annahme: backendUser enthält die notwendigen Felder (uuid, name, email, createdAt, updatedAt)
       const dbUser: DbUser = {
         uuid: backendUser.uuid,
         username: backendUser.name, // Mapping
@@ -268,20 +327,25 @@ export const useUserStore = defineStore('user', () => {
         createdAt: backendUser.createdAt,
         updatedAt: backendUser.updatedAt,
         needsBackendSync: false, // Erfolgreich synchronisiert
+        passwordHash: undefined, // Passwort-Hash wird nicht in DbUser gespeichert, wenn vom Backend synchronisiert
       };
       await db.dbUsers.put(dbUser); // put() aktualisiert oder fügt hinzu
+      infoLog('userStore', 'validateLogin: Benutzerdaten in IndexedDB gespeichert/aktualisiert.', { userId: dbUser.uuid });
+
 
       // State aktualisieren
       const localUser: LocalUser = {
         id: dbUser.uuid,
         username: dbUser.username,
         email: dbUser.email,
-        passwordHash: '', // Passwort-Hash wird nicht persistent gespeichert
+        passwordHash: '', // Passwort-Hash wird nicht persistent im State gespeichert nach Online-Login
         createdAt: dbUser.createdAt,
         updatedAt: dbUser.updatedAt,
-        accessToken: backendUser.accessToken, // Tokens vom Backend übernehmen
-        refreshToken: backendUser.refreshToken,
+        accessToken: tokenResponse.access_token, // Tokens vom Backend übernehmen
+        refreshToken: tokenResponse.token_type, // token_type hier als refreshToken speichern (ggf. anpassen)
       };
+      debugLog('userStore', 'validateLogin: LocalUser object created with backend data and token:', JSON.stringify(localUser));
+
       // Finde und ersetze den Benutzer im State oder füge ihn hinzu
       const userIndex = users.value.findIndex(u => u.id === localUser.id);
       if (userIndex > -1) {
@@ -290,8 +354,9 @@ export const useUserStore = defineStore('user', () => {
         users.value.push(localUser);
       }
 
-      return localUser;
-
+      infoLog('userStore', 'validateLogin: Login-Prozess abgeschlossen, Benutzer im State aktualisiert.', { userId: localUser.id });
+      return localUser; // Erfolgreicher Login
+      // Unerreichbarer Code 'return localUser;' wurde entfernt.
     } catch (error) {
       // Fehler bei Online-Login (z.B. Offline, falsche Credentials)
       errorLog('userStore', 'validateLogin: Online-Login fehlgeschlagen.', { error });

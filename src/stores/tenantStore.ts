@@ -71,6 +71,15 @@ export class FinwiseTenantSpecificDB extends Dexie {
         });
       });
     });
+    this.version(3).stores({
+      accounts: '&id, name, accountType, isActive, accountGroupId, created_at, updated_at',
+      accountGroups: '&id, name, created_at, updated_at',
+      syncQueue: '++id, entity_type, entity_id, operation, timestamp, last_attempt_at, attempts', // Hinzugefügt: attempts
+      syncMetadata: '&entity_type, last_synced_at',
+    }).upgrade(tx => {
+      debugLog('FinwiseTenantSpecificDB', 'Upgrade auf Version 3 durchgeführt: Index für syncQueue.attempts hinzugefügt.');
+      // Keine explizite Datenmigration für das Hinzufügen eines Indexes erforderlich.
+    });
   }
 }
 

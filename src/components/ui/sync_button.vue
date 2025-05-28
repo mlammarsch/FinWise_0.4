@@ -1,31 +1,34 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { computed, ref, onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted } from "vue"; // ref entfernt, da isBackendOnline direkt vom Service kommt
 import { SyncService } from "../../services/SyncService";
 import { infoLog, warnLog } from "../../utils/logger";
 
-const syncService = new SyncService();
-const isBackendOnline = ref(navigator.onLine);
+const syncService = new SyncService(); // Beachte Hinweis zur Singleton-Instanziierung oben
 
-// Hinweis: Diese Prüfung ist vorläufig. Eine robustere Lösung (z. B. über WebSocket oder Ping) ist vorgesehen.
-const updateOnlineStatus = () => {
-  isBackendOnline.value = navigator.onLine;
-  infoLog("SyncButton", `Online status updated: ${isBackendOnline.value}`);
-};
+// isBackendOnline wird jetzt direkt vom SyncService bezogen
+const isBackendReallyOnline = syncService.isBackendReallyOnline;
 
 onMounted(() => {
-  window.addEventListener("online", updateOnlineStatus);
-  window.addEventListener("offline", updateOnlineStatus);
-  syncService.updateQueueStatus();
+  // Die Listener für navigator.onLine werden entfernt, da wir den WebSocket-Status verwenden
+  syncService.updateQueueStatus(); // Initialen Queue-Status laden
 });
 
 onUnmounted(() => {
-  window.removeEventListener("online", updateOnlineStatus);
-  window.removeEventListener("offline", updateOnlineStatus);
+  // Keine Listener mehr zu entfernen
+  // syncService.cleanup() sollte global beim App-Unmount aufgerufen werden, nicht hier pro Button-Instanz
 });
 
 const isQueueEmpty = syncService.isQueueEmpty;
 const isCurrentlySyncing = syncService.isCurrentlySyncing;
+const webSocketStatus = syncService.webSocketStatus; // Für detailliertere Zustände, falls benötigt
+
+const isDisabled = computed(() => {
+  return (
+    isCurrentlySyncing.value ||
+    (!isBackendReallyOnline.value && webSocketStatus.value !== "connecting")
+  );
+});
 
 const buttonState = computed(() => {
   if (isCurrentlySyncing.value) {
@@ -37,20 +40,25 @@ const buttonState = computed(() => {
     };
   }
 
-  if (!isBackendOnline.value) {
+  // Verwende isBackendReallyOnline vom SyncService
+  if (!isBackendReallyOnline.value) {
+    const titleDetail =
+      webSocketStatus.value === "connecting"
+        ? "Verbindung wird aufgebaut..."
+        : "Backend offline.";
     if (isQueueEmpty.value) {
       return {
         iconColorClass: "text-error",
         icon: "mdi:autorenew",
         animate: false,
-        title: "Backend offline. Sync-Queue ist leer.",
+        title: `${titleDetail} Sync-Queue ist leer.`,
       };
     }
     return {
       iconColorClass: "text-error",
       icon: "mdi:autorenew-off",
       animate: false,
-      title: "Backend offline. Ungesyncte Änderungen vorhanden.",
+      title: `${titleDetail} Ungesyncte Änderungen vorhanden.`,
     };
   }
 
@@ -92,7 +100,7 @@ async function handleSyncButtonClick() {
     :class="{ 'animate-spin': buttonState.animate }"
     @click="handleSyncButtonClick"
     :title="buttonState.title"
-    :disabled="isCurrentlySyncing && !isBackendOnline"
+    :disabled="isDisabled"
   >
     <Icon
       :icon="buttonState.icon"

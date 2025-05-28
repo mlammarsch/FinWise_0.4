@@ -1,7 +1,6 @@
 // src/api/syncApi.ts
 import { BACKEND_BASE_URL } from '@/config';
-// import { useAuthStore } from '@/stores/authStore'; // Vorerst auskommentiert
-import { infoLog, errorLog } from '@/utils/logger';
+import { infoLog, errorLog, debugLog } from '@/utils/logger';
 import type { Account, AccountGroup, SyncableEntity } from '@/types';
 
 export type EntityType = 'accounts' | 'account_groups'; // Erweiterbar für andere Entitäten
@@ -28,10 +27,7 @@ export interface PullResponse<T extends SyncableEntity> {
   server_last_sync_timestamp?: string;
 }
 
-const getAuthHeader = (): Record<string, string> => {
-  // const authStore = useAuthStore(); // Vorerst auskommentiert
-  // const token = authStore.token;
-  const token = localStorage.getItem('authToken'); // Platzhalter für Token
+const getAuthHeader = (token: string | null): Record<string, string> => {
   if (token) {
     return { Authorization: `Bearer ${token}` };
   }
@@ -69,15 +65,34 @@ const handleApiError = (error: unknown, context: string): { success: false; erro
 };
 
 export const syncApi = {
-  pushChanges: async (items: SyncQueueItem[]): Promise<PushResponse | { success: false; error: string }> => {
+  pushChanges: async (items: SyncQueueItem[], token: string | null): Promise<PushResponse | { success: false; error: string }> => {
     infoLog('syncApi', 'Pushing changes to backend', { count: items.length });
     try {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-        ...getAuthHeader(),
+        ...getAuthHeader(token),
       };
 
-      const response = await fetch(`${BACKEND_BASE_URL}/api/v1/sync/push`, {
+      debugLog('syncApi', 'Sending push request with headers:', headers); // Debug-Log hinzugefügt
+
+      // tenantId aus dem ersten Item extrahieren, da alle Items im Batch zum selben Tenant gehören sollten.
+      // Sicherstellen, dass items nicht leer ist, um Fehler zu vermeiden.
+      if (!items || items.length === 0) {
+        errorLog('syncApi', 'pushChanges: items array is empty, cannot determine tenantId.');
+        return { success: false, error: 'Cannot push changes: items array is empty.' };
+      }
+      const tenantId = items[0].tenantId;
+      if (!tenantId) {
+        errorLog('syncApi', 'pushChanges: tenantId is missing in the first sync item.');
+        return { success: false, error: 'Cannot push changes: tenantId is missing in sync item.' };
+      }
+
+      // Stelle sicher, dass beide Query-Parameter (tenantId und requested_tenant_id) gesendet werden.
+      // Beide sollten denselben Wert haben.
+      const url = `${BACKEND_BASE_URL}/api/v1/sync/push?tenantId=${tenantId}&requested_tenant_id=${tenantId}`;
+      debugLog('syncApi', 'Constructed push URL:', { url }); // Hinzugefügter Log für die URL
+
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: JSON.stringify(items),
@@ -107,10 +122,11 @@ export const syncApi = {
   pullChanges: async <T extends SyncableEntity>(
     entityType: EntityType,
     tenantId: string,
+    token: string | null, // Token als Parameter hinzugefügt
     lastSyncTimestamp?: string,
   ): Promise<PullResponse<T> | { success: false; error: string }> => {
     infoLog('syncApi', `Pulling changes for ${entityType}`, { tenantId, lastSyncTimestamp });
-    let url = `${BACKEND_BASE_URL}/api/v1/sync/pull/${entityType}?tenant_id=${tenantId}`;
+    let url = `${BACKEND_BASE_URL}/api/v1/sync/pull/${entityType}?requested_tenant_id=${tenantId}`;
     if (lastSyncTimestamp) {
       url += `&last_sync_timestamp=${encodeURIComponent(lastSyncTimestamp)}`;
     }
@@ -118,7 +134,7 @@ export const syncApi = {
     try {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
-        ...getAuthHeader(),
+        ...getAuthHeader(token), // Token an getAuthHeader übergeben
       };
 
       const response = await fetch(url, {

@@ -248,3 +248,16 @@ export interface Entity {
   id: string
   isActive: boolean
 }
+
+// Token Typ
+export interface Token {
+  access_token: string;
+  token_type: string;
+}
+
+// JWT Payload Typ (für Frontend-Dekodierung)
+export interface JwtPayload {
+  sub: string; // Subject (Benutzer-ID)
+  exp: number; // Expiration time (Unix timestamp)
+  // Fügen Sie hier weitere erwartete Felder hinzu
+}

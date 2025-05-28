@@ -79,7 +79,7 @@ export const apiService = {
 
   // Neue Methode für Online-Login
   login: (credentials: LoginPayload) =>
-    apiService.post<UserFromApi, LoginPayload>('/login', credentials), // Annahme: Login gibt UserFromApi zurück
+    apiService.post<Token, LoginPayload>('/login', credentials), // Login gibt jetzt Token zurück
 
   // Neue Methode für User-Updates (ohne Passwort)
   updateUser: (uuid: string, userData: Omit<UserFromApi, 'uuid' | 'createdAt' | 'updatedAt'>) =>
