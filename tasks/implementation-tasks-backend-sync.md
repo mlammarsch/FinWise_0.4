@@ -28,7 +28,7 @@ Basierend auf PRD: [`prd-backend-sync-account-accountgroup.md`](tasks/prd-backen
         - `tenant_id: str` (Zur expliziten Mandantenzuordnung)
     - Stelle sicher, dass Zeitstempel (`created_at`, `updated_at`, `deleted_at`) UTC sind.
 
-- [ ] **Task 1.2: `AccountGroup`-Modell definieren/aktualisieren**
+- [x] **Task 1.2: `AccountGroup`-Modell definieren/aktualisieren**
     - Referenz: PRD Abschnitt 4.1 (AccountGroup Modell)
     - Verwende `SQLModel`.
     - Felder implementieren:
