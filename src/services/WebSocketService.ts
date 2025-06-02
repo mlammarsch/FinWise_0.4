@@ -1,7 +1,8 @@
 // src/services/WebSocketService.ts
 import { useSessionStore } from '@/stores/sessionStore';
-import { useWebSocketStore, WebSocketStatus } from '@/stores/webSocketStore';
+import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog } from '@/utils/logger';
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage } from '@/types';
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -23,7 +24,7 @@ export const WebSocketService = {
     if (!sessionStore.currentTenantId) {
       errorLog('[WebSocketService]', 'Cannot connect: Tenant ID is missing.');
       webSocketStore.setError('Tenant ID is missing for WebSocket connection.');
-      webSocketStore.setStatus(WebSocketStatus.ERROR);
+      webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
       return;
     }
 
@@ -37,7 +38,7 @@ export const WebSocketService = {
     const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws_finwise/ws/${tenantId}`;
 
     explicitClose = false;
-    webSocketStore.setStatus(WebSocketStatus.CONNECTING);
+    webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTING);
     infoLog('[WebSocketService]', `Connecting to ${wsUrl}`);
 
     try {
@@ -45,47 +46,51 @@ export const WebSocketService = {
 
       socket.onopen = () => {
         infoLog('[WebSocketService]', 'Connected to WebSocket server.');
-        webSocketStore.setStatus(WebSocketStatus.CONNECTED);
+        webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTED);
+        // Der Backend-Status wird durch eine explizite Nachricht vom Backend gesetzt.
+        // Hier könnte man einen initialen "optimistischen" Status setzen oder auf die erste Statusnachricht warten.
+        // webSocketStore.setBackendStatus(BackendStatus.ONLINE); // Vorerst nicht, warten auf Nachricht
         webSocketStore.setError(null);
         reconnectAttempts = 0;
-        // Hier könnte eine initiale Nachricht an den Server gesendet werden, falls erforderlich
-        // this.sendMessage({ type: 'client_hello', tenantId });
       };
 
       socket.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data as string);
+          const message = JSON.parse(event.data as string) as ServerWebSocketMessage;
           debugLog('[WebSocketService]', 'Message received:', message);
           webSocketStore.setLastMessage(message);
 
-          // Grundlegende Nachrichtenbehandlung
-          if (message.type === 'status_update') {
-            if (message.status === 'backend_online') {
-              infoLog('[WebSocketService]', 'Backend signaled: ONLINE');
-              // Ggf. weitere Aktionen hier
+          // Nachrichtenbehandlung für Backend-Status
+          if (message.type === 'status') {
+            const statusMessage = message as StatusMessage; // Type assertion
+            infoLog('[WebSocketService]', `Backend status update: ${statusMessage.payload.status}`);
+            webSocketStore.setBackendStatus(statusMessage.payload.status);
+            if (statusMessage.payload.status === BackendStatus.ERROR && statusMessage.payload.message) {
+              webSocketStore.setError(`Backend error: ${statusMessage.payload.message}`);
             }
           }
-          // Weitere Nachrichten-Typen hier behandeln (z.B. Datenänderungen)
-          // if (message.type === 'data_update') {
-          //   // Verarbeitung anstoßen, z.B. relevanten Store informieren
-          // }
+          // Hier weitere Nachrichten-Typen behandeln
+          // z.B. if (message.type === 'data_update') { ... }
 
         } catch (e) {
           errorLog('[WebSocketService]', 'Error parsing message from server:', e, event.data);
           webSocketStore.setError('Error parsing message from server.');
+          // Bei einem Parsing-Fehler könnte man den Backend-Status auf ERROR setzen
+          webSocketStore.setBackendStatus(BackendStatus.ERROR);
         }
       };
 
       socket.onerror = (error) => {
         errorLog('[WebSocketService]', 'WebSocket error:', error);
         webSocketStore.setError('WebSocket connection error.');
-        webSocketStore.setStatus(WebSocketStatus.ERROR);
-        // Die onclose-Methode wird normalerweise nach einem Fehler auch aufgerufen.
+        webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
+        // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
       };
 
       socket.onclose = (event) => {
         infoLog('[WebSocketService]', `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
-        webSocketStore.setStatus(WebSocketStatus.DISCONNECTED);
+        webSocketStore.setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
+        // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
         socket = null;
 
         if (!explicitClose && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -102,7 +107,8 @@ export const WebSocketService = {
     } catch (error) {
       errorLog('[WebSocketService]', 'Failed to create WebSocket:', error);
       webSocketStore.setError('Failed to create WebSocket connection.');
-      webSocketStore.setStatus(WebSocketStatus.ERROR);
+      webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
+      // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
     }
   },
 
@@ -136,9 +142,13 @@ export const WebSocketService = {
     }
   },
 
-  // Hilfsfunktion, um den aktuellen Status zu bekommen (optional)
-  getStatus(): WebSocketStatus {
-    return useWebSocketStore().status;
+  // Hilfsfunktion, um den aktuellen Verbindungsstatus zu bekommen (optional)
+  getConnectionStatus(): WebSocketConnectionStatus {
+    return useWebSocketStore().connectionStatus;
+  },
+  // Hilfsfunktion, um den aktuellen Backend-Status zu bekommen (optional)
+  getBackendStatus(): BackendStatus {
+    return useWebSocketStore().backendStatus;
   },
 };
 

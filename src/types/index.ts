@@ -239,3 +239,37 @@ export interface Entity {
   id: string
   isActive: boolean
 }
+
+// WebSocket-bezogene Typen
+export enum BackendStatus {
+  ONLINE = 'online',
+  OFFLINE = 'offline',
+  MAINTENANCE = 'maintenance',
+  ERROR = 'error',
+}
+
+export interface WebSocketMessageBase {
+  type: string;
+  payload?: unknown; // Generischer Payload, kann spezifischer gemacht werden
+}
+
+export interface StatusMessage extends WebSocketMessageBase {
+  type: 'status';
+  payload: {
+    status: BackendStatus;
+    message?: string; // Optionale Nachricht zum Status
+  };
+}
+
+// Hier könnten weitere spezifische Nachrichtentypen definiert werden, z.B.
+// export interface DataUpdateMessage extends WebSocketMessageBase {
+//   type: 'data_update';
+//   payload: {
+//     entity: string;
+//     action: 'created' | 'updated' | 'deleted';
+//     data: any;
+//   };
+// }
+
+// Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
+export type ServerWebSocketMessage = StatusMessage; // | DataUpdateMessage etc.

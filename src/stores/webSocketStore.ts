@@ -2,8 +2,9 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { infoLog, errorLog } from '@/utils/logger';
+import { BackendStatus, type ServerWebSocketMessage } from '@/types';
 
-export enum WebSocketStatus {
+export enum WebSocketConnectionStatus { // Umbenannt zur Klarheit
   CONNECTING = 'connecting',
   CONNECTED = 'connected',
   DISCONNECTED = 'disconnected',
@@ -11,13 +12,23 @@ export enum WebSocketStatus {
 }
 
 export const useWebSocketStore = defineStore('webSocket', () => {
-  const status = ref<WebSocketStatus>(WebSocketStatus.DISCONNECTED);
+  const connectionStatus = ref<WebSocketConnectionStatus>(WebSocketConnectionStatus.DISCONNECTED);
+  const backendStatus = ref<BackendStatus>(BackendStatus.OFFLINE);
   const lastError = ref<string | null>(null);
-  const lastMessage = ref<unknown | null>(null); // Für eingehende Nachrichten
+  const lastMessage = ref<ServerWebSocketMessage | null>(null); // Typisiert mit ServerWebSocketMessage
 
-  function setStatus(newStatus: WebSocketStatus) {
-    infoLog('[WebSocketStore]', `Status changed to: ${newStatus}`);
-    status.value = newStatus;
+  function setConnectionStatus(newStatus: WebSocketConnectionStatus) {
+    infoLog('[WebSocketStore]', `Connection status changed to: ${newStatus}`);
+    connectionStatus.value = newStatus;
+    if (newStatus === WebSocketConnectionStatus.DISCONNECTED || newStatus === WebSocketConnectionStatus.ERROR) {
+      // Wenn die Verbindung getrennt wird oder ein Fehler auftritt, ist das Backend nicht mehr zuverlässig erreichbar
+      setBackendStatus(BackendStatus.OFFLINE);
+    }
+  }
+
+  function setBackendStatus(newStatus: BackendStatus) {
+    infoLog('[WebSocketStore]', `Backend status changed to: ${newStatus}`);
+    backendStatus.value = newStatus;
   }
 
   function setError(errorMessage: string | null) {
@@ -26,26 +37,30 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     }
     lastError.value = errorMessage;
     if (errorMessage) {
-      setStatus(WebSocketStatus.ERROR);
+      setConnectionStatus(WebSocketConnectionStatus.ERROR);
+      // Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt
     }
   }
 
-  function setLastMessage(message: unknown) {
+  function setLastMessage(message: ServerWebSocketMessage) {
     // infoLog('[WebSocketStore]', 'New message received:', message); // Kann sehr gesprächig sein
     lastMessage.value = message;
   }
 
   function reset() {
-    status.value = WebSocketStatus.DISCONNECTED;
+    setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
+    setBackendStatus(BackendStatus.OFFLINE); // Explizit auch hier setzen
     lastError.value = null;
     lastMessage.value = null;
   }
 
   return {
-    status,
+    connectionStatus,
+    backendStatus,
     lastError,
     lastMessage,
-    setStatus,
+    setConnectionStatus,
+    setBackendStatus,
     setError,
     setLastMessage,
     reset,
