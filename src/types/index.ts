@@ -250,15 +250,14 @@ export enum BackendStatus {
 
 export interface WebSocketMessageBase {
   type: string;
-  payload?: unknown; // Generischer Payload, kann spezifischer gemacht werden
+  // payload?: unknown; // Generischer Payload wird hier nicht mehr benötigt, wenn StatusMessage ihn nicht verwendet
 }
 
 export interface StatusMessage extends WebSocketMessageBase {
   type: 'status';
-  payload: {
-    status: BackendStatus;
-    message?: string; // Optionale Nachricht zum Status
-  };
+  status: BackendStatus;
+  message?: string; // Optionale Nachricht zum Status
+  // payload entfernt, da Status und Message direkt auf der obersten Ebene sind
 }
 
 // Hier könnten weitere spezifische Nachrichtentypen definiert werden, z.B.

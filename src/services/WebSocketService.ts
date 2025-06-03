@@ -63,10 +63,11 @@ export const WebSocketService = {
           // Nachrichtenbehandlung für Backend-Status
           if (message.type === 'status') {
             const statusMessage = message as StatusMessage; // Type assertion
-            infoLog('[WebSocketService]', `Backend status update: ${statusMessage.payload.status}`);
-            webSocketStore.setBackendStatus(statusMessage.payload.status);
-            if (statusMessage.payload.status === BackendStatus.ERROR && statusMessage.payload.message) {
-              webSocketStore.setError(`Backend error: ${statusMessage.payload.message}`);
+            infoLog('[WebSocketService]', `Backend status update: ${statusMessage.status}`);
+            webSocketStore.setBackendStatus(statusMessage.status);
+            // Prüfen, ob die Nachricht eine 'message'-Eigenschaft hat, falls es ein Fehler ist
+            if (statusMessage.status === BackendStatus.ERROR && statusMessage.message) {
+              webSocketStore.setError(`Backend error: ${statusMessage.message}`);
             }
           }
           // Hier weitere Nachrichten-Typen behandeln
