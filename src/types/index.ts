@@ -272,3 +272,31 @@ export interface StatusMessage extends WebSocketMessageBase {
 
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
 export type ServerWebSocketMessage = StatusMessage; // | DataUpdateMessage etc.
+
+// Sync Queue Typen
+export enum SyncOperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+}
+
+export enum SyncStatus {
+  PENDING = 'pending',
+  PROCESSING = 'processing',
+  SYNCED = 'synced',
+  FAILED = 'failed',
+}
+
+export interface SyncQueueEntry {
+  id: string; // Eindeutige ID für den Queue-Eintrag (z.B. UUID)
+  tenantId: string; // Mandanten-ID
+  entityType: 'Account' | 'AccountGroup'; // Typ der Entität
+  entityId: string; // ID der betroffenen Entität
+  operationType: SyncOperationType; // Art der Operation
+  payload: Account | AccountGroup | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
+  timestamp: number; // Zeitstempel der Änderung (Unix-Timestamp)
+  status: SyncStatus; // Status des Sync-Eintrags
+  attempts?: number; // Anzahl der Synchronisierungsversuche
+  lastAttempt?: number; // Zeitstempel des letzten Versuchs
+  error?: string; // Fehlermeldung bei Fehlschlag
+}

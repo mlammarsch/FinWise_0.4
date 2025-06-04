@@ -1,7 +1,9 @@
 // src/services/TenantDbService.ts
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
-import type { Account, AccountGroup } from '@/types';
+import type { Account, AccountGroup, SyncQueueEntry } from '@/types';
+import { SyncStatus } from '@/types'; // SyncStatus importieren
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
+import { v4 as uuidv4 } from 'uuid';
 
 export class TenantDbService {
   private get db(): FinwiseTenantSpecificDB | null {
@@ -193,6 +195,38 @@ export class TenantDbService {
     } catch (err) {
       errorLog('TenantDbService', 'Fehler beim Abrufen aller Kontogruppen', { error: err });
       return [];
+    }
+  }
+
+  /**
+   * Fügt einen neuen Eintrag zur Sync Queue hinzu.
+   * @param entry Der hinzuzufügende Sync-Queue-Eintrag (ohne id, timestamp, status, tenantId - diese werden hier gesetzt).
+   */
+  async addSyncQueueEntry(
+    entryData: Omit<SyncQueueEntry, 'id' | 'timestamp' | 'status' | 'tenantId'>,
+  ): Promise<SyncQueueEntry | null> {
+    const tenantStore = useTenantStore();
+    if (!this.db || !tenantStore.activeTenantId) {
+      warnLog('TenantDbService', 'addSyncQueueEntry: Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+    }
+
+    const newEntry: SyncQueueEntry = {
+      ...entryData,
+      id: uuidv4(),
+      tenantId: tenantStore.activeTenantId, // tenantId hier setzen
+      timestamp: Date.now(),
+      status: SyncStatus.PENDING, // Initialer Status
+      attempts: 0,
+    };
+
+    try {
+      await this.db.syncQueue.add(newEntry);
+      debugLog('TenantDbService', `SyncQueue-Eintrag für Entity ${newEntry.entityType} (ID: ${newEntry.entityId}, Op: ${newEntry.operationType}) hinzugefügt.`, newEntry);
+      return newEntry;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen des SyncQueue-Eintrags für Entity ${newEntry.entityType} (ID: ${newEntry.entityId})`, { entry: newEntry, error: err });
+      throw err; // Fehler weiterwerfen, damit der aufrufende Code darauf reagieren kann
     }
   }
 }

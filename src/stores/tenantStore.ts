@@ -6,11 +6,12 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
-import type { Account, AccountGroup } from '../types'; // Importiere die Typen
+import type { Account, AccountGroup, SyncQueueEntry } from '../types'; // Importiere die Typen
 
 export class FinwiseTenantSpecificDB extends Dexie {
-  accounts!: Table<Account, string>; // Deklariere die Tabelle 'accounts' mit Typen
-  accountGroups!: Table<AccountGroup, string>; // Deklariere die Tabelle 'accountGroups' mit Typen
+  accounts!: Table<Account, string>;
+  accountGroups!: Table<AccountGroup, string>;
+  syncQueue!: Table<SyncQueueEntry, string>; // Sync Queue Tabelle
 
   constructor(databaseName: string) {
     super(databaseName);
@@ -18,6 +19,14 @@ export class FinwiseTenantSpecificDB extends Dexie {
       accounts: '&id, name, accountType, isActive, accountGroupId',
       accountGroups: '&id, name',
     });
+    // Version 2 fügt die syncQueue Tabelle hinzu
+    // Wichtig: Indizes für häufige Abfragen hinzufügen, z.B. status, timestamp, entityType
+    this.version(2).stores({
+      accounts: '&id, name, accountType, isActive, accountGroupId', // Schema beibehalten
+      accountGroups: '&id, name', // Schema beibehalten
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status',
+    });
+    // Weitere Versionen hier bei Bedarf
   }
 }
 
