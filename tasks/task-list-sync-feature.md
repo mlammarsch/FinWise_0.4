@@ -7,7 +7,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 3. WebSocket: Online-/Offline-Status signalisieren
 - [x] 4. Frontend: Offline-Änderungen in IndexedDB Sync Queue speichern (Account, Account Group)
 - [x] 5. Frontend: Sync Queue automatisch an Backend senden bei Wiederherstellung der Verbindung
-- [ ] 6. Backend: Empfangene Änderungen aus Sync Queue verarbeiten und in Tenant-Datenbank speichern
+- [x] 6. Backend: Empfangene Änderungen aus Sync Queue verarbeiten und in Tenant-Datenbank speichern
 - [ ] 7. Backend: Änderungen erkennen und über WebSocket an Frontend senden (Account, Account Group)
 - [ ] 8. Frontend: Vom Backend empfangene Änderungen verarbeiten und lokale IndexedDB aktualisieren
 - [ ] 9. Synchronisation: Bidirektionalität sicherstellen
@@ -35,7 +35,12 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] [`src/services/WebSocketService.ts`](src/services/WebSocketService.ts:1): Implementiert die Logik zur Erkennung der Verbindungswiederherstellung und das automatische Senden der Sync Queue (`processSyncQueue`, `checkAndProcessSyncQueue`, `initialize` mit `watch`).
 - [ ] [`src/main.ts`](src/main.ts:1): Initialisiert den WebSocketService und reagiert auf Tenant-Änderungen. (Hier sollte `WebSocketService.initialize()` aufgerufen werden)
 - [ ] [`src/vite-env.d.ts`](src/vite-env.d.ts): Globale Typdefinition für `window.ApexCharts` hinzugefügt.
-- [ ] `../FinWise_0.4_BE/app/websocket/schemas.py`: Definiert Pydantic-Modelle für WebSocket-Nachrichten.
-- [x] `../FinWise_0.4_BE/app/websocket/connection_manager.py`: Verwaltet aktive WebSocket-Verbindungen.
-- [x] `../FinWise_0.4_BE/app/websocket/endpoints.py`: Definiert die WebSocket-Endpunkte und die grundlegende Nachrichtenbehandlung.
-- [x] `../FinWise_0.4_BE/main.py`: Hauptanwendung, in die der WebSocket-Router integriert wurde.
+- [x] `../FinWise_0.4_BE/app/websocket/schemas.py`: Pydantic-Modelle für WebSocket-Nachrichten erweitert (`SyncQueueEntry`, `ProcessSyncEntryMessage` etc.).
+- [x] `../FinWise_0.4_BE/app/websocket/connection_manager.py`: Verwaltet aktive WebSocket-Verbindungen. (Keine Änderung in diesem Schritt)
+- [x] `../FinWise_0.4_BE/app/websocket/endpoints.py`: WebSocket-Endpunkt erweitert, um `process_sync_entry`-Nachrichten zu empfangen und den `sync_service` aufzurufen.
+- [x] `../FinWise_0.4_BE/main.py`: Hauptanwendung, in die der WebSocket-Router integriert wurde. (Keine Änderung in diesem Schritt)
+- [ ] `../FinWise_0.4_BE/app/models/financial_models.py`: Neue Datei mit SQLAlchemy-Modellen für `Account` und `AccountGroup`.
+- [ ] `../FinWise_0.4_BE/app/crud/crud_account.py`: Angepasst an SQLAlchemy-Modelle und Pydantic-Payloads für Sync.
+- [ ] `../FinWise_0.4_BE/app/crud/crud_account_group.py`: Neue Datei mit CRUD-Funktionen für `AccountGroup`.
+- [ ] `../FinWise_0.4_BE/app/services/sync_service.py`: Neuer Service zur Verarbeitung von Sync-Einträgen und Interaktion mit Mandanten-DBs.
+- [ ] `../FinWise_0.4_BE/app/db/tenant_db.py`: (Gelesen, um die Erstellung von Mandanten-DB-Sitzungen zu verstehen; `TenantBase.metadata.create_all` wird nun im `sync_service` verwendet).
