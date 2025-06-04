@@ -14,7 +14,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 10. Synchronisation: Löschoperationen korrekt verarbeiten
 - [x] 11. Backend: Tenant-Zuordnung und Speicherung in korrekter Datenbank sicherstellen (Überprüfung abgeschlossen, keine Änderungen notwendig)
 - [x] 12. Synchronisation: Konfliktlösung nach "last write wins" implementieren
-- [ ] 13. Backend: Datenbankmodell für Account und Account Group implementieren
+- [x] 13. Backend: Datenbankmodell für Account und Account Group implementieren/verifizieren (Modelle und Schemas für `balance` und `creditLimit` auf `Numeric`/`Decimal` umgestellt; Konsistenz mit Frontend-Typen sichergestellt)
 - [ ] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung
 - [ ] 15. WebSocket: Sichere Verbindung und Verschlüsselung (SOLLTE)
 - [ ] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
@@ -35,11 +35,11 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] [`src/services/WebSocketService.ts`](src/services/WebSocketService.ts:1): Erweitert um `onmessage`-Handler zur Verarbeitung von `data_update`-Nachrichten vom Backend; löst entsprechende Aktionen im `accountStore` aus, prüft `tenant_id`.
 - [ ] [`src/main.ts`](src/main.ts:1): Initialisiert den WebSocketService und reagiert auf Tenant-Änderungen. (Hier sollte `WebSocketService.initialize()` aufgerufen werden)
 - [ ] [`src/vite-env.d.ts`](src/vite-env.d.ts): Globale Typdefinition für `window.ApexCharts` hinzugefügt.
-- [x] `../FinWise_0.4_BE/app/websocket/schemas.py`: (Indirekt betroffen, da die Payloads, die hier definiert sind, nun `updated_at` aus den Hauptschemas `AccountPayload`, `AccountGroupPayload` etc. enthalten)
+- [x] `../FinWise_0.4_BE/app/models/schemas.py`: Pydantic-Schemas für `Account` und `AccountGroup` angepasst (`balance`, `creditLimit` auf `Decimal`).
 - [x] `../FinWise_0.4_BE/app/websocket/connection_manager.py`: Erweitert um `exclude_websocket` Parameter in `broadcast_json_to_tenant` und `send_personal_json_message` zur Vermeidung von Nachrichten-Loops bei der Verarbeitung von Sync-Queue-Einträgen.
 - [x] `../FinWise_0.4_BE/app/websocket/endpoints.py`: Übergibt nun das `websocket`-Objekt (für `exclude_websocket`) an `sync_service.process_sync_entry_for_tenant` beim Verarbeiten von `process_sync_entry`.
 - [x] `../FinWise_0.4_BE/main.py`: Hauptanwendung, in die der WebSocket-Router integriert wurde. (Keine Änderung in diesem Schritt)
-- [x] `../FinWise_0.4_BE/app/models/financial_models.py`: SQLAlchemy-Modelle `Account` und `AccountGroup` hatten bereits `updated_at` (verifiziert).
+- [x] `../FinWise_0.4_BE/app/models/financial_models.py`: SQLAlchemy-Modelle `Account` und `AccountGroup` angepasst (`balance`, `creditLimit` auf `Numeric`).
 - [x] `../FinWise_0.4_BE/app/crud/crud_account.py`: CRUD-Operationen angepasst, um `updated_at` aus Payloads zu übernehmen; WebSocket-Benachrichtigung an `SyncService` delegiert.
 - [x] `../FinWise_0.4_BE/app/crud/crud_account_group.py`: CRUD-Operationen angepasst, um `updated_at` aus Payloads zu übernehmen; WebSocket-Benachrichtigung an `SyncService` delegiert.
 - [x] `../FinWise_0.4_BE/app/services/sync_service.py`: LWW-Logik implementiert: Vergleicht `updated_at`-Zeitstempel bei `CREATE`/`UPDATE` aus `syncQueue` und sendet entsprechende Benachrichtigungen.
