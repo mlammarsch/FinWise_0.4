@@ -16,6 +16,7 @@ export interface Account {
   creditLimit?: number
   offset: number
   image?: string
+  updated_at?: string // ISO 8601 Format
 }
 
 export interface AccountGroup {
@@ -23,6 +24,7 @@ export interface AccountGroup {
   name: string
   sortOrder: number
   image?: string
+  updated_at?: string // ISO 8601 Format
 }
 
 // Kategorie-Modelle

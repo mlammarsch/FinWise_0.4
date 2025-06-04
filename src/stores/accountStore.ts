@@ -30,85 +30,135 @@ export const useAccountStore = defineStore('account', () => {
     accountGroups.value.find(g => g.id === id),
   );
 
-  async function addAccount(account: Account, fromSync = false): Promise<Account> {
+  async function addAccount(accountData: Omit<Account, 'updated_at'> | Account, fromSync = false): Promise<Account> {
     const webSocketStore = useWebSocketStore();
-    // Lokale DB immer zuerst aktualisieren für sofortiges UI-Feedback
-    // Nur zur DB hinzufügen, wenn es nicht schon durch einen Sync-Vorgang geschieht
-    // oder wenn es explizit nicht aus einem Sync kommt.
-    // Die Logik hier ist, dass wenn fromSync=true, die DB bereits vom WebSocketService aktualisiert wurde.
-    // Aber der Store muss trotzdem aktualisiert werden.
-    // Wenn fromSync=false, dann ist es eine lokale Änderung.
 
-    // Wenn die Änderung vom Sync kommt, wurde die DB bereits im TenantDbService durch den WebSocket Handler aktualisiert.
-    // Wir müssen hier nur den Store State aktualisieren.
-    // Wenn es eine lokale Änderung ist (fromSync = false), dann muss die DB hier aktualisiert werden.
-    if (!fromSync) {
-      await tenantDbService.addAccount(account);
+    const accountWithTimestamp: Account = {
+      ...accountData,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (accountData as any).updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (CREATE)
+      const localAccount = await tenantDbService.getAccountById(accountWithTimestamp.id);
+      if (localAccount && localAccount.updated_at && accountWithTimestamp.updated_at &&
+          new Date(localAccount.updated_at) >= new Date(accountWithTimestamp.updated_at)) {
+        infoLog('accountStore', `addAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        // Optional: Store mit lokalen Daten "auffrischen", falls er abweicht (sollte nicht passieren, wenn Logik korrekt ist)
+        // const storeIdx = accounts.value.findIndex(a => a.id === localAccount.id);
+        // if (storeIdx !== -1 && JSON.stringify(accounts.value[storeIdx]) !== JSON.stringify(localAccount)) {
+        //   accounts.value[storeIdx] = localAccount;
+        // }
+        return localAccount; // Gib das lokale, "gewinnende" Konto zurück
+      }
+      // Wenn eingehend neuer ist oder lokal nicht existiert, fahre fort mit DB-Update und Store-Update
+      await tenantDbService.addAccount(accountWithTimestamp); // addAccount ist wie put, überschreibt wenn ID existiert
+      infoLog('accountStore', `addAccount (fromSync): Eingehendes Konto ${accountWithTimestamp.id} angewendet (neuer oder lokal nicht vorhanden).`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.addAccount(accountWithTimestamp);
     }
-    const existingAccountIndex = accounts.value.findIndex(a => a.id === account.id);
+
+    const existingAccountIndex = accounts.value.findIndex(a => a.id === accountWithTimestamp.id);
     if (existingAccountIndex === -1) {
-      accounts.value.push(account);
+      accounts.value.push(accountWithTimestamp);
     } else {
-      // Falls das Konto schon existiert (z.B. durch eine Race Condition oder doppelte Nachricht), aktualisieren wir es.
-      accounts.value[existingAccountIndex] = account;
-      warnLog('accountStore', `addAccount: Account ${account.id} existed, updated instead.`);
+      // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt, falls die DB-Operation nicht sofort reflektiert wird
+      // oder falls es eine Race Condition gab. Im `fromSync`-Fall sollte die DB bereits den "Gewinner" haben.
+      if (!fromSync || (accountWithTimestamp.updated_at && (!accounts.value[existingAccountIndex].updated_at || new Date(accountWithTimestamp.updated_at) > new Date(accounts.value[existingAccountIndex].updated_at!)))) {
+        accounts.value[existingAccountIndex] = accountWithTimestamp;
+      } else if (fromSync) {
+        // Wenn fromSync und das Store-Konto neuer ist, behalte das Store-Konto (sollte durch obige DB-Prüfung nicht passieren)
+         warnLog('accountStore', `addAccount (fromSync): Store-Konto ${accounts.value[existingAccountIndex].id} war neuer als eingehendes ${accountWithTimestamp.id}. Store nicht geändert.`);
+      }
     }
-    infoLog('accountStore', `Account "${account.name}" im Store hinzugefügt/aktualisiert.`);
+    infoLog('accountStore', `Account "${accountWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountWithTimestamp.id}).`);
 
+    // SyncQueue-Logik nur für lokale Änderungen
     if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT,
-          entityId: account.id,
+          entityId: accountWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: account,
+          payload: accountWithTimestamp,
         });
-        infoLog('accountStore', `Account "${account.name}" zur Sync Queue hinzugefügt (CREATE).`);
+        infoLog('accountStore', `Account "${accountWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
-        errorLog('accountStore', `Fehler beim Hinzufügen von Account "${account.name}" zur Sync Queue.`, e);
-        // Hier könnte eine Fehlerbehandlung für den Benutzer erfolgen
+        errorLog('accountStore', `Fehler beim Hinzufügen von Account "${accountWithTimestamp.name}" zur Sync Queue.`, e);
       }
     } else if (!fromSync) {
-      // TODO: Logik für Online-Senden (späterer Schritt, wenn fromSync false ist)
-      debugLog('accountStore', `Account "${account.name}" würde jetzt online gesendet (nicht implementiert).`);
+      debugLog('accountStore', `Account "${accountWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
     }
-    return account;
+    return accountWithTimestamp;
   }
 
-  async function updateAccount(accountUpdates: Account, fromSync = false): Promise<boolean> {
+  async function updateAccount(accountUpdatesData: Account, fromSync = false): Promise<boolean> {
     const webSocketStore = useWebSocketStore();
-    if (!fromSync) {
-      await tenantDbService.updateAccount(accountUpdates);
-    }
-    const idx = accounts.value.findIndex(a => a.id === accountUpdates.id);
-    if (idx !== -1) {
-      accounts.value[idx] = { ...accounts.value[idx], ...accountUpdates };
-      infoLog('accountStore', `Account "${accountUpdates.name}" im Store aktualisiert.`);
 
+    const accountUpdatesWithTimestamp: Account = {
+      ...accountUpdatesData,
+      updated_at: accountUpdatesData.updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (UPDATE)
+      const localAccount = await tenantDbService.getAccountById(accountUpdatesWithTimestamp.id);
+      if (!localAccount) {
+        // Konto existiert lokal nicht, also behandle es wie ein "CREATE" vom Sync
+        infoLog('accountStore', `updateAccount (fromSync): Lokales Konto ${accountUpdatesWithTimestamp.id} nicht gefunden. Behandle als addAccount.`);
+        await addAccount(accountUpdatesWithTimestamp, true); // Rufe addAccount mit fromSync=true auf
+        return true; // Frühzeitiger Ausstieg, da addAccount die weitere Logik übernimmt
+      }
+
+      if (localAccount.updated_at && accountUpdatesWithTimestamp.updated_at &&
+          new Date(localAccount.updated_at) >= new Date(accountUpdatesWithTimestamp.updated_at)) {
+        infoLog('accountStore', `updateAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        // Optional: Store mit lokalen Daten "auffrischen"
+        // const storeIdx = accounts.value.findIndex(a => a.id === localAccount.id);
+        // if (storeIdx !== -1 && JSON.stringify(accounts.value[storeIdx]) !== JSON.stringify(localAccount)) {
+        //   accounts.value[storeIdx] = localAccount;
+        // }
+        return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
+      }
+      // Eingehend ist neuer, fahre fort mit DB-Update und Store-Update
+      await tenantDbService.updateAccount(accountUpdatesWithTimestamp);
+      infoLog('accountStore', `updateAccount (fromSync): Eingehendes Update für Konto ${accountUpdatesWithTimestamp.id} angewendet.`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.updateAccount(accountUpdatesWithTimestamp);
+    }
+
+    const idx = accounts.value.findIndex(a => a.id === accountUpdatesWithTimestamp.id);
+    if (idx !== -1) {
+      // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt
+      if (!fromSync || (accountUpdatesWithTimestamp.updated_at && (!accounts.value[idx].updated_at || new Date(accountUpdatesWithTimestamp.updated_at) > new Date(accounts.value[idx].updated_at!)))) {
+        accounts.value[idx] = { ...accounts.value[idx], ...accountUpdatesWithTimestamp };
+      } else if (fromSync) {
+        warnLog('accountStore', `updateAccount (fromSync): Store-Konto ${accounts.value[idx].id} war neuer als eingehendes ${accountUpdatesWithTimestamp.id}. Store nicht geändert.`);
+      }
+      infoLog('accountStore', `Account "${accountUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${accountUpdatesWithTimestamp.id}).`);
+
+      // SyncQueue-Logik nur für lokale Änderungen
       if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
         try {
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT,
-            entityId: accountUpdates.id,
+            entityId: accountUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: accountUpdates,
+            payload: accountUpdatesWithTimestamp,
           });
-          infoLog('accountStore', `Account "${accountUpdates.name}" zur Sync Queue hinzugefügt (UPDATE).`);
+          infoLog('accountStore', `Account "${accountUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
-          errorLog('accountStore', `Fehler beim Hinzufügen von Account Update "${accountUpdates.name}" zur Sync Queue.`, e);
+          errorLog('accountStore', `Fehler beim Hinzufügen von Account Update "${accountUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
         }
       } else if (!fromSync) {
-        // TODO: Logik für Online-Senden
-        debugLog('accountStore', `Account Update "${accountUpdates.name}" würde jetzt online gesendet (nicht implementiert).`);
+        debugLog('accountStore', `Account Update "${accountUpdatesWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
       }
       return true;
     }
-    // Fall: Konto nicht im Store gefunden, aber es kam ein Update vom Sync.
-    // Das bedeutet, das Konto wurde möglicherweise erstellt, während wir offline waren, und dann aktualisiert.
-    // Wir sollten es als neues Konto hinzufügen.
     if (fromSync) {
-      warnLog('accountStore', `updateAccount: Account ${accountUpdates.id} not found in store during sync. Adding it.`);
-      await addAccount(accountUpdates, true); // Rufe addAccount mit fromSync=true auf
+      warnLog('accountStore', `updateAccount: Account ${accountUpdatesWithTimestamp.id} not found in store during sync. Adding it.`);
+      await addAccount(accountUpdatesWithTimestamp, true);
       return true;
     }
     return false;
@@ -144,71 +194,119 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
-  async function addAccountGroup(accountGroup: AccountGroup, fromSync = false): Promise<AccountGroup> {
+  async function addAccountGroup(accountGroupData: Omit<AccountGroup, 'updated_at'> | AccountGroup, fromSync = false): Promise<AccountGroup> {
     const webSocketStore = useWebSocketStore();
-    if (!fromSync) {
-      await tenantDbService.addAccountGroup(accountGroup);
+
+    const accountGroupWithTimestamp: AccountGroup = {
+      ...accountGroupData,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (accountGroupData as any).updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (CREATE)
+      const localGroup = await tenantDbService.getAccountGroupById(accountGroupWithTimestamp.id);
+      if (localGroup && localGroup.updated_at && accountGroupWithTimestamp.updated_at &&
+          new Date(localGroup.updated_at) >= new Date(accountGroupWithTimestamp.updated_at)) {
+        infoLog('accountStore', `addAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localGroup;
+      }
+      await tenantDbService.addAccountGroup(accountGroupWithTimestamp);
+      infoLog('accountStore', `addAccountGroup (fromSync): Eingehende Gruppe ${accountGroupWithTimestamp.id} angewendet.`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.addAccountGroup(accountGroupWithTimestamp);
     }
 
-    const existingGroupIndex = accountGroups.value.findIndex(g => g.id === accountGroup.id);
+    const existingGroupIndex = accountGroups.value.findIndex(g => g.id === accountGroupWithTimestamp.id);
     if (existingGroupIndex === -1) {
-      accountGroups.value.push(accountGroup);
+      accountGroups.value.push(accountGroupWithTimestamp);
     } else {
-      accountGroups.value[existingGroupIndex] = accountGroup;
-      warnLog('accountStore', `addAccountGroup: AccountGroup ${accountGroup.id} existed, updated instead.`);
+      // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt
+      if (!fromSync || (accountGroupWithTimestamp.updated_at && (!accountGroups.value[existingGroupIndex].updated_at || new Date(accountGroupWithTimestamp.updated_at) > new Date(accountGroups.value[existingGroupIndex].updated_at!)))) {
+        accountGroups.value[existingGroupIndex] = accountGroupWithTimestamp;
+      } else if (fromSync) {
+         warnLog('accountStore', `addAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[existingGroupIndex].id} war neuer als eingehende ${accountGroupWithTimestamp.id}. Store nicht geändert.`);
+      }
     }
-    infoLog('accountStore', `AccountGroup "${accountGroup.name}" im Store hinzugefügt/aktualisiert.`);
+    infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountGroupWithTimestamp.id}).`);
 
+    // SyncQueue-Logik nur für lokale Änderungen
     if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT_GROUP,
-          entityId: accountGroup.id,
+          entityId: accountGroupWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: accountGroup,
+          payload: accountGroupWithTimestamp,
         });
-        infoLog('accountStore', `AccountGroup "${accountGroup.name}" zur Sync Queue hinzugefügt (CREATE).`);
+        infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
-        errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup "${accountGroup.name}" zur Sync Queue.`, e);
+        errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup "${accountGroupWithTimestamp.name}" zur Sync Queue.`, e);
       }
     } else if (!fromSync) {
-      // TODO: Logik für Online-Senden
-      debugLog('accountStore', `AccountGroup "${accountGroup.name}" würde jetzt online gesendet (nicht implementiert).`);
+      debugLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
     }
-    return accountGroup;
+    return accountGroupWithTimestamp;
   }
 
-  async function updateAccountGroup(accountGroupUpdates: AccountGroup, fromSync = false): Promise<boolean> {
+  async function updateAccountGroup(accountGroupUpdatesData: AccountGroup, fromSync = false): Promise<boolean> {
     const webSocketStore = useWebSocketStore();
-    if (!fromSync) {
-      await tenantDbService.updateAccountGroup(accountGroupUpdates);
-    }
-    const idx = accountGroups.value.findIndex(g => g.id === accountGroupUpdates.id);
-    if (idx !== -1) {
-      accountGroups.value[idx] = { ...accountGroups.value[idx], ...accountGroupUpdates };
-      infoLog('accountStore', `AccountGroup "${accountGroupUpdates.name}" im Store aktualisiert.`);
 
+    const accountGroupUpdatesWithTimestamp: AccountGroup = {
+      ...accountGroupUpdatesData,
+      updated_at: accountGroupUpdatesData.updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (UPDATE)
+      const localGroup = await tenantDbService.getAccountGroupById(accountGroupUpdatesWithTimestamp.id);
+      if (!localGroup) {
+        infoLog('accountStore', `updateAccountGroup (fromSync): Lokale Gruppe ${accountGroupUpdatesWithTimestamp.id} nicht gefunden. Behandle als addAccountGroup.`);
+        await addAccountGroup(accountGroupUpdatesWithTimestamp, true);
+        return true;
+      }
+
+      if (localGroup.updated_at && accountGroupUpdatesWithTimestamp.updated_at &&
+          new Date(localGroup.updated_at) >= new Date(accountGroupUpdatesWithTimestamp.updated_at)) {
+        infoLog('accountStore', `updateAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return true;
+      }
+      await tenantDbService.updateAccountGroup(accountGroupUpdatesWithTimestamp);
+      infoLog('accountStore', `updateAccountGroup (fromSync): Eingehendes Update für Gruppe ${accountGroupUpdatesWithTimestamp.id} angewendet.`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.updateAccountGroup(accountGroupUpdatesWithTimestamp);
+    }
+
+    const idx = accountGroups.value.findIndex(g => g.id === accountGroupUpdatesWithTimestamp.id);
+    if (idx !== -1) {
+      if (!fromSync || (accountGroupUpdatesWithTimestamp.updated_at && (!accountGroups.value[idx].updated_at || new Date(accountGroupUpdatesWithTimestamp.updated_at) > new Date(accountGroups.value[idx].updated_at!)))) {
+        accountGroups.value[idx] = { ...accountGroups.value[idx], ...accountGroupUpdatesWithTimestamp };
+      } else if (fromSync) {
+        warnLog('accountStore', `updateAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[idx].id} war neuer als eingehende ${accountGroupUpdatesWithTimestamp.id}. Store nicht geändert.`);
+      }
+      infoLog('accountStore', `AccountGroup "${accountGroupUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${accountGroupUpdatesWithTimestamp.id}).`);
+
+      // SyncQueue-Logik nur für lokale Änderungen
       if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
         try {
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT_GROUP,
-            entityId: accountGroupUpdates.id,
+            entityId: accountGroupUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: accountGroupUpdates,
+            payload: accountGroupUpdatesWithTimestamp,
           });
-          infoLog('accountStore', `AccountGroup "${accountGroupUpdates.name}" zur Sync Queue hinzugefügt (UPDATE).`);
+          infoLog('accountStore', `AccountGroup "${accountGroupUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
-          errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup Update "${accountGroupUpdates.name}" zur Sync Queue.`, e);
+          errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup Update "${accountGroupUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
         }
       } else if (!fromSync) {
-        // TODO: Logik für Online-Senden
-        debugLog('accountStore', `AccountGroup Update "${accountGroupUpdates.name}" würde jetzt online gesendet (nicht implementiert).`);
+        debugLog('accountStore', `AccountGroup Update "${accountGroupUpdatesWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
       }
       return true;
     }
     if (fromSync) {
-      warnLog('accountStore', `updateAccountGroup: AccountGroup ${accountGroupUpdates.id} not found in store during sync. Adding it.`);
-      await addAccountGroup(accountGroupUpdates, true);
+      warnLog('accountStore', `updateAccountGroup: AccountGroup ${accountGroupUpdatesWithTimestamp.id} not found in store during sync. Adding it.`);
+      await addAccountGroup(accountGroupUpdatesWithTimestamp, true);
       return true;
     }
     return false;
