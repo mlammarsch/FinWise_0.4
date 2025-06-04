@@ -5,7 +5,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 1. Backend: WebSocket-Server implementieren
 - [x] 2. Frontend: WebSocket-Client implementieren
 - [x] 3. WebSocket: Online-/Offline-Status signalisieren
-- [ ] 4. Frontend: Offline-Änderungen in IndexedDB Sync Queue speichern (Account, Account Group)
+- [x] 4. Frontend: Offline-Änderungen in IndexedDB Sync Queue speichern (Account, Account Group), **inkl. `tenantId` pro Eintrag**
 - [ ] 5. Frontend: Sync Queue automatisch an Backend senden bei Wiederherstellung der Verbindung
 - [ ] 6. Backend: Empfangene Änderungen aus Sync Queue verarbeiten und in Tenant-Datenbank speichern
 - [ ] 7. Backend: Änderungen erkennen und über WebSocket an Frontend senden (Account, Account Group)
@@ -26,11 +26,13 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [ ] [`tasks/prd-sync-feature.md`](tasks/prd-sync-feature.md): Produktanforderungen für die Synchronisationsfunktion.
 - [ ] [`tasks/task-list-sync-feature.md`](tasks/task-list-sync-feature.md): Diese Taskliste zur Verfolgung des Fortschritts.
 - [ ] [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): UI-Komponente zur Anzeige des Synchronisationsstatus.
-- [x] [`src/types/index.ts`](src/types/index.ts): TypeScript-Typen für WebSocket-Nachrichten und Backend-Status hinzugefügt.
-- [ ] [`src/services/DataService.ts`](src/services/DataService.ts): Möglicherweise Anpassungen für IndexedDB-Zugriff und Sync Queue.
+- [x] [`src/types/index.ts`](src/types/index.ts): TypeScript-Typen für WebSocket-Nachrichten und Backend-Status hinzugefügt. (Keine Änderungen in diesem Task)
+- [ ] [`src/services/DataService.ts`](src/services/DataService.ts): (Keine Änderungen in diesem Task, da Logik in Stores und SyncQueueService)
+- [x] [`src/services/SyncQueueService.ts`](src/services/SyncQueueService.ts): Neu erstellt für Dexie DB und Sync Queue Logik.
 - [ ] [`src/services/TenantService.ts`](src/services/TenantService.ts): Möglicherweise Anpassungen für Tenant-Erstellung und -Verwaltung.
 - [ ] [`src/services/SessionService.ts`](src/services/SessionService.ts): Möglicherweise Anpassungen für Session- und Tenant-Handling.
-- [x] [`src/stores/webSocketStore.ts`](src/stores/webSocketStore.ts): Erweitert um Backend-Status und Anpassung an neue Typen.
+- [x] [`src/stores/webSocketStore.ts`](src/stores/webSocketStore.ts): (Keine Änderungen in diesem Task, nur als Referenz genutzt)
+- [x] [`src/stores/accountStore.ts`](src/stores/accountStore.ts): Angepasst, um Offline-Änderungen für Account und AccountGroup in die Sync Queue zu speichern.
 - [x] [`src/services/WebSocketService.ts`](src/services/WebSocketService.ts): Erweitert zur Verarbeitung von Backend-Statusnachrichten und Aktualisierung des Stores.
 - [ ] [`src/main.ts`](src/main.ts): Initialisiert den WebSocketService und reagiert auf Tenant-Änderungen.
 - [ ] [`src/vite-env.d.ts`](src/vite-env.d.ts): Globale Typdefinition für `window.ApexCharts` hinzugefügt.
