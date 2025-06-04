@@ -1,8 +1,11 @@
 // src/services/WebSocketService.ts
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
-import { infoLog, errorLog, debugLog } from '@/utils/logger';
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage } from '@/types';
+import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry } from '@/types'; // SyncStatus und SyncQueueEntry hinzugefügt
+import { watch } from 'vue'; // watch importiert
+import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
+import { useTenantStore } from '@/stores/tenantStore'; // useTenantStore importiert
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -10,6 +13,9 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 let socket: WebSocket | null = null;
 let reconnectAttempts = 0;
 let explicitClose = false;
+let isSyncProcessRunning = false; // Verhindert mehrfache Ausführung
+
+const tenantDbService = new TenantDbService(); // Instanziiere den Service hier
 
 export const WebSocketService = {
   connect(): void {
@@ -52,6 +58,8 @@ export const WebSocketService = {
         // webSocketStore.setBackendStatus(BackendStatus.ONLINE); // Vorerst nicht, warten auf Nachricht
         webSocketStore.setError(null);
         reconnectAttempts = 0;
+        // Nach erfolgreicher Verbindung prüfen, ob Sync gestartet werden soll
+        this.checkAndProcessSyncQueue();
       };
 
       socket.onmessage = (event) => {
@@ -69,6 +77,8 @@ export const WebSocketService = {
             if (statusMessage.status === BackendStatus.ERROR && statusMessage.message) {
               webSocketStore.setError(`Backend error: ${statusMessage.message}`);
             }
+            // Nach Backend-Status-Update prüfen, ob Sync gestartet werden soll
+            this.checkAndProcessSyncQueue();
           }
           // Hier weitere Nachrichten-Typen behandeln
           // z.B. if (message.type === 'data_update') { ... }
@@ -151,7 +161,119 @@ export const WebSocketService = {
   getBackendStatus(): BackendStatus {
     return useWebSocketStore().backendStatus;
   },
+
+  async processSyncQueue(): Promise<void> {
+    if (isSyncProcessRunning) {
+      debugLog('[WebSocketService]', 'Sync process already running.');
+      return;
+    }
+    isSyncProcessRunning = true;
+    infoLog('[WebSocketService]', 'Starting to process sync queue...');
+
+    const webSocketStore = useWebSocketStore();
+    const tenantStore = useTenantStore();
+    const currentTenantId = tenantStore.activeTenantId;
+
+    if (!currentTenantId) {
+      warnLog('[WebSocketService]', 'Cannot process sync queue: No active tenant.');
+      isSyncProcessRunning = false;
+      return;
+    }
+
+    if (webSocketStore.connectionStatus !== WebSocketConnectionStatus.CONNECTED || webSocketStore.backendStatus !== BackendStatus.ONLINE) {
+      infoLog('[WebSocketService]', 'Cannot process sync queue: Not connected or backend not online.');
+      isSyncProcessRunning = false;
+      return;
+    }
+
+    try {
+      const pendingEntries = await tenantDbService.getPendingSyncEntries(currentTenantId);
+      if (pendingEntries.length === 0) {
+        infoLog('[WebSocketService]', 'No pending entries in sync queue.');
+        isSyncProcessRunning = false;
+        return;
+      }
+
+      infoLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries to sync.`);
+
+      for (const entry of pendingEntries) {
+        // 1. Status auf PROCESSING setzen
+        const statusUpdatedToProcessing = await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PROCESSING);
+        if (!statusUpdatedToProcessing) {
+          errorLog('[WebSocketService]', `Failed to update sync entry ${entry.id} to PROCESSING. Skipping.`);
+          continue;
+        }
+
+        // 2. Nachricht vorbereiten und senden
+        const messageToSend = {
+          type: 'process_sync_entry',
+          payload: entry,
+        };
+
+        infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
+        const sent = this.sendMessage(messageToSend);
+
+        if (!sent) {
+          errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. Setting back to PENDING.`);
+          // Bei direktem Sendefehler zurück auf PENDING
+          await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
+        } else {
+          // Erfolgreich gesendet (aber noch nicht vom Backend bestätigt)
+          // Die Bestätigung und das Setzen auf SYNCED/FAILED erfolgt in Schritt 8
+          debugLog('[WebSocketService]', `Sync entry ${entry.id} sent to backend, status is PROCESSING.`);
+        }
+      }
+    } catch (error) {
+      errorLog('[WebSocketService]', 'Error processing sync queue:', error);
+    } finally {
+      isSyncProcessRunning = false;
+      infoLog('[WebSocketService]', 'Finished processing sync queue attempt.');
+    }
+  },
+
+  checkAndProcessSyncQueue(): void {
+    const webSocketStore = useWebSocketStore();
+    if (
+      webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTED &&
+      webSocketStore.backendStatus === BackendStatus.ONLINE
+    ) {
+      infoLog('[WebSocketService]', 'Connection re-established and backend online. Triggering sync queue processing.');
+      this.processSyncQueue();
+    } else {
+      debugLog('[WebSocketService]', 'Conditions not met for sync queue processing.', {
+        conn: webSocketStore.connectionStatus,
+        backend: webSocketStore.backendStatus,
+      });
+    }
+  },
+
+  initialize(): void {
+    const webSocketStore = useWebSocketStore();
+    // Beobachte Änderungen im connectionStatus und backendStatus
+    watch(
+      [webSocketStore.connectionStatus, webSocketStore.backendStatus],
+      ([newConnectionStatus, newBackendStatus]: [WebSocketConnectionStatus, BackendStatus], [oldConnectionStatus, oldBackendStatus]: [WebSocketConnectionStatus, BackendStatus]) => {
+        debugLog('[WebSocketService]', 'Status changed:', {
+          connNew: newConnectionStatus, backendNew: newBackendStatus,
+          connOld: oldConnectionStatus, backendOld: oldBackendStatus,
+        });
+        this.checkAndProcessSyncQueue();
+      },
+      { immediate: false } // Nicht sofort ausführen, sondern nur bei Änderung nach Initialisierung
+    );
+    infoLog('[WebSocketService]', 'Initialized and watching for connection/backend status changes to trigger sync.');
+
+    // Optionale automatische Verbindung, falls gewünscht und Tenant vorhanden
+    // const session = useSessionStore();
+    // if (session.currentTenantId) {
+    //   this.connect();
+    // }
+  }
 };
+
+// WebSocketService.initialize(); // Initialisierung aufrufen, damit das Watching startet
+// Die Initialisierung sollte einmalig beim App-Start erfolgen, z.B. in main.ts oder App.vue
+// Für dieses Beispiel wird es hier aufgerufen, aber in einer echten App wäre ein zentralerer Ort besser.
 
 // Automatische Verbindung beim Laden des Services, wenn ein Tenant ausgewählt ist.
 // Dies kann auch an anderer Stelle in der Anwendung initiiert werden, z.B. nach dem Login oder Tenant-Wechsel.

@@ -229,4 +229,65 @@ export class TenantDbService {
       throw err; // Fehler weiterwerfen, damit der aufrufende Code darauf reagieren kann
     }
   }
+
+  /**
+   * Ruft alle ausstehenden Sync-Queue-Einträge für einen bestimmten Mandanten ab,
+   * sortiert nach Zeitstempel in aufsteigender Reihenfolge.
+   * @param tenantId Die ID des Mandanten.
+   * @returns Ein Array von SyncQueueEntry-Objekten.
+   */
+  async getPendingSyncEntries(tenantId: string): Promise<SyncQueueEntry[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getPendingSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const entries = await this.db.syncQueue
+        .where({ tenantId: tenantId, status: SyncStatus.PENDING })
+        .sortBy('timestamp');
+      debugLog('TenantDbService', `Ausstehende Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+      return entries;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen ausstehender Sync-Einträge für Mandant ${tenantId}`, { error: err });
+      return [];
+    }
+  }
+
+  /**
+   * Aktualisiert den Status eines Sync-Queue-Eintrags.
+   * @param entryId Die ID des Sync-Queue-Eintrags.
+   * @param newStatus Der neue Status.
+   * @param error Optional: Eine Fehlermeldung, falls der Status FAILED ist.
+   */
+  async updateSyncQueueEntryStatus(entryId: string, newStatus: SyncStatus, error?: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const updateData: Partial<SyncQueueEntry> = { status: newStatus };
+      if (newStatus === SyncStatus.PROCESSING) {
+        updateData.attempts = (await this.db.syncQueue.get(entryId))?.attempts ?? 0 + 1;
+        updateData.lastAttempt = Date.now();
+      }
+      if (newStatus === SyncStatus.FAILED && error) {
+        updateData.error = error;
+      }
+      if (newStatus === SyncStatus.SYNCED) {
+        updateData.error = undefined; // Fehler entfernen bei Erfolg
+      }
+
+      const updatedCount = await this.db.syncQueue.update(entryId, updateData);
+      if (updatedCount > 0) {
+        debugLog('TenantDbService', `Status für SyncQueue-Eintrag ${entryId} auf ${newStatus} aktualisiert.`);
+        return true;
+      } else {
+        warnLog('TenantDbService', `Konnte SyncQueue-Eintrag ${entryId} für Status-Update nicht finden.`);
+        return false;
+      }
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren des Status für SyncQueue-Eintrag ${entryId}`, { error: err });
+      return false;
+    }
+  }
 }
