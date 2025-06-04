@@ -250,28 +250,42 @@ export enum BackendStatus {
 
 export interface WebSocketMessageBase {
   type: string;
-  // payload?: unknown; // Generischer Payload wird hier nicht mehr benötigt, wenn StatusMessage ihn nicht verwendet
 }
 
 export interface StatusMessage extends WebSocketMessageBase {
   type: 'status';
   status: BackendStatus;
-  message?: string; // Optionale Nachricht zum Status
-  // payload entfernt, da Status und Message direkt auf der obersten Ebene sind
+  message?: string;
 }
 
-// Hier könnten weitere spezifische Nachrichtentypen definiert werden, z.B.
-// export interface DataUpdateMessage extends WebSocketMessageBase {
-//   type: 'data_update';
-//   payload: {
-//     entity: string;
-//     action: 'created' | 'updated' | 'deleted';
-//     data: any;
-//   };
-// }
+// Enums für DataUpdateNotificationMessage, basierend auf Backend-Definitionen
+export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity' zu vermeiden
+  ACCOUNT = 'Account',
+  ACCOUNT_GROUP = 'AccountGroup',
+}
+
+// SyncOperationType ist bereits unten definiert und wird hier wiederverwendet.
+
+// Payload-Typen für DataUpdateNotificationMessage
+export interface DeletePayload {
+  id: string;
+}
+
+// NotificationDataPayload ist eine Union der möglichen Datenstrukturen.
+// Wir verwenden die bestehenden Interfaces Account und AccountGroup.
+export type NotificationDataPayload = Account | AccountGroup | DeletePayload;
+
+export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
+  type: 'data_update'; // type wurde im Backend als event_type bezeichnet, hier konsistent mit anderen Messages 'type'
+  event_type: 'data_update'; // Behalten wir event_type für Kompatibilität mit Backend-Benennung
+  tenant_id: string;
+  entity_type: EntityTypeEnum;
+  operation_type: SyncOperationType; // Wiederverwendung des bestehenden Enums
+  data: NotificationDataPayload;
+}
 
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage; // | DataUpdateMessage etc.
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {
@@ -290,7 +304,7 @@ export enum SyncStatus {
 export interface SyncQueueEntry {
   id: string; // Eindeutige ID für den Queue-Eintrag (z.B. UUID)
   tenantId: string; // Mandanten-ID
-  entityType: 'Account' | 'AccountGroup'; // Typ der Entität
+  entityType: EntityTypeEnum; // Typ der Entität, Verwendung des neuen Enums
   entityId: string; // ID der betroffenen Entität
   operationType: SyncOperationType; // Art der Operation
   payload: Account | AccountGroup | { id: string } | null; // Die Daten bei create/update, nur ID bei delete

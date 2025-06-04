@@ -2,10 +2,11 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry } from '@/types'; // SyncStatus und SyncQueueEntry hinzugefügt
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload } from '@/types'; // Erweiterte Importe
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
 import { useTenantStore } from '@/stores/tenantStore'; // useTenantStore importiert
+import { useAccountStore } from '@/stores/accountStore'; // accountStore importiert
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -62,11 +63,13 @@ export const WebSocketService = {
         this.checkAndProcessSyncQueue();
       };
 
-      socket.onmessage = (event) => {
+      socket.onmessage = async (event) => { // async hinzugefügt
         try {
           const message = JSON.parse(event.data as string) as ServerWebSocketMessage;
           debugLog('[WebSocketService]', 'Message received:', message);
           webSocketStore.setLastMessage(message);
+          const tenantStore = useTenantStore(); // tenantStore Instanz
+          const accountStore = useAccountStore(); // accountStore Instanz
 
           // Nachrichtenbehandlung für Backend-Status
           if (message.type === 'status') {
@@ -79,9 +82,53 @@ export const WebSocketService = {
             }
             // Nach Backend-Status-Update prüfen, ob Sync gestartet werden soll
             this.checkAndProcessSyncQueue();
+          } else if (message.type === 'data_update' && message.event_type === 'data_update') { // event_type zusätzlich prüfen
+            const updateMessage = message as DataUpdateNotificationMessage;
+            infoLog('[WebSocketService]', 'DataUpdateNotificationMessage received:', updateMessage);
+
+            // Prüfen, ob die tenant_id mit dem aktiven Mandanten übereinstimmt
+            if (updateMessage.tenant_id !== tenantStore.activeTenantId) {
+              warnLog('[WebSocketService]', `Received DataUpdateNotification for tenant ${updateMessage.tenant_id}, but active tenant is ${tenantStore.activeTenantId}. Ignoring.`);
+              return;
+            }
+
+            // Verarbeitung basierend auf entity_type und operation_type
+            try {
+              switch (updateMessage.entity_type) {
+                case EntityTypeEnum.ACCOUNT:
+                  const accountData = updateMessage.data as Account | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await accountStore.addAccount(accountData as Account, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Account ${ (accountData as Account).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await accountStore.updateAccount(accountData as Account, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Account ${ (accountData as Account).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    await accountStore.deleteAccount(accountData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Account ${accountData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.ACCOUNT_GROUP:
+                  const accountGroupData = updateMessage.data as AccountGroup | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await accountStore.addAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AccountGroup ${ (accountGroupData as AccountGroup).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await accountStore.updateAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AccountGroup ${ (accountGroupData as AccountGroup).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    await accountStore.deleteAccountGroup(accountGroupData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AccountGroup ${accountGroupData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                default:
+                  warnLog('[WebSocketService]', `Unknown entity_type: ${updateMessage.entity_type}`);
+              }
+            } catch (e) {
+              errorLog('[WebSocketService]', 'Error processing DataUpdateNotificationMessage:', e, updateMessage);
+              // Hier könnte eine spezifischere Fehlerbehandlung erfolgen
+            }
           }
-          // Hier weitere Nachrichten-Typen behandeln
-          // z.B. if (message.type === 'data_update') { ... }
 
         } catch (e) {
           errorLog('[WebSocketService]', 'Error parsing message from server:', e, event.data);

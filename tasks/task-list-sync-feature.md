@@ -9,7 +9,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 5. Frontend: Sync Queue automatisch an Backend senden bei Wiederherstellung der Verbindung
 - [x] 6. Backend: Empfangene Änderungen aus Sync Queue verarbeiten und in Tenant-Datenbank speichern
 - [x] 7. Backend: Änderungen erkennen und über WebSocket an Frontend senden (Account, Account Group)
-- [ ] 8. Frontend: Vom Backend empfangene Änderungen verarbeiten und lokale IndexedDB aktualisieren
+- [x] 8. Frontend: Vom Backend empfangene Änderungen verarbeiten und lokale IndexedDB aktualisieren
 - [ ] 9. Synchronisation: Bidirektionalität sicherstellen
 - [ ] 10. Synchronisation: Löschoperationen korrekt verarbeiten
 - [ ] 11. Backend: Tenant-Zuordnung und Speicherung in korrekter Datenbank sicherstellen
@@ -26,13 +26,13 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [ ] [`tasks/prd-sync-feature.md`](tasks/prd-sync-feature.md): Produktanforderungen für die Synchronisationsfunktion.
 - [ ] [`tasks/task-list-sync-feature.md`](tasks/task-list-sync-feature.md): Diese Taskliste zur Verfolgung des Fortschritts.
 - [ ] [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): UI-Komponente zur Anzeige des Synchronisationsstatus.
-- [x] [`src/types/index.ts`](src/types/index.ts:1): TypeScript-Typen für WebSocket-Nachrichten, Backend-Status und Sync-Queue (`SyncQueueEntry`, `SyncOperationType`, `SyncStatus`) hinzugefügt/aktualisiert.
+- [x] [`src/types/index.ts`](src/types/index.ts:1): TypeScript-Typen erweitert um `DataUpdateNotificationMessage`, `EntityTypeEnum`, `DeletePayload`, `NotificationDataPayload` zur Verarbeitung von Backend-Benachrichtigungen. `ServerWebSocketMessage` angepasst.
 - [ ] [`src/services/DataService.ts`](src/services/DataService.ts:1): (Keine Änderungen in diesem Schritt, da Accounts/AccountGroups über TenantDbService laufen)
 - [x] [`src/stores/tenantStore.ts`](src/stores/tenantStore.ts:1): Dexie-Datenbankdefinition (`FinwiseTenantSpecificDB`) um `syncQueue`-Tabelle erweitert. (Keine Änderung in diesem Schritt)
 - [x] [`src/services/TenantDbService.ts`](src/services/TenantDbService.ts:1): Erweitert um `getPendingSyncEntries` und `updateSyncQueueEntryStatus` für die Verarbeitung der Sync Queue.
-- [x] [`src/stores/accountStore.ts`](src/stores/accountStore.ts:1): CRUD-Operationen für Accounts und AccountGroups modifiziert, um Änderungen bei Offline-Status in die Sync Queue zu schreiben. (Keine Änderung in diesem Schritt)
+- [x] [`src/stores/accountStore.ts`](src/stores/accountStore.ts:1): CRUD-Operationen angepasst mit `fromSync`-Flag, um bei Backend-Updates keine neuen Sync-Queue-Einträge zu erstellen und den Store-State zu aktualisieren.
 - [x] [`src/stores/webSocketStore.ts`](src/stores/webSocketStore.ts:1): Dient zur Überprüfung des Online-/Offline-Status. (Keine Änderung in diesem Schritt, wird aber vom WebSocketService genutzt)
-- [x] [`src/services/WebSocketService.ts`](src/services/WebSocketService.ts:1): Implementiert die Logik zur Erkennung der Verbindungswiederherstellung und das automatische Senden der Sync Queue (`processSyncQueue`, `checkAndProcessSyncQueue`, `initialize` mit `watch`).
+- [x] [`src/services/WebSocketService.ts`](src/services/WebSocketService.ts:1): Erweitert um `onmessage`-Handler zur Verarbeitung von `data_update`-Nachrichten vom Backend; löst entsprechende Aktionen im `accountStore` aus, prüft `tenant_id`.
 - [ ] [`src/main.ts`](src/main.ts:1): Initialisiert den WebSocketService und reagiert auf Tenant-Änderungen. (Hier sollte `WebSocketService.initialize()` aufgerufen werden)
 - [ ] [`src/vite-env.d.ts`](src/vite-env.d.ts): Globale Typdefinition für `window.ApexCharts` hinzugefügt.
 - [x] `../FinWise_0.4_BE/app/websocket/schemas.py`: Pydantic-Modelle für WebSocket-Nachrichten erweitert (`SyncQueueEntry`, `ProcessSyncEntryMessage`, `ServerEventType`, `NotificationDataPayload`, `DataUpdateNotificationMessage`).
