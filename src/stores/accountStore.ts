@@ -118,11 +118,13 @@ export const useAccountStore = defineStore('account', () => {
     const webSocketStore = useWebSocketStore();
     const accountToDelete = accounts.value.find(a => a.id === accountId);
 
-    if (!fromSync) {
-      await tenantDbService.deleteAccount(accountId);
-    }
+    // Lokale DB immer zuerst (oder zumindest vor dem Hinzufügen zur SyncQueue) aktualisieren,
+    // unabhängig davon, ob es vom Sync kommt oder eine lokale Änderung ist,
+    // um den lokalen Zustand konsistent zu halten.
+    // Die `fromSync`-Logik verhindert dann nur das erneute Senden an den Server.
+    await tenantDbService.deleteAccount(accountId);
     accounts.value = accounts.value.filter(a => a.id !== accountId);
-    infoLog('accountStore', `Account mit ID "${accountId}" aus Store entfernt.`);
+    infoLog('accountStore', `Account mit ID "${accountId}" aus Store und lokaler DB entfernt.`);
 
     if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE && accountToDelete) {
       try {
@@ -221,11 +223,12 @@ export const useAccountStore = defineStore('account', () => {
     }
     const groupToDelete = accountGroups.value.find(g => g.id === accountGroupId);
 
-    if (!fromSync) {
-      await tenantDbService.deleteAccountGroup(accountGroupId);
-    }
+    // Lokale DB immer zuerst (oder zumindest vor dem Hinzufügen zur SyncQueue) aktualisieren,
+    // unabhängig davon, ob es vom Sync kommt oder eine lokale Änderung ist,
+    // um den lokalen Zustand konsistent zu halten.
+    await tenantDbService.deleteAccountGroup(accountGroupId);
     accountGroups.value = accountGroups.value.filter(g => g.id !== accountGroupId);
-    infoLog('accountStore', `AccountGroup mit ID "${accountGroupId}" aus Store entfernt.`);
+    infoLog('accountStore', `AccountGroup mit ID "${accountGroupId}" aus Store und lokaler DB entfernt.`);
 
     if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE && groupToDelete) {
       try {
