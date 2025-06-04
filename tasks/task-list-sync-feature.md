@@ -15,7 +15,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 11. Backend: Tenant-Zuordnung und Speicherung in korrekter Datenbank sicherstellen (Überprüfung abgeschlossen, keine Änderungen notwendig)
 - [x] 12. Synchronisation: Konfliktlösung nach "last write wins" implementieren
 - [x] 13. Backend: Datenbankmodell für Account und Account Group implementieren/verifizieren (Modelle und Schemas für `balance` und `creditLimit` auf `Numeric`/`Decimal` umgestellt; Konsistenz mit Frontend-Typen sichergestellt)
-- [ ] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung
+- [x] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung (Überprüfung der Kompatibilität abgeschlossen, bestehende Implementierung ist robust, keine Änderungen notwendig)
 - [ ] 15. WebSocket: Sichere Verbindung und Verschlüsselung (SOLLTE)
 - [ ] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
 - [ ] 17. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Manuelle Auslösung der Synchronisation ermöglichen
@@ -42,5 +42,5 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] `../FinWise_0.4_BE/app/models/financial_models.py`: SQLAlchemy-Modelle `Account` und `AccountGroup` angepasst (`balance`, `creditLimit` auf `Numeric`).
 - [x] `../FinWise_0.4_BE/app/crud/crud_account.py`: CRUD-Operationen angepasst, um `updated_at` aus Payloads zu übernehmen; WebSocket-Benachrichtigung an `SyncService` delegiert.
 - [x] `../FinWise_0.4_BE/app/crud/crud_account_group.py`: CRUD-Operationen angepasst, um `updated_at` aus Payloads zu übernehmen; WebSocket-Benachrichtigung an `SyncService` delegiert.
-- [x] `../FinWise_0.4_BE/app/services/sync_service.py`: LWW-Logik implementiert: Vergleicht `updated_at`-Zeitstempel bei `CREATE`/`UPDATE` aus `syncQueue` und sendet entsprechende Benachrichtigungen.
-- [ ] `../FinWise_0.4_BE/app/db/tenant_db.py`: (Gelesen, um die Erstellung von Mandanten-DB-Sitzungen zu verstehen; `TenantBase.metadata.create_all` wird nun im `sync_service` verwendet).
+- [x] `../FinWise_0.4_BE/app/services/sync_service.py`: LWW-Logik implementiert; stellt sicher, dass `get_tenant_db_session` (und damit die DB-Erstellung via `create_tenant_db_engine`) vor der Verarbeitung von Sync-Einträgen für neue Mandanten aufgerufen wird.
+- [x] `../FinWise_0.4_BE/app/db/tenant_db.py`: `create_tenant_db_engine` und `TenantBase.metadata.create_all` sind für die dynamische Erstellung von Mandanten-DBs und Tabellen verantwortlich (verifiziert).
