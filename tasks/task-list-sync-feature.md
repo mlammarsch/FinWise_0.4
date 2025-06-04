@@ -12,7 +12,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 8. Frontend: Vom Backend empfangene Änderungen verarbeiten und lokale IndexedDB aktualisieren
 - [ ] 9. Synchronisation: Bidirektionalität sicherstellen (Backend-Anpassungen zur Vermeidung von Nachrichten-Loops implementiert; Frontend-Tests und Gesamtüberprüfung ausstehend)
 - [x] 10. Synchronisation: Löschoperationen korrekt verarbeiten
-- [ ] 11. Backend: Tenant-Zuordnung und Speicherung in korrekter Datenbank sicherstellen
+- [x] 11. Backend: Tenant-Zuordnung und Speicherung in korrekter Datenbank sicherstellen (Überprüfung abgeschlossen, keine Änderungen notwendig)
 - [ ] 12. Synchronisation: Konfliktlösung nach "last write wins" implementieren
 - [ ] 13. Backend: Datenbankmodell für Account und Account Group implementieren
 - [ ] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung
