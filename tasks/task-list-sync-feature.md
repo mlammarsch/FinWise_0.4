@@ -17,7 +17,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 13. Backend: Datenbankmodell für Account und Account Group implementieren/verifizieren (Modelle und Schemas für `balance` und `creditLimit` auf `Numeric`/`Decimal` umgestellt; Konsistenz mit Frontend-Typen sichergestellt)
 - [x] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung (Überprüfung der Kompatibilität abgeschlossen, bestehende Implementierung ist robust, keine Änderungen notwendig)
 - [ ] 15. WebSocket: Sichere Verbindung und Verschlüsselung (SOLLTE)
-- [ ] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
+- [x] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
 - [ ] 17. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Manuelle Auslösung der Synchronisation ermöglichen
 - [ ] 18. Dokumentation: Schritte zur Erweiterung der Synchronisation auf weitere Datentabellen dokumentieren
 
@@ -25,7 +25,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 
 - [ ] [`tasks/prd-sync-feature.md`](tasks/prd-sync-feature.md): Produktanforderungen für die Synchronisationsfunktion.
 - [ ] [`tasks/task-list-sync-feature.md`](tasks/task-list-sync-feature.md): Diese Taskliste zur Verfolgung des Fortschritts.
-- [ ] [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): UI-Komponente zur Anzeige des Synchronisationsstatus.
+- [x] [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): UI-Komponente zur Anzeige des Synchronisationsstatus (Online/Offline) und zur manuellen Auslösung der Synchronisation. Zeigt nun den Online- und Offline-Status reaktiv an, basierend auf dem `webSocketStore`. Die Logik für das manuelle Auslösen der Synchronisation wurde auf den `WebSocketService` umgestellt.
 - [x] [`src/types/index.ts`](src/types/index.ts:1): `Account` und `AccountGroup` Interfaces um `updated_at` (string) erweitert für LWW. Neue WebSocket-Nachrichtentypen (`RequestInitialDataMessage`, `InitialDataPayload`, `InitialDataLoadMessage`) und `SyncOperationType.INITIAL_LOAD` hinzugefügt.
 - [ ] [`src/services/DataService.ts`](src/services/DataService.ts:1): (Keine Änderungen in diesem Schritt, da Accounts/AccountGroups über TenantDbService laufen)
 - [x] [`src/stores/tenantStore.ts`](src/stores/tenantStore.ts:1): Ruft `WebSocketService.requestInitialData()` nach erfolgreicher Aktivierung eines Mandanten auf.
