@@ -19,7 +19,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [ ] 15. WebSocket: Sichere Verbindung und Verschlüsselung (SOLLTE)
 - [x] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
 - [x] 17. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Manuelle Auslösung der Synchronisation ermöglichen
-- [ ] 18. Dokumentation: Schritte zur Erweiterung der Synchronisation auf weitere Datentabellen dokumentieren
+- [x] 18. Dokumentation: Schritte zur Erweiterung der Synchronisation auf weitere Datentabellen dokumentieren
 
 ## Relevante Dateien
 
@@ -44,3 +44,4 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] `../FinWise_0.4_BE/app/crud/crud_account_group.py`: CRUD-Operationen angepasst, um `updated_at` aus Payloads zu übernehmen; WebSocket-Benachrichtigung an `SyncService` delegiert. (Keine Änderung in diesem Schritt)
 - [x] `../FinWise_0.4_BE/app/services/sync_service.py`: LWW-Logik implementiert; neue Funktion `get_initial_data_for_tenant` hinzugefügt, um alle Accounts und AccountGroups für einen Mandanten abzurufen.
 - [x] `../FinWise_0.4_BE/app/db/tenant_db.py`: `create_tenant_db_engine` und `TenantBase.metadata.create_all` sind für die dynamische Erstellung von Mandanten-DBs und Tabellen verantwortlich (verifiziert). (Keine Änderung in diesem Schritt)
+- [x] [`docs/extending-synchronization.md`](docs/extending-synchronization.md:1): Dokumentation zur Erweiterung der Synchronisationsfunktion auf neue Datenmodelle.
