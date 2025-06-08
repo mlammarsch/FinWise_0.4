@@ -264,6 +264,7 @@ export interface StatusMessage extends WebSocketMessageBase {
 export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity' zu vermeiden
   ACCOUNT = 'Account',
   ACCOUNT_GROUP = 'AccountGroup',
+  // Weitere Entitätstypen hier bei Bedarf
 }
 
 // SyncOperationType ist bereits unten definiert und wird hier wiederverwendet.
@@ -286,14 +287,36 @@ export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
   data: NotificationDataPayload;
 }
 
+// Nachricht vom Client zum Server, um initiale Daten anzufordern
+export interface RequestInitialDataMessage extends WebSocketMessageBase {
+  type: 'request_initial_data';
+  tenant_id: string;
+}
+
+// Payload für die Antwort des Servers mit den initialen Daten
+export interface InitialDataPayload {
+  accounts: Account[];
+  account_groups: AccountGroup[];
+}
+
+// Nachricht vom Server zum Client mit den initialen Daten
+export interface InitialDataLoadMessage extends WebSocketMessageBase {
+  type: 'initial_data_load'; // Unterscheidung von 'data_update'
+  event_type: 'initial_data_load'; // Konsistent mit Backend-Schema
+  tenant_id: string;
+  payload: InitialDataPayload;
+}
+
+
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage;
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
+  INITIAL_LOAD = 'initial_load', // Hinzugefügt für den initialen Ladevorgang
 }
 
 export enum SyncStatus {

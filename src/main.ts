@@ -44,6 +44,7 @@ app.mount('#app');
 // Eine robustere Lösung könnte dies in einem Vue-Lifecycle-Hook (z.B. onMounted in App.vue)
 // oder nach erfolgreichem Login/Tenant-Auswahl tun.
 router.isReady().then(() => {
+  WebSocketService.initialize(); // WebSocketService initialisieren, um Watcher zu aktivieren
   const session = useSessionStore();
   if (session.currentTenantId) {
     WebSocketService.connect();

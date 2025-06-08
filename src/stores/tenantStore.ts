@@ -45,8 +45,9 @@ class FinwiseUserDBGlobal extends Dexie {
 const userDB = new FinwiseUserDBGlobal();
 
 import { useAccountStore } from './accountStore';
-import { useCategoryStore } from './categoryStore';
+// import { useCategoryStore } from './categoryStore'; // Vorerst nicht benötigt
 import { useSessionStore } from './sessionStore';
+import { WebSocketService } from '@/services/WebSocketService'; // Korrigierter Import-Case
 
 // Definiere den expliziten Typ für den Store-State
 interface TenantStoreState {
@@ -189,10 +190,15 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       return true;
     }
 
-    if (activeTenantDB.value) {
-      activeTenantDB.value.close();
+    const previousDbInstance = activeTenantDB.value;
+    if (previousDbInstance instanceof Dexie) {
+      previousDbInstance.close();
       activeTenantDB.value = null;
-      debugLog('tenantStore', 'Vorherige aktive Mandanten-DB geschlossen.');
+      debugLog('tenantStore', 'Vorherige aktive Mandanten-DB (Dexie-Instanz) geschlossen.');
+    } else if (previousDbInstance) {
+      // Fallback, falls es ein Objekt ist, aber keine Dexie-Instanz (sollte nicht passieren)
+      warnLog('tenantStore', 'Vorherige aktive Mandanten-DB war keine Dexie-Instanz, konnte nicht sicher geschlossen werden.', previousDbInstance);
+      activeTenantDB.value = null;
     }
 
     if (!id) {
@@ -202,11 +208,43 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       return true;
     }
 
-    const tenantExists = tenants.value.find(t => t.uuid === id);
+    let tenantExists = tenants.value.find(t => t.uuid === id);
+
     if (!tenantExists) {
-      errorLog('tenantStore', `setActiveTenant: Tenant mit ID ${id} nicht gefunden.`);
-      activeTenantId.value = null;
-      localStorage.removeItem('finwise_activeTenant');
+      // Wenn der Tenant nicht sofort gefunden wird, versuchen, die Tenant-Liste neu zu laden.
+      // Dies könnte helfen, wenn setActiveTenant aufgerufen wird, bevor loadTenants abgeschlossen ist
+      // oder bevor die Synchronisation der Mandanten vom Backend die lokale userDB aktualisiert hat.
+      warnLog('tenantStore', `setActiveTenant: Tenant ${id} nicht sofort in der Liste gefunden. Versuche erneutes Laden der Tenants aus der userDB.`);
+      await loadTenants(); // Sicherstellen, dass die Liste aus der userDB aktuell ist
+      tenantExists = tenants.value.find(t => t.uuid === id); // Erneuter Versuch
+    }
+
+    if (!tenantExists) {
+      errorLog('tenantStore', `setActiveTenant: Tenant mit ID ${id} auch nach erneutem Laden aus userDB nicht gefunden. Mandantenspezifische DB wird nicht geöffnet.`);
+      // Setze den aktiven Tenant zurück, falls er es war
+      if (activeTenantId.value === id) {
+        activeTenantId.value = null;
+        localStorage.removeItem('finwise_activeTenant');
+        const dbInstanceToClose = activeTenantDB.value; // Wert aus Ref holen
+        // Dieser Block ist innerhalb von if (activeTenantId.value === id)
+        // und behandelt den Fall, dass der Tenant nicht gefunden wurde,
+        // aber vorher vielleicht als aktiv galt.
+        const dbToCloseDueToNotFoundTenant = activeTenantDB.value;
+        if (dbToCloseDueToNotFoundTenant instanceof Dexie) {
+          dbToCloseDueToNotFoundTenant.close();
+          activeTenantDB.value = null;
+          debugLog('tenantStore', 'setActiveTenant: DB für nicht gefundenen (aber zuvor aktiven) Tenant geschlossen.');
+        } else if (dbToCloseDueToNotFoundTenant) {
+           warnLog('tenantStore', 'setActiveTenant: DB-Instanz für nicht gefundenen Tenant war keine Dexie-Instanz.', dbToCloseDueToNotFoundTenant);
+           activeTenantDB.value = null;
+        }
+      }
+      // Informiere auch den sessionStore, dass dieser Tenant nicht gültig ist
+      const session = useSessionStore();
+      if (session.currentTenantId === id) {
+        session.currentTenantId = null; // Dies sollte idealerweise einen neuen Login-Flow oder Tenant-Auswahl triggern
+        warnLog('tenantStore', `setActiveTenant: currentTenantId im sessionStore für ungültigen Tenant ${id} zurückgesetzt.`);
+      }
       return false;
     }
 
@@ -221,6 +259,15 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       activeTenantDB.value = tenantDB;
       session.currentTenantId = id;
       infoLog('tenantStore', `Tenant "${tenantExists.tenantName}" (DB: ${dbName}) aktiviert und DB verbunden. SessionStore aktualisiert.`);
+
+      // Nach erfolgreicher Aktivierung und DB-Verbindung, initiale Daten anfordern
+      // Stellen Sie sicher, dass der WebSocket verbunden ist, bevor Sie dies tun.
+      // Dies könnte auch im WebSocketService selbst behandelt werden, wenn sich der Tenant ändert und eine Verbindung besteht.
+      // Fürs Erste rufen wir es hier direkt auf, unter der Annahme, dass der WS-Connect-Prozess
+      // auch durch die Tenant-Änderung getriggert wird oder bereits verbunden ist.
+      // Der initiale Datenabruf wird nun vom WebSocketService gehandhabt,
+      // der auf Änderungen des activeTenantId und des Verbindungsstatus reagiert.
+      debugLog('tenantStore', `setActiveTenant: Initialer Datenabruf für Tenant ${id} wird vom WebSocketService übernommen.`);
       return true;
     } catch (err) {
       errorLog('tenantStore', `Fehler beim Verbinden/Initialisieren der Mandanten-DB für ${id}`, err);
