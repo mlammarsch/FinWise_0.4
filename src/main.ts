@@ -9,7 +9,7 @@ import { seedData } from './mock/seed_kaputt';
 import { Icon } from '@iconify/vue';
 import ApexCharts from 'apexcharts';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { initializeLogger } from '@/utils/logger';
+import { initializeLogger, debugLog } from '@/utils/logger'; // debugLog importiert
 import { SessionService } from '@/services/SessionService';
 import { PlanningService } from '@/services/PlanningService';
 import { WebSocketService } from '@/services/WebSocketService'; // WebSocketService importieren
@@ -50,14 +50,22 @@ router.isReady().then(() => {
   const session = useSessionStore();
   const webSocketStore = useWebSocketStore(); // WebSocketStore Instanz
 
+  debugLog('[main.ts]', 'Initial check for WebSocket connection:', { tenantId: session.currentTenantId });
   if (session.currentTenantId) {
+    debugLog('[main.ts]', `Attempting initial WebSocket connect for tenant: ${session.currentTenantId}`);
     WebSocketService.connect(); // Initiale Verbindung, falls Tenant schon da
+  } else {
+    debugLog('[main.ts]', 'No currentTenantId found at initial connect attempt.');
   }
 
   // Kombinierter Watcher für Tenant-Änderung und WebSocket-Status
   watch(
     [() => session.currentTenantId, () => webSocketStore.connectionStatus, () => webSocketStore.backendStatus],
     ([newTenantId, connStatus, backendStatus], [oldTenantId, oldConnStatus, oldBackendStatus]) => {
+      debugLog('[main.ts Watcher]', 'State changed:', {
+        newTenantId, connStatus, backendStatus,
+        oldTenantId, oldConnStatus, oldBackendStatus,
+      });
       const tenantJustChanged = newTenantId && newTenantId !== oldTenantId;
       const connectionJustEstablished = connStatus === WebSocketConnectionStatus.CONNECTED && oldConnStatus !== WebSocketConnectionStatus.CONNECTED;
       const backendJustOnline = backendStatus === BackendStatus.ONLINE && oldBackendStatus !== BackendStatus.ONLINE;
@@ -78,8 +86,10 @@ router.isReady().then(() => {
         // Ein einfaches Flag im tenantStore oder accountStore (z.B. initialLoadCompletedForTenant[tenantId])
         // wäre hier noch besser, um mehrfache Anfragen zu vermeiden.
         // Fürs Erste rufen wir es auf, wenn die Bedingungen erfüllt sind.
-        infoLog('[main.ts]', `Conditions met for initial data request for tenant ${newTenantId}. Requesting...`);
+        debugLog('[main.ts Watcher]', `Conditions met for initial data request for tenant ${newTenantId}. Requesting...`, { newTenantId, connStatus, backendStatus });
         WebSocketService.requestInitialData(newTenantId);
+      } else {
+        debugLog('[main.ts Watcher]', 'Conditions NOT met for initial data request.', { newTenantId, connStatus, backendStatus });
       }
     },
     { immediate: true } // immediate: true, um den Zustand beim Start zu prüfen

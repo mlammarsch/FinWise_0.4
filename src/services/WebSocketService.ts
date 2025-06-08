@@ -22,6 +22,7 @@ export const WebSocketService = {
   connect(): void {
     const sessionStore = useSessionStore();
     const webSocketStore = useWebSocketStore();
+    debugLog('[WebSocketService]', 'connect() called. Current socket state:', socket?.readyState, 'Tenant ID from session:', sessionStore.currentTenantId);
 
     if (socket && socket.readyState === WebSocket.OPEN) {
       infoLog('[WebSocketService]', 'Already connected.');
@@ -43,6 +44,7 @@ export const WebSocketService = {
     const wsHost = window.location.hostname; // oder eine konfigurierte Backend-URL
     const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000'; // Port des Backends
     const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws_finwise/ws/${tenantId}`;
+    debugLog('[WebSocketService]', `Constructed WebSocket URL: ${wsUrl}`);
 
     explicitClose = false;
     webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTING);
@@ -52,13 +54,14 @@ export const WebSocketService = {
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        infoLog('[WebSocketService]', 'Connected to WebSocket server.');
+        infoLog('[WebSocketService]', 'WebSocket onopen event triggered.');
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTED);
         // Der Backend-Status wird durch eine explizite Nachricht vom Backend gesetzt.
         // Hier könnte man einen initialen "optimistischen" Status setzen oder auf die erste Statusnachricht warten.
         // webSocketStore.setBackendStatus(BackendStatus.ONLINE); // Vorerst nicht, warten auf Nachricht
         webSocketStore.setError(null);
         reconnectAttempts = 0;
+        debugLog('[WebSocketService]', 'onopen: Set connectionStatus to CONNECTED, reset error and reconnectAttempts.');
         // Nach erfolgreicher Verbindung prüfen, ob Sync gestartet werden soll
         this.checkAndProcessSyncQueue();
       };
@@ -77,10 +80,11 @@ export const WebSocketService = {
           // Nachrichtenbehandlung für Backend-Status
           if (message.type === 'status') {
             const statusMessage = message as StatusMessage; // Type assertion
-            infoLog('[WebSocketService]', `Backend status update: ${statusMessage.status}`);
+            infoLog('[WebSocketService]', `Backend status update: ${statusMessage.status}`, { messageDetails: statusMessage });
             webSocketStore.setBackendStatus(statusMessage.status);
             // Prüfen, ob die Nachricht eine 'message'-Eigenschaft hat, falls es ein Fehler ist
             if (statusMessage.status === BackendStatus.ERROR && statusMessage.message) {
+              errorLog('[WebSocketService]', `Received backend error status: ${statusMessage.message}`);
               webSocketStore.setError(`Backend error: ${statusMessage.message}`);
             }
             // Nach Backend-Status-Update prüfen, ob Sync gestartet werden soll
@@ -180,15 +184,15 @@ export const WebSocketService = {
         }
       };
 
-      socket.onerror = (error) => {
-        errorLog('[WebSocketService]', 'WebSocket error:', error);
+      socket.onerror = (errorEvent) => { // errorEvent statt error für mehr Klarheit
+        errorLog('[WebSocketService]', 'WebSocket onerror event triggered:', errorEvent);
         webSocketStore.setError('WebSocket connection error.');
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
         // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
       };
 
-      socket.onclose = (event) => {
-        infoLog('[WebSocketService]', `WebSocket closed. Code: ${event.code}, Reason: ${event.reason}, Clean: ${event.wasClean}`);
+      socket.onclose = (closeEvent) => { // closeEvent statt event
+        infoLog('[WebSocketService]', `WebSocket onclose event triggered. Code: ${closeEvent.code}, Reason: ${closeEvent.reason}, Clean: ${closeEvent.wasClean}`, { eventDetails: closeEvent });
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
         // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
         socket = null;
