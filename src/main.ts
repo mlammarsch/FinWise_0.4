@@ -13,6 +13,8 @@ import { initializeLogger } from '@/utils/logger';
 import { SessionService } from '@/services/SessionService';
 import { PlanningService } from '@/services/PlanningService';
 import { WebSocketService } from '@/services/WebSocketService'; // WebSocketService importieren
+import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore'; // Für Status-Überprüfung
+import { BackendStatus } from '@/types'; // Für BackendStatus-Überprüfung
 
 // Pinia erstellen und App konfigurieren
 const pinia = createPinia();
@@ -46,20 +48,42 @@ app.mount('#app');
 router.isReady().then(() => {
   WebSocketService.initialize(); // WebSocketService initialisieren, um Watcher zu aktivieren
   const session = useSessionStore();
+  const webSocketStore = useWebSocketStore(); // WebSocketStore Instanz
+
   if (session.currentTenantId) {
-    WebSocketService.connect();
+    WebSocketService.connect(); // Initiale Verbindung, falls Tenant schon da
   }
-  // Listener für Tenant-Änderungen, um WebSocket neu zu verbinden
-  watch(() => session.currentTenantId, (newTenantId, oldTenantId) => {
-    if (newTenantId && newTenantId !== oldTenantId) {
-      infoLog('[main.ts]', `Tenant changed from ${oldTenantId} to ${newTenantId}. Reconnecting WebSocket.`);
-      WebSocketService.disconnect(); // Alte Verbindung trennen
-      WebSocketService.connect();   // Neue Verbindung aufbauen
-    } else if (!newTenantId && oldTenantId) {
-      infoLog('[main.ts]', 'Tenant deselected. Disconnecting WebSocket.');
-      WebSocketService.disconnect();
-    }
-  });
+
+  // Kombinierter Watcher für Tenant-Änderung und WebSocket-Status
+  watch(
+    [() => session.currentTenantId, () => webSocketStore.connectionStatus, () => webSocketStore.backendStatus],
+    ([newTenantId, connStatus, backendStatus], [oldTenantId, oldConnStatus, oldBackendStatus]) => {
+      const tenantJustChanged = newTenantId && newTenantId !== oldTenantId;
+      const connectionJustEstablished = connStatus === WebSocketConnectionStatus.CONNECTED && oldConnStatus !== WebSocketConnectionStatus.CONNECTED;
+      const backendJustOnline = backendStatus === BackendStatus.ONLINE && oldBackendStatus !== BackendStatus.ONLINE;
+
+      if (tenantJustChanged) {
+        infoLog('[main.ts]', `Tenant changed from ${oldTenantId} to ${newTenantId}. Reconnecting WebSocket.`);
+        WebSocketService.disconnect();
+        WebSocketService.connect();
+      } else if (!newTenantId && oldTenantId) {
+        infoLog('[main.ts]', 'Tenant deselected. Disconnecting WebSocket.');
+        WebSocketService.disconnect();
+      }
+
+      // Initialen Datenabruf anstoßen, wenn Tenant gesetzt und Verbindung bereit
+      if (newTenantId && connStatus === WebSocketConnectionStatus.CONNECTED && backendStatus === BackendStatus.ONLINE) {
+        // Prüfen, ob sich der Tenant geändert hat oder die Verbindung/Backend gerade erst bereit wurde,
+        // um zu entscheiden, ob ein initialer Load nötig ist.
+        // Ein einfaches Flag im tenantStore oder accountStore (z.B. initialLoadCompletedForTenant[tenantId])
+        // wäre hier noch besser, um mehrfache Anfragen zu vermeiden.
+        // Fürs Erste rufen wir es auf, wenn die Bedingungen erfüllt sind.
+        infoLog('[main.ts]', `Conditions met for initial data request for tenant ${newTenantId}. Requesting...`);
+        WebSocketService.requestInitialData(newTenantId);
+      }
+    },
+    { immediate: true } // immediate: true, um den Zustand beim Start zu prüfen
+  );
 });
 
 

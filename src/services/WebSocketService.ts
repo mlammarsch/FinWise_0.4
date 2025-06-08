@@ -2,7 +2,7 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload } from '@/types'; // Erweiterte Importe
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage } from '@/types'; // Erweiterte Importe für Initial Load
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
@@ -64,9 +64,12 @@ export const WebSocketService = {
       };
 
       socket.onmessage = async (event) => { // async hinzugefügt
+        // Loggen der rohen Nachricht direkt beim Empfang
+        debugLog('[WebSocketService]', 'Raw message received from server:', event.data);
         try {
           const message = JSON.parse(event.data as string) as ServerWebSocketMessage;
-          debugLog('[WebSocketService]', 'Message received:', message);
+          // Loggen der geparsten Nachricht
+          debugLog('[WebSocketService]', 'Parsed message received:', message);
           webSocketStore.setLastMessage(message);
           const tenantStore = useTenantStore(); // tenantStore Instanz
           const accountStore = useAccountStore(); // accountStore Instanz
@@ -128,6 +131,45 @@ export const WebSocketService = {
               errorLog('[WebSocketService]', 'Error processing DataUpdateNotificationMessage:', e, updateMessage);
               // Hier könnte eine spezifischere Fehlerbehandlung erfolgen
             }
+            // Loggen der geparsten Nachricht
+            // debugLog('[WebSocketService]', 'Parsed message received:', message); // Bereits oben geloggt
+
+          // Prüfe auf event_type, da das Backend dies für initial_data_load sendet
+          } else if (message.event_type === 'initial_data_load') { // Änderung hier: message.type zu message.event_type
+            const initialDataMessage = message as InitialDataLoadMessage; // Type assertion ist hier immer noch wichtig
+            infoLog('[WebSocketService]', 'InitialDataLoadMessage received (matched on event_type):', initialDataMessage);
+
+            if (initialDataMessage.tenant_id !== tenantStore.activeTenantId) {
+              warnLog('[WebSocketService]', `Received InitialDataLoadMessage for tenant ${initialDataMessage.tenant_id}, but active tenant is ${tenantStore.activeTenantId}. Ignoring.`);
+              return;
+            }
+
+            const { accounts, account_groups } = initialDataMessage.payload;
+            debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups });
+
+
+            if (accounts && accounts.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${accounts.length} initial accounts.`);
+              for (const acc of accounts) {
+                debugLog('[WebSocketService]', 'Attempting to add account from initial load:', acc);
+                await accountStore.addAccount(acc, true); // fromSync = true
+                infoLog('[WebSocketService]', `Account ${acc.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial accounts received or accounts array is empty.');
+            }
+
+            if (account_groups && account_groups.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${account_groups.length} initial account groups.`);
+              for (const group of account_groups) {
+                debugLog('[WebSocketService]', 'Attempting to add account group from initial load:', group);
+                await accountStore.addAccountGroup(group, true); // fromSync = true
+                infoLog('[WebSocketService]', `AccountGroup ${group.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial account groups received or accountGroups array is empty.');
+            }
+            infoLog('[WebSocketService]', 'Finished processing InitialDataLoadMessage.');
           }
 
         } catch (e) {
@@ -207,6 +249,23 @@ export const WebSocketService = {
   // Hilfsfunktion, um den aktuellen Backend-Status zu bekommen (optional)
   getBackendStatus(): BackendStatus {
     return useWebSocketStore().backendStatus;
+  },
+
+  requestInitialData(tenantId: string): void {
+    const webSocketStore = useWebSocketStore();
+    if (socket && socket.readyState === WebSocket.OPEN && webSocketStore.backendStatus === BackendStatus.ONLINE) {
+      infoLog('[WebSocketService]', `Requesting initial data for tenant ${tenantId}`);
+      const message: RequestInitialDataMessage = {
+        type: 'request_initial_data',
+        tenant_id: tenantId,
+      };
+      this.sendMessage(message);
+    } else {
+      errorLog('[WebSocketService]', 'Cannot request initial data: WebSocket not connected or backend not online.', {
+        connected: socket?.readyState === WebSocket.OPEN,
+        backendStatus: webSocketStore.backendStatus,
+      });
+    }
   },
 
   async processSyncQueue(): Promise<void> {

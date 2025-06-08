@@ -16,15 +16,20 @@ export class FinwiseTenantSpecificDB extends Dexie {
   constructor(databaseName: string) {
     super(databaseName);
     this.version(1).stores({
-      accounts: '&id, name, accountType, isActive, accountGroupId',
-      accountGroups: '&id, name',
+      accounts: '&id, name, accountType, isActive, accountGroupId', // Veraltet, aber für Upgrades beibehalten
+      accountGroups: '&id, name', // Veraltet
     });
-    // Version 2 fügt die syncQueue Tabelle hinzu
-    // Wichtig: Indizes für häufige Abfragen hinzufügen, z.B. status, timestamp, entityType
+    // Version 2 fügte die syncQueue Tabelle hinzu und behielt alte Schemata bei
     this.version(2).stores({
-      accounts: '&id, name, accountType, isActive, accountGroupId', // Schema beibehalten
-      accountGroups: '&id, name', // Schema beibehalten
+      accounts: '&id, name, accountType, isActive, accountGroupId', // Veraltet
+      accountGroups: '&id, name', // Veraltet
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status',
+    });
+    // Version 3 aktualisiert accounts und accountGroups auf das vollständige Schema
+    this.version(3).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status', // Schema beibehalten
     });
     // Weitere Versionen hier bei Bedarf
   }
@@ -267,7 +272,15 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       // auch durch die Tenant-Änderung getriggert wird oder bereits verbunden ist.
       // Der initiale Datenabruf wird nun vom WebSocketService gehandhabt,
       // der auf Änderungen des activeTenantId und des Verbindungsstatus reagiert.
-      debugLog('tenantStore', `setActiveTenant: Initialer Datenabruf für Tenant ${id} wird vom WebSocketService übernommen.`);
+      // debugLog('tenantStore', `setActiveTenant: Initialer Datenabruf für Tenant ${id} wird vom WebSocketService übernommen.`);
+      // Expliziter Aufruf zum Anfordern initialer Daten:
+      if (id) { // Sicherstellen, dass eine ID vorhanden ist
+        // Es ist wichtig zu prüfen, ob der WebSocketService bereit ist oder die Anfrage puffert.
+        // Fürs Erste gehen wir davon aus, dass der connect-Prozess des WebSockets auch durch
+        // die Tenant-Änderung (via main.ts Watcher) getriggert wird und die Anfrage dann gesendet werden kann.
+        WebSocketService.requestInitialData(id);
+        infoLog('tenantStore', `setActiveTenant: Anforderung für initiale Daten für Tenant ${id} an WebSocketService gesendet.`);
+      }
       return true;
     } catch (err) {
       errorLog('tenantStore', `Fehler beim Verbinden/Initialisieren der Mandanten-DB für ${id}`, err);
