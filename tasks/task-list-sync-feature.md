@@ -18,7 +18,7 @@ Basierend auf den Anforderungen in [prd-sync-feature.md](tasks/prd-sync-feature.
 - [x] 14. Backend: Erstellung von Tenant-Datenbanken nachholen bei Offline-Erstellung (Überprüfung der Kompatibilität abgeschlossen, bestehende Implementierung ist robust, keine Änderungen notwendig)
 - [ ] 15. WebSocket: Sichere Verbindung und Verschlüsselung (SOLLTE)
 - [x] 16. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Anzeige des Synchronisationsstatus implementieren
-- [ ] 17. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Manuelle Auslösung der Synchronisation ermöglichen
+- [x] 17. UI-Komponente [`src/components/ui/SyncButton.vue`](src/components/ui/SyncButton.vue): Manuelle Auslösung der Synchronisation ermöglichen
 - [ ] 18. Dokumentation: Schritte zur Erweiterung der Synchronisation auf weitere Datentabellen dokumentieren
 
 ## Relevante Dateien

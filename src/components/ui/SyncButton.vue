@@ -1,99 +1,137 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { computed } from "vue"; // onMounted, onUnmounted entfernt, da nicht mehr direkt für SyncService benötigt
-import { WebSocketService } from "../../services/WebSocketService"; // Importiere WebSocketService
+import { computed, ref } from "vue"; // Importiere ref
+import { WebSocketService } from "../../services/WebSocketService";
 import { infoLog, warnLog } from "../../utils/logger";
 import {
   useWebSocketStore,
   WebSocketConnectionStatus,
 } from "../../stores/webSocketStore";
+import { useTenantStore } from "../../stores/tenantStore"; // Importiere tenantStore
 
 const webSocketStore = useWebSocketStore();
+const tenantStore = useTenantStore(); // Initialisiere tenantStore
+const isManuallyProcessingSync = ref(false); // Neuer Ref für manuelles Sync-Feedback
 
 const isOnline = computed(
   () => webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTED
 );
 
-// Vereinfachung: isCurrentlySyncing wird an den Verbindungsaufbau gekoppelt
-const isCurrentlySyncing = computed(
+// Zeigt an, ob der WebSocket gerade aktiv versucht, eine Verbindung herzustellen.
+const isConnecting = computed(
   () => webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTING
 );
 
-// Vereinfachung: isQueueEmpty wird vorerst als true angenommen, wenn online.
-// Dies müsste durch eine echte Abfrage des Queue-Status aus dem WebSocketService ersetzt werden,
-// falls diese Information reaktiv verfügbar gemacht wird.
+// isQueueEmpty bleibt wie es ist für diese Aufgabe
 const isQueueEmpty = computed(() => {
-  if (!isOnline.value) return true; // Wenn offline, betrachten wir die Queue als irrelevant oder "leer" für die UI
-  // Hier könnte später eine echte Prüfung hinzukommen, z.B. über einen Store oder Service-Status
-  return true; // Annahme: Wenn online, ist die Queue erstmal leer oder synchronisiert
+  if (!isOnline.value) return true;
+  return true; // Annahme
 });
 
 const isDisabled = computed(() => {
-  // Button deaktivieren, wenn gerade "synchronisiert" (connecting) wird oder wenn offline
-  // und nicht gerade versucht wird zu verbinden.
-  return (
-    isCurrentlySyncing.value ||
-    (!isOnline.value &&
-      webSocketStore.connectionStatus !== WebSocketConnectionStatus.CONNECTING)
-  );
+  // Deaktivieren, wenn nicht online (CONNECTED).
+  // Dies deckt CONNECTING, DISCONNECTED, ERROR ab.
+  if (!isOnline.value) {
+    return true;
+  }
+  // Wenn online, deaktiviere nur, wenn gerade manuell synchronisiert wird.
+  return isManuallyProcessingSync.value;
 });
 
 const buttonState = computed(() => {
-  if (isCurrentlySyncing.value) {
-    // Zustand "CONNECTING" als "Synchronisiere..."
+  if (isManuallyProcessingSync.value) {
+    // Zustand für manuelle Synchronisation
+    return {
+      iconColorClass: "text-info",
+      icon: "mdi:sync", // Rotiert durch animate: true
+      animate: true,
+      title: "Synchronisiere Daten...",
+    };
+  }
+
+  if (isConnecting.value) {
+    // Zustand, wenn WebSocket verbindet
     return {
       iconColorClass: "text-warning",
-      icon: "mdi:autorenew", // Sich drehende Pfeile
+      icon: "mdi:autorenew",
       animate: true,
-      title: "Verbindung wird aufgebaut...", // Angepasster Text
+      title: "Verbindung wird aufgebaut...",
     };
   }
 
   if (!isOnline.value) {
+    // Zustand, wenn offline (DISCONNECTED, ERROR)
     return {
       iconColorClass: "text-error",
-      icon: "mdi:cloud-off-outline", // Offline-Icon
+      icon: "mdi:cloud-off-outline",
       animate: false,
-      title: "Offline",
+      title: "Offline. Manuelle Synchronisation nicht möglich.",
     };
   }
 
-  // Online
+  // Online, nicht manuell synchronisierend, nicht verbindend
   if (isQueueEmpty.value) {
-    // Annahme: Queue ist leer, wenn online und nicht "connecting"
     return {
       iconColorClass: "text-success",
-      icon: "mdi:cloud-check-outline", // Online und synchronisiert Icon
+      icon: "mdi:cloud-check-outline",
       animate: false,
-      title: "Online. Synchronisiert.",
+      title: "Online & Synchron. Klicken für manuelle Synchronisation.",
     };
   }
-  // Dieser Fall wird durch die Vereinfachung von isQueueEmpty seltener eintreten,
-  // es sei denn, isQueueEmpty wird später komplexer.
+
+  // Online, Queue nicht leer (aktuell theoretisch, basierend auf isQueueEmpty Logik)
   return {
     iconColorClass: "text-info",
-    icon: "mdi:cloud-upload-outline", // Icon für ausstehende Änderungen
+    icon: "mdi:cloud-upload-outline",
     animate: false,
-    title: "Online. Änderungen zum Synchronisieren vorhanden.", // Angepasster Text
+    title: "Online. Lokale Änderungen. Klicken für manuelle Synchronisation.",
   };
 });
 
 async function handleSyncButtonClick() {
-  infoLog("SyncButton", "Sync button clicked");
-  if (isCurrentlySyncing.value || !isOnline.value) {
+  infoLog("SyncButton", "Manual sync button clicked by user.");
+
+  // Nur ausführen, wenn online und nicht bereits eine manuelle Synchronisation läuft.
+  if (!isOnline.value || isManuallyProcessingSync.value) {
     warnLog(
       "SyncButton",
-      "Sync cannot be triggered. Either already syncing, or offline."
+      "Manual sync trigger ignored. Conditions not met (not online or already processing).",
+      {
+        isOnline: isOnline.value,
+        isManuallyProcessingSync: isManuallyProcessingSync.value,
+        connectionStatus: webSocketStore.connectionStatus,
+      }
     );
     return;
   }
+
+  isManuallyProcessingSync.value = true;
+  infoLog("SyncButton", "Starting manual sync process...");
+
   try {
-    // Rufe die Methode zum Verarbeiten der Sync-Queue im WebSocketService auf
-    await WebSocketService.processSyncQueue();
-    infoLog("SyncButton", "processSyncQueue called");
+    await WebSocketService.processSyncQueue(); // Korrigierter Methodenname
+    infoLog("SyncButton", "processSyncQueue successfully called.");
+
+    if (tenantStore.activeTenantId) {
+      await WebSocketService.requestInitialData(tenantStore.activeTenantId); // tenantId übergeben
+      infoLog(
+        "SyncButton",
+        "requestInitialData successfully called. Manual sync process complete.",
+        { tenantId: tenantStore.activeTenantId }
+      );
+    } else {
+      warnLog(
+        "SyncButton",
+        "Cannot call requestInitialData: activeTenantId is not available.",
+        { activeTenantId: tenantStore.activeTenantId }
+      );
+    }
   } catch (error) {
-    console.error("Fehler beim manuellen Aufruf von processSyncQueue:", error);
-    // Hier könnte eine Fehlermeldung im UI angezeigt werden
+    warnLog("SyncButton", "Error during manual sync process.", { error });
+    // console.error("Error during manual sync process:", error); // Alternative
+  } finally {
+    isManuallyProcessingSync.value = false;
+    infoLog("SyncButton", "Manual sync process finished (finally block).");
   }
 }
 </script>
