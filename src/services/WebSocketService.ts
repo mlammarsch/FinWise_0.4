@@ -5,7 +5,7 @@ import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLo
 import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload } from '@/types'; // Erweiterte Importe
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
-import { useTenantStore } from '@/stores/tenantStore'; // useTenantStore importiert
+import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
 import { useAccountStore } from '@/stores/accountStore'; // accountStore importiert
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
@@ -219,10 +219,17 @@ export const WebSocketService = {
 
     const webSocketStore = useWebSocketStore();
     const tenantStore = useTenantStore();
-    const currentTenantId = tenantStore.activeTenantId;
+    const currentTenantId = tenantStore.activeTenantId; // Globale Variable wird hier korrekt verwendet
 
     if (!currentTenantId) {
-      warnLog('[WebSocketService]', 'Cannot process sync queue: No active tenant.');
+      warnLog('[WebSocketService]', 'Cannot process sync queue: No active tenant ID.');
+      isSyncProcessRunning = false;
+      return;
+    }
+
+    const activeDB = tenantStore.activeTenantDB as FinwiseTenantSpecificDB | null;
+    if (!activeDB) {
+      warnLog('[WebSocketService]', 'Cannot process sync queue: No active tenant DB.');
       isSyncProcessRunning = false;
       return;
     }
@@ -234,44 +241,67 @@ export const WebSocketService = {
     }
 
     try {
-      const pendingEntries = await tenantDbService.getPendingSyncEntries(currentTenantId);
-      if (pendingEntries.length === 0) {
-        infoLog('[WebSocketService]', 'No pending entries in sync queue.');
-        isSyncProcessRunning = false;
-        return;
-      }
+      // Dexie-Transaktion starten
+      await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
+        const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
 
-      infoLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries to sync.`);
+        // 1. Ausstehende Einträge innerhalb der Transaktion abrufen
+        const pendingEntries = await syncQueueTable
+          .where({ tenantId: currentTenantId, status: SyncStatus.PENDING })
+          .sortBy('timestamp');
 
-      for (const entry of pendingEntries) {
-        // 1. Status auf PROCESSING setzen
-        const statusUpdatedToProcessing = await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PROCESSING);
-        if (!statusUpdatedToProcessing) {
-          errorLog('[WebSocketService]', `Failed to update sync entry ${entry.id} to PROCESSING. Skipping.`);
-          continue;
+        if (pendingEntries.length === 0) {
+          infoLog('[WebSocketService]', 'No pending entries in sync queue (within transaction).');
+          return; // Beendet die Transaktions-Callback-Funktion
         }
 
-        // 2. Nachricht vorbereiten und senden
-        const messageToSend = {
-          type: 'process_sync_entry',
-          payload: entry,
-        };
+        infoLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries to sync (within transaction).`);
 
-        infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
-        const sent = this.sendMessage(messageToSend);
+        for (const entry of pendingEntries) {
+          // 2. Status auf PROCESSING setzen (innerhalb der Transaktion)
+          const updateDataProcessing: Partial<SyncQueueEntry> = {
+            status: SyncStatus.PROCESSING,
+            attempts: (entry.attempts ?? 0) + 1,
+            lastAttempt: Date.now(),
+          };
+          const updatedToProcessingCount = await syncQueueTable.update(entry.id, updateDataProcessing);
 
-        if (!sent) {
-          errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. Setting back to PENDING.`);
-          // Bei direktem Sendefehler zurück auf PENDING
-          await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
-        } else {
-          // Erfolgreich gesendet (aber noch nicht vom Backend bestätigt)
-          // Die Bestätigung und das Setzen auf SYNCED/FAILED erfolgt in Schritt 8
-          debugLog('[WebSocketService]', `Sync entry ${entry.id} sent to backend, status is PROCESSING.`);
+          if (updatedToProcessingCount === 0) {
+            errorLog('[WebSocketService]', `Failed to update sync entry ${entry.id} to PROCESSING (not found in transaction?). Skipping.`);
+            continue; // Nächsten Eintrag in der Schleife bearbeiten
+          }
+          // Wichtig: Das 'entry'-Objekt, das gesendet wird, mit den neuen Werten aktualisieren
+          Object.assign(entry, updateDataProcessing);
+
+
+          // 3. Nachricht vorbereiten und senden
+          const messageToSend = {
+            type: 'process_sync_entry',
+            payload: entry, // Sendet den aktualisierten Eintrag
+          };
+
+          infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
+          const sent = this.sendMessage(messageToSend); // sendMessage ist außerhalb der DB-Transaktion
+
+          if (!sent) {
+            errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. Setting back to PENDING (within transaction).`);
+            // Bei direktem Sendefehler zurück auf PENDING (innerhalb der Transaktion)
+            const updateDataPending: Partial<SyncQueueEntry> = {
+              status: SyncStatus.PENDING,
+              error: 'Failed to send to WebSocket',
+              // lastAttempt und attempts bleiben vom PROCESSING-Versuch erhalten
+            };
+            await syncQueueTable.update(entry.id, updateDataPending);
+          } else {
+            debugLog('[WebSocketService]', `Sync entry ${entry.id} sent to backend, status is PROCESSING (DB updated in transaction).`);
+          }
         }
-      }
+      }); // Ende der Dexie-Transaktion
+      debugLog('[WebSocketService]', 'Dexie transaction for sync queue processing completed.');
     } catch (error) {
-      errorLog('[WebSocketService]', 'Error processing sync queue:', error);
+      errorLog('[WebSocketService]', 'Error processing sync queue with transaction:', error);
+      // Bei einem Fehler in der Transaktion selbst werden die Änderungen zurückgerollt.
+      // isSyncProcessRunning wird im finally Block gesetzt.
     } finally {
       isSyncProcessRunning = false;
       infoLog('[WebSocketService]', 'Finished processing sync queue attempt.');
