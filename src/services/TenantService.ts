@@ -5,20 +5,18 @@
 
 import { useTenantStore }   from '@/stores/tenantStore';
 import { useCategoryStore } from '@/stores/categoryStore';
-import { useSessionStore }  from '@/stores/sessionStore'; // useAccountStore entfernt, da nicht mehr direkt hier genutzt
+import { useSessionStore }  from '@/stores/sessionStore';
 
 import { CategoryService }  from '@/services/CategoryService';
 import { AccountService }   from '@/services/AccountService';
 import { BalanceService }   from '@/services/BalanceService';
 
-// AccountType, AccountGroup und uuidv4 entfernt, da Logik in AccountService verschoben
 import { infoLog, debugLog, errorLog } from '@/utils/logger';
 import { DataService }      from './DataService';
-// import { v4 as uuidv4 } from 'uuid'; // Entfernt
 
 export const TenantService = {
   /**
-   * Erstellt einen neuen Tenant und legt Basis-Kategorien, Konten-Gruppen und Girokonto an.
+   * Erstellt einen neuen Tenant mit Standardkategorien und -konten.
    */
   async createTenant(tenantName: string) {
     const session = useSessionStore();
@@ -29,12 +27,10 @@ export const TenantService = {
     if (!tenant)
       throw new Error('Fehler beim lokalen Anlegen des Tenants.');
 
-    await this.switchTenant(tenant.uuid); // Warten bis switchTenant abgeschlossen ist
+    await this.switchTenant(tenant.uuid);
 
     const catStore = useCategoryStore();
-    // const accStore = useAccountStore(); // Entfernt, Logik in AccountService
 
-    // Initialisierung der Standard-Kategorien (bleibt hier)
     if (!catStore.categories.find(c => c.name === 'Verfügbare Mittel')) {
       CategoryService.addCategory({
         name: 'Verfügbare Mittel',
@@ -50,10 +46,10 @@ export const TenantService = {
     }
 
     const incomeGroup = catStore.categoryGroups.find(g => g.name === 'Einnahmen')
-      ?? await catStore.addCategoryGroup({ name: 'Einnahmen', sortOrder: 0, isIncomeGroup: true }); // await hinzugefügt
+      ?? await catStore.addCategoryGroup({ name: 'Einnahmen', sortOrder: 0, isIncomeGroup: true });
 
     const expenseGroup = catStore.categoryGroups.find(g => g.name === 'Ausgaben')
-      ?? await catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false }); // await hinzugefügt
+      ?? await catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false });
 
     for (const dc of [
       { name: 'Gehalt',             groupId: incomeGroup.id },
@@ -66,7 +62,7 @@ export const TenantService = {
       { name: 'Versicherung',       groupId: expenseGroup.id },
     ]) {
       if (!catStore.categories.some(c => c.name === dc.name)) {
-        CategoryService.addCategory({ // Annahme: addCategory ist asynchron oder synchronisiert den Store korrekt
+        CategoryService.addCategory({
           name: dc.name,
           sortOrder: 0,
           isActive: true,
@@ -80,18 +76,14 @@ export const TenantService = {
       }
     }
 
-    // Initialisierung der Standard-Kontogruppen und des Girokontos über den AccountService
-    // Dies geschieht nach switchTenant und der Initialisierung der Kategorien
     try {
       await AccountService.initializeDefaultAccountsAndGroups();
       debugLog('[TenantService]', 'Standardkonten und -gruppen erfolgreich initialisiert.');
     } catch (err) {
       errorLog('[TenantService]', 'Fehler bei der Initialisierung der Standardkonten und -gruppen.', { error: err });
-      // Hier könnte man überlegen, ob der Tenant trotzdem als "erstellt" gilt oder ob ein Rollback nötig ist.
-      // Fürs Erste wird der Fehler geloggt und der Prozess fortgesetzt.
     }
 
-    BalanceService.calculateMonthlyBalances(); // Bleibt hier, da es nach allen Datenänderungen erfolgen sollte
+    BalanceService.calculateMonthlyBalances();
 
     infoLog('[TenantService]', 'Tenant angelegt & initialisiert', {
       tenantId: tenant.uuid,

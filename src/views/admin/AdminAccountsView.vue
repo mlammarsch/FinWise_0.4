@@ -3,50 +3,42 @@ import { ref, computed } from "vue";
 import { useAccountStore } from "../../stores/accountStore";
 import AccountForm from "../../components/account/AccountForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
-import { type Account, AccountType, type AccountGroup } from "../../types"; // Remove 'type' for AccountType
+import { type Account, AccountType, type AccountGroup } from "../../types";
 import AccountGroupForm from "../../components/account/AccountGroupForm.vue";
 import { useRouter } from "vue-router";
 import { Icon } from "@iconify/vue";
 import { BalanceService } from "../../services/BalanceService";
-import { AccountService } from "../../services/AccountService"; // Add AccountService import
-import { debugLog } from "../../utils/logger"; // Import debugLog
+import { AccountService } from "../../services/AccountService";
+import { debugLog, infoLog, errorLog } from "../../utils/logger";
 
 // Stores
 const accountStore = useAccountStore();
 const router = useRouter();
 
-// State für Modals
 const showAccountModal = ref(false);
-const showGroupModal = ref(false); // Modal für AccountGroup
+const showGroupModal = ref(false);
 
-// Ausgewähltes Konto / Gruppe
 const selectedAccount = ref<Account | null>(null);
-const selectedGroup = ref<AccountGroup | null>(null); // Ausgewählte Gruppe
+const selectedGroup = ref<AccountGroup | null>(null);
 
-// Bearbeitungsmodus
 const isEditMode = ref(false);
-const isGroupEditMode = ref(false); // Bearbeitungsmodus für Gruppen
+const isGroupEditMode = ref(false);
 
-// Alle Konten
 const accounts = computed(() => accountStore.accounts);
 
-// Kontogruppen
 const accountGroups = computed(() => accountStore.accountGroups);
 
-// Gibt den Namen der Kontogruppe zurück
 const getGroupName = (groupId: string) => {
-  const group = accountGroups.value.find((g: AccountGroup) => g.id === groupId); // Add type for g
+  const group = accountGroups.value.find((g: AccountGroup) => g.id === groupId);
   return group ? group.name : "Unbekannt";
 };
 
-// Berechnet den Gesamtbetrag der Konten innerhalb einer Gruppe
 const getGroupBalance = (groupId: string) => {
   return accounts.value
-    .filter((account: Account) => account.accountGroupId === groupId) // Add type for account
-    .reduce((sum: number, account: Account) => sum + account.balance, 0); // Add types for sum and account
+    .filter((account: Account) => account.accountGroupId === groupId)
+    .reduce((sum: number, account: Account) => sum + account.balance, 0);
 };
 
-// Formatiert den Kontotyp für die Anzeige
 const formatAccountType = (type: AccountType): string => {
   switch (type) {
     case AccountType.CHECKING:
@@ -62,64 +54,68 @@ const formatAccountType = (type: AccountType): string => {
   }
 };
 
-// Konto bearbeiten
 const editAccount = (account: Account) => {
   selectedAccount.value = account;
   isEditMode.value = true;
   showAccountModal.value = true;
 };
 
-// Neues Konto erstellen
 const createAccount = () => {
   selectedAccount.value = null;
   isEditMode.value = false;
   showAccountModal.value = true;
 };
 
-// Konto speichern
 const saveAccount = async (
   accountData: Omit<Account, "id" | "uuid" | "balance">
 ) => {
   if (isEditMode.value && selectedAccount.value) {
-    // Pass the full account object including the id for updates
     await AccountService.updateAccount(selectedAccount.value.id, accountData);
   } else {
-    // For new accounts, the service will generate the id and uuid
     await AccountService.addAccount(accountData);
   }
   showAccountModal.value = false;
 };
 
-// Konto löschen
 const deleteAccount = (account: Account) => {
   if (confirm(`Möchten Sie das Konto "${account.name}" wirklich löschen?`)) {
-    accountStore.deleteAccount(account.id);
+    AccountService.deleteAccount(account.id);
   }
 };
 
-// Konto einer anderen Gruppe zuweisen
-const updateAccountGroup = (account: Account, newGroupId: string) => {
-  accountStore.updateAccount(account.id, { accountGroupId: newGroupId });
+const updateAccountGroup = async (account: Account, newGroupId: string) => {
+  const success = await AccountService.updateAccount(account.id, {
+    accountGroupId: newGroupId,
+  });
+  if (success) {
+    infoLog(
+      "AdminAccountsView",
+      `Account ${account.name} group updated successfully to ${newGroupId}`,
+      { accountId: account.id, newGroupId }
+    );
+  } else {
+    errorLog(
+      "AdminAccountsView",
+      `Failed to update account ${account.name} group to ${newGroupId}`,
+      { accountId: account.id, newGroupId }
+    );
+  }
 };
 
-// Gruppe bearbeiten
 const editAccountGroup = (group: AccountGroup) => {
   selectedGroup.value = group;
   isGroupEditMode.value = true;
   showGroupModal.value = true;
 };
 
-// Neue Gruppe erstellen
 const createAccountGroup = () => {
   selectedGroup.value = null;
   isGroupEditMode.value = false;
   showGroupModal.value = true;
 };
 
-// Gruppe speichern
 const saveAccountGroup = async (groupData: Omit<AccountGroup, "id">) => {
   if (isGroupEditMode.value && selectedGroup.value) {
-    // Assuming updateAccountGroup in service takes id and partial updates
     await AccountService.updateAccountGroup(selectedGroup.value.id, groupData);
   } else {
     await AccountService.addAccountGroup(groupData);
@@ -127,10 +123,8 @@ const saveAccountGroup = async (groupData: Omit<AccountGroup, "id">) => {
   showGroupModal.value = false;
 };
 
-// Gruppe löschen
 const deleteAccountGroup = async (groupId: string) => {
   if (confirm("Möchten Sie die Kontogruppe wirklich löschen?")) {
-    // Replace template literal with string
     debugLog(
       "[AdminAccountsView]",
       "deleteAccountGroup",
@@ -145,7 +139,6 @@ const deleteAccountGroup = async (groupId: string) => {
       { groupId, success }
     );
     if (!success) {
-      // Optional: Zeige eine Fehlermeldung an, wenn das Löschen fehlschlägt (z.B. weil die Gruppe noch Konten hat)
       alert(
         "Kontogruppe konnte nicht gelöscht werden. Stellen Sie sicher, dass keine Konten mehr in dieser Gruppe vorhanden sind."
       );
@@ -153,7 +146,9 @@ const deleteAccountGroup = async (groupId: string) => {
   }
 };
 
-// Button-Funktion: Monatssalden aktualisieren
+/**
+ * Aktualisiert die Monatssalden aller Konten. Zentral für die Finanzübersicht.
+ */
 const updateMonthlyBalances = () => {
   BalanceService.calculateMonthlyBalances();
 };

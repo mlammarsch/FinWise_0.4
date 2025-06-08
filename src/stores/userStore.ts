@@ -1,10 +1,4 @@
 // src/stores/userStore.ts
-/**
- * Pfad zur Datei: src/stores/userStore.ts
- * Pinia-Store zum Verwalten aller lokalen User-Accounts via Dexie.
- * Password-Hashing via bcryptjs (vorerst beibehalten).
- */
-
 import { defineStore } from 'pinia';
 import { ref, computed, onMounted } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,80 +6,71 @@ import * as bcrypt from 'bcryptjs';
 import Dexie, { type Table } from 'dexie';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { apiService, type UserFromApi, type TenantFromApi } from '@/services/apiService';
-import { useSessionStore } from './sessionStore'; // Importiere sessionStore
-import { useTenantStore } from './tenantStore'; // Hinzugefügter und korrigierter Import
+import { useSessionStore } from './sessionStore';
+import { useTenantStore } from './tenantStore';
 
-// Schnittstelle für Daten, die zum Backend gepusht werden
 interface UserPushData {
   name: string;
   email: string;
-  hashed_password?: string; // Angepasst an Backend-Schema UserSyncPayload
+  hashed_password?: string;
 }
 
-// Schnittstellen
-export interface LocalUser { // Bleibt für den State und Methoden-Signaturen, die nicht direkt DB-Struktur widerspiegeln
-  id: string; // uuid in der DB
-  username: string; // wird zu 'name' in der DB
+export interface LocalUser {
+  id: string;
+  username: string;
   email: string;
-  passwordHash: string; // Nicht in DbUser gespeichert
+  passwordHash: string;
   createdAt: string;
   updatedAt: string;
   accessToken?: string;
   refreshToken?: string;
 }
 
-export interface DbUser { // Struktur für die Dexie 'users' Tabelle
-  uuid: string; // Primärschlüssel
-  username: string; // Geändert von name zu username
+export interface DbUser {
+  uuid: string;
+  username: string;
   email: string;
   createdAt: string;
   updatedAt: string;
-  needsBackendSync?: boolean; // Flag, um lokale Erstellung/Änderung zu markieren
-  passwordHash?: string; // Hinzugefügt für die persistente Speicherung des Hashes bei Offline-Registrierung
+  needsBackendSync?: boolean;
+  passwordHash?: string;
 }
 
-export interface DbTenant { // Struktur für die Dexie 'tenants' Tabelle
-  uuid: string; // Primärschlüssel
-  tenantName: string; // Geändert von name zu tenantName
-  user_id: string; // Fremdschlüssel zu DbUser.uuid
+export interface DbTenant {
+  uuid: string;
+  tenantName: string;
+  user_id: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// Schnittstelle für die Dexie 'session' Tabelle
 export interface DbSession {
-  id: string; // Fester Schlüssel, z.B. 'currentSession'
+  id: string;
   currentUserId: string | null;
   currentTenantId: string | null;
 }
 
-// Dexie Datenbankklasse für User-, globale Tenant- und Session-Daten
 class FinwiseUserDB extends Dexie {
   dbUsers!: Table<DbUser, string>;
   dbTenants!: Table<DbTenant, string>;
-  dbSession!: Table<DbSession, string>; // Neue Tabelle für Session-Daten
+  dbSession!: Table<DbSession, string>;
 
   constructor() {
     super('finwiseUserDB');
-    // Erhöhe die Versionsnummer, da wir eine neue Tabelle hinzufügen und dbUsers erweitern
     this.version(3).stores({
-      dbUsers: '&uuid, username, email, passwordHash, createdAt, updatedAt, needsBackendSync', // passwordHash hinzugefügt
-      dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt', // name zu tenantName geändert
-      dbSession: '&id', // Neue Tabelle mit 'id' als Primärschlüssel
+      dbUsers: '&uuid, username, email, passwordHash, createdAt, updatedAt, needsBackendSync',
+      dbTenants: '&uuid, tenantName, user_id, createdAt, updatedAt',
+      dbSession: '&id',
     });
   }
 }
 
-export const db = new FinwiseUserDB(); // Exportiere die db-Instanz
-
-/** Konstante SaltRounds gemäß Anforderung 1 = 9 */
+export const db = new FinwiseUserDB();
 const SALT_ROUNDS = 9;
 
 export const useUserStore = defineStore('user', () => {
-  /* ------------------------------------------------------------------ State */
-  const users = ref<LocalUser[]>([]); // Hält die LocalUser-Objekte für die UI-Logik
+  const users = ref<LocalUser[]>([]);
 
-  /* ---------------------------------------------------------------- Initialisierung */
   async function _loadUsersFromDb() {
     try {
       const dbUsersList = await db.dbUsers.toArray();
@@ -115,7 +100,6 @@ export const useUserStore = defineStore('user', () => {
     }
   });
 
-  /* ---------------------------------------------------------------- Getter */
   const getUserById = computed(() => (id: string) =>
     users.value.find(u => u.id === id),
   );
@@ -126,7 +110,10 @@ export const useUserStore = defineStore('user', () => {
     ),
   );
 
-  /* ---------------------------------------------------------------- Actions */
+  /**
+   * Registriert einen neuen Benutzer.
+   * Versucht die Registrierung online und speichert den Benutzer andernfalls lokal.
+   */
   async function registerUser(
     username: string,
     email: string,
@@ -264,8 +251,6 @@ export const useUserStore = defineStore('user', () => {
         users.value.push(localUser);
       }
 
-      // Mandanten synchronisieren, nachdem der User erfolgreich eingeloggt wurde
-      // und bevor die Funktion zurückkehrt, damit TenantSelectView aktuelle Daten hat.
       infoLog('userStore', `validateLogin: Starte syncUserTenants für User ${localUser.id} nach erfolgreichem Login.`);
       await syncUserTenants(localUser.id);
       infoLog('userStore', `validateLogin: syncUserTenants für User ${localUser.id} abgeschlossen.`);
@@ -360,7 +345,10 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  // --- Sync Implementierung ---
+  /**
+   * Synchronisiert Benutzerdaten zwischen lokaler DB und Backend.
+   * Verantwortlich für das Abrufen, Aktualisieren und Pushen von Benutzerdaten.
+   */
   async function syncUsers(): Promise<void> {
     infoLog('userStore', 'syncUsers: Starte User-Synchronisation');
     try {
@@ -568,8 +556,6 @@ export const useUserStore = defineStore('user', () => {
           errorLog('userStore', `syncUserTenants: Fehler beim Pushen des lokalen Tenants ${lTenantToPush.uuid} zum Backend: ${errorMessage}`, { rawError: error, tenantUuid: lTenantToPush.uuid, dataSent: {name: lTenantToPush.tenantName, user_id: lTenantToPush.user_id} });
         }
       }
-      // Nachdem die lokale DB aktualisiert wurde und alle Push-Versuche erfolgt sind,
-      // den tenantStore benachrichtigen, seine Liste neu aus der DB zu laden.
       const tenantStore = useTenantStore();
       await tenantStore.loadTenants();
       infoLog('userStore', `syncUserTenants: Tenant-Synchronisation für User ${userId} abgeschlossen und tenantStore.loadTenants() aufgerufen.`);
@@ -580,18 +566,14 @@ export const useUserStore = defineStore('user', () => {
   }
 
   return {
-    /* State */
     users,
-    /* Getter */
     getUserById,
     getUserByUsername,
-    /* Actions */
     registerUser,
     validateLogin,
     changePassword,
     deleteUser,
     reset,
-    /* Sync Actions */
     syncUsers,
     syncUserTenants,
   };

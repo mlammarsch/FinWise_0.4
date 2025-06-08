@@ -1,7 +1,7 @@
 // src/services/TenantDbService.ts
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import type { Account, AccountGroup, SyncQueueEntry } from '@/types';
-import { SyncStatus } from '@/types'; // SyncStatus importieren
+import { SyncStatus } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -11,10 +11,6 @@ export class TenantDbService {
     return tenantStore.activeTenantDB;
   }
 
-  /**
-   * Fügt ein neues Konto zur IndexedDB hinzu.
-   * @param account Das hinzuzufügende Konto.
-   */
   async addAccount(account: Account): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'addAccount: Keine aktive Mandanten-DB verfügbar.');
@@ -29,10 +25,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Aktualisiert ein bestehendes Konto in der IndexedDB.
-   * @param account Das zu aktualisierende Konto.
-   */
   async updateAccount(account: Account): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'updateAccount: Keine aktive Mandanten-DB verfügbar.');
@@ -48,10 +40,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Löscht ein Konto aus der IndexedDB anhand seiner ID.
-   * @param accountId Die ID des zu löschenden Kontos.
-   */
   async deleteAccount(accountId: string): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'deleteAccount: Keine aktive Mandanten-DB verfügbar.');
@@ -66,11 +54,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Ruft ein Konto anhand seiner ID aus der IndexedDB ab.
-   * @param accountId Die ID des abzurufenden Kontos.
-   * @returns Das gefundene Konto oder undefined.
-   */
   async getAccountById(accountId: string): Promise<Account | undefined> {
     if (!this.db) {
       warnLog('TenantDbService', 'getAccountById: Keine aktive Mandanten-DB verfügbar.');
@@ -86,10 +69,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Ruft alle Konten aus der IndexedDB ab.
-   * @returns Ein Array aller Konten.
-   */
   async getAllAccounts(): Promise<Account[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getAllAccounts: Keine aktive Mandanten-DB verfügbar.');
@@ -105,10 +84,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Fügt eine neue Kontogruppe zur IndexedDB hinzu.
-   * @param accountGroup Die hinzuzufügende Kontogruppe.
-   */
   async addAccountGroup(accountGroup: AccountGroup): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'addAccountGroup: Keine aktive Mandanten-DB verfügbar.');
@@ -123,10 +98,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Aktualisiert eine bestehende Kontogruppe in der IndexedDB.
-   * @param accountGroup Die zu aktualisierende Kontogruppe.
-   */
   async updateAccountGroup(accountGroup: AccountGroup): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'updateAccountGroup: Keine aktive Mandanten-DB verfügbar.');
@@ -141,10 +112,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Löscht eine Kontogruppe aus der IndexedDB anhand ihrer ID.
-   * @param accountGroupId Die ID der zu löschenden Kontogruppe.
-   */
   async deleteAccountGroup(accountGroupId: string): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'deleteAccountGroup: Keine aktive Mandanten-DB verfügbar.');
@@ -159,11 +126,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Ruft eine Kontogruppe anhand ihrer ID aus der IndexedDB ab.
-   * @param accountGroupId Die ID der abzurufenden Kontogruppe.
-   * @returns Die gefundene Kontogruppe oder undefined.
-   */
   async getAccountGroupById(accountGroupId: string): Promise<AccountGroup | undefined> {
     if (!this.db) {
       warnLog('TenantDbService', 'getAccountGroupById: Keine aktive Mandanten-DB verfügbar.');
@@ -179,10 +141,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Ruft alle Kontogruppen aus der IndexedDB ab.
-   * @returns Ein Array aller Kontogruppen.
-   */
   async getAllAccountGroups(): Promise<AccountGroup[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getAllAccountGroups: Keine aktive Mandanten-DB verfügbar.');
@@ -199,8 +157,7 @@ export class TenantDbService {
   }
 
   /**
-   * Fügt einen neuen Eintrag zur Sync Queue hinzu.
-   * @param entry Der hinzuzufügende Sync-Queue-Eintrag (ohne id, timestamp, status, tenantId - diese werden hier gesetzt).
+   * Fügt einen Eintrag zur Synchronisationswarteschlange hinzu.
    */
   async addSyncQueueEntry(
     entryData: Omit<SyncQueueEntry, 'id' | 'timestamp' | 'status' | 'tenantId'>,
@@ -214,9 +171,9 @@ export class TenantDbService {
     const newEntry: SyncQueueEntry = {
       ...entryData,
       id: uuidv4(),
-      tenantId: tenantStore.activeTenantId, // tenantId hier setzen
+      tenantId: tenantStore.activeTenantId,
       timestamp: Date.now(),
-      status: SyncStatus.PENDING, // Initialer Status
+      status: SyncStatus.PENDING,
       attempts: 0,
     };
 
@@ -226,16 +183,10 @@ export class TenantDbService {
       return newEntry;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen des SyncQueue-Eintrags für Entity ${newEntry.entityType} (ID: ${newEntry.entityId})`, { entry: newEntry, error: err });
-      throw err; // Fehler weiterwerfen, damit der aufrufende Code darauf reagieren kann
+      throw err;
     }
   }
 
-  /**
-   * Ruft alle ausstehenden Sync-Queue-Einträge für einen bestimmten Mandanten ab,
-   * sortiert nach Zeitstempel in aufsteigender Reihenfolge.
-   * @param tenantId Die ID des Mandanten.
-   * @returns Ein Array von SyncQueueEntry-Objekten.
-   */
   async getPendingSyncEntries(tenantId: string): Promise<SyncQueueEntry[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getPendingSyncEntries: Keine aktive Mandanten-DB verfügbar.');
@@ -253,12 +204,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Aktualisiert den Status eines Sync-Queue-Eintrags.
-   * @param entryId Die ID des Sync-Queue-Eintrags.
-   * @param newStatus Der neue Status.
-   * @param error Optional: Eine Fehlermeldung, falls der Status FAILED ist.
-   */
   async updateSyncQueueEntryStatus(entryId: string, newStatus: SyncStatus, error?: string): Promise<boolean> {
     if (!this.db) {
       warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB verfügbar.');
@@ -274,7 +219,7 @@ export class TenantDbService {
         updateData.error = error;
       }
       if (newStatus === SyncStatus.SYNCED) {
-        updateData.error = undefined; // Fehler entfernen bei Erfolg
+        updateData.error = undefined;
       }
 
       const updatedCount = await this.db.syncQueue.update(entryId, updateData);

@@ -6,32 +6,29 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
-import type { Account, AccountGroup, SyncQueueEntry } from '../types'; // Importiere die Typen
+import type { Account, AccountGroup, SyncQueueEntry } from '../types';
 
 export class FinwiseTenantSpecificDB extends Dexie {
   accounts!: Table<Account, string>;
   accountGroups!: Table<AccountGroup, string>;
-  syncQueue!: Table<SyncQueueEntry, string>; // Sync Queue Tabelle
+  syncQueue!: Table<SyncQueueEntry, string>;
 
   constructor(databaseName: string) {
     super(databaseName);
     this.version(1).stores({
-      accounts: '&id, name, accountType, isActive, accountGroupId', // Veraltet, aber für Upgrades beibehalten
-      accountGroups: '&id, name', // Veraltet
+      accounts: '&id, name, accountType, isActive, accountGroupId',
+      accountGroups: '&id, name',
     });
-    // Version 2 fügte die syncQueue Tabelle hinzu und behielt alte Schemata bei
     this.version(2).stores({
-      accounts: '&id, name, accountType, isActive, accountGroupId', // Veraltet
-      accountGroups: '&id, name', // Veraltet
+      accounts: '&id, name, accountType, isActive, accountGroupId',
+      accountGroups: '&id, name',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status',
     });
-    // Version 3 aktualisiert accounts und accountGroups auf das vollständige Schema
     this.version(3).stores({
       accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
       accountGroups: '&id, name, sortOrder, image, updated_at',
-      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status', // Schema beibehalten
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status',
     });
-    // Weitere Versionen hier bei Bedarf
   }
 }
 
@@ -50,11 +47,9 @@ class FinwiseUserDBGlobal extends Dexie {
 const userDB = new FinwiseUserDBGlobal();
 
 import { useAccountStore } from './accountStore';
-// import { useCategoryStore } from './categoryStore'; // Vorerst nicht benötigt
 import { useSessionStore } from './sessionStore';
-import { WebSocketService } from '@/services/WebSocketService'; // Korrigierter Import-Case
+import { WebSocketService } from '@/services/WebSocketService';
 
-// Definiere den expliziten Typ für den Store-State
 interface TenantStoreState {
   tenants: Ref<DbTenant[]>;
   activeTenantId: Ref<string | null>;
@@ -70,6 +65,10 @@ interface TenantStoreState {
   syncCurrentTenantData: () => Promise<void>;
 }
 
+/**
+ * Verwaltet die Mandanten-Daten und die aktuelle Mandanten-Auswahl.
+ * Zentrale Komponente für die Mandantenverwaltung.
+ */
 export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
   const tenants = ref<DbTenant[]>([]);
   const activeTenantId = ref<string | null>(null);
@@ -188,7 +187,6 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     }
   }
 
-  /** Aktiviert einen Mandanten und verbindet dessen spezifische IndexedDB. */
   async function setActiveTenant(id: string | null): Promise<boolean> {
     if (activeTenantId.value === id && activeTenantDB.value?.isOpen()) {
       debugLog('tenantStore', `Tenant ${id} ist bereits aktiv und DB verbunden.`);
@@ -201,7 +199,6 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       activeTenantDB.value = null;
       debugLog('tenantStore', 'Vorherige aktive Mandanten-DB (Dexie-Instanz) geschlossen.');
     } else if (previousDbInstance) {
-      // Fallback, falls es ein Objekt ist, aber keine Dexie-Instanz (sollte nicht passieren)
       warnLog('tenantStore', 'Vorherige aktive Mandanten-DB war keine Dexie-Instanz, konnte nicht sicher geschlossen werden.', previousDbInstance);
       activeTenantDB.value = null;
     }
@@ -216,24 +213,17 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     let tenantExists = tenants.value.find(t => t.uuid === id);
 
     if (!tenantExists) {
-      // Wenn der Tenant nicht sofort gefunden wird, versuchen, die Tenant-Liste neu zu laden.
-      // Dies könnte helfen, wenn setActiveTenant aufgerufen wird, bevor loadTenants abgeschlossen ist
-      // oder bevor die Synchronisation der Mandanten vom Backend die lokale userDB aktualisiert hat.
       warnLog('tenantStore', `setActiveTenant: Tenant ${id} nicht sofort in der Liste gefunden. Versuche erneutes Laden der Tenants aus der userDB.`);
-      await loadTenants(); // Sicherstellen, dass die Liste aus der userDB aktuell ist
-      tenantExists = tenants.value.find(t => t.uuid === id); // Erneuter Versuch
+      await loadTenants();
+      tenantExists = tenants.value.find(t => t.uuid === id);
     }
 
     if (!tenantExists) {
       errorLog('tenantStore', `setActiveTenant: Tenant mit ID ${id} auch nach erneutem Laden aus userDB nicht gefunden. Mandantenspezifische DB wird nicht geöffnet.`);
-      // Setze den aktiven Tenant zurück, falls er es war
       if (activeTenantId.value === id) {
         activeTenantId.value = null;
         localStorage.removeItem('finwise_activeTenant');
-        const dbInstanceToClose = activeTenantDB.value; // Wert aus Ref holen
-        // Dieser Block ist innerhalb von if (activeTenantId.value === id)
-        // und behandelt den Fall, dass der Tenant nicht gefunden wurde,
-        // aber vorher vielleicht als aktiv galt.
+        const dbInstanceToClose = activeTenantDB.value;
         const dbToCloseDueToNotFoundTenant = activeTenantDB.value;
         if (dbToCloseDueToNotFoundTenant instanceof Dexie) {
           dbToCloseDueToNotFoundTenant.close();
@@ -244,10 +234,9 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
            activeTenantDB.value = null;
         }
       }
-      // Informiere auch den sessionStore, dass dieser Tenant nicht gültig ist
       const session = useSessionStore();
       if (session.currentTenantId === id) {
-        session.currentTenantId = null; // Dies sollte idealerweise einen neuen Login-Flow oder Tenant-Auswahl triggern
+        session.currentTenantId = null;
         warnLog('tenantStore', `setActiveTenant: currentTenantId im sessionStore für ungültigen Tenant ${id} zurückgesetzt.`);
       }
       return false;
@@ -265,19 +254,7 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       session.currentTenantId = id;
       infoLog('tenantStore', `Tenant "${tenantExists.tenantName}" (DB: ${dbName}) aktiviert und DB verbunden. SessionStore aktualisiert.`);
 
-      // Nach erfolgreicher Aktivierung und DB-Verbindung, initiale Daten anfordern
-      // Stellen Sie sicher, dass der WebSocket verbunden ist, bevor Sie dies tun.
-      // Dies könnte auch im WebSocketService selbst behandelt werden, wenn sich der Tenant ändert und eine Verbindung besteht.
-      // Fürs Erste rufen wir es hier direkt auf, unter der Annahme, dass der WS-Connect-Prozess
-      // auch durch die Tenant-Änderung getriggert wird oder bereits verbunden ist.
-      // Der initiale Datenabruf wird nun vom WebSocketService gehandhabt,
-      // der auf Änderungen des activeTenantId und des Verbindungsstatus reagiert.
-      // debugLog('tenantStore', `setActiveTenant: Initialer Datenabruf für Tenant ${id} wird vom WebSocketService übernommen.`);
-      // Expliziter Aufruf zum Anfordern initialer Daten:
-      if (id) { // Sicherstellen, dass eine ID vorhanden ist
-        // Es ist wichtig zu prüfen, ob der WebSocketService bereit ist oder die Anfrage puffert.
-        // Fürs Erste gehen wir davon aus, dass der connect-Prozess des WebSockets auch durch
-        // die Tenant-Änderung (via main.ts Watcher) getriggert wird und die Anfrage dann gesendet werden kann.
+      if (id) {
         WebSocketService.requestInitialData(id);
         infoLog('tenantStore', `setActiveTenant: Anforderung für initiale Daten für Tenant ${id} an WebSocketService gesendet.`);
       }
