@@ -21,7 +21,7 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.accounts.add(account);
+      await this.db.accounts.put(account);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) hinzugefügt.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen des Kontos "${account.name}"`, { account, error: err });
@@ -115,7 +115,7 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.accountGroups.add(accountGroup);
+      await this.db.accountGroups.put(accountGroup);
       debugLog('TenantDbService', `Kontogruppe "${accountGroup.name}" (ID: ${accountGroup.id}) hinzugefügt.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen der Kontogruppe "${accountGroup.name}"`, { accountGroup, error: err });
