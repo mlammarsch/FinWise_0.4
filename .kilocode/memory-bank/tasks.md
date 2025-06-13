@@ -406,3 +406,139 @@ Implementierung eines robusten Reconnection-Mechanismus für WebSocket-Verbindun
 - Vermeidung von Connection-Spam bei schlechter Verbindung
 - User Experience während Reconnection-Phasen
 - Logging für Debugging von Verbindungsproblemen
+
+---
+
+## Synchronisationsprobleme: Accounts und Account Groups
+
+**Letztes Update:** 2025-01-13
+**Status:** Kritische Bugs - Hohe Priorität
+**Anwendungsfall:** Konsistente und zuverlässige Synchronisation
+
+### Übersicht
+Zwei kritische Probleme in der aktuellen Synchronisationsimplementierung von Accounts und Account Groups, die eine inkonsistente Datensynchronisation und fehlende Prozessabwicklung verursachen.
+
+### Problem 1: Inkonsistente Synchronisation
+
+#### Aktueller Zustand:
+- Die Synchronisation von Accounts und Account Groups erfolgt aktuell anders als die Offline-Synchronisation über die Sync-Queue
+- Derzeit wird anscheinend ein normaler API-Endpoint für die Synchronisation erwartet (Kommentar im Code)
+- Dies ist bisher noch nicht implementiert
+
+#### Gewünschter Zustand:
+- Die Synchronisation von Accounts und Account Groups soll analog zur Offline-Synchronisation über die Sync-Queue erfolgen
+- Das bedeutet, dass die Synchronisationsanfragen in die Sync-Queue eingereiht werden sollen
+- Ob off- oder online: Wenn Online, soll die Sync sofort durchgeführt werden
+
+#### Begründung:
+- Ziel ist eine konsistente Synchronisationsmethode unabhängig vom Online- oder Offline-Status
+- Vereinheitlichung der Synchronisationslogik für alle Entitäten
+
+#### Zu modifizierende Dateien:
+- `src/stores/accountStore.ts` - Account-Synchronisation über Sync-Queue
+- `src/stores/accountGroupStore.ts` - Account Group-Synchronisation über Sync-Queue
+- `src/services/TenantDbService.ts` - Sync-Queue-Integration für Accounts/Groups
+- `app/services/sync_service.py` - Backend-Sync-Service für Account-Entitäten
+- `app/crud/crud_account.py` - CRUD-Operationen mit Sync-Benachrichtigung
+- `app/crud/crud_account_group.py` - CRUD-Operationen mit Sync-Benachrichtigung
+
+### Problem 2: Fehlende Rückmeldung des Synchronisationsstatus
+
+#### Aktueller Zustand:
+- Der Status eines Eintrags in der Sync-Queue wechselt auf "Processing", sobald eine Übertragung stattfindet
+- Es erfolgt keine Rückmeldung/Quittierung vom Backend, ob die Synchronisation erfolgreich war
+- Die Sync-Queue wird nicht geleert, auch wenn die Übertragung stattgefunden hat
+
+#### Gewünschter Zustand:
+- Nach erfolgreicher Synchronisation soll eine Quittierung (Bestätigung) vom Backend empfangen werden
+- Die Sync-Queue soll nach Erhalt der Bestätigung geleert werden, wobei die ID des erfolgreich synchronisierten Datensatzes angegeben wird
+
+#### Einordnung:
+- Dies wird als Bug betrachtet, da die Sync-Queue nicht korrekt verwaltet wird
+- Hier muss eine saubere Prozessabwicklung stattfinden
+
+#### Zu modifizierende Dateien:
+- `src/services/TenantDbService.ts` - Sync-Queue-Status-Management
+- `src/services/WebSocketService.ts` - Sync-Bestätigungen verarbeiten
+- `app/services/sync_service.py` - Sync-Bestätigungen senden
+- `app/websocket/schemas.py` - Sync-Bestätigungs-Nachrichten
+- `app/websocket/endpoints.py` - Sync-Bestätigungs-Handler
+
+### Lösungsansatz
+
+#### Phase 1: Sync-Queue-Integration für Accounts/Groups
+1. **Account Store anpassen**
+   ```typescript
+   // In src/stores/accountStore.ts
+   async function addAccount(accountData: Omit<Account, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+     const newAccount: Account = {
+       ...accountData,
+       id: uuidv4(),
+       updated_at: new Date().toISOString()
+     };
+
+     // Lokaler State
+     accounts.value.push(newAccount);
+
+     // IndexedDB
+     await tenantDbService?.saveAccount(newAccount);
+
+     // Sync-Queue (NEU - konsistent mit anderen Entitäten)
+     await tenantDbService?.addToSyncQueue('accounts', 'create', newAccount);
+   }
+   ```
+
+2. **Account Group Store anpassen**
+   ```typescript
+   // In src/stores/accountGroupStore.ts
+   // Analog zu Account Store - alle CRUD-Operationen über Sync-Queue
+   ```
+
+#### Phase 2: Sync-Bestätigungssystem implementieren
+1. **Backend-Bestätigungen**
+   ```python
+   # In app/services/sync_service.py
+   async def process_sync_item(item: SyncQueueItem):
+       try:
+           # Sync-Operation durchführen
+           result = await perform_sync_operation(item)
+
+           # Bestätigung an Frontend senden
+           await send_sync_confirmation(item.tenant_id, item.id, 'success', result)
+       except Exception as e:
+           # Fehler-Bestätigung senden
+           await send_sync_confirmation(item.tenant_id, item.id, 'error', str(e))
+   ```
+
+2. **Frontend-Bestätigungsverarbeitung**
+   ```typescript
+   // In src/services/WebSocketService.ts
+   case 'sync_confirmation':
+     await tenantDbService?.removeSyncQueueItem(message.payload.sync_id);
+     break;
+   ```
+
+### Validierung der Lösung
+
+#### Checkliste Problem 1:
+- [ ] Account-CRUD-Operationen verwenden Sync-Queue
+- [ ] Account Group-CRUD-Operationen verwenden Sync-Queue
+- [ ] Online-Synchronisation erfolgt sofort über Sync-Queue
+- [ ] Offline-Synchronisation wird in Queue gespeichert
+- [ ] Konsistente Synchronisationslogik für alle Entitäten
+
+#### Checkliste Problem 2:
+- [ ] Backend sendet Sync-Bestätigungen
+- [ ] Frontend verarbeitet Sync-Bestätigungen
+- [ ] Sync-Queue wird nach erfolgreicher Sync geleert
+- [ ] Fehlerhafte Sync-Versuche werden korrekt behandelt
+- [ ] Sync-Queue-Status wird korrekt verwaltet
+
+#### Test-Szenarien:
+1. **Online-Account-Erstellung**: Account wird erstellt, sofort synchronisiert, Bestätigung empfangen, Queue geleert
+2. **Offline-Account-Erstellung**: Account wird erstellt, in Queue gespeichert, bei Reconnect synchronisiert und bestätigt
+3. **Sync-Fehler**: Fehlgeschlagene Synchronisation wird korrekt behandelt, Queue-Item bleibt für Retry
+4. **Mehrere Queue-Items**: Alle Items werden sequenziell abgearbeitet und bestätigt
+
+### Priorität
+**Hoch** - Diese Probleme beeinträchtigen die Datenintegrität und Benutzererfahrung erheblich. Eine schnelle Lösung ist erforderlich, um eine zuverlässige Synchronisation zu gewährleisten.
