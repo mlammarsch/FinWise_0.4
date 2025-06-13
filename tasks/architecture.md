@@ -10,7 +10,7 @@ Die Frontend-Anwendung ist in drei Hauptschichten unterteilt:
 
 *   **UI-Schicht (Vue-Komponenten):** Verantwortlich für die Darstellung der Benutzeroberfläche und die Interaktion mit dem Benutzer. Nutzt daisyui und tailwind.
 *   **Business-Logic-Schicht (Services):** Enthält die Geschäftslogik der Anwendung und implementiert Funktionen wie Budgetierung, Transaktionsverwaltung und Prognoseberechnungen.
-*   **Datenschicht (Stores):** Verwaltet den Zustand der Anwendung und stellt Daten für die UI-Schicht bereit. Stores nutzen Pinia.
+*   **Datenschicht (Stores):** Verwaltet den Zustand der Anwendung und stellt Daten für die UI-Schicht bereit. Stores nutzen Pinia mit IndexedDB-Persistierung für Offline-Funktionalität.
 
 ### Modulstruktur (Frontend)
 
@@ -30,10 +30,132 @@ Die Anwendung ist modular aufgebaut und umfasst folgende Bereiche:
 *   `components`:  Wiederverwendbare UI-Komponenten (z.B. `AccountCard.vue`, `BudgetForm.vue`).
 *   `layouts`: Definiert das Layout der Anwendung (z.B. `AppLayout.vue`).
 *   `router`: Definiert die Routen der Anwendung.
-*   `services`:  Implementiert die Geschäftslogik (z.B. `AccountService.ts`, `BudgetService.ts`).
-*   `stores`: Verwaltet den Anwendungszustand (z.B. `accountStore.ts`, `budgetStore.ts`).
+*   `services`:  Implementiert die Geschäftslogik (z.B. `AccountService.ts`, `BudgetService.ts`) und Datenpersistierung (`TenantDbService.ts` für IndexedDB).
+*   `stores`: Verwaltet den Anwendungszustand (z.B. `accountStore.ts`, `budgetStore.ts`) mit IndexedDB-Persistierung für Offline-Funktionalität.
 *   `types`: Definiert TypeScript-Typen und -Interfaces.
 *   `utils`: Enthält Hilfsfunktionen (z.B. Datumsformatierung, Währungsformatierung).
+## IndexedDB-Integration und Datenpersistierung
+
+### Übersicht
+
+Die Frontend-Anwendung nutzt IndexedDB für lokale Datenpersistierung, um Offline-Funktionalität und verbesserte Performance zu gewährleisten. Die Integration erfolgt über den [`TenantDbService`](../src/services/TenantDbService.ts), der eine einheitliche API für alle Stores bereitstellt.
+
+### Architektur der Datenpersistierung
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   Vue Components│    │   Pinia Stores   │    │  TenantDbService│
+│                 │───▶│                  │───▶│                 │
+│  (UI Layer)     │    │ (State Management│    │ (Data Layer)    │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
+                                                         │
+                                                         ▼
+                                                ┌─────────────────┐
+                                                │   IndexedDB     │
+                                                │                 │
+                                                │ (Browser Storage│
+                                                └─────────────────┘
+```
+
+### TenantDbService
+
+Der [`TenantDbService`](../src/services/TenantDbService.ts) fungiert als zentrale Abstraktionsschicht für IndexedDB-Operationen:
+
+**Hauptfunktionalitäten:**
+- **Tenant-spezifische Datenbankisolation**: Jeder Mandant erhält eine separate IndexedDB-Datenbank
+- **CRUD-Operationen**: Einheitliche API für Create, Read, Update, Delete
+- **Sync-Queue Management**: Verwaltung ausstehender Synchronisationsoperationen
+- **Schema-Management**: Automatische Datenbank-Initialisierung und Migrations
+- **Error Handling**: Robuste Fehlerbehandlung mit Logging-Integration
+
+**Unterstützte Entitäten:**
+- Transactions (vollständig implementiert)
+- Accounts (geplant)
+- Categories (geplant)
+- Budgets (geplant)
+- Rules (geplant)
+
+### Store-Integration
+
+#### Transaction Store Beispiel
+
+```typescript
+// Verwendung in transactionStore.ts
+const tenantDbService = new TenantDbService();
+
+// CRUD-Operationen
+async function addTransaction(tx: ExtendedTransaction): Promise<ExtendedTransaction> {
+  await tenantDbService.addTransaction(tx);
+  // Sync-Queue Entry automatisch erstellt
+  await tenantDbService.addSyncQueueEntry({
+    entityType: EntityTypeEnum.TRANSACTION,
+    entityId: tx.id,
+    operationType: SyncOperationType.CREATE,
+    payload: tx,
+  });
+  return tx;
+}
+```
+
+### Sync-System Integration
+
+#### Last-Write-Wins Konfliktauflösung
+
+Das System implementiert eine Last-Write-Wins Strategie basierend auf `updated_at` Timestamps:
+
+```typescript
+// Konfliktauflösung bei eingehenden Sync-Daten
+if (localTransaction.updated_at && incomingTransaction.updated_at &&
+    new Date(localTransaction.updated_at) >= new Date(incomingTransaction.updated_at)) {
+  // Lokale Version ist neuer - eingehende Änderung verwerfen
+  return localTransaction;
+}
+```
+
+#### Sync-Queue Management
+
+- **Automatische Queue-Erstellung**: Lokale Änderungen werden automatisch zur Synchronisation vorgemerkt
+- **Batch-Processing**: Effiziente Übertragung mehrerer Änderungen
+- **Retry-Mechanismus**: Fehlgeschlagene Sync-Operationen werden wiederholt
+- **Conflict Resolution**: Intelligente Behandlung von Sync-Konflikten
+
+### Performance-Optimierungen
+
+#### IndexedDB Vorteile
+
+- **Asynchrone Operationen**: Non-blocking UI durch Promise-basierte API
+- **Große Speicherkapazität**: Praktisch unbegrenzt im Vergleich zu localStorage
+- **Indexierung**: Effiziente Abfragen durch automatische Indizes
+- **Transaktionale Konsistenz**: ACID-Eigenschaften für Datenintegrität
+
+#### Implementierte Optimierungen
+
+- **Lazy Loading**: Daten werden nur bei Bedarf geladen
+- **Batch Operations**: Mehrere Operationen in einer Transaktion
+- **Selective Updates**: Nur geänderte Felder werden aktualisiert
+- **Caching**: Store-State als Cache für häufig abgerufene Daten
+
+### Migration und Kompatibilität
+
+#### Automatische Migration
+
+```typescript
+// Nahtlose Umstellung von localStorage zu IndexedDB
+async function migrateFromLocalStorage(): Promise<void> {
+  const oldData = localStorage.getItem('transactions');
+  if (oldData) {
+    const transactions = JSON.parse(oldData);
+    await tenantDbService.bulkAddTransactions(transactions);
+    localStorage.removeItem('transactions');
+  }
+}
+```
+
+#### API-Kompatibilität
+
+- **Keine Breaking Changes**: Alle bestehenden Store-Methoden bleiben unverändert
+- **Rückwärtskompatibilität**: Unterstützung für Legacy-Datenformate
+- **Graceful Degradation**: Fallback auf localStorage bei IndexedDB-Problemen
 *   `views`: Enthält die Hauptansichten, jede View liegt in der Regel in einer eigenen *.vue-Datei.
 
 ## Backend-Architektur

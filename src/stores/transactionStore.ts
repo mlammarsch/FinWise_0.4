@@ -6,10 +6,10 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { Transaction } from '@/types';
+import { Transaction, SyncOperationType, EntityTypeEnum } from '@/types';
 import { useAccountStore } from './accountStore';
-import { debugLog } from '@/utils/logger';
-import { storageKey } from '@/utils/storageKey';
+import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
+import { TenantDbService } from '@/services/TenantDbService';
 
 export interface ExtendedTransaction extends Transaction {
   tagIds: string[];
@@ -19,6 +19,7 @@ export interface ExtendedTransaction extends Transaction {
   isReconciliation: boolean;
   runningBalance: number;
   transferToAccountId?: string | null;
+  updated_at?: string;
 }
 
 function toDateOnlyString(i: string): string {
@@ -26,6 +27,8 @@ function toDateOnlyString(i: string): string {
 }
 
 export const useTransactionStore = defineStore('transaction', () => {
+  const tenantDbService = new TenantDbService();
+
   /* ----------------------------------------------------- State */
   const transactions = ref<ExtendedTransaction[]>([]);
   const accountStore = useAccountStore();
@@ -48,74 +51,181 @@ export const useTransactionStore = defineStore('transaction', () => {
   );
 
   function getRecentTransactions(limit: number = 10) {
-    debugLog('[transactionStore] getRecentTransactions', { limit });
+    debugLog('transactionStore', 'getRecentTransactions', { limit });
     return [...transactions.value]
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, limit);
   }
 
   /* --------------------------------------------------- Actions */
-  function addTransaction(tx: ExtendedTransaction): ExtendedTransaction {
-    transactions.value.push(tx);
-    saveTransactions();
-    debugLog('[transactionStore] addTransaction', tx);
-    return tx;
+  async function addTransaction(tx: ExtendedTransaction, fromSync = false): Promise<ExtendedTransaction> {
+    const transactionWithTimestamp: ExtendedTransaction = {
+      ...tx,
+      updated_at: tx.updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      const localTransaction = await tenantDbService.getTransactionById(transactionWithTimestamp.id);
+      if (localTransaction && localTransaction.updated_at && transactionWithTimestamp.updated_at &&
+          new Date(localTransaction.updated_at) >= new Date(transactionWithTimestamp.updated_at)) {
+        infoLog('transactionStore', `addTransaction (fromSync): Lokale Transaktion ${localTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localTransaction;
+      }
+      await tenantDbService.addTransaction(transactionWithTimestamp);
+      infoLog('transactionStore', `addTransaction (fromSync): Eingehende Transaktion ${transactionWithTimestamp.id} angewendet.`);
+    } else {
+      await tenantDbService.addTransaction(transactionWithTimestamp);
+    }
+
+    const existingTransactionIndex = transactions.value.findIndex(t => t.id === transactionWithTimestamp.id);
+    if (existingTransactionIndex === -1) {
+      transactions.value.push(transactionWithTimestamp);
+    } else {
+      if (!fromSync || (transactionWithTimestamp.updated_at && (!transactions.value[existingTransactionIndex].updated_at || new Date(transactionWithTimestamp.updated_at) > new Date(transactions.value[existingTransactionIndex].updated_at!)))) {
+        transactions.value[existingTransactionIndex] = transactionWithTimestamp;
+      } else if (fromSync) {
+        warnLog('transactionStore', `addTransaction (fromSync): Store-Transaktion ${transactions.value[existingTransactionIndex].id} war neuer als eingehende ${transactionWithTimestamp.id}. Store nicht geändert.`);
+      }
+    }
+    infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" im Store hinzugefügt/aktualisiert (ID: ${transactionWithTimestamp.id}).`);
+
+    if (!fromSync) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.TRANSACTION,
+          entityId: transactionWithTimestamp.id,
+          operationType: SyncOperationType.CREATE,
+          payload: transactionWithTimestamp,
+        });
+        infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" zur Sync Queue hinzugefügt (CREATE).`);
+      } catch (e) {
+        errorLog('transactionStore', `Fehler beim Hinzufügen von Transaction "${transactionWithTimestamp.description}" zur Sync Queue.`, e);
+      }
+    }
+    return transactionWithTimestamp;
   }
 
-  function updateTransaction(id: string, updates: Partial<ExtendedTransaction>): boolean {
-    const idx = transactions.value.findIndex(t => t.id === id);
-    if (idx === -1) {
-      debugLog('[transactionStore] updateTransaction - not found', id);
-      return false;
+  async function updateTransaction(id: string, updates: Partial<ExtendedTransaction>, fromSync = false): Promise<boolean> {
+    const transactionUpdatesWithTimestamp: Partial<ExtendedTransaction> = {
+      ...updates,
+      updated_at: updates.updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      const localTransaction = await tenantDbService.getTransactionById(id);
+      if (!localTransaction) {
+        infoLog('transactionStore', `updateTransaction (fromSync): Lokale Transaktion ${id} nicht gefunden. Behandle als addTransaction.`);
+        const fullTransaction = { id, ...transactionUpdatesWithTimestamp } as ExtendedTransaction;
+        await addTransaction(fullTransaction, true);
+        return true;
+      }
+
+      if (localTransaction.updated_at && transactionUpdatesWithTimestamp.updated_at &&
+          new Date(localTransaction.updated_at) >= new Date(transactionUpdatesWithTimestamp.updated_at)) {
+        infoLog('transactionStore', `updateTransaction (fromSync): Lokale Transaktion ${localTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return true;
+      }
+      const updatedTransaction = { ...localTransaction, ...transactionUpdatesWithTimestamp };
+      await tenantDbService.updateTransaction(updatedTransaction);
+      infoLog('transactionStore', `updateTransaction (fromSync): Eingehendes Update für Transaktion ${id} angewendet.`);
+    } else {
+      const localTransaction = await tenantDbService.getTransactionById(id);
+      if (!localTransaction) {
+        debugLog('transactionStore', 'updateTransaction - not found', { id });
+        return false;
+      }
+      const updatedTransaction = { ...localTransaction, ...transactionUpdatesWithTimestamp };
+      await tenantDbService.updateTransaction(updatedTransaction);
     }
-    transactions.value[idx] = { ...transactions.value[idx], ...updates };
-    saveTransactions();
-    debugLog('[transactionStore] updateTransaction - updated', { id, updates });
+
+    const idx = transactions.value.findIndex(t => t.id === id);
+    if (idx !== -1) {
+      if (!fromSync || (transactionUpdatesWithTimestamp.updated_at && (!transactions.value[idx].updated_at || new Date(transactionUpdatesWithTimestamp.updated_at) > new Date(transactions.value[idx].updated_at!)))) {
+        transactions.value[idx] = { ...transactions.value[idx], ...transactionUpdatesWithTimestamp };
+      } else if (fromSync) {
+        warnLog('transactionStore', `updateTransaction (fromSync): Store-Transaktion ${transactions.value[idx].id} war neuer als eingehende ${id}. Store nicht geändert.`);
+      }
+      infoLog('transactionStore', `Transaction mit ID "${id}" im Store aktualisiert.`);
+
+      if (!fromSync) {
+        try {
+          await tenantDbService.addSyncQueueEntry({
+            entityType: EntityTypeEnum.TRANSACTION,
+            entityId: id,
+            operationType: SyncOperationType.UPDATE,
+            payload: transactions.value[idx],
+          });
+          infoLog('transactionStore', `Transaction mit ID "${id}" zur Sync Queue hinzugefügt (UPDATE).`);
+        } catch (e) {
+          errorLog('transactionStore', `Fehler beim Hinzufügen von Transaction Update (ID: "${id}") zur Sync Queue.`, e);
+        }
+      }
+      return true;
+    }
+    if (fromSync) {
+      warnLog('transactionStore', `updateTransaction: Transaction ${id} not found in store during sync. Adding it.`);
+      const fullTransaction = { id, ...transactionUpdatesWithTimestamp } as ExtendedTransaction;
+      await addTransaction(fullTransaction, true);
+      return true;
+    }
+    return false;
+  }
+
+  async function deleteTransaction(id: string, fromSync = false): Promise<boolean> {
+    const transactionToDelete = transactions.value.find(t => t.id === id);
+
+    await tenantDbService.deleteTransaction(id);
+    transactions.value = transactions.value.filter(t => t.id !== id);
+    infoLog('transactionStore', `Transaction mit ID "${id}" aus Store und lokaler DB entfernt.`);
+
+    if (!fromSync && transactionToDelete) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.TRANSACTION,
+          entityId: id,
+          operationType: SyncOperationType.DELETE,
+          payload: { id: id },
+        });
+        infoLog('transactionStore', `Transaction mit ID "${id}" zur Sync Queue hinzugefügt (DELETE).`);
+      } catch (e) {
+        errorLog('transactionStore', `Fehler beim Hinzufügen von Transaction Delete (ID: "${id}") zur Sync Queue.`, e);
+      }
+    }
     return true;
   }
 
-  function deleteTransaction(id: string): boolean {
-    const before = transactions.value.length;
-    transactions.value = transactions.value.filter(t => t.id !== id);
-    const success = transactions.value.length < before;
-    if (success) {
-      saveTransactions();
-      debugLog('[transactionStore] deleteTransaction - deleted', id);
-    } else {
-      debugLog('[transactionStore] deleteTransaction - not found', id);
-    }
-    return success;
-  }
-
   /* ----------------------------------------------- Persistence */
-  function loadTransactions() {
-    const raw = localStorage.getItem(storageKey('transactions'));
-    transactions.value = raw ? JSON.parse(raw) : [];
+  async function loadTransactions(): Promise<void> {
+    try {
+      const loadedTransactions = await tenantDbService.getAllTransactions();
+      transactions.value = loadedTransactions || [];
 
-    // normalize dates
-    transactions.value = transactions.value.map(tx => ({
-      ...tx,
-      date: toDateOnlyString(tx.date),
-      valueDate: toDateOnlyString(tx.valueDate || tx.date),
-    }));
+      // normalize dates
+      transactions.value = transactions.value.map(tx => ({
+        ...tx,
+        date: toDateOnlyString(tx.date),
+        valueDate: toDateOnlyString(tx.valueDate || tx.date),
+      }));
 
-    debugLog('[transactionStore] loadTransactions', {
-      cnt: transactions.value.length,
-    });
+      debugLog('transactionStore', 'loadTransactions completed', {
+        count: transactions.value.length,
+      });
+    } catch (error) {
+      errorLog('transactionStore', 'Fehler beim Laden der Transaktionen', error);
+      transactions.value = [];
+    }
   }
 
-  function saveTransactions() {
-    localStorage.setItem(
-      storageKey('transactions'),
-      JSON.stringify(transactions.value),
-    );
-    debugLog('[transactionStore] saveTransactions');
-  }
-
-  function reset() {
+  async function reset(): Promise<void> {
     transactions.value = [];
-    loadTransactions();
-    debugLog('[transactionStore] reset');
+    await loadTransactions();
+    debugLog('transactionStore', 'reset completed');
+  }
+
+  /** Initialisiert den Store beim Tenantwechsel oder App-Start */
+  async function initializeStore(): Promise<void> {
+    await loadTransactions();
+    debugLog('transactionStore', 'initializeStore completed');
   }
 
   loadTransactions();
@@ -131,7 +241,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     updateTransaction,
     deleteTransaction,
     loadTransactions,
-    saveTransactions,
     reset,
+    initializeStore,
   };
 });

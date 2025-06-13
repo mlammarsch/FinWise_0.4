@@ -270,6 +270,7 @@ export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity
   ACCOUNT_GROUP = 'AccountGroup',
   CATEGORY = 'Category',
   CATEGORY_GROUP = 'CategoryGroup',
+  TRANSACTION = 'Transaction',
   // Weitere Entitätstypen hier bei Bedarf
 }
 
@@ -388,7 +389,7 @@ export interface SyncQueueEntry {
   entityType: EntityTypeEnum; // Typ der Entität, Verwendung des neuen Enums
   entityId: string; // ID der betroffenen Entität
   operationType: SyncOperationType; // Art der Operation
-  payload: Account | AccountGroup | Category | CategoryGroup | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
+  payload: Account | AccountGroup | Category | CategoryGroup | Transaction | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
   timestamp: number; // Zeitstempel der Änderung (Unix-Timestamp)
   status: SyncStatus; // Status des Sync-Eintrags
   attempts?: number; // Anzahl der Synchronisierungsversuche

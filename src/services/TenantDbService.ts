@@ -1,5 +1,6 @@
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry, QueueStatistics } from '@/types';
+import type { ExtendedTransaction } from '@/stores/transactionStore';
 import { SyncStatus } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -559,6 +560,78 @@ export class TenantDbService {
     } catch (error) {
       errorLog('TenantDbService', 'Error getting pending DELETE operations', { error, tenantId });
       return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
+    }
+  }
+
+  async addTransaction(transaction: ExtendedTransaction): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTransaction: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.transactions.put(transaction);
+      debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen der Transaktion "${transaction.description}"`, { transaction, error: err });
+      throw err;
+    }
+  }
+
+  async updateTransaction(transaction: ExtendedTransaction): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateTransaction: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.transactions.put(transaction);
+      debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) aktualisiert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren der Transaktion "${transaction.description}"`, { transaction, error: err });
+      throw err;
+    }
+  }
+
+  async deleteTransaction(transactionId: string): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteTransaction: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.transactions.delete(transactionId);
+      debugLog('TenantDbService', `Transaktion mit ID "${transactionId}" gelöscht.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der Transaktion mit ID "${transactionId}"`, { transactionId, error: err });
+      throw err;
+    }
+  }
+
+  async getTransactionById(transactionId: string): Promise<ExtendedTransaction | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getTransactionById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const transaction = await this.db.transactions.get(transactionId);
+      debugLog('TenantDbService', `Transaktion mit ID "${transactionId}" abgerufen.`, { transaction });
+      return transaction;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der Transaktion mit ID "${transactionId}"`, { transactionId, error: err });
+      return undefined;
+    }
+  }
+
+  async getAllTransactions(): Promise<ExtendedTransaction[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getAllTransactions: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const transactions = await this.db.transactions.toArray();
+      debugLog('TenantDbService', 'Alle Transaktionen abgerufen.', { count: transactions.length });
+      return transactions;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Transaktionen', { error: err });
+      return [];
     }
   }
 }

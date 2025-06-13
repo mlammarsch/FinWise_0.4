@@ -6,12 +6,14 @@ import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
 import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry } from '../types';
+import type { ExtendedTransaction } from './transactionStore';
 
 export class FinwiseTenantSpecificDB extends Dexie {
   accounts!: Table<Account, string>;
   accountGroups!: Table<AccountGroup, string>;
   categories!: Table<Category, string>;
   categoryGroups!: Table<CategoryGroup, string>;
+  transactions!: Table<ExtendedTransaction, string>;
   syncQueue!: Table<SyncQueueEntry, string>;
 
   constructor(databaseName: string) {
@@ -40,6 +42,14 @@ export class FinwiseTenantSpecificDB extends Dexie {
       accountGroups: '&id, name, sortOrder, image, updated_at',
       categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
       categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(6).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
     });
   }
