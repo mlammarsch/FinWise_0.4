@@ -22,15 +22,15 @@
  * - transfer – Übertragung erfolgreich durchgeführt
  */
 import { ref, computed, watch, onMounted, nextTick, withDefaults } from "vue";
-import { toDateOnlyString } from "@/utils/formatters";
+import { toDateOnlyString } from "../../utils/formatters";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import CurrencyInput from "../ui/CurrencyInput.vue";
 import SelectCategory from "../ui/SelectCategory.vue";
-import { useCategoryStore } from "@/stores/categoryStore";
-import { debugLog } from "@/utils/logger";
+import { CategoryService } from "../../services/CategoryService";
+import { debugLog } from "../../utils/logger";
 import { Icon } from "@iconify/vue";
-import { TransactionService } from "@/services/TransactionService";
-import { BalanceService } from "@/services/BalanceService";
+import { TransactionService } from "../../services/TransactionService";
+import { BalanceService } from "../../services/BalanceService";
 
 const props = withDefaults(
   defineProps<{
@@ -52,8 +52,6 @@ const props = withDefaults(
 );
 
 const emit = defineEmits(["close", "transfer"]);
-
-const categoryStore = useCategoryStore();
 
 const fromCategoryIdLocal = ref("");
 const toCategoryIdLocal = ref("");
@@ -101,7 +99,7 @@ const availableFromBalance = computed(() => {
 });
 
 onMounted(() => {
-  debugLog("[CategoryTransferModal] mounted - incoming props", { ...props });
+  debugLog("CategoryTransferModal", "mounted - incoming props", { ...props });
 });
 
 watch(
@@ -129,7 +127,8 @@ watch(
           toCategoryIdLocal.value = "";
         } else if (props.mode === "fill" && props.preselectedCategoryId) {
           toCategoryIdLocal.value = props.preselectedCategoryId;
-          const availableFundsCat = categoryStore.getAvailableFundsCategory();
+          const availableFundsCat =
+            CategoryService.getAvailableFundsCategory().value;
           fromCategoryIdLocal.value = availableFundsCat?.id || "";
         } else {
           fromCategoryIdLocal.value = "";
@@ -157,7 +156,7 @@ watch(
         }
       });
 
-      debugLog("[CategoryTransferModal] Initialized state", {
+      debugLog("CategoryTransferModal", "Initialized state", {
         from: fromCategoryIdLocal.value,
         to: toCategoryIdLocal.value,
         amount: amount.value,
@@ -184,7 +183,7 @@ async function performTransfer() {
     !date.value ||
     isProcessing.value
   ) {
-    debugLog("[CategoryTransferModal] Validation failed or processing", {
+    debugLog("CategoryTransferModal", "Validation failed or processing", {
       from: fromCategoryIdLocal.value,
       to: toCategoryIdLocal.value,
       amount: amount.value,
@@ -198,7 +197,7 @@ async function performTransfer() {
   try {
     let success = false;
     if (props.transactionId && props.gegentransactionId) {
-      debugLog("[CategoryTransferModal] Attempting to update transfer");
+      debugLog("CategoryTransferModal", "Attempting to update transfer");
       success = await TransactionService.updateCategoryTransfer(
         props.transactionId,
         props.gegentransactionId,
@@ -209,7 +208,7 @@ async function performTransfer() {
         noteLocal.value
       );
     } else {
-      debugLog("[CategoryTransferModal] Attempting to add transfer");
+      debugLog("CategoryTransferModal", "Attempting to add transfer");
       const result = await TransactionService.addCategoryTransfer(
         fromCategoryIdLocal.value,
         toCategoryIdLocal.value,
@@ -221,16 +220,16 @@ async function performTransfer() {
     }
 
     if (success) {
-      debugLog("[CategoryTransferModal] Transfer successful");
+      debugLog("CategoryTransferModal", "Transfer successful");
       // Explizite Aktualisierung der Salden
       BalanceService.calculateMonthlyBalances();
       emit("transfer");
       emit("close");
     } else {
-      debugLog("[CategoryTransferModal] Transfer failed");
+      debugLog("CategoryTransferModal", "Transfer failed");
     }
   } catch (error) {
-    debugLog("[CategoryTransferModal] Error during transfer:", error);
+    debugLog("CategoryTransferModal", "Error during transfer", error);
   } finally {
     isProcessing.value = false;
   }
@@ -246,19 +245,24 @@ async function performTransfer() {
   >
     <div class="modal-box w-full max-w-lg">
       <h3 class="font-bold text-lg mb-4 flex items-center">
-        <Icon icon="mdi:swap-horizontal-bold" class="mr-2 text-xl" />
+        <Icon
+          icon="mdi:swap-horizontal-bold"
+          class="mr-2 text-xl"
+        />
         <template v-if="transactionId">Kategorietransfer bearbeiten</template>
         <template v-else-if="mode === 'fill'">
           Fülle
           <span class="font-semibold mx-1">{{
-            categoryStore.getCategoryById(toCategoryIdLocal)?.name || "..."
+            CategoryService.getCategoryById(toCategoryIdLocal).value?.name ||
+            "..."
           }}</span>
           auf von...
         </template>
         <template v-else>
           Transferiere von
           <span class="font-semibold mx-1">{{
-            categoryStore.getCategoryById(fromCategoryIdLocal)?.name || "..."
+            CategoryService.getCategoryById(fromCategoryIdLocal).value?.name ||
+            "..."
           }}</span>
           zu...
         </template>
@@ -304,7 +308,10 @@ async function performTransfer() {
             v-model="amount"
             :class="amount > availableFromBalance ? 'input-error' : ''"
           />
-          <label class="label" v-if="fromCategoryIdLocal">
+          <label
+            class="label"
+            v-if="fromCategoryIdLocal"
+          >
             <span
               class="label-text-alt flex items-center"
               :class="
@@ -359,7 +366,11 @@ async function performTransfer() {
 
         <!-- Actions -->
         <div class="modal-action mt-6">
-          <button type="button" class="btn btn-ghost" @click="$emit('close')">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            @click="$emit('close')"
+          >
             Abbrechen
           </button>
           <button
@@ -376,7 +387,10 @@ async function performTransfer() {
         </div>
       </form>
     </div>
-    <div class="modal-backdrop bg-black/30" @click="$emit('close')"></div>
+    <div
+      class="modal-backdrop bg-black/30"
+      @click="$emit('close')"
+    ></div>
   </div>
 </template>
 

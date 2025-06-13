@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { Category } from "../../types";
-import { useCategoryStore } from "../../stores/categoryStore";
+import { CategoryService } from "../../services/CategoryService";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 
 const props = defineProps<{
@@ -11,8 +11,6 @@ const props = defineProps<{
 
 const emit = defineEmits(["save", "cancel"]);
 
-const categoryStore = useCategoryStore();
-
 // Formularfelder
 const name = ref("");
 const description = ref("");
@@ -21,24 +19,25 @@ const isSavingsGoal = ref(false);
 const targetAmount = ref(0);
 const targetDate = ref("");
 const categoryGroupId = ref("");
-const parentCategoryId = ref<string | null>(null);
+const parentCategoryId = ref<string | undefined>(undefined);
 const balance = ref(0);
 
 // Lade die Daten, wenn eine Kategorie zum Bearbeiten übergeben wurde
 onMounted(() => {
   if (props.category) {
     name.value = props.category.name;
-    description.value = props.category.description;
+    description.value = ""; // Category hat keine description property
     isActive.value = props.category.isActive;
-    isSavingsGoal.value = props.category.isSavingsGoal;
-    targetAmount.value = props.category.targetAmount;
-    targetDate.value = props.category.targetDate || "";
-    categoryGroupId.value = props.category.categoryGroupId;
+    isSavingsGoal.value = props.category.isSavingsGoal || false;
+    targetAmount.value = 0; // Category hat keine targetAmount property
+    targetDate.value = ""; // Category hat keine targetDate property
+    categoryGroupId.value = props.category.categoryGroupId || "";
     parentCategoryId.value = props.category.parentCategoryId;
-    balance.value = props.category.balance;
+    balance.value = props.category.available || 0;
   } else {
-    if (categoryStore.categoryGroups.length > 0) {
-      categoryGroupId.value = categoryStore.categoryGroups[0].id;
+    const groups = CategoryService.getCategoryGroups().value;
+    if (groups.length > 0) {
+      categoryGroupId.value = groups[0].id;
     }
   }
 });
@@ -59,24 +58,30 @@ const formatNumber = (value: number | undefined | null): string => {
 const saveCategory = () => {
   const categoryData: Omit<Category, "id"> = {
     name: name.value,
-    description: description.value,
+    icon: undefined,
+    budgeted: 0,
+    activity: 0,
+    available: balance.value,
+    isIncomeCategory: false,
+    isHidden: false,
     isActive: isActive.value,
-    isSavingsGoal: isSavingsGoal.value,
-    targetAmount: targetAmount.value,
-    targetDate: targetDate.value || null,
+    sortOrder: 0,
     categoryGroupId: categoryGroupId.value,
     parentCategoryId: parentCategoryId.value,
-    balance: balance.value,
+    isSavingsGoal: isSavingsGoal.value,
+    updated_at: new Date().toISOString(),
   };
 
   emit("save", categoryData);
 };
 
-const categoryGroups = computed(() => categoryStore.categoryGroups);
+const categoryGroups = computed(
+  () => CategoryService.getCategoryGroups().value
+);
 
 const parentCategories = computed(() => {
-  return categoryStore.categories
-    .filter((cat) => !props.category || cat.id !== props.category.id)
+  return CategoryService.getCategories()
+    .value.filter((cat) => !props.category || cat.id !== props.category.id)
     .map((cat) => ({
       id: cat.id,
       name: cat.name,
@@ -85,7 +90,10 @@ const parentCategories = computed(() => {
 </script>
 
 <template>
-  <form @submit.prevent="saveCategory" class="space-y-4">
+  <form
+    @submit.prevent="saveCategory"
+    class="space-y-4"
+  >
     <div class="form-control">
       <label class="label">
         <span class="label-text">Name</span>
@@ -141,7 +149,7 @@ const parentCategories = computed(() => {
           v-model="parentCategoryId"
           class="select select-bordered w-full"
         >
-          <option :value="null">Keine (Hauptkategorie)</option>
+          <option :value="undefined">Keine (Hauptkategorie)</option>
           <option
             v-for="category in parentCategories"
             :key="category.id"
@@ -164,7 +172,10 @@ const parentCategories = computed(() => {
       </label>
     </div>
 
-    <div v-if="isSavingsGoal" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div
+      v-if="isSavingsGoal"
+      class="grid grid-cols-1 md:grid-cols-2 gap-4"
+    >
       <div class="form-control">
         <label class="label">
           <span class="label-text">Zielbetrag</span>
@@ -174,7 +185,11 @@ const parentCategories = computed(() => {
           <input
             type="text"
             :value="formatNumber(targetAmount)"
-            @input="targetAmount = parseNumber(($event.target as HTMLInputElement).value)"
+            @input="
+              targetAmount = parseNumber(
+                ($event.target as HTMLInputElement).value
+              )
+            "
             class="input input-bordered w-full"
             :required="isSavingsGoal"
             placeholder="0,00"
@@ -195,7 +210,10 @@ const parentCategories = computed(() => {
       </div>
     </div>
 
-    <div v-if="isEdit" class="form-control">
+    <div
+      v-if="isEdit"
+      class="form-control"
+    >
       <label class="label">
         <span class="label-text">Aktueller Saldo</span>
       </label>
@@ -218,10 +236,19 @@ const parentCategories = computed(() => {
     </div>
 
     <div class="flex justify-end space-x-2 pt-4">
-      <button type="button" class="btn" @click="$emit('cancel')">
+      <button
+        type="button"
+        class="btn"
+        @click="$emit('cancel')"
+      >
         Abbrechen
       </button>
-      <button type="submit" class="btn btn-primary">Speichern</button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+      >
+        Speichern
+      </button>
     </div>
   </form>
 </template>

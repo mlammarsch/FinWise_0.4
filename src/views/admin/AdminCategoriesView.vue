@@ -1,23 +1,22 @@
 <!-- src/views/admin/AdminCategoriesView.vue -->
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { useCategoryStore } from "../../stores/categoryStore";
+import { CategoryService } from "../../services/CategoryService";
 import CategoryForm from "../../components/budget/CategoryForm.vue";
 import { Category } from "../../types";
 import { Icon } from "@iconify/vue";
 
-// Stores
-const categoryStore = useCategoryStore();
-
 // Helper
 const isVerfuegbareMittel = (cat: Category) =>
-  cat.name.trim().toLowerCase() === "verfügbare mittel";
+  cat?.name?.trim()?.toLowerCase() === "verfügbare mittel";
 
-// Gefilterte Daten (ohne ‚Verfügbare Mittel‘)
+// Gefilterte Daten (ohne ‚Verfügbare Mittel')
 const categories = computed(() =>
-  categoryStore.categories.filter((c) => !isVerfuegbareMittel(c))
+  CategoryService.getCategories().value.filter((c) => !isVerfuegbareMittel(c))
 );
-const categoryGroups = computed(() => categoryStore.categoryGroups);
+const categoryGroups = computed(
+  () => CategoryService.getCategoryGroups().value
+);
 
 // Kategorie State
 const showCategoryModal = ref(false);
@@ -44,24 +43,37 @@ const createCategory = () => {
   showCategoryModal.value = true;
 };
 
-const saveCategory = (categoryData: Omit<Category, "id">) => {
-  if (isEditMode.value && selectedCategory.value) {
-    categoryStore.updateCategory(selectedCategory.value.id, categoryData);
-  } else {
-    categoryStore.addCategory(categoryData);
+const saveCategory = async (categoryData: Omit<Category, "id">) => {
+  try {
+    if (isEditMode.value && selectedCategory.value) {
+      await CategoryService.updateCategory(
+        selectedCategory.value.id,
+        categoryData
+      );
+    } else {
+      await CategoryService.addCategory(categoryData);
+    }
+    showCategoryModal.value = false;
+  } catch (error) {
+    console.error("Fehler beim Speichern der Kategorie:", error);
+    alert("Fehler beim Speichern der Kategorie.");
   }
-  showCategoryModal.value = false;
 };
 
-const deleteCategory = (category: Category) => {
+const deleteCategory = async (category: Category) => {
   if (
     confirm(`Möchten Sie die Kategorie "${category.name}" wirklich löschen?`)
   ) {
-    const result = categoryStore.deleteCategory(category.id);
-    if (!result) {
-      alert(
-        "Die Kategorie kann nicht gelöscht werden, da sie Unterkategorien enthält."
-      );
+    try {
+      const result = await CategoryService.deleteCategory(category.id);
+      if (!result) {
+        alert(
+          "Die Kategorie kann nicht gelöscht werden, da sie Unterkategorien enthält."
+        );
+      }
+    } catch (error) {
+      console.error("Fehler beim Löschen der Kategorie:", error);
+      alert("Fehler beim Löschen der Kategorie.");
     }
   }
 };
@@ -85,57 +97,57 @@ const editCategoryGroup = (groupId: string) => {
   showGroupModal.value = true;
 };
 
-const saveCategoryGroup = () => {
-  if (editingGroupId.value) {
-    // Update
-    const existing = categoryGroups.value.find(
-      (g) => g.id === editingGroupId.value
-    );
-    if (existing) {
-      Object.assign(existing, {
+const saveCategoryGroup = async () => {
+  try {
+    if (editingGroupId.value) {
+      await CategoryService.updateCategoryGroup(editingGroupId.value, {
         name: groupName.value,
         sortOrder: groupSort.value,
         isIncomeGroup: groupIsIncome.value,
       });
-      categoryStore.loadCategories(); // Refresh
+    } else {
+      await CategoryService.addCategoryGroup({
+        name: groupName.value,
+        sortOrder: groupSort.value,
+        isIncomeGroup: groupIsIncome.value,
+      });
     }
-  } else {
-    // Neu
-    categoryStore.addCategoryGroup({
-      name: groupName.value,
-      sortOrder: groupSort.value,
-      isIncomeGroup: groupIsIncome.value,
-    });
+    showGroupModal.value = false;
+  } catch (error) {
+    console.error("Fehler beim Speichern der Kategoriegruppe:", error);
+    alert("Fehler beim Speichern der Kategoriegruppe.");
   }
-  showGroupModal.value = false;
 };
 
-const deleteCategoryGroup = (groupId: string) => {
+const deleteCategoryGroup = async (groupId: string) => {
   const group = categoryGroups.value?.find((g) => g.id === groupId);
   if (!group) return;
   if (
     confirm(`Möchten Sie die Kategoriegruppe "${group.name}" wirklich löschen?`)
   ) {
-    const result = categoryStore.deleteCategoryGroup(groupId);
-    if (!result) {
-      alert(
-        "Die Kategoriegruppe kann nicht gelöscht werden, da sie noch Kategorien enthält."
-      );
+    try {
+      const result = await CategoryService.deleteCategoryGroup(groupId);
+      if (!result) {
+        alert(
+          "Die Kategoriegruppe kann nicht gelöscht werden, da sie noch Kategorien enthält."
+        );
+      }
+    } catch (error) {
+      console.error("Fehler beim Löschen der Kategoriegruppe:", error);
+      alert("Fehler beim Löschen der Kategoriegruppe.");
     }
   }
 };
 
 // Helper
-const getGroupName = (groupId: string): string => {
-  if (!categoryGroups.value) return "Unbekannt";
-  const group = categoryGroups.value.find((g) => g.id === groupId);
-  return group ? group.name : "Unbekannt";
+const getGroupName = (groupId: string | undefined): string => {
+  if (!groupId) return "Unbekannt";
+  return CategoryService.getGroupName(groupId);
 };
 
-const getParentCategoryName = (parentId: string | null): string => {
-  if (!parentId) return "-";
-  const parent = categories.value.find((c) => c.id === parentId);
-  return parent ? parent.name : "Unbekannt";
+const getParentCategoryName = (parentId: string | null | undefined): string => {
+  if (parentId === undefined) return "-";
+  return CategoryService.getParentCategoryName(parentId);
 };
 </script>
 
@@ -152,14 +164,20 @@ const getParentCategoryName = (parentId: string | null): string => {
             class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
             @click="createCategoryGroup"
           >
-            <Icon icon="mdi:folder-plus" class="mr-2 text-base" />
+            <Icon
+              icon="mdi:folder-plus"
+              class="mr-2 text-base"
+            />
             Neue Gruppe
           </button>
           <button
             class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
             @click="createCategory"
           >
-            <Icon icon="mdi:plus" class="mr-2 text-base" />
+            <Icon
+              icon="mdi:plus"
+              class="mr-2 text-base"
+            />
             Neue Kategorie
           </button>
         </div>
@@ -183,7 +201,10 @@ const getParentCategoryName = (parentId: string | null): string => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="category in categories" :key="category.id">
+              <tr
+                v-for="category in categories"
+                :key="category.id"
+              >
                 <td>
                   {{ category.name }}
                   <span
@@ -195,13 +216,15 @@ const getParentCategoryName = (parentId: string | null): string => {
                 <td>{{ getGroupName(category.categoryGroupId) }}</td>
                 <td>{{ getParentCategoryName(category.parentCategoryId) }}</td>
                 <td
-                  :class="category.balance >= 0 ? 'text-success' : 'text-error'"
+                  :class="
+                    category.available >= 0 ? 'text-success' : 'text-error'
+                  "
                 >
                   {{
                     new Intl.NumberFormat("de-DE", {
                       style: "currency",
                       currency: "EUR",
-                    }).format(category.balance)
+                    }).format(category.available)
                   }}
                 </td>
                 <td>
@@ -218,19 +241,28 @@ const getParentCategoryName = (parentId: string | null): string => {
                       class="btn btn-ghost btn-xs"
                       @click="editCategory(category)"
                     >
-                      <Icon icon="mdi:pencil" class="text-base" />
+                      <Icon
+                        icon="mdi:pencil"
+                        class="text-base"
+                      />
                     </button>
                     <button
                       class="btn btn-ghost btn-xs text-error"
                       @click="deleteCategory(category)"
                     >
-                      <Icon icon="mdi:trash-can" class="text-base" />
+                      <Icon
+                        icon="mdi:trash-can"
+                        class="text-base"
+                      />
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="(categories?.length ?? 0) === 0">
-                <td colspan="6" class="text-center py-4">
+                <td
+                  colspan="6"
+                  class="text-center py-4"
+                >
                   Keine Kategorien vorhanden
                 </td>
               </tr>
@@ -256,7 +288,10 @@ const getParentCategoryName = (parentId: string | null): string => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="group in categoryGroups" :key="group.id">
+              <tr
+                v-for="group in categoryGroups"
+                :key="group.id"
+              >
                 <td>{{ group.name }}</td>
                 <td>
                   <span
@@ -281,19 +316,28 @@ const getParentCategoryName = (parentId: string | null): string => {
                       class="btn btn-ghost btn-xs"
                       @click="editCategoryGroup(group.id)"
                     >
-                      <Icon icon="mdi:pencil" class="text-base" />
+                      <Icon
+                        icon="mdi:pencil"
+                        class="text-base"
+                      />
                     </button>
                     <button
                       class="btn btn-ghost btn-xs text-error"
                       @click="deleteCategoryGroup(group.id)"
                     >
-                      <Icon icon="mdi:trash-can" class="text-base" />
+                      <Icon
+                        icon="mdi:trash-can"
+                        class="text-base"
+                      />
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="(categoryGroups?.length ?? 0) === 0">
-                <td colspan="5" class="text-center py-4">
+                <td
+                  colspan="5"
+                  class="text-center py-4"
+                >
                   Keine Kategoriegruppen vorhanden
                 </td>
               </tr>
@@ -304,7 +348,10 @@ const getParentCategoryName = (parentId: string | null): string => {
     </div>
 
     <!-- Kategorie-Modal -->
-    <div v-if="showCategoryModal" class="modal modal-open">
+    <div
+      v-if="showCategoryModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-2xl">
         <h3 class="font-bold text-lg mb-4">
           {{ isEditMode ? "Kategorie bearbeiten" : "Neue Kategorie" }}
@@ -316,16 +363,25 @@ const getParentCategoryName = (parentId: string | null): string => {
           @cancel="showCategoryModal = false"
         />
       </div>
-      <div class="modal-backdrop" @click="showCategoryModal = false"></div>
+      <div
+        class="modal-backdrop"
+        @click="showCategoryModal = false"
+      ></div>
     </div>
 
     <!-- Kategoriegruppe-Modal -->
-    <div v-if="showGroupModal" class="modal modal-open">
+    <div
+      v-if="showGroupModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-xl">
         <h3 class="font-bold text-lg mb-4">
           {{ editingGroupId ? "Gruppe bearbeiten" : "Neue Gruppe" }}
         </h3>
-        <form @submit.prevent="saveCategoryGroup" class="space-y-4">
+        <form
+          @submit.prevent="saveCategoryGroup"
+          class="space-y-4"
+        >
           <div>
             <label class="label">Name</label>
             <input
@@ -354,14 +410,26 @@ const getParentCategoryName = (parentId: string | null): string => {
             </select>
           </div>
           <div class="modal-action">
-            <button type="submit" class="btn btn-primary">Speichern</button>
-            <button type="button" class="btn" @click="showGroupModal = false">
+            <button
+              type="submit"
+              class="btn btn-primary"
+            >
+              Speichern
+            </button>
+            <button
+              type="button"
+              class="btn"
+              @click="showGroupModal = false"
+            >
               Abbrechen
             </button>
           </div>
         </form>
       </div>
-      <div class="modal-backdrop" @click="showGroupModal = false"></div>
+      <div
+        class="modal-backdrop"
+        @click="showGroupModal = false"
+      ></div>
     </div>
   </div>
 </template>
