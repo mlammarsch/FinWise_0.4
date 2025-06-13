@@ -94,7 +94,7 @@ export const WebSocketService = {
             }
             // Nach Backend-Status-Update prüfen, ob Sync gestartet werden soll
             this.checkAndProcessSyncQueue();
-          } else if (message.type === 'data_update' && message.event_type === 'data_update') { // event_type zusätzlich prüfen
+          } else if ('event_type' in message && message.event_type === 'data_update') { // event_type als primäres Kriterium
             const updateMessage = message as DataUpdateNotificationMessage;
             infoLog('[WebSocketService]', 'DataUpdateNotificationMessage received:', updateMessage);
 
@@ -116,6 +116,11 @@ export const WebSocketService = {
                     await accountStore.updateAccount(accountData as Account, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Account ${ (accountData as Account).id } updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for Account ${accountData.id}`, {
+                      accountData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
                     await accountStore.deleteAccount(accountData.id, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Account ${accountData.id} deleted via WebSocket.`);
                   }
@@ -129,6 +134,11 @@ export const WebSocketService = {
                     await accountStore.updateAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AccountGroup ${ (accountGroupData as AccountGroup).id } updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for AccountGroup ${accountGroupData.id}`, {
+                      accountGroupData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
                     await accountStore.deleteAccountGroup(accountGroupData.id, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AccountGroup ${accountGroupData.id} deleted via WebSocket.`);
                   }
@@ -195,14 +205,25 @@ export const WebSocketService = {
 
         } catch (e) {
           errorLog('[WebSocketService]', 'Error parsing message from server:', e, event.data);
+          // Prüfen, ob es sich um eine Textnachricht handelt (z.B. Fehlermeldung)
+          if (typeof event.data === 'string' && !event.data.startsWith('{')) {
+            warnLog('[WebSocketService]', 'Received non-JSON message from server:', event.data);
+            // Textnachrichten nicht als kritische Fehler behandeln
+            return;
+          }
           webSocketStore.setError('Error parsing message from server.');
-          // Bei einem Parsing-Fehler könnte man den Backend-Status auf ERROR setzen
+          // Bei einem echten JSON-Parse-Fehler den Backend-Status auf ERROR setzen
           webSocketStore.setBackendStatus(BackendStatus.ERROR);
         }
       };
 
       socket.onerror = (errorEvent) => { // errorEvent statt error für mehr Klarheit
-        errorLog('[WebSocketService]', 'WebSocket onerror event triggered:', errorEvent);
+        errorLog('[WebSocketService]', 'WebSocket onerror event triggered:', {
+          error: errorEvent,
+          readyState: socket?.readyState,
+          url: wsUrl,
+          tenantId: tenantId
+        });
         webSocketStore.setError('WebSocket connection error.');
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
         // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
@@ -298,6 +319,12 @@ export const WebSocketService = {
     infoLog('[WebSocketService]', 'Starting to process sync queue...');
 
     const webSocketStore = useWebSocketStore();
+    debugLog('[WebSocketService]', 'Sync queue processing started', {
+      connectionStatus: webSocketStore.connectionStatus,
+      backendStatus: webSocketStore.backendStatus,
+      socketReadyState: socket?.readyState,
+      socketUrl: socket?.url
+    });
     const tenantStore = useTenantStore();
     const currentTenantId = tenantStore.activeTenantId; // Globale Variable wird hier korrekt verwendet
 
@@ -436,7 +463,7 @@ export const WebSocketService = {
     const webSocketStore = useWebSocketStore();
     // Beobachte Änderungen im connectionStatus und backendStatus
     watch(
-      [webSocketStore.connectionStatus, webSocketStore.backendStatus],
+      [() => webSocketStore.connectionStatus, () => webSocketStore.backendStatus],
       ([newConnectionStatus, newBackendStatus]: [WebSocketConnectionStatus, BackendStatus], [oldConnectionStatus, oldBackendStatus]: [WebSocketConnectionStatus, BackendStatus]) => {
         debugLog('[WebSocketService]', 'Status changed:', {
           connNew: newConnectionStatus, backendNew: newBackendStatus,
@@ -616,7 +643,11 @@ export const WebSocketService = {
       const tenantStore = useTenantStore();
       if (tenantStore.activeTenantId) {
         debugLog('[WebSocketService]', 'Periodic sync check triggered');
-        await this.requestServerDataStatus(tenantStore.activeTenantId);
+        // TODO: Temporär deaktiviert bis Backend vollständig implementiert
+        // await this.requestServerDataStatus(tenantStore.activeTenantId);
+
+        // Stattdessen normale Sync-Queue-Verarbeitung
+        await this.processSyncQueue();
       }
     }, intervalMs);
 
@@ -658,9 +689,9 @@ export const WebSocketService = {
       const webSocketStore = useWebSocketStore();
 
       const message = {
-        type: 'request_data_status',
+        type: 'data_status_request',
         tenant_id: tenantId,
-        last_sync_time: webSocketStore.syncState.lastAutoSyncTime,
+        entity_types: null, // Alle Entitätstypen
       };
 
       const sent = this.sendMessage(message);

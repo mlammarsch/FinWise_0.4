@@ -29,6 +29,11 @@ export class FinwiseTenantSpecificDB extends Dexie {
       accountGroups: '&id, name, sortOrder, image, updated_at',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status',
     });
+    this.version(4).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
   }
 }
 

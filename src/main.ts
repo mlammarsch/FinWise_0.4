@@ -15,6 +15,7 @@ import { PlanningService } from '@/services/PlanningService';
 import { WebSocketService } from '@/services/WebSocketService';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { BackendStatus } from '@/types';
+import '@/utils/syncDebugger'; // Import für globale Debug-Funktionen
 
 const pinia = createPinia();
 const app = createApp(App);

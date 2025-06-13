@@ -122,7 +122,7 @@ async function updateQueueStatistics() {
       tenantStore.activeTenantId
     );
     queueStatistics.value = stats;
-    debugLog("SyncButton", "Queue statistics updated", stats);
+    // debugLog("SyncButton", "Queue statistics updated", stats);
   } catch (error) {
     warnLog("SyncButton", "Failed to update queue statistics", { error });
   }
@@ -199,8 +199,8 @@ onMounted(async () => {
   // Initiale Queue-Statistiken laden
   await updateQueueStatistics();
 
-  // Periodische Updates der Queue-Statistiken
-  queueUpdateInterval.value = setInterval(updateQueueStatistics, 2000);
+  // Periodische Updates der Queue-Statistiken (weniger aggressiv)
+  queueUpdateInterval.value = setInterval(updateQueueStatistics, 10000); // 10 Sekunden statt 2
 
   debugLog("SyncButton", "Component mounted and queue monitoring started");
 });
@@ -234,8 +234,8 @@ watch(
   () => webSocketStore.connectionStatus,
   (newStatus) => {
     debugLog("SyncButton", "Connection status changed", { status: newStatus });
-    // Queue-Statistiken bei Verbindungsänderung aktualisieren
-    updateQueueStatistics();
+    // Queue-Statistiken werden bereits periodisch aktualisiert
+    // updateQueueStatistics(); // Entfernt, um redundante Aufrufe zu vermeiden
   }
 );
 </script>
