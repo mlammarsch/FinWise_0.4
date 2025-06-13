@@ -329,7 +329,7 @@ export interface SyncNackMessage extends WebSocketMessageBase {
 }
 
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage;
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {
@@ -358,4 +358,64 @@ export interface SyncQueueEntry {
   attempts?: number; // Anzahl der Synchronisierungsversuche
   lastAttempt?: number; // Zeitstempel des letzten Versuchs
   error?: string; // Fehlermeldung bei Fehlschlag
+}
+
+// Erweiterte Sync-System Types für SyncButton und WebSocketService
+export interface QueueStatistics {
+  pendingCount: number;
+  processingCount: number;
+  failedCount: number;
+  lastSyncTime: number | null;
+  oldestPendingTime: number | null;
+  totalSyncedToday: number;
+  averageSyncDuration: number;
+  lastErrorMessage: string | null;
+}
+
+export interface SyncState {
+  isAutoSyncEnabled: boolean;
+  lastAutoSyncTime: number | null;
+  nextAutoSyncTime: number | null;
+  queueStatistics: QueueStatistics | null;
+  syncInProgress: boolean;
+  syncAnimationEndTime: number | null;
+  periodicSyncInterval: number;
+}
+
+export interface ConflictReport {
+  conflicts: Array<{
+    entityType: string;
+    entityId: string;
+    localChecksum: string;
+    serverChecksum: string;
+    lastModified: {
+      local: number;
+      server: number;
+    };
+  }>;
+  localOnly: Array<{
+    entityType: string;
+    entityId: string;
+  }>;
+  serverOnly: Array<{
+    entityType: string;
+    entityId: string;
+  }>;
+}
+
+export interface DataStatusResponseMessage extends WebSocketMessageBase {
+  type: 'data_status_response';
+  tenant_id: string;
+  entity_checksums: Record<string, Record<string, any>>;
+  last_sync_time: number;
+}
+
+export interface SyncMetrics {
+  id: string;
+  tenantId: string;
+  timestamp: number;
+  duration: number;
+  success: boolean;
+  error?: string;
+  entitiesProcessed: number;
 }

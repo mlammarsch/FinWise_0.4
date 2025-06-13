@@ -1,8 +1,8 @@
 // src/stores/webSocketStore.ts
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import { infoLog, errorLog } from '@/utils/logger';
-import { BackendStatus, type ServerWebSocketMessage } from '@/types';
+import { infoLog, errorLog, debugLog } from '@/utils/logger';
+import { BackendStatus, type ServerWebSocketMessage, type SyncState, type QueueStatistics } from '@/types';
 
 export enum WebSocketConnectionStatus { // Umbenannt zur Klarheit
   CONNECTING = 'connecting',
@@ -16,6 +16,17 @@ export const useWebSocketStore = defineStore('webSocket', () => {
   const backendStatus = ref<BackendStatus>(BackendStatus.OFFLINE);
   const lastError = ref<string | null>(null);
   const lastMessage = ref<ServerWebSocketMessage | null>(null); // Typisiert mit ServerWebSocketMessage
+
+  // Erweiterte Sync-State Properties
+  const syncState = ref<SyncState>({
+    isAutoSyncEnabled: true,
+    lastAutoSyncTime: null,
+    nextAutoSyncTime: null,
+    queueStatistics: null,
+    syncInProgress: false,
+    syncAnimationEndTime: null,
+    periodicSyncInterval: 60000
+  });
 
   function setConnectionStatus(newStatus: WebSocketConnectionStatus) {
     infoLog('[WebSocketStore]', `Connection status changed to: ${newStatus}`);
@@ -52,6 +63,60 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     setBackendStatus(BackendStatus.OFFLINE); // Explizit auch hier setzen
     lastError.value = null;
     lastMessage.value = null;
+    // Sync-State zurücksetzen
+    syncState.value = {
+      isAutoSyncEnabled: true,
+      lastAutoSyncTime: null,
+      nextAutoSyncTime: null,
+      queueStatistics: null,
+      syncInProgress: false,
+      syncAnimationEndTime: null,
+      periodicSyncInterval: 60000
+    };
+  }
+
+  // Neue Sync-State Actions
+  function setSyncInProgress(inProgress: boolean, minimumDuration: number = 3000) {
+    syncState.value.syncInProgress = inProgress;
+    if (inProgress) {
+      syncState.value.syncAnimationEndTime = Date.now() + minimumDuration;
+    } else {
+      syncState.value.syncAnimationEndTime = null;
+    }
+    infoLog('[WebSocketStore]', `Sync in progress: ${inProgress}`, {
+      minimumDuration,
+      endTime: syncState.value.syncAnimationEndTime
+    });
+  }
+
+  function updateQueueStatistics(stats: QueueStatistics) {
+    syncState.value.queueStatistics = stats;
+    debugLog('[WebSocketStore]', 'Queue statistics updated', stats);
+  }
+
+  function setAutoSyncEnabled(enabled: boolean) {
+    syncState.value.isAutoSyncEnabled = enabled;
+    infoLog('[WebSocketStore]', `Auto-sync ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  function setPeriodicSyncInterval(intervalMs: number) {
+    syncState.value.periodicSyncInterval = intervalMs;
+    infoLog('[WebSocketStore]', `Periodic sync interval set to ${intervalMs}ms`);
+  }
+
+  function updateLastAutoSyncTime(timestamp: number | null = null) {
+    syncState.value.lastAutoSyncTime = timestamp || Date.now();
+    debugLog('[WebSocketStore]', 'Last auto sync time updated', {
+      timestamp: syncState.value.lastAutoSyncTime
+    });
+  }
+
+  function recordSyncMetrics(duration: number, success: boolean, error?: string) {
+    debugLog('[WebSocketStore]', 'Sync metrics recorded', {
+      duration,
+      success,
+      error
+    });
   }
 
   return {
@@ -59,10 +124,17 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     backendStatus,
     lastError,
     lastMessage,
+    syncState,
     setConnectionStatus,
     setBackendStatus,
     setError,
     setLastMessage,
     reset,
+    setSyncInProgress,
+    updateQueueStatistics,
+    setAutoSyncEnabled,
+    setPeriodicSyncInterval,
+    updateLastAutoSyncTime,
+    recordSyncMetrics,
   };
 });

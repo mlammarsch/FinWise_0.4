@@ -2,7 +2,7 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
@@ -15,6 +15,11 @@ let socket: WebSocket | null = null;
 let reconnectAttempts = 0;
 let explicitClose = false;
 let isSyncProcessRunning = false; // Verhindert mehrfache Ausführung
+
+// Neue Properties für automatische Synchronisation
+let autoSyncInterval: NodeJS.Timeout | null = null;
+let queueWatcher: (() => void) | null = null;
+let isAutoSyncEnabled = true;
 
 const tenantDbService = new TenantDbService(); // Instanziiere den Service hier
 
@@ -182,6 +187,10 @@ export const WebSocketService = {
             const nackMessage = message as SyncNackMessage;
             warnLog('[WebSocketService]', `Received sync_nack for entry ${nackMessage.id}`, nackMessage);
             await this.processSyncNack(nackMessage);
+          } else if (message.type === 'data_status_response') {
+            const statusResponse = message as DataStatusResponseMessage;
+            infoLog('[WebSocketService]', 'Received data_status_response', statusResponse);
+            await this.handleDataStatusResponse(statusResponse);
           }
 
         } catch (e) {
@@ -442,6 +451,9 @@ export const WebSocketService = {
     // Sync-Queue beim Start initialisieren
     this.initializeSyncQueue();
 
+    // Automatische Synchronisation initialisieren
+    this.initializeAutoSync();
+
     // Optionale automatische Verbindung, falls gewünscht und Tenant vorhanden
     // const session = useSessionStore();
     // if (session.currentTenantId) {
@@ -544,6 +556,146 @@ export const WebSocketService = {
     // Jitter hinzufügen (±25% Variation)
     const jitter = delay * 0.25 * (Math.random() - 0.5);
     return Math.round(delay + jitter);
+  },
+
+  // Automatische Synchronisation
+  async initializeAutoSync(): Promise<void> {
+    infoLog('[WebSocketService]', 'Initializing automatic synchronization...');
+
+    // 1. Queue-Watcher einrichten
+    this.setupQueueWatcher();
+
+    // 2. Periodische Synchronisation starten
+    this.startPeriodicSync();
+
+    // 3. Verbindungs-Watcher einrichten
+    this.setupConnectionWatcher();
+
+    infoLog('[WebSocketService]', 'Automatic synchronization initialized');
+  },
+
+  setupQueueWatcher(): void {
+    const tenantStore = useTenantStore();
+
+    // Überwacht Änderungen in der Sync-Queue
+    queueWatcher = watch(
+      () => tenantStore.activeTenantId,
+      async (tenantId) => {
+        if (!tenantId) return;
+
+        // Prüfe auf neue Queue-Einträge alle 5 Sekunden
+        const checkInterval = setInterval(async () => {
+          if (!this.isOnlineAndReady()) {
+            return;
+          }
+
+          const pendingEntries = await tenantDbService.getPendingSyncEntries(tenantId);
+          if (pendingEntries.length > 0) {
+            debugLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries, triggering sync`);
+            this.processSyncQueue();
+          }
+        }, 5000);
+
+        // Cleanup bei Tenant-Wechsel
+        return () => clearInterval(checkInterval);
+      },
+      { immediate: true }
+    );
+  },
+
+  async startPeriodicSync(intervalMs: number = 60000): Promise<void> {
+    if (autoSyncInterval) {
+      clearInterval(autoSyncInterval);
+    }
+
+    autoSyncInterval = setInterval(async () => {
+      if (!isAutoSyncEnabled || !this.isOnlineAndReady()) {
+        return;
+      }
+
+      const tenantStore = useTenantStore();
+      if (tenantStore.activeTenantId) {
+        debugLog('[WebSocketService]', 'Periodic sync check triggered');
+        await this.requestServerDataStatus(tenantStore.activeTenantId);
+      }
+    }, intervalMs);
+
+    infoLog('[WebSocketService]', `Periodic sync started with ${intervalMs}ms interval`);
+  },
+
+  setupConnectionWatcher(): void {
+    const webSocketStore = useWebSocketStore();
+
+    watch(
+      [() => webSocketStore.connectionStatus, () => webSocketStore.backendStatus],
+      ([newConnStatus, newBackendStatus], [oldConnStatus, oldBackendStatus]) => {
+        const wasOffline = oldConnStatus !== WebSocketConnectionStatus.CONNECTED ||
+                          oldBackendStatus !== BackendStatus.ONLINE;
+        const isNowOnline = newConnStatus === WebSocketConnectionStatus.CONNECTED &&
+                           newBackendStatus === BackendStatus.ONLINE;
+
+        if (wasOffline && isNowOnline) {
+          infoLog('[WebSocketService]', 'Connection re-established, triggering immediate sync');
+          this.processSyncQueue();
+        }
+      }
+    );
+  },
+
+  isOnlineAndReady(): boolean {
+    const webSocketStore = useWebSocketStore();
+    return webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTED &&
+           webSocketStore.backendStatus === BackendStatus.ONLINE;
+  },
+
+  async requestServerDataStatus(tenantId: string): Promise<void> {
+    if (!this.isOnlineAndReady()) {
+      debugLog('[WebSocketService]', 'Cannot request server data status: not online and ready');
+      return;
+    }
+
+    try {
+      const webSocketStore = useWebSocketStore();
+
+      const message = {
+        type: 'request_data_status',
+        tenant_id: tenantId,
+        last_sync_time: webSocketStore.syncState.lastAutoSyncTime,
+      };
+
+      const sent = this.sendMessage(message);
+      if (sent) {
+        debugLog('[WebSocketService]', 'Server data status requested', { tenantId });
+      }
+    } catch (error) {
+      errorLog('[WebSocketService]', 'Error requesting server data status', { error, tenantId });
+    }
+  },
+
+  async handleDataStatusResponse(message: DataStatusResponseMessage): Promise<void> {
+    const tenantStore = useTenantStore();
+    const webSocketStore = useWebSocketStore();
+
+    if (message.tenant_id !== tenantStore.activeTenantId) {
+      warnLog('[WebSocketService]', 'Received data status for wrong tenant', {
+        received: message.tenant_id,
+        expected: tenantStore.activeTenantId
+      });
+      return;
+    }
+
+    try {
+      // Update last sync time
+      webSocketStore.updateLastAutoSyncTime(message.last_sync_time);
+
+      infoLog('[WebSocketService]', 'Data status response processed', {
+        tenantId: message.tenant_id,
+        lastSyncTime: message.last_sync_time
+      });
+
+    } catch (error) {
+      errorLog('[WebSocketService]', 'Error handling data status response', { error, message });
+    }
   }
 };
 

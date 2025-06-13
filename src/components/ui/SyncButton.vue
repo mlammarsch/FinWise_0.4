@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { Icon } from "@iconify/vue";
-import { computed, ref } from "vue";
+import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { WebSocketService } from "../../services/WebSocketService";
-import { infoLog, warnLog } from "../../utils/logger";
+import { infoLog, warnLog, debugLog } from "../../utils/logger";
 import {
   useWebSocketStore,
   WebSocketConnectionStatus,
 } from "../../stores/webSocketStore";
 import { useTenantStore } from "../../stores/tenantStore";
+import { TenantDbService } from "../../services/TenantDbService";
+import type { QueueStatistics } from "../../types";
 
 const webSocketStore = useWebSocketStore();
 const tenantStore = useTenantStore();
+const tenantDbService = new TenantDbService();
+
+// Reactive State
 const isManuallyProcessingSync = ref(false);
+const syncAnimationTimer = ref(0);
+const queueStatistics = ref<QueueStatistics | null>(null);
+const queueUpdateInterval = ref<NodeJS.Timeout | null>(null);
 
 const isOnline = computed(
   () => webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTED
@@ -21,9 +29,19 @@ const isConnecting = computed(
   () => webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTING
 );
 
-const isQueueEmpty = computed(() => {
-  if (!isOnline.value) return true;
-  return true;
+const hasQueueItems = computed(() => {
+  return (
+    queueStatistics.value &&
+    (queueStatistics.value.pendingCount > 0 ||
+      queueStatistics.value.processingCount > 0)
+  );
+});
+
+const syncAnimationState = computed(() => {
+  return {
+    isActive: isManuallyProcessingSync.value || syncAnimationTimer.value > 0,
+    remainingTime: syncAnimationTimer.value,
+  };
 });
 
 const isDisabled = computed(() => {
@@ -35,15 +53,17 @@ const isDisabled = computed(() => {
 });
 
 const buttonState = computed(() => {
-  if (isManuallyProcessingSync.value) {
+  // Aktive Synchronisation (höchste Priorität)
+  if (syncAnimationState.value.isActive) {
     return {
-      iconColorClass: "text-info",
+      iconColorClass: "text-warning",
       icon: "mdi:sync",
       animate: true,
       title: "Synchronisiere Daten...",
     };
   }
 
+  // Verbindung wird aufgebaut
   if (isConnecting.value) {
     return {
       iconColorClass: "text-warning",
@@ -53,31 +73,71 @@ const buttonState = computed(() => {
     };
   }
 
+  // Offline-Zustände
   if (!isOnline.value) {
+    if (hasQueueItems.value) {
+      return {
+        iconColorClass: "text-error",
+        icon: "mdi:cloud-alert-outline",
+        animate: false,
+        title: "Offline - Ungesyncte Änderungen vorhanden",
+      };
+    } else {
+      return {
+        iconColorClass: "text-error",
+        icon: "mdi:cloud-off-outline",
+        animate: false,
+        title: "Offline & Synchron",
+      };
+    }
+  }
+
+  // Online-Zustände
+  if (hasQueueItems.value) {
     return {
-      iconColorClass: "text-error",
-      icon: "mdi:cloud-off-outline",
+      iconColorClass: "text-info",
+      icon: "mdi:cloud-upload-outline",
       animate: false,
-      title: "Offline. Manuelle Synchronisation nicht möglich.",
+      title: `Online - ${
+        queueStatistics.value?.pendingCount || 0
+      } lokale Änderungen`,
     };
   }
 
-  if (isQueueEmpty.value) {
-    return {
-      iconColorClass: "text-success",
-      icon: "mdi:cloud-check-outline",
-      animate: false,
-      title: "Online & Synchron. Klicken für manuelle Synchronisation.",
-    };
-  }
-
+  // Vollständig synchron und online
   return {
-    iconColorClass: "text-info",
-    icon: "mdi:cloud-upload-outline",
+    iconColorClass: "text-success",
+    icon: "mdi:cloud-check",
     animate: false,
-    title: "Online. Lokale Änderungen. Klicken für manuelle Synchronisation.",
+    title: "Online & Synchron",
   };
 });
+
+// Methods
+async function updateQueueStatistics() {
+  if (!tenantStore.activeTenantId) return;
+
+  try {
+    const stats = await tenantDbService.getQueueStatistics(
+      tenantStore.activeTenantId
+    );
+    queueStatistics.value = stats;
+    debugLog("SyncButton", "Queue statistics updated", stats);
+  } catch (error) {
+    warnLog("SyncButton", "Failed to update queue statistics", { error });
+  }
+}
+
+function startSyncAnimation(minimumDuration: number = 3000) {
+  syncAnimationTimer.value = minimumDuration;
+  const interval = setInterval(() => {
+    syncAnimationTimer.value -= 100;
+    if (syncAnimationTimer.value <= 0) {
+      clearInterval(interval);
+      syncAnimationTimer.value = 0;
+    }
+  }, 100);
+}
 
 /**
  *  Ermöglicht die manuelle Synchronisation von Daten mit dem Server.
@@ -99,6 +159,7 @@ async function handleSyncButtonClick() {
   }
 
   isManuallyProcessingSync.value = true;
+  startSyncAnimation(3000);
   infoLog("SyncButton", "Starting manual sync process...");
 
   try {
@@ -107,41 +168,115 @@ async function handleSyncButtonClick() {
 
     if (tenantStore.activeTenantId) {
       await WebSocketService.requestInitialData(tenantStore.activeTenantId);
-      infoLog(
-        "SyncButton",
-        "requestInitialData successfully called. Manual sync process complete.",
-        { tenantId: tenantStore.activeTenantId }
-      );
+      infoLog("SyncButton", "requestInitialData successfully called.", {
+        tenantId: tenantStore.activeTenantId,
+      });
     } else {
       warnLog(
         "SyncButton",
-        "Cannot call requestInitialData: activeTenantId is not available.",
-        { activeTenantId: tenantStore.activeTenantId }
+        "Cannot call requestInitialData: activeTenantId not available."
       );
     }
   } catch (error) {
     warnLog("SyncButton", "Error during manual sync process.", { error });
   } finally {
-    isManuallyProcessingSync.value = false;
-    infoLog("SyncButton", "Manual sync process finished (finally block).");
+    // Warten auf Mindest-Animation-Dauer
+    const remainingTime = syncAnimationTimer.value;
+    if (remainingTime > 0) {
+      setTimeout(() => {
+        isManuallyProcessingSync.value = false;
+        infoLog("SyncButton", "Manual sync process finished after animation.");
+      }, remainingTime);
+    } else {
+      isManuallyProcessingSync.value = false;
+      infoLog("SyncButton", "Manual sync process finished immediately.");
+    }
   }
 }
+
+// Lifecycle
+onMounted(async () => {
+  // Initiale Queue-Statistiken laden
+  await updateQueueStatistics();
+
+  // Periodische Updates der Queue-Statistiken
+  queueUpdateInterval.value = setInterval(updateQueueStatistics, 2000);
+
+  debugLog("SyncButton", "Component mounted and queue monitoring started");
+});
+
+onUnmounted(() => {
+  if (queueUpdateInterval.value) {
+    clearInterval(queueUpdateInterval.value);
+    queueUpdateInterval.value = null;
+  }
+  debugLog("SyncButton", "Component unmounted and queue monitoring stopped");
+});
+
+// Watchers
+watch(
+  () => tenantStore.activeTenantId,
+  async (newTenantId) => {
+    if (newTenantId) {
+      await updateQueueStatistics();
+      debugLog(
+        "SyncButton",
+        "Active tenant changed, queue statistics updated",
+        {
+          tenantId: newTenantId,
+        }
+      );
+    }
+  }
+);
+
+watch(
+  () => webSocketStore.connectionStatus,
+  (newStatus) => {
+    debugLog("SyncButton", "Connection status changed", { status: newStatus });
+    // Queue-Statistiken bei Verbindungsänderung aktualisieren
+    updateQueueStatistics();
+  }
+);
 </script>
 
 <template>
-  <button
-    class="btn btn-ghost btn-circle"
-    :class="{ 'animate-spin': buttonState.animate }"
-    @click="handleSyncButtonClick"
-    :title="buttonState.title"
-    :disabled="isDisabled"
-  >
-    <Icon
-      :icon="buttonState.icon"
-      :class="buttonState.iconColorClass"
-      style="font-size: 21px; width: 21px; height: 21px"
-    />
-  </button>
+  <div class="sync-button-container relative">
+    <button
+      class="btn btn-ghost btn-circle relative"
+      :class="{
+        'animate-spin': buttonState.animate,
+        'btn-disabled': isDisabled,
+      }"
+      @click="handleSyncButtonClick"
+      :title="buttonState.title"
+      :disabled="isDisabled"
+    >
+      <Icon
+        :icon="buttonState.icon"
+        :class="buttonState.iconColorClass"
+        style="font-size: 21px; width: 21px; height: 21px"
+      />
+
+      <!-- Queue-Counter Badge -->
+      <div
+        v-if="queueStatistics && queueStatistics.pendingCount > 0"
+        class="absolute -top-1 -right-1 bg-warning text-warning-content rounded-full text-xs min-w-[16px] h-4 flex items-center justify-center px-1"
+      >
+        {{
+          queueStatistics.pendingCount > 99
+            ? "99+"
+            : queueStatistics.pendingCount
+        }}
+      </div>
+    </button>
+
+    <!-- Sync Progress Indicator -->
+    <div
+      v-if="syncAnimationState.isActive"
+      class="absolute inset-0 rounded-full border-2 border-warning border-t-transparent animate-spin"
+    ></div>
+  </div>
 </template>
 
 <style lang="postcss" scoped></style>

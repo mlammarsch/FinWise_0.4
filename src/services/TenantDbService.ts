@@ -1,6 +1,6 @@
 // src/services/TenantDbService.ts
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
-import type { Account, AccountGroup, SyncQueueEntry } from '@/types';
+import type { Account, AccountGroup, SyncQueueEntry, QueueStatistics } from '@/types';
 import { SyncStatus } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -337,6 +337,43 @@ export class TenantDbService {
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Zurücksetzen hängender PROCESSING-Einträge für Mandant ${tenantId}`, { error: err });
       return 0;
+    }
+  }
+
+  async getQueueStatistics(tenantId: string): Promise<QueueStatistics> {
+    if (!this.db) {
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    try {
+      const [pendingEntries, processingEntries, failedEntries] = await Promise.all([
+        this.db.syncQueue.where({ tenantId, status: SyncStatus.PENDING }).toArray(),
+        this.db.syncQueue.where({ tenantId, status: SyncStatus.PROCESSING }).toArray(),
+        this.db.syncQueue.where({ tenantId, status: SyncStatus.FAILED }).toArray()
+      ]);
+
+      const oldestPending = pendingEntries.length > 0
+        ? Math.min(...pendingEntries.map(e => e.timestamp))
+        : null;
+
+      const lastError = failedEntries.length > 0
+        ? failedEntries.sort((a, b) => (b.lastAttempt || 0) - (a.lastAttempt || 0))[0].error
+        : null;
+
+      return {
+        pendingCount: pendingEntries.length,
+        processingCount: processingEntries.length,
+        failedCount: failedEntries.length,
+        lastSyncTime: null, // Wird später implementiert
+        oldestPendingTime: oldestPending,
+        totalSyncedToday: 0, // Wird später implementiert
+        averageSyncDuration: 0, // Wird später implementiert
+        lastErrorMessage: lastError || null
+      };
+
+    } catch (error) {
+      errorLog('TenantDbService', 'Error getting queue statistics', { error, tenantId });
+      throw error;
     }
   }
 }
