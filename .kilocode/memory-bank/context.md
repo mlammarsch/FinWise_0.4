@@ -1,15 +1,16 @@
-Absolut! Hier ist das Dokument strukturiert, um die Übersichtlichkeit zu erhöhen und die wichtigsten Punkte hervorzuheben:
+# FinWise Projekt – Aktueller Kontext (Version 0.4)
 
-**FinWise Projekt – Statusbericht (Version 0.4)**
+**Letztes Update:** 13. Januar 2025
 
-**1. Aktueller Kontext**
+## 1. Aktueller Kontext
 
-*   **Phase:** Entwicklung (Version 0.4)
-*   **Status:** Funktionsfähiges Frontend und Backend mit Kernfunktionen zur Haushaltsfinanzplanung
+*   **Phase:** Entwicklung (Version 0.4) - Synchronisations-Optimierung
+*   **Status:** Funktionsfähiges Frontend und Backend mit vollständiger Account/AccountGroup-Synchronisation
 *   **Hauptfokus:**
-    *   Bidirektionale Synchronisation (Frontend/Backend)
-    *   Offline-First-Architektur (WebSocket-basierte Echtzeit-Sync)
-    *   Multi-Tenant-System (saubere Datentrennung)
+    *   **Sync-Acknowledgment-System** (ACK/NACK für zuverlässige Sync-Queue-Verarbeitung)
+    *   **Erweitern der Synchronisation** auf weitere Entitäten (Categories, Transactions, etc.)
+    *   **Robustheit und Performance** der bidirektionalen Synchronisation
+    *   **Testing-Infrastruktur** für komplexe Sync-Szenarien
 
 **2. Implementierungsstatus**
 
@@ -26,60 +27,84 @@ Absolut! Hier ist das Dokument strukturiert, um die Übersichtlichkeit zu erhöh
     *   **CRUD:** Vollständige CRUD-Operationen für Accounts und AccountGroups
     *   **Sync-Service:** Last-Write-Wins Konfliktlösung
 
-**3. Kürzlich Abgeschlossene Änderungen**
+## 3. Kürzlich Abgeschlossene Änderungen
 
-*   **3.1 Synchronisation (Account/AccountGroup)**
-    *   Vollständige bidirektionale Sync
-    *   WebSocket-basierte Echtzeit-Updates
-    *   Offline-Queue-System
-    *   Last-Write-Wins Konfliktlösung (basierend auf `updated_at`)
-*   **3.2 IndexedDB Migration**
-    *   Migration von localStorage zu IndexedDB (Performance)
-    *   Dexie.js für typisierte Datenbankoperationen
-    *   Mandantenspezifische Datenbanken im Frontend
+*   **3.1 Vollständige Account/AccountGroup-Synchronisation** ✅
+    *   Bidirektionale Echtzeit-Sync über WebSocket
+    *   Offline-Queue-System mit automatischer Verarbeitung bei Reconnect
+    *   Last-Write-Wins Konfliktlösung implementiert
+    *   Integration Tests für alle Sync-Szenarien
+*   **3.2 IndexedDB-Migration abgeschlossen** ✅
+    *   Vollständige Migration von localStorage zu IndexedDB
+    *   [`TenantDbService.ts`](../src/services/TenantDbService.ts) als zentrale Datenbank-Schnittstelle
+    *   Mandantenspezifische Datenbanken mit Dexie.js
+*   **3.3 Testing-Infrastruktur erweitert** ✅
+    *   Umfassende Integration Tests für Sync-Funktionalität
+    *   Mock-Services für isolierte Tests
+    *   Test-Daten-Generatoren für realistische Szenarien
+*   **3.4 Sync-Acknowledgment-System in Entwicklung** 🔄
+    *   ACK/NACK-Nachrichten für Sync-Bestätigungen
+    *   Retry-Mechanismen für fehlgeschlagene Sync-Operationen
+    *   Automatische Queue-Bereinigung nach erfolgreicher Synchronisation
 
-**4. Nächste Schritte**
+## 4. Nächste Schritte
 
-*   **4.1 Kurzfristig (1-2 Wochen)**
-    *   **Erweitern der Synchronisation** Bugbehebung und Erweiterung der gleichen, bereits existierenden Sync Aktivität auch bei bestehender Onlineverbindung
+*   **4.1 Aktuell in Arbeit (diese Woche)**
+    *   **Sync-Acknowledgment-System finalisieren**:
+        *   ACK/NACK-Verarbeitung im [`WebSocketService.ts`](../src/services/WebSocketService.ts)
+        *   Automatische Queue-Bereinigung nach erfolgreicher Sync
+        *   Retry-Mechanismen für fehlgeschlagene Operationen
+    *   **Sync-Konsistenz für Accounts/AccountGroups**:
+        *   Einheitliche Sync-Queue-Nutzung auch bei Online-Verbindung
+        *   Behebung der inkonsistenten Synchronisationsmethoden
+
+*   **4.2 Kurzfristig (1-2 Wochen)**
     *   **Erweitern der Synchronisation auf weitere Entitäten**:
-        *   Categories/CategoryGroups
-        *   Transactions
+        *   Categories/CategoryGroups (höchste Priorität)
+        *   Transactions (kritisch für Kernfunktionalität)
         *   Tags/Recipients
         *   PlanningTransactions
-    *   **Verbesserung der Sync-Robustheit**:
-        *   Bessere Fehlerbehandlung bei Sync-Konflikten
-        *   Retry-Mechanismen
-        *   Validierung der Datenintegrität
-*   **4.2 Mittelfristig (4-6 Wochen)**
+    *   **Robustheit verbessern**:
+        *   WebSocket-Reconnection-Handling optimieren
+        *   Stuck-Processing-Entries automatisch zurücksetzen
+        *   Umfassende Fehlerbehandlung
+
+*   **4.3 Mittelfristig (4-6 Wochen)**
     *   **Performance-Optimierungen**:
-        *   Paginierung
-        *   Lazy Loading
-        *   Optimierung der WebSocket-Nachrichten
+        *   Paginierung für große Datenmengen
+        *   Batch-Operationen für Initial Data Load
+        *   WebSocket-Nachrichten-Komprimierung
     *   **Erweiterte Features**:
-        *   CSV-Import (mit Sync)
-        *   Bulk-Operationen (mit effizienter Sync)
+        *   CSV-Import mit Sync-Integration
+        *   Bulk-Operationen mit effizienter Synchronisation
         *   Erweiterte Regel-Engine
-*   **4.3 Langfristig (2-3 Monate)**
+
+*   **4.4 Langfristig (2-3 Monate)**
     *   **Produktionsreife**:
-        *   Umfassende Tests der Sync-Funktionalität
-        *   Deployment-Pipeline/Monitoring
-        *   Backup/Recovery-Strategien
+        *   End-to-End-Tests für alle Sync-Szenarien
+        *   Performance-Monitoring und -Optimierung
+        *   Deployment-Pipeline und Backup-Strategien
     *   **Erweiterte Funktionen**:
-        *   Erweiterte Statistiken/Reporting
+        *   Erweiterte Statistiken und Reporting
         *   Export-Funktionen
-        *   Mobile App (PWA)
+        *   Progressive Web App (PWA) Features
 
-**5. Aktuelle Herausforderungen**
+## 5. Aktuelle Herausforderungen
 
-*   **5.1 Technische Herausforderungen**:
-    *   Komplexität der bidirektionalen Synchronisation
-    *   Datenintegrität (Offline-Operationen)
-    *   Performance (große Transaktionsmengen)
-*   **5.2 Architektonische Entscheidungen**:
-    *   Sync-Granularität (Feld-Level vs. Entitäts-Level)
-    *   Konfliktlösung (Last-Write-Wins vs. komplexere Merge-Strategien)
-    *   Skalierung
+*   **5.1 Kritische Sync-Probleme** (Hohe Priorität):
+    *   **Inkonsistente Synchronisation**: Accounts/AccountGroups nutzen noch nicht einheitlich die Sync-Queue
+    *   **Fehlende Sync-Bestätigungen**: Queue wird nicht nach erfolgreicher Sync geleert
+    *   **Stuck Processing Entries**: Einträge bleiben im "processing" Status hängen
+
+*   **5.2 Technische Herausforderungen**:
+    *   **Komplexität der Transaction-Sync**: Hohe Datenvolumen und Beziehungen zu anderen Entitäten
+    *   **Performance bei großen Datenmengen**: Optimierung für Tausende von Transaktionen
+    *   **WebSocket-Stabilität**: Robuste Reconnection-Mechanismen
+
+*   **5.3 Architektonische Entscheidungen**:
+    *   **Sync-Granularität**: Entitäts-Level vs. Feld-Level Updates
+    *   **Konfliktlösung**: Last-Write-Wins vs. komplexere Merge-Strategien
+    *   **Skalierung**: Vorbereitung auf Multi-User-Szenarien pro Mandant
 
 **6. Entwicklungsumgebung**
 
@@ -103,13 +128,32 @@ Absolut! Hier ist das Dokument strukturiert, um die Übersichtlichkeit zu erhöh
     *   Frontend-Tests ausbaufähig
     *   Sync-Funktionalität: Umfassende Integration Tests erforderlich
 
-**8. Bekannte Issues**
+## 8. Bekannte Issues und Technische Schulden
 
-*   **8.1 Aktuelle Bugs/Limitationen**:
-    *   Requirements.txt (Backend): Encoding-Probleme
-    *   Store-Reset-Methoden: Nicht vollständig async
-    *   WebSocket-Reconnection-Logic: Verbesserungspotenzial
-*   **8.2 Technische Schulden**:
-    *   Legacy-Code (localStorage-Migration)
-    *   Inkonsistente Error-Handling-Patterns
-    *   Dokumentation der API-Endpunkte: Unvollständig
+*   **8.1 Kritische Bugs** (Hohe Priorität):
+    *   **Sync-Queue-Management**: Einträge werden nicht nach erfolgreicher Sync entfernt
+    *   **Inkonsistente Sync-Methoden**: Accounts nutzen noch nicht einheitlich die Sync-Queue
+    *   **Processing-Timeout**: Keine automatische Zurücksetzung von hängenden Sync-Einträgen
+
+*   **8.2 Mittlere Priorität**:
+    *   **WebSocket-Reconnection**: Exponential Backoff und bessere Fehlerbehandlung
+    *   **Store-Reset-Methoden**: Vollständige async/await-Implementierung
+    *   **Error-Handling**: Einheitliche Patterns für alle Services
+
+*   **8.3 Technische Schulden**:
+    *   **Legacy localStorage-Code**: Vollständige Entfernung nach IndexedDB-Migration
+    *   **API-Dokumentation**: Unvollständige Dokumentation der WebSocket-Endpunkte
+    *   **Testing-Coverage**: Erweiterte Unit-Tests für alle Stores und Services
+
+## 9. Aktuelle Arbeitsweise
+
+*   **9.1 Entwicklungszyklen**:
+    *   **Sync-First-Ansatz**: Alle neuen Features werden mit Synchronisation entwickelt
+    *   **Test-Driven**: Integration Tests vor Feature-Implementierung
+    *   **Iterative Verbesserung**: Kontinuierliche Optimierung der Sync-Performance
+
+*   **9.2 Code-Qualität**:
+    *   **Strikte TypeScript-Typisierung** mit umfassenden Interface-Definitionen
+    *   **Konsistente Logging-Strategien** mit [`debugLog`](../src/utils/logger.ts), [`infoLog`](../src/utils/logger.ts), [`errorLog`](../src/utils/logger.ts)
+    *   **Self-documenting Code** mit sprechenden Methodennamen
+    *   **Einheitliche Store-Patterns** für alle Pinia Stores

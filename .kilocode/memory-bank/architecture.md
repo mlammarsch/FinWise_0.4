@@ -215,24 +215,33 @@ if (incoming_data.updated_at > db_obj.updated_at:
 ## Kritische Implementierungspfade
 
 ### 1. Account/AccountGroup Synchronisation (✅ Vollständig implementiert)
-- **Frontend**: [`accountStore.ts`](src/stores/accountStore.ts) mit vollständiger Sync-Integration
+- **Frontend**: [`accountStore.ts`](../src/stores/accountStore.ts) mit vollständiger Sync-Integration
 - **Backend**: [`crud_account.py`](../FinWise_0.4_BE/app/crud/crud_account.py) und [`crud_account_group.py`](../FinWise_0.4_BE/app/crud/crud_account_group.py)
 - **WebSocket**: Bidirektionale Updates zwischen allen Clients
+- **Testing**: Umfassende Integration Tests implementiert
 
-### 2. Transaction Synchronisation (🔄 In Entwicklung)
-- **Priorität**: Höchste, da Transaktionen das Herzstück der App sind
+### 2. Sync-Acknowledgment-System (🔄 In aktiver Entwicklung)
+- **Priorität**: Kritisch für zuverlässige Synchronisation
+- **Frontend**: [`WebSocketService.ts`](../src/services/WebSocketService.ts) - ACK/NACK-Verarbeitung
+- **Backend**: Sync-Service erweitert um Bestätigungsnachrichten
+- **Features**: Retry-Mechanismen, Queue-Bereinigung, Timeout-Handling
+
+### 3. Transaction Synchronisation (📋 Nächste Priorität)
+- **Priorität**: Höchste nach ACK/NACK-System
 - **Komplexität**: Hoch wegen Volumen und Beziehungen zu anderen Entitäten
 - **Herausforderung**: Performance bei großen Datenmengen
+- **Strategie**: Batch-Synchronisation und Incremental Sync
 
-### 3. Session Management
-- **[`SessionService.ts`](src/services/SessionService.ts)**: Router Guards und Authentifizierung
-- **[`sessionStore.ts`](src/stores/sessionStore.ts)**: Persistente Session-Daten in IndexedDB
+### 4. Session Management (✅ Implementiert)
+- **[`SessionService.ts`](../src/services/SessionService.ts)**: Router Guards und Authentifizierung
+- **[`sessionStore.ts`](../src/stores/sessionStore.ts)**: Persistente Session-Daten in IndexedDB
 - **Backend**: Token-basierte Authentifizierung
 
-### 4. IndexedDB-Integration
-- **[`TenantDbService.ts`](src/services/TenantDbService.ts)**: Zentrale Datenbank-Operationen
+### 5. IndexedDB-Integration (✅ Vollständig migriert)
+- **[`TenantDbService.ts`](../src/services/TenantDbService.ts)**: Zentrale Datenbank-Operationen
 - **Dexie.js**: Typisierte IndexedDB-Wrapper
 - **Mandantenspezifische DBs**: Separate Datenbanken pro Mandant
+- **Migration**: Vollständig von localStorage zu IndexedDB migriert
 
 ## Design Patterns
 
@@ -281,8 +290,10 @@ if (incoming_data.updated_at > db_obj.updated_at:
 
 ### Synchronisation:
 - **Incremental Sync**: Nur geänderte Daten übertragen
-- **Compression**: WebSocket-Nachrichten komprimieren
-- **Batching**: Mehrere Änderungen in einer Nachricht
+- **Compression**: WebSocket-Nachrichten komprimieren (geplant)
+- **Batching**: Mehrere Änderungen in einer Nachricht (geplant)
+- **ACK/NACK-System**: Zuverlässige Queue-Verarbeitung (in Entwicklung)
+- **Retry-Mechanismen**: Exponential backoff bei Fehlern (in Entwicklung)
 
 ## Deployment-Architektur
 
@@ -296,3 +307,38 @@ if (incoming_data.updated_at > db_obj.updated_at:
 - **Backend**: FastAPI mit Gunicorn/Uvicorn
 - **Datenbanken**: SQLite oder PostgreSQL
 - **WebSockets**: Load Balancer mit Sticky Sessions
+
+## Aktuelle Architektur-Herausforderungen
+
+### Kritische Issues (Hohe Priorität):
+1. **Sync-Queue-Konsistenz**: Einheitliche Nutzung der Sync-Queue für alle Entitäten
+2. **Queue-Management**: Automatische Bereinigung nach erfolgreicher Synchronisation
+3. **Stuck Processing Entries**: Timeout-Handling für hängende Sync-Operationen
+
+### Performance-Optimierungen (Mittlere Priorität):
+1. **WebSocket-Reconnection**: Verbessertes Handling mit exponential backoff
+2. **Batch-Operations**: Effiziente Verarbeitung großer Datenmengen
+3. **Initial Data Load**: Optimierung für schnelleren App-Start
+
+### Skalierungs-Vorbereitung (Niedrige Priorität):
+1. **Multi-User-Support**: Vorbereitung auf mehrere Benutzer pro Mandant
+2. **Database-Migration**: Vorbereitung auf PostgreSQL für Produktion
+3. **Microservices**: Aufteilen in kleinere Services bei Bedarf
+
+## Testing-Architektur
+
+### Frontend-Testing:
+- **Unit-Tests**: Vitest für isolierte Store- und Service-Tests
+- **Integration-Tests**: Umfassende Sync-Funktionalitäts-Tests
+- **Mock-Services**: Isolierte Tests ohne Backend-Abhängigkeiten
+- **Test-Daten**: Realistische Test-Daten-Generatoren
+
+### Backend-Testing:
+- **Unit-Tests**: Pytest für CRUD-Operationen und Services
+- **Integration-Tests**: WebSocket und Sync-Service-Tests (geplant)
+- **API-Tests**: FastAPI Test-Client für Endpunkt-Tests
+
+### End-to-End-Testing (geplant):
+- **Sync-Szenarien**: Online/Offline/Konflikt-Tests
+- **Performance-Tests**: Große Datenmengen und Concurrent Users
+- **Browser-Tests**: Cross-Browser-Kompatibilität

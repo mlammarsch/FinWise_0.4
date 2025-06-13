@@ -200,6 +200,27 @@ InitialDataLoadMessage {
     account_groups: AccountGroup[]
   }
 }
+
+// Sync-Acknowledgment-Nachrichten (NEU)
+SyncAckMessage {
+  type: 'sync_ack',
+  id: string,              // SyncQueueEntry.id
+  status: 'processed',
+  entityId: string,
+  entityType: EntityType,
+  operationType: SyncOperationType
+}
+
+SyncNackMessage {
+  type: 'sync_nack',
+  id: string,              // SyncQueueEntry.id
+  status: 'failed',
+  entityId: string,
+  entityType: EntityType,
+  operationType: SyncOperationType,
+  reason: string,          // Fehlergrund
+  detail?: string         // Detaillierte Fehlermeldung
+}
 ```
 
 ## Synchronisations-Protokoll
@@ -211,7 +232,7 @@ SyncQueueEntry {
   tenantId: string,        // Mandanten-ID
   entityType: EntityType,  // Typ der Entität
   entityId: string,        // ID der Entität
-  operationType: 'create' | 'update' | 'delete',
+  operationType: 'create' | 'update' | 'delete' | 'initial_load',
   payload: Entity | { id: string } | null,
   timestamp: number,       // Unix-Timestamp
   status: 'pending' | 'processing' | 'synced' | 'failed',
@@ -221,10 +242,18 @@ SyncQueueEntry {
 }
 ```
 
+### Sync-Acknowledgment-System (NEU)
+- **ACK-Nachrichten**: Backend bestätigt erfolgreiche Verarbeitung
+- **NACK-Nachrichten**: Backend meldet Fehler mit Grund und Details
+- **Queue-Management**: Einträge werden nur nach ACK entfernt
+- **Retry-Mechanismen**: Automatische Wiederholung bei NACK mit exponential backoff
+- **Timeout-Handling**: Stuck processing entries werden automatisch zurückgesetzt
+
 ### Konfliktlösung
 - **Strategie**: Last-Write-Wins (LWW)
 - **Basis**: `updated_at` Timestamp-Vergleich
 - **Implementierung**: Frontend und Backend
+- **Granularität**: Entitäts-Level (vollständige Entität wird überschrieben)
 
 ## Performance-Konfiguration
 
@@ -299,19 +328,85 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 - **Data Volume**: SQLite-Performance bei sehr großen Datenmengen
 - **Sync Performance**: Abhängig von Netzwerklatenz und Datenvolumen
 
+## Testing-Infrastruktur
+
+### Frontend-Testing
+- **Framework**: Vitest 3.2.1 für Unit-Tests
+- **Integration Tests**: Umfassende Sync-Funktionalitäts-Tests
+- **Test-Utilities**:
+  - [`tests/mocks/mock-websocket-server.ts`](../tests/mocks/mock-websocket-server.ts) - WebSocket-Mock
+  - [`tests/mocks/mock-tenant-service.ts`](../tests/mocks/mock-tenant-service.ts) - TenantDbService-Mock
+  - [`tests/mocks/test-data-generators.ts`](../tests/mocks/test-data-generators.ts) - Test-Daten-Generierung
+- **Sync-Tests**:
+  - [`tests/integration/sync-integration.test.ts`](../tests/integration/sync-integration.test.ts)
+  - [`tests/integration/sync-error-handling.test.ts`](../tests/integration/sync-error-handling.test.ts)
+  - [`tests/integration/account-sync.test.ts`](../tests/integration/account-sync.test.ts)
+  - [`tests/integration/account-group-sync.test.ts`](../tests/integration/account-group-sync.test.ts)
+
+### Backend-Testing
+- **Framework**: Pytest 8.3.5
+- **Test-Coverage**: User/Tenant-Management, CRUD-Operationen
+- **Sync-Tests**: Geplant für WebSocket und Sync-Service
+
+### Test-Strategien
+- **Unit-Tests**: Isolierte Tests für einzelne Funktionen
+- **Integration-Tests**: End-to-End-Tests für Sync-Szenarien
+- **Mock-Services**: Isolierte Tests ohne externe Abhängigkeiten
+- **Performance-Tests**: Geplant für große Datenmengen
+
 ## Monitoring & Logging
 
 ### Frontend-Logging
-- **Logger**: Custom Logger in [`src/utils/logger.ts`](src/utils/logger.ts)
-- **Levels**: Debug, Info, Warn, Error
-- **Storage**: Browser Console + lokale Persistierung
+- **Logger**: Custom Logger in [`src/utils/logger.ts`](../src/utils/logger.ts)
+- **Levels**: debugLog, infoLog, warnLog, errorLog
+- **Module-basiert**: Jeder Log-Eintrag enthält Modulnamen
+- **Storage**: Browser Console + lokale Persistierung (geplant)
+- **Sync-Logging**: Detaillierte Logs für alle Sync-Operationen
 
 ### Backend-Logging
 - **Logger**: Custom Logger in [`app/utils/logger.py`](../FinWise_0.4_BE/app/utils/logger.py)
-- **Levels**: Debug, Info, Warn, Error
-- **Format**: Strukturierte JSON-Logs mit Modulnamen
+- **Levels**: debugLog, infoLog, warnLog, errorLog
+- **Format**: Strukturierte JSON-Logs mit Modulnamen und Details
+- **Sync-Logging**: Umfassende Logs für WebSocket und Sync-Service
 
 ### Metriken (geplant)
-- **Performance**: Response Times, Query Performance
-- **Usage**: Feature Usage, User Engagement
-- **Errors**: Error Rates, Sync Failures
+- **Performance**: Response Times, Query Performance, Sync-Latenz
+- **Usage**: Feature Usage, User Engagement, Sync-Häufigkeit
+- **Errors**: Error Rates, Sync Failures, Retry-Statistiken
+- **WebSocket**: Verbindungsqualität, Reconnection-Häufigkeit
+
+## Aktuelle technische Entwicklungen
+
+### Abgeschlossene Migrationen
+- ✅ **localStorage → IndexedDB**: Vollständige Migration mit Dexie.js
+- ✅ **Sync-Architektur**: Bidirektionale Synchronisation für Accounts/AccountGroups
+- ✅ **WebSocket-Integration**: Echtzeit-Updates zwischen Frontend und Backend
+- ✅ **Testing-Setup**: Umfassende Integration-Tests für Sync-Funktionalität
+
+### In Entwicklung
+- 🔄 **Sync-Acknowledgment-System**: ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
+- 🔄 **WebSocket-Reconnection**: Verbessertes Reconnection-Handling mit exponential backoff
+- 🔄 **Performance-Optimierung**: Batch-Operationen und Paginierung
+
+### Geplante Entwicklungen
+- 📋 **Transaction-Synchronisation**: Erweitern der Sync auf Transaktionen
+- 📋 **Category-Synchronisation**: Erweitern der Sync auf Categories/CategoryGroups
+- 📋 **Performance-Monitoring**: Metriken und Monitoring-Dashboard
+- 📋 **PWA-Features**: Service Worker und Offline-Capabilities
+
+## Technische Schulden
+
+### Hohe Priorität
+- **Sync-Konsistenz**: Einheitliche Sync-Queue-Nutzung für alle Entitäten
+- **Queue-Management**: Automatische Bereinigung nach erfolgreicher Sync
+- **Error-Handling**: Einheitliche Patterns für alle Services
+
+### Mittlere Priorität
+- **Legacy-Code**: Vollständige Entfernung von localStorage-Resten
+- **API-Dokumentation**: Vollständige WebSocket-API-Dokumentation
+- **Performance**: Optimierung für große Datenmengen
+
+### Niedrige Priorität
+- **Code-Duplikation**: Refactoring ähnlicher Patterns in Stores
+- **Type-Safety**: Erweiterte TypeScript-Typisierung
+- **Bundle-Size**: Weitere Optimierung der Bundle-Größe
