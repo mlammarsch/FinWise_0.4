@@ -9,8 +9,6 @@ import type { Account, AccountGroup, SyncQueueEntry } from '@/types';
 import { SyncOperationType, EntityTypeEnum } from '@/types'; // EntityTypeEnum importiert
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger'; // warnLog importiert
 import { TenantDbService } from '@/services/TenantDbService';
-import { useWebSocketStore } from './webSocketStore'; // WebSocketStore importieren
-import { BackendStatus } from '@/types'; // BackendStatus importieren
 
 export const useAccountStore = defineStore('account', () => {
   const tenantDbService = new TenantDbService();
@@ -31,7 +29,6 @@ export const useAccountStore = defineStore('account', () => {
   );
 
   async function addAccount(accountData: Omit<Account, 'updated_at'> | Account, fromSync = false): Promise<Account> {
-    const webSocketStore = useWebSocketStore();
 
     const accountWithTimestamp: Account = {
       ...accountData,
@@ -74,8 +71,8 @@ export const useAccountStore = defineStore('account', () => {
     }
     infoLog('accountStore', `Account "${accountWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountWithTimestamp.id}).`);
 
-    // SyncQueue-Logik nur für lokale Änderungen
-    if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT,
@@ -87,14 +84,11 @@ export const useAccountStore = defineStore('account', () => {
       } catch (e) {
         errorLog('accountStore', `Fehler beim Hinzufügen von Account "${accountWithTimestamp.name}" zur Sync Queue.`, e);
       }
-    } else if (!fromSync) {
-      debugLog('accountStore', `Account "${accountWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
     }
     return accountWithTimestamp;
   }
 
   async function updateAccount(accountUpdatesData: Account, fromSync = false): Promise<boolean> {
-    const webSocketStore = useWebSocketStore();
 
     const accountUpdatesWithTimestamp: Account = {
       ...accountUpdatesData,
@@ -138,8 +132,8 @@ export const useAccountStore = defineStore('account', () => {
       }
       infoLog('accountStore', `Account "${accountUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${accountUpdatesWithTimestamp.id}).`);
 
-      // SyncQueue-Logik nur für lokale Änderungen
-      if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
+      // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+      if (!fromSync) {
         try {
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT,
@@ -151,8 +145,6 @@ export const useAccountStore = defineStore('account', () => {
         } catch (e) {
           errorLog('accountStore', `Fehler beim Hinzufügen von Account Update "${accountUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
         }
-      } else if (!fromSync) {
-        debugLog('accountStore', `Account Update "${accountUpdatesWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
       }
       return true;
     }
@@ -165,7 +157,6 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   async function deleteAccount(accountId: string, fromSync = false): Promise<void> {
-    const webSocketStore = useWebSocketStore();
     const accountToDelete = accounts.value.find(a => a.id === accountId);
 
     // Lokale DB immer zuerst (oder zumindest vor dem Hinzufügen zur SyncQueue) aktualisieren,
@@ -176,7 +167,8 @@ export const useAccountStore = defineStore('account', () => {
     accounts.value = accounts.value.filter(a => a.id !== accountId);
     infoLog('accountStore', `Account mit ID "${accountId}" aus Store und lokaler DB entfernt.`);
 
-    if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE && accountToDelete) {
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync && accountToDelete) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT,
@@ -188,14 +180,10 @@ export const useAccountStore = defineStore('account', () => {
       } catch (e) {
         errorLog('accountStore', `Fehler beim Hinzufügen von Account Delete (ID: "${accountId}") zur Sync Queue.`, e);
       }
-    } else if (!fromSync && accountToDelete) {
-      // TODO: Logik für Online-Senden
-      debugLog('accountStore', `Account Delete (ID: "${accountId}") würde jetzt online gesendet (nicht implementiert).`);
     }
   }
 
   async function addAccountGroup(accountGroupData: Omit<AccountGroup, 'updated_at'> | AccountGroup, fromSync = false): Promise<AccountGroup> {
-    const webSocketStore = useWebSocketStore();
 
     const accountGroupWithTimestamp: AccountGroup = {
       ...accountGroupData,
@@ -230,8 +218,8 @@ export const useAccountStore = defineStore('account', () => {
     }
     infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountGroupWithTimestamp.id}).`);
 
-    // SyncQueue-Logik nur für lokale Änderungen
-    if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT_GROUP,
@@ -243,14 +231,11 @@ export const useAccountStore = defineStore('account', () => {
       } catch (e) {
         errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup "${accountGroupWithTimestamp.name}" zur Sync Queue.`, e);
       }
-    } else if (!fromSync) {
-      debugLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
     }
     return accountGroupWithTimestamp;
   }
 
   async function updateAccountGroup(accountGroupUpdatesData: AccountGroup, fromSync = false): Promise<boolean> {
-    const webSocketStore = useWebSocketStore();
 
     const accountGroupUpdatesWithTimestamp: AccountGroup = {
       ...accountGroupUpdatesData,
@@ -286,8 +271,8 @@ export const useAccountStore = defineStore('account', () => {
       }
       infoLog('accountStore', `AccountGroup "${accountGroupUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${accountGroupUpdatesWithTimestamp.id}).`);
 
-      // SyncQueue-Logik nur für lokale Änderungen
-      if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE) {
+      // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+      if (!fromSync) {
         try {
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT_GROUP,
@@ -299,8 +284,6 @@ export const useAccountStore = defineStore('account', () => {
         } catch (e) {
           errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup Update "${accountGroupUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
         }
-      } else if (!fromSync) {
-        debugLog('accountStore', `AccountGroup Update "${accountGroupUpdatesWithTimestamp.name}" würde jetzt online gesendet (nicht implementiert).`);
       }
       return true;
     }
@@ -313,7 +296,6 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   async function deleteAccountGroup(accountGroupId: string, fromSync = false): Promise<boolean> {
-    const webSocketStore = useWebSocketStore();
     if (!fromSync && accounts.value.some(a => a.accountGroupId === accountGroupId)) {
       errorLog('accountStore', `deleteAccountGroup: Group ${accountGroupId} is still in use by accounts. Deletion aborted.`);
       // Hier könnte man einen Fehler werfen oder eine Benachrichtigung anzeigen
@@ -328,7 +310,8 @@ export const useAccountStore = defineStore('account', () => {
     accountGroups.value = accountGroups.value.filter(g => g.id !== accountGroupId);
     infoLog('accountStore', `AccountGroup mit ID "${accountGroupId}" aus Store und lokaler DB entfernt.`);
 
-    if (!fromSync && webSocketStore.backendStatus === BackendStatus.OFFLINE && groupToDelete) {
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync && groupToDelete) {
       try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT_GROUP,
@@ -340,9 +323,6 @@ export const useAccountStore = defineStore('account', () => {
       } catch (e) {
         errorLog('accountStore', `Fehler beim Hinzufügen von AccountGroup Delete (ID: "${accountGroupId}") zur Sync Queue.`, e);
       }
-    } else if (!fromSync && groupToDelete) {
-      // TODO: Logik für Online-Senden
-      debugLog('accountStore', `AccountGroup Delete (ID: "${accountGroupId}") würde jetzt online gesendet (nicht implementiert).`);
     }
     return true;
   }
