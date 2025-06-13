@@ -7,41 +7,107 @@ import {
   RuleConditionType,
   RuleActionType,
   Transaction,
+  EntityTypeEnum,
+  SyncOperationType,
 } from '../types';
-import { debugLog } from '@/utils/logger';
-import { TransactionService } from '@/services/TransactionService'; // neu
+import { debugLog, errorLog } from '@/utils/logger';
+import { TransactionService } from '@/services/TransactionService';
+import { TenantDbService } from '@/services/TenantDbService';
 
 export const useRuleStore = defineStore('rule', () => {
   /** Alle Regeln */
   const rules = ref<AutomationRule[]>([]);
 
   // ------------------------------------------------------------------ CRUD
-  function addRule(rule: Omit<AutomationRule, 'id'>) {
-    const newRule: AutomationRule = { ...rule, id: uuidv4() };
-    rules.value.push(newRule);
-    saveRules();
-    debugLog('[ruleStore] addRule', newRule);
-    return newRule;
+  async function addRule(rule: Omit<AutomationRule, 'id'>, fromSync: boolean = false) {
+    try {
+      const newRule: AutomationRule = {
+        ...rule,
+        id: uuidv4(),
+        updated_at: new Date().toISOString()
+      };
+
+      const tenantDbService = new TenantDbService();
+      const createdRule = await tenantDbService.createRule(newRule);
+
+      rules.value.push(createdRule);
+
+      if (!fromSync) {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.RULE,
+          entityId: createdRule.id,
+          operationType: SyncOperationType.CREATE,
+          payload: createdRule,
+        });
+      }
+
+      debugLog('RuleStore', `Regel "${createdRule.name}" hinzugefügt`, { id: createdRule.id });
+      return createdRule;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler beim Hinzufügen der Regel', error);
+      throw error;
+    }
   }
 
   const getRuleById = computed(() => {
     return (id: string) => rules.value.find((r) => r.id === id);
   });
 
-  function updateRule(id: string, updates: Partial<AutomationRule>) {
-    const idx = rules.value.findIndex((r) => r.id === id);
-    if (idx === -1) return false;
-    rules.value[idx] = { ...rules.value[idx], ...updates };
-    saveRules();
-    debugLog('[ruleStore] updateRule', { id, updates });
-    return true;
+  async function updateRule(id: string, updates: Partial<AutomationRule>, fromSync: boolean = false) {
+    try {
+      const tenantDbService = new TenantDbService();
+      const success = await tenantDbService.updateRule(id, updates);
+
+      if (success) {
+        const idx = rules.value.findIndex((r) => r.id === id);
+        if (idx !== -1) {
+          rules.value[idx] = { ...rules.value[idx], ...updates, updated_at: new Date().toISOString() };
+        }
+
+        if (!fromSync) {
+          await tenantDbService.addSyncQueueEntry({
+            entityType: EntityTypeEnum.RULE,
+            entityId: id,
+            operationType: SyncOperationType.UPDATE,
+            payload: { ...updates, id },
+          });
+        }
+
+        debugLog('RuleStore', `Regel mit ID ${id} aktualisiert`);
+      }
+
+      return success;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler beim Aktualisieren der Regel', error);
+      return false;
+    }
   }
 
-  function deleteRule(id: string) {
-    rules.value = rules.value.filter((r) => r.id !== id);
-    saveRules();
-    debugLog('[ruleStore] deleteRule', id);
-    return true;
+  async function deleteRule(id: string, fromSync: boolean = false) {
+    try {
+      const tenantDbService = new TenantDbService();
+      const success = await tenantDbService.deleteRule(id);
+
+      if (success) {
+        rules.value = rules.value.filter((r) => r.id !== id);
+
+        if (!fromSync) {
+          await tenantDbService.addSyncQueueEntry({
+            entityType: EntityTypeEnum.RULE,
+            entityId: id,
+            operationType: SyncOperationType.DELETE,
+            payload: { id },
+          });
+        }
+
+        debugLog('RuleStore', `Regel mit ID ${id} gelöscht`);
+      }
+
+      return success;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler beim Löschen der Regel', error);
+      return false;
+    }
   }
 
   // ------------------------------------------------ Regel‑Engine ---------
@@ -78,11 +144,7 @@ export const useRuleStore = defineStore('rule', () => {
       }
     }
 
-    debugLog('[ruleStore] applyRulesToTransaction', {
-      transactionId: transaction.id,
-      stage,
-      rulesApplied: applied,
-    });
+    debugLog('RuleStore', `${applied} Regeln auf Transaktion ${transaction.id} angewendet (Stage: ${stage})`);
 
     return modified;
   }
@@ -136,27 +198,24 @@ export const useRuleStore = defineStore('rule', () => {
   }
 
   // -------------------------------------------------- Persistence ---------
-  function saveRules() {
-    localStorage.setItem('finwise_rules', JSON.stringify(rules.value));
-  }
-  function loadRules() {
-    const saved = localStorage.getItem('finwise_rules');
-    if (saved) {
-      try {
-        rules.value = JSON.parse(saved);
-        debugLog('[ruleStore] loadRules', rules.value.length);
-      } catch (e) {
-        debugLog('[ruleStore] loadRules error', e);
-        rules.value = [];
-      }
+  async function loadRules(fromSync: boolean = false) {
+    try {
+      const tenantDbService = new TenantDbService();
+      const loadedRules = await tenantDbService.getRules();
+      rules.value = loadedRules;
+      debugLog('RuleStore', `${loadedRules.length} Regeln geladen`);
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler beim Laden der Regeln', error);
+      rules.value = [];
     }
   }
 
-  function reset() {
+  async function reset() {
     rules.value = [];
-    loadRules();
+    await loadRules();
   }
 
+  // Initialisierung
   loadRules();
 
   return {
@@ -167,6 +226,7 @@ export const useRuleStore = defineStore('rule', () => {
     getRuleById,
     updateRule,
     deleteRule,
+    loadRules,
     /* engine */
     applyRulesToTransaction,
     /* util */

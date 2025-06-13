@@ -5,7 +5,7 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
-import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry } from '../types';
+import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, PlanningTransaction } from '../types';
 import type { ExtendedTransaction } from './transactionStore';
 
 export class FinwiseTenantSpecificDB extends Dexie {
@@ -14,6 +14,10 @@ export class FinwiseTenantSpecificDB extends Dexie {
   categories!: Table<Category, string>;
   categoryGroups!: Table<CategoryGroup, string>;
   transactions!: Table<ExtendedTransaction, string>;
+  planningTransactions!: Table<PlanningTransaction, string>;
+  recipients!: Table<Recipient, string>;
+  tags!: Table<Tag, string>;
+  rules!: Table<AutomationRule, string>;
   syncQueue!: Table<SyncQueueEntry, string>;
 
   constructor(databaseName: string) {
@@ -50,6 +54,48 @@ export class FinwiseTenantSpecificDB extends Dexie {
       categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
       categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
       transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(7).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(8).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      tags: '&id, name, parentTagId, color, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(9).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      tags: '&id, name, parentTagId, color, updated_at',
+      rules: '&id, name, stage, priority, isActive, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(10).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      planningTransactions: '&id, name, accountId, categoryId, startDate, isActive, recurrencePattern, transactionType, updated_at',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      tags: '&id, name, parentTagId, color, updated_at',
+      rules: '&id, name, stage, priority, isActive, updated_at',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
     });
   }

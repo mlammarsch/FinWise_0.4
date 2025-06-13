@@ -214,8 +214,8 @@ function onCreateCategory(newCategory: { id: string; name: string }) {
   debugLog("[TransactionForm] onCreateCategory", created);
 }
 
-function onCreateTag(newTag: { id: string; name: string }) {
-  const created = tagStore.addTag({
+async function onCreateTag(newTag: { id: string; name: string }) {
+  const created = await tagStore.addTag({
     name: newTag.name,
     parentTagId: null,
   });
@@ -223,8 +223,10 @@ function onCreateTag(newTag: { id: string; name: string }) {
   debugLog("[TransactionForm] onCreateTag", created);
 }
 
-function onCreateRecipient(newRecipient: { id: string; name: string }) {
-  const created = recipientStore.addRecipient({ name: newRecipient.name });
+async function onCreateRecipient(newRecipient: { id: string; name: string }) {
+  const created = await recipientStore.addRecipient({
+    name: newRecipient.name,
+  });
   recipientId.value = created.id;
   debugLog("[TransactionForm] onCreateRecipient", created);
 }
@@ -289,7 +291,12 @@ const submitForm = () => {
 </script>
 
 <template>
-  <div class="text-center p-4" v-if="!recipientsLoaded">Lade Empfänger...</div>
+  <div
+    class="text-center p-4"
+    v-if="!recipientsLoaded"
+  >
+    Lade Empfänger...
+  </div>
   <form
     ref="formModalRef"
     novalidate
@@ -346,7 +353,10 @@ const submitForm = () => {
       class="alert alert-error p-2"
     >
       <ul class="list-disc list-inside">
-        <li v-for="(err, index) in validationErrors" :key="index">
+        <li
+          v-for="(err, index) in validationErrors"
+          :key="index"
+        >
           {{ err }}
         </li>
       </ul>
@@ -405,7 +415,11 @@ const submitForm = () => {
           class="select select-bordered focus:outline-none focus:ring-2 focus:ring-accent w-full"
           :disabled="!isTransfer"
         >
-          <option v-for="a in filteredAccounts" :key="a.id" :value="a.id">
+          <option
+            v-for="a in filteredAccounts"
+            :key="a.id"
+            :value="a.id"
+          >
             {{ a.name }}
           </option>
         </select>

@@ -1,7 +1,6 @@
 // src/stores/planningStore.ts
 /**
- * Pfad: src/stores/planningStore.ts
- * Store für geplante Transaktionen – tenant-spezifisch persistiert.
+ * Store für geplante Transaktionen – tenant-spezifisch persistiert via IndexedDB.
  */
 
 import { defineStore } from 'pinia';
@@ -16,6 +15,7 @@ import { debugLog } from '@/utils/logger';
 import { storageKey } from '@/utils/storageKey';
 import { BalanceService } from '@/services/BalanceService';
 import { TransactionService } from '@/services/TransactionService';
+import { TenantDbService } from '@/services/TenantDbService';
 import { useTransactionStore } from './transactionStore';
 import { useRuleStore } from './ruleStore';
 import {
@@ -35,6 +35,7 @@ export const usePlanningStore = defineStore('planning', () => {
   const planningTransactions = ref<PlanningTransaction[]>([]);
   const transactionStore    = useTransactionStore();
   const ruleStore           = useRuleStore();
+  const tenantDbService     = new TenantDbService();
 
   /* ---------------------------------------------- Getters */
   const getPlanningTransactionById = computed(() => (id: string) =>
@@ -48,7 +49,7 @@ export const usePlanningStore = defineStore('planning', () => {
   );
 
   /* ---------------------------------------------- Actions */
-  function addPlanningTransaction(p: Partial<PlanningTransaction>) {
+  async function addPlanningTransaction(p: Partial<PlanningTransaction>, fromSync = false) {
     const id = uuidv4();
     const tx: PlanningTransaction = {
       id,
@@ -80,46 +81,86 @@ export const usePlanningStore = defineStore('planning', () => {
       autoExecute: p.autoExecute || false,
     };
 
-    planningTransactions.value.push(tx);
-    savePlanningTransactions();
-    BalanceService.calculateMonthlyBalances();
-    TransactionService.schedule(tx);
-    ruleStore.evaluateRules();
-    debugLog('[planningStore] add', { id });
+    try {
+      const savedTx = await tenantDbService.createPlanningTransaction(tx);
+      planningTransactions.value.push(savedTx);
 
-    return tx;
+      if (!fromSync) {
+        BalanceService.calculateMonthlyBalances();
+        // TransactionService.schedule(tx); // Kommentiert aus, da Methode nicht existiert
+        // ruleStore.evaluateRules(); // Kommentiert aus, da Methode nicht existiert
+      }
+
+      debugLog('PlanningStore', `Planungstransaktion "${tx.name}" hinzugefügt`, { id });
+      return savedTx;
+    } catch (error) {
+      debugLog('PlanningStore', `Fehler beim Hinzufügen der Planungstransaktion "${tx.name}"`, String(error));
+      throw error;
+    }
   }
 
-  function updatePlanningTransaction(id: string, upd: Partial<PlanningTransaction>) {
-    const idx = planningTransactions.value.findIndex(p => p.id === id);
-    if (idx === -1) return false;
+  async function updatePlanningTransaction(id: string, upd: Partial<PlanningTransaction>, fromSync = false) {
+    try {
+      const success = await tenantDbService.updatePlanningTransaction(id, upd);
+      if (!success) {
+        debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" nicht gefunden für Update`);
+        return false;
+      }
 
-    planningTransactions.value[idx] = {
-      ...planningTransactions.value[idx],
-      ...upd,
-    };
-    savePlanningTransactions();
-    BalanceService.calculateMonthlyBalances();
-    TransactionService.reschedule(planningTransactions.value[idx]);
-    debugLog('[planningStore] update', { id, updates: Object.keys(upd) });
-    return true;
+      const idx = planningTransactions.value.findIndex(p => p.id === id);
+      if (idx !== -1) {
+        planningTransactions.value[idx] = {
+          ...planningTransactions.value[idx],
+          ...upd,
+        };
+      }
+
+      if (!fromSync) {
+        BalanceService.calculateMonthlyBalances();
+        // TransactionService.reschedule(planningTransactions.value[idx]); // Kommentiert aus, da Methode nicht existiert
+      }
+
+      debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" aktualisiert`, Object.keys(upd).join(', '));
+      return true;
+    } catch (error) {
+      debugLog('PlanningStore', `Fehler beim Aktualisieren der Planungstransaktion mit ID "${id}"`, String(error));
+      return false;
+    }
   }
 
-  function deletePlanningTransaction(id: string) {
-    const tx = planningTransactions.value.find(p => p.id === id);
-    planningTransactions.value = planningTransactions.value.filter(p => p.id !== id);
-    savePlanningTransactions();
-    BalanceService.calculateMonthlyBalances();
-    TransactionService.cancel(id);
-    debugLog('[planningStore] delete', { id, name: tx?.name });
+  async function deletePlanningTransaction(id: string, fromSync = false) {
+    try {
+      const tx = planningTransactions.value.find(p => p.id === id);
+      const success = await tenantDbService.deletePlanningTransaction(id);
+
+      if (success) {
+        planningTransactions.value = planningTransactions.value.filter(p => p.id !== id);
+
+        if (!fromSync) {
+          BalanceService.calculateMonthlyBalances();
+          // TransactionService.cancel(id); // Kommentiert aus, da Methode nicht existiert
+        }
+
+        debugLog('PlanningStore', `Planungstransaktion "${tx?.name}" gelöscht`, id);
+      } else {
+        debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" nicht gefunden für Löschung`);
+      }
+
+      return success;
+    } catch (error) {
+      debugLog('PlanningStore', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, String(error));
+      return false;
+    }
   }
 
   /* ------------------------------------------- Persistence */
-  function loadPlanningTransactions() {
-    const raw = localStorage.getItem(storageKey('planning_transactions'));
-    if (raw) {
-      try {
-        planningTransactions.value = JSON.parse(raw).map((tx: any) => ({
+  async function loadPlanningTransactions() {
+    try {
+      // Erst versuchen aus IndexedDB zu laden
+      const dbTransactions = await tenantDbService.getPlanningTransactions();
+
+      if (dbTransactions.length > 0) {
+        planningTransactions.value = dbTransactions.map((tx: any) => ({
           ...tx,
           name: tx.name || tx.payee || '',
           date: toDateOnlyString(tx.startDate),
@@ -130,30 +171,64 @@ export const usePlanningStore = defineStore('planning', () => {
           isActive: tx.isActive !== undefined ? tx.isActive : true,
           forecastOnly: tx.forecastOnly !== undefined ? tx.forecastOnly : false,
         }));
-      } catch (e) {
-        planningTransactions.value = [];
-        debugLog('[planningStore] load - parse error', e);
+        debugLog('PlanningStore', `${planningTransactions.value.length} Planungstransaktionen aus IndexedDB geladen`);
+        return;
       }
+
+      // Fallback: Migration von localStorage
+      const raw = localStorage.getItem(storageKey('planning_transactions'));
+      if (raw) {
+        try {
+          const legacyTransactions = JSON.parse(raw).map((tx: any) => ({
+            ...tx,
+            name: tx.name || tx.payee || '',
+            date: toDateOnlyString(tx.startDate),
+            valueDate: toDateOnlyString(tx.valueDate || tx.startDate),
+            amountType: tx.amountType || AmountType.EXACT,
+            weekendHandling: tx.weekendHandling || WeekendHandlingType.NONE,
+            recurrenceEndType: tx.recurrenceEndType || RecurrenceEndType.NEVER,
+            isActive: tx.isActive !== undefined ? tx.isActive : true,
+            forecastOnly: tx.forecastOnly !== undefined ? tx.forecastOnly : false,
+          }));
+
+          // Migriere zu IndexedDB
+          for (const tx of legacyTransactions) {
+            await tenantDbService.createPlanningTransaction(tx);
+          }
+
+          planningTransactions.value = legacyTransactions;
+          localStorage.removeItem(storageKey('planning_transactions'));
+          debugLog('PlanningStore', `${legacyTransactions.length} Planungstransaktionen von localStorage zu IndexedDB migriert`);
+        } catch (e) {
+          planningTransactions.value = [];
+          debugLog('PlanningStore', 'Fehler beim Parsen der localStorage-Daten', String(e));
+        }
+      } else {
+        planningTransactions.value = [];
+        debugLog('PlanningStore', 'Keine Planungstransaktionen gefunden');
+      }
+    } catch (error) {
+      planningTransactions.value = [];
+      debugLog('PlanningStore', 'Fehler beim Laden der Planungstransaktionen', String(error));
     }
-    debugLog('[planningStore] load', { cnt: planningTransactions.value.length });
   }
 
   function savePlanningTransactions() {
-    localStorage.setItem(
-      storageKey('planning_transactions'),
-      JSON.stringify(planningTransactions.value),
-    );
-    debugLog('[planningStore] save', { cnt: planningTransactions.value.length });
+    // IndexedDB persistiert automatisch - diese Methode wird für Kompatibilität beibehalten
+    debugLog('PlanningStore', `${planningTransactions.value.length} Planungstransaktionen sind in IndexedDB persistiert`);
   }
 
-  function reset() {
+  async function reset() {
     planningTransactions.value = [];
     localStorage.removeItem(storageKey('last_forecast_update'));
-    loadPlanningTransactions();
-    debugLog('[planningStore] reset');
+    await loadPlanningTransactions();
+    debugLog('PlanningStore', 'Store zurückgesetzt');
   }
 
-  loadPlanningTransactions();
+  // Initialisierung - async wird in einem Promise-Wrapper ausgeführt
+  loadPlanningTransactions().catch(error => {
+    debugLog('PlanningStore', 'Fehler bei der Initialisierung', String(error));
+  });
 
   /* ----------------------------------------------- Exports */
   return {

@@ -58,8 +58,9 @@ export interface Tag {
   id: string
   name: string
   parentTagId?: string | null
-  color: string
+  color?: string
   icon?: string
+  updated_at?: string // ISO 8601 Format
 }
 
 export interface Recipient {
@@ -67,6 +68,7 @@ export interface Recipient {
   name: string
   defaultCategoryId?: string | null
   note?: string
+  updated_at?: string // ISO 8601 Format
 }
 
 // Transaktionen
@@ -121,6 +123,7 @@ export interface PlanningTransaction {
   isActive: boolean;
   forecastOnly: boolean;
   autoExecute?: boolean;
+  updated_at?: string; // ISO 8601 Format
 }
 
 // Regeln / Automatisierungen
@@ -164,6 +167,7 @@ export interface AutomationRule {
   actions: RuleAction[]
   priority: number
   isActive: boolean
+  updated_at?: string // ISO 8601 Format
 }
 
 // Zusatzmodelle
@@ -271,6 +275,10 @@ export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity
   CATEGORY = 'Category',
   CATEGORY_GROUP = 'CategoryGroup',
   TRANSACTION = 'Transaction',
+  PLANNING_TRANSACTION = 'PlanningTransaction',
+  RECIPIENT = 'Recipient',
+  TAG = 'Tag',
+  RULE = 'Rule',
   // Weitere Entitätstypen hier bei Bedarf
 }
 
@@ -282,8 +290,8 @@ export interface DeletePayload {
 }
 
 // NotificationDataPayload ist eine Union der möglichen Datenstrukturen.
-// Wir verwenden die bestehenden Interfaces Account, AccountGroup, Category und CategoryGroup.
-export type NotificationDataPayload = Account | AccountGroup | Category | CategoryGroup | DeletePayload;
+// Wir verwenden die bestehenden Interfaces Account, AccountGroup, Category, CategoryGroup und Recipient.
+export type NotificationDataPayload = Account | AccountGroup | Category | CategoryGroup | Recipient | DeletePayload;
 
 export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
   type: 'data_update'; // type wurde im Backend als event_type bezeichnet, hier konsistent mit anderen Messages 'type'
@@ -389,7 +397,7 @@ export interface SyncQueueEntry {
   entityType: EntityTypeEnum; // Typ der Entität, Verwendung des neuen Enums
   entityId: string; // ID der betroffenen Entität
   operationType: SyncOperationType; // Art der Operation
-  payload: Account | AccountGroup | Category | CategoryGroup | Transaction | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
+  payload: Account | AccountGroup | Category | CategoryGroup | Transaction | Recipient | Tag | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
   timestamp: number; // Zeitstempel der Änderung (Unix-Timestamp)
   status: SyncStatus; // Status des Sync-Eintrags
   attempts?: number; // Anzahl der Synchronisierungsversuche

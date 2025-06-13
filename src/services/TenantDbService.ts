@@ -1,5 +1,5 @@
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
-import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry, QueueStatistics } from '@/types';
+import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, QueueStatistics, PlanningTransaction } from '@/types';
 import type { ExtendedTransaction } from '@/stores/transactionStore';
 import { SyncStatus } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
@@ -632,6 +632,407 @@ export class TenantDbService {
     } catch (err) {
       errorLog('TenantDbService', 'Fehler beim Abrufen aller Transaktionen', { error: err });
       return [];
+    }
+  }
+
+  async createRecipient(recipient: Recipient): Promise<Recipient> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'createRecipient: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      const recipientWithTimestamp = {
+        ...recipient,
+        updated_at: new Date().toISOString()
+      };
+      await this.db.recipients.put(recipientWithTimestamp);
+      debugLog('TenantDbService', `Empfänger "${recipient.name}" (ID: ${recipient.id}) erstellt.`);
+      return recipientWithTimestamp;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Erstellen des Empfängers "${recipient.name}"`, { recipient, error: err });
+      throw err;
+    }
+  }
+
+  async getRecipients(): Promise<Recipient[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getRecipients: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const recipients = await this.db.recipients.toArray();
+      debugLog('TenantDbService', 'Alle Empfänger abgerufen.', { count: recipients.length });
+      return recipients;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Empfänger', { error: err });
+      return [];
+    }
+  }
+
+  async getRecipientById(id: string): Promise<Recipient | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getRecipientById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const recipient = await this.db.recipients.get(id);
+      debugLog('TenantDbService', `Empfänger mit ID "${id}" abgerufen.`, { recipient });
+      return recipient;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen des Empfängers mit ID "${id}"`, { id, error: err });
+      return undefined;
+    }
+  }
+
+  async updateRecipient(id: string, updates: Partial<Recipient>): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateRecipient: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existing = await this.db.recipients.get(id);
+      if (!existing) {
+        warnLog('TenantDbService', `Empfänger mit ID "${id}" für Update nicht gefunden.`);
+        return false;
+      }
+
+      const updatedRecipient = {
+        ...existing,
+        ...updates,
+        id, // ID darf nicht überschrieben werden
+        updated_at: new Date().toISOString()
+      };
+
+      await this.db.recipients.put(updatedRecipient);
+      debugLog('TenantDbService', `Empfänger "${updatedRecipient.name}" (ID: ${id}) aktualisiert.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren des Empfängers mit ID "${id}"`, { id, updates, error: err });
+      return false;
+    }
+  }
+
+  async deleteRecipient(id: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteRecipient: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existing = await this.db.recipients.get(id);
+      if (!existing) {
+        warnLog('TenantDbService', `Empfänger mit ID "${id}" für Löschung nicht gefunden.`);
+        return false;
+      }
+
+      await this.db.recipients.delete(id);
+      debugLog('TenantDbService', `Empfänger mit ID "${id}" gelöscht.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen des Empfängers mit ID "${id}"`, { id, error: err });
+      return false;
+    }
+  }
+
+  async createTag(tag: Tag): Promise<Tag> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'createTag: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      const tagWithTimestamp = {
+        ...tag,
+        updated_at: new Date().toISOString()
+      };
+      await this.db.tags.put(tagWithTimestamp);
+      debugLog('TenantDbService', `Tag "${tag.name}" (ID: ${tag.id}) erstellt.`);
+      return tagWithTimestamp;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Erstellen des Tags "${tag.name}"`, { tag, error: err });
+      throw err;
+    }
+  }
+
+  async getTags(): Promise<Tag[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getTags: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const tags = await this.db.tags.toArray();
+      debugLog('TenantDbService', 'Alle Tags abgerufen.', { count: tags.length });
+      return tags;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Tags', { error: err });
+      return [];
+    }
+  }
+
+  async getTagById(id: string): Promise<Tag | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getTagById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const tag = await this.db.tags.get(id);
+      debugLog('TenantDbService', `Tag mit ID "${id}" abgerufen.`, { tag });
+      return tag;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen des Tags mit ID "${id}"`, { id, error: err });
+      return undefined;
+    }
+  }
+
+  async updateTag(id: string, updates: Partial<Tag>): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateTag: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingTag = await this.db.tags.get(id);
+      if (!existingTag) {
+        warnLog('TenantDbService', `Tag mit ID "${id}" für Update nicht gefunden.`);
+        return false;
+      }
+
+      const updatedTag = {
+        ...existingTag,
+        ...updates,
+        id, // ID darf nicht überschrieben werden
+        updated_at: new Date().toISOString()
+      };
+
+      await this.db.tags.put(updatedTag);
+      debugLog('TenantDbService', `Tag "${updatedTag.name}" (ID: ${id}) aktualisiert.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren des Tags mit ID "${id}"`, { id, updates, error: err });
+      return false;
+    }
+  }
+
+  async deleteTag(id: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteTag: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingTag = await this.db.tags.get(id);
+      if (!existingTag) {
+        warnLog('TenantDbService', `Tag mit ID "${id}" für Löschung nicht gefunden.`);
+        return false;
+      }
+
+      await this.db.tags.delete(id);
+      debugLog('TenantDbService', `Tag "${existingTag.name}" (ID: ${id}) gelöscht.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen des Tags mit ID "${id}"`, { id, error: err });
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // AUTOMATION RULES CRUD OPERATIONS
+  // ============================================================================
+
+  async createRule(rule: AutomationRule): Promise<AutomationRule> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'createRule: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      const ruleWithTimestamp = {
+        ...rule,
+        updated_at: new Date().toISOString()
+      };
+      await this.db.rules.put(ruleWithTimestamp);
+      debugLog('TenantDbService', `Regel "${rule.name}" (ID: ${rule.id}) erstellt.`);
+      return ruleWithTimestamp;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Erstellen der Regel "${rule.name}"`, { rule, error: err });
+      throw err;
+    }
+  }
+
+  async getRules(): Promise<AutomationRule[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getRules: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const rules = await this.db.rules.orderBy('priority').toArray();
+      debugLog('TenantDbService', `${rules.length} Regeln abgerufen.`);
+      return rules;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen der Regeln', { error: err });
+      return [];
+    }
+  }
+
+  async getRuleById(id: string): Promise<AutomationRule | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getRuleById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const rule = await this.db.rules.get(id);
+      if (rule) {
+        debugLog('TenantDbService', `Regel "${rule.name}" (ID: ${id}) abgerufen.`);
+      }
+      return rule;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der Regel mit ID "${id}"`, { id, error: err });
+      return undefined;
+    }
+  }
+
+  async updateRule(id: string, updates: Partial<AutomationRule>): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateRule: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingRule = await this.db.rules.get(id);
+      if (!existingRule) {
+        warnLog('TenantDbService', `Regel mit ID "${id}" für Update nicht gefunden.`);
+        return false;
+      }
+
+      const updatedRule = {
+        ...existingRule,
+        ...updates,
+        id, // ID darf nicht überschrieben werden
+        updated_at: new Date().toISOString()
+      };
+
+      await this.db.rules.put(updatedRule);
+      debugLog('TenantDbService', `Regel "${updatedRule.name}" (ID: ${id}) aktualisiert.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren der Regel mit ID "${id}"`, { id, updates, error: err });
+      return false;
+    }
+  }
+
+  async deleteRule(id: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteRule: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingRule = await this.db.rules.get(id);
+      if (!existingRule) {
+        warnLog('TenantDbService', `Regel mit ID "${id}" für Löschung nicht gefunden.`);
+        return false;
+      }
+
+      await this.db.rules.delete(id);
+      debugLog('TenantDbService', `Regel "${existingRule.name}" (ID: ${id}) gelöscht.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der Regel mit ID "${id}"`, { id, error: err });
+      return false;
+    }
+  }
+
+  // PlanningTransaction CRUD-Methoden
+  async createPlanningTransaction(planningTransaction: PlanningTransaction): Promise<PlanningTransaction> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'createPlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      const planningTransactionWithTimestamp = {
+        ...planningTransaction,
+        updated_at: new Date().toISOString()
+      };
+      await this.db.planningTransactions.put(planningTransactionWithTimestamp);
+      debugLog('TenantDbService', `Planungstransaktion "${planningTransaction.name}" (ID: ${planningTransaction.id}) erstellt.`);
+      return planningTransactionWithTimestamp;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Erstellen der Planungstransaktion "${planningTransaction.name}"`, { planningTransaction, error: err });
+      throw err;
+    }
+  }
+
+  async getPlanningTransactions(): Promise<PlanningTransaction[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getPlanningTransactions: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const planningTransactions = await this.db.planningTransactions.toArray();
+      debugLog('TenantDbService', 'Alle Planungstransaktionen abgerufen.', { count: planningTransactions.length });
+      return planningTransactions;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Planungstransaktionen', { error: err });
+      return [];
+    }
+  }
+
+  async getPlanningTransactionById(id: string): Promise<PlanningTransaction | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getPlanningTransactionById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const planningTransaction = await this.db.planningTransactions.get(id);
+      if (planningTransaction) {
+        debugLog('TenantDbService', `Planungstransaktion mit ID "${id}" abgerufen.`);
+      }
+      return planningTransaction;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der Planungstransaktion mit ID "${id}"`, { id, error: err });
+      return undefined;
+    }
+  }
+
+  async updatePlanningTransaction(id: string, updates: Partial<PlanningTransaction>): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updatePlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingPlanningTransaction = await this.db.planningTransactions.get(id);
+      if (!existingPlanningTransaction) {
+        warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Update nicht gefunden.`);
+        return false;
+      }
+
+      const updatedPlanningTransaction = {
+        ...existingPlanningTransaction,
+        ...updates,
+        id, // ID darf nicht überschrieben werden
+        updated_at: new Date().toISOString()
+      };
+
+      await this.db.planningTransactions.put(updatedPlanningTransaction);
+      debugLog('TenantDbService', `Planungstransaktion "${updatedPlanningTransaction.name}" (ID: ${id}) aktualisiert.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren der Planungstransaktion mit ID "${id}"`, { id, updates, error: err });
+      return false;
+    }
+  }
+
+  async deletePlanningTransaction(id: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deletePlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const existingPlanningTransaction = await this.db.planningTransactions.get(id);
+      if (!existingPlanningTransaction) {
+        warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Löschung nicht gefunden.`);
+        return false;
+      }
+
+      await this.db.planningTransactions.delete(id);
+      debugLog('TenantDbService', `Planungstransaktion "${existingPlanningTransaction.name}" (ID: ${id}) gelöscht.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, { id, error: err });
+      return false;
     }
   }
 }
