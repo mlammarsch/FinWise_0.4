@@ -2,7 +2,7 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage } from '@/types'; // Erweiterte Importe für Initial Load
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
@@ -139,7 +139,7 @@ export const WebSocketService = {
             // debugLog('[WebSocketService]', 'Parsed message received:', message); // Bereits oben geloggt
 
           // Prüfe auf event_type, da das Backend dies für initial_data_load sendet
-          } else if (message.event_type === 'initial_data_load') { // Änderung hier: message.type zu message.event_type
+          } else if ('event_type' in message && message.event_type === 'initial_data_load') { // Type guard hinzugefügt
             const initialDataMessage = message as InitialDataLoadMessage; // Type assertion ist hier immer noch wichtig
             infoLog('[WebSocketService]', 'InitialDataLoadMessage received (matched on event_type):', initialDataMessage);
 
@@ -174,6 +174,14 @@ export const WebSocketService = {
               infoLog('[WebSocketService]', 'No initial account groups received or accountGroups array is empty.');
             }
             infoLog('[WebSocketService]', 'Finished processing InitialDataLoadMessage.');
+          } else if (message.type === 'sync_ack') {
+            const ackMessage = message as SyncAckMessage;
+            infoLog('[WebSocketService]', `Received sync_ack for entry ${ackMessage.id}`, ackMessage);
+            await this.processSyncAck(ackMessage);
+          } else if (message.type === 'sync_nack') {
+            const nackMessage = message as SyncNackMessage;
+            warnLog('[WebSocketService]', `Received sync_nack for entry ${nackMessage.id}`, nackMessage);
+            await this.processSyncNack(nackMessage);
           }
 
         } catch (e) {
@@ -387,6 +395,34 @@ export const WebSocketService = {
     }
   },
 
+  async initializeSyncQueue(): Promise<void> {
+    const tenantStore = useTenantStore();
+    const currentTenantId = tenantStore.activeTenantId;
+
+    if (!currentTenantId) {
+      debugLog('[WebSocketService]', 'No active tenant for sync queue initialization.');
+      return;
+    }
+
+    try {
+      // Hängende PROCESSING-Einträge zurücksetzen (älter als 30 Sekunden)
+      const resetCount = await tenantDbService.resetStuckProcessingEntries(currentTenantId, 30000);
+      if (resetCount > 0) {
+        infoLog('[WebSocketService]', `${resetCount} hängende PROCESSING-Einträge beim Start zurückgesetzt.`);
+      }
+
+      // Prüfen, ob es ausstehende Einträge gibt
+      const pendingEntries = await tenantDbService.getPendingSyncEntries(currentTenantId);
+      const failedEntries = await tenantDbService.getFailedSyncEntries(currentTenantId);
+
+      if (pendingEntries.length > 0 || failedEntries.length > 0) {
+        infoLog('[WebSocketService]', `Sync-Queue initialisiert: ${pendingEntries.length} ausstehende, ${failedEntries.length} fehlgeschlagene Einträge.`);
+      }
+    } catch (error) {
+      errorLog('[WebSocketService]', 'Fehler bei der Sync-Queue-Initialisierung', { error });
+    }
+  },
+
   initialize(): void {
     const webSocketStore = useWebSocketStore();
     // Beobachte Änderungen im connectionStatus und backendStatus
@@ -403,11 +439,111 @@ export const WebSocketService = {
     );
     infoLog('[WebSocketService]', 'Initialized and watching for connection/backend status changes to trigger sync.');
 
+    // Sync-Queue beim Start initialisieren
+    this.initializeSyncQueue();
+
     // Optionale automatische Verbindung, falls gewünscht und Tenant vorhanden
     // const session = useSessionStore();
     // if (session.currentTenantId) {
     //   this.connect();
     // }
+  },
+
+  async processSyncAck(ackMessage: SyncAckMessage): Promise<void> {
+    try {
+      const success = await tenantDbService.removeSyncQueueEntry(ackMessage.id);
+      if (success) {
+        infoLog('[WebSocketService]', `Sync-Queue-Eintrag ${ackMessage.id} erfolgreich nach ACK entfernt.`, {
+          entityType: ackMessage.entityType,
+          entityId: ackMessage.entityId,
+          operationType: ackMessage.operationType
+        });
+      } else {
+        warnLog('[WebSocketService]', `Konnte Sync-Queue-Eintrag ${ackMessage.id} nach ACK nicht entfernen (möglicherweise bereits entfernt).`);
+      }
+    } catch (error) {
+      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-ACK für Eintrag ${ackMessage.id}`, { error, ackMessage });
+    }
+  },
+
+  async processSyncNack(nackMessage: SyncNackMessage): Promise<void> {
+    try {
+      const entry = await tenantDbService.getSyncQueueEntry(nackMessage.id);
+      if (!entry) {
+        warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für NACK-Verarbeitung nicht gefunden.`);
+        return;
+      }
+
+      const currentAttempts = entry.attempts ?? 0;
+      const maxRetries = this.getMaxRetriesForReason(nackMessage.reason);
+
+      if (currentAttempts >= maxRetries) {
+        // Maximale Anzahl von Versuchen erreicht - als dauerhaft fehlgeschlagen markieren
+        const success = await tenantDbService.updateSyncQueueEntryStatus(
+          nackMessage.id,
+          SyncStatus.FAILED,
+          `Max retries (${maxRetries}) exceeded: ${nackMessage.reason} - ${nackMessage.detail || ''}`
+        );
+        if (success) {
+          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} als dauerhaft fehlgeschlagen markiert nach ${currentAttempts} Versuchen.`, {
+            reason: nackMessage.reason,
+            detail: nackMessage.detail,
+            maxRetries
+          });
+        }
+      } else {
+        // Retry mit exponential backoff
+        const retryDelay = this.calculateRetryDelay(currentAttempts);
+
+        const success = await tenantDbService.updateSyncQueueEntryStatus(
+          nackMessage.id,
+          SyncStatus.PENDING,
+          `Retry scheduled after NACK: ${nackMessage.reason} - ${nackMessage.detail || ''}`
+        );
+
+        if (success) {
+          warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für Retry geplant in ${retryDelay}ms (Versuch ${currentAttempts + 1}/${maxRetries}).`, {
+            reason: nackMessage.reason,
+            detail: nackMessage.detail,
+            retryDelay
+          });
+
+          // Retry nach Delay planen
+          setTimeout(() => {
+            this.checkAndProcessSyncQueue();
+          }, retryDelay);
+        }
+      }
+    } catch (error) {
+      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-NACK für Eintrag ${nackMessage.id}`, { error, nackMessage });
+    }
+  },
+
+  getMaxRetriesForReason(reason: string): number {
+    // Verschiedene Retry-Strategien basierend auf dem Fehlergrund
+    switch (reason) {
+      case 'validation_error':
+      case 'table_not_found':
+        return 1; // Strukturelle Fehler - nur ein Retry
+      case 'database_operational_error':
+        return 5; // Datenbankfehler - mehr Retries
+      case 'processing_error':
+      case 'generic_processing_error':
+        return 3; // Allgemeine Verarbeitungsfehler - moderate Retries
+      default:
+        return 3; // Standard-Retry-Anzahl
+    }
+  },
+
+  calculateRetryDelay(attemptNumber: number): number {
+    // Exponential backoff: 2^attemptNumber * 1000ms, max 30 Sekunden
+    const baseDelay = 1000; // 1 Sekunde
+    const maxDelay = 30000; // 30 Sekunden
+    const delay = Math.min(baseDelay * Math.pow(2, attemptNumber), maxDelay);
+
+    // Jitter hinzufügen (±25% Variation)
+    const jitter = delay * 0.25 * (Math.random() - 0.5);
+    return Math.round(delay + jitter);
   }
 };
 

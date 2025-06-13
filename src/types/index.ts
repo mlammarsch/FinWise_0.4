@@ -307,9 +307,29 @@ export interface InitialDataLoadMessage extends WebSocketMessageBase {
   payload: InitialDataPayload;
 }
 
+// Sync-Acknowledgment-Nachrichten vom Server
+export interface SyncAckMessage extends WebSocketMessageBase {
+  type: 'sync_ack';
+  id: string; // SyncQueueEntry.id
+  status: 'processed';
+  entityId: string;
+  entityType: EntityTypeEnum;
+  operationType: SyncOperationType;
+}
+
+export interface SyncNackMessage extends WebSocketMessageBase {
+  type: 'sync_nack';
+  id: string; // SyncQueueEntry.id
+  status: 'failed';
+  entityId: string;
+  entityType: EntityTypeEnum;
+  operationType: SyncOperationType;
+  reason: string; // Kurzer Grund für den Fehler
+  detail?: string; // Detaillierte Fehlermeldung
+}
 
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage;
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {

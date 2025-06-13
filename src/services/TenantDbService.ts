@@ -235,4 +235,108 @@ export class TenantDbService {
       return false;
     }
   }
+
+  async removeSyncQueueEntry(entryId: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'removeSyncQueueEntry: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      // Prüfen, ob der Eintrag existiert, bevor wir ihn löschen
+      const existingEntry = await this.db.syncQueue.get(entryId);
+      if (!existingEntry) {
+        warnLog('TenantDbService', `SyncQueue-Eintrag ${entryId} für Löschung nicht gefunden.`);
+        return false;
+      }
+
+      await this.db.syncQueue.delete(entryId);
+      debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}`, { error: err });
+      return false;
+    }
+  }
+
+  async getSyncQueueEntry(entryId: string): Promise<SyncQueueEntry | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getSyncQueueEntry: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const entry = await this.db.syncQueue.get(entryId);
+      if (entry) {
+        debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} abgerufen.`);
+      }
+      return entry;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen des SyncQueue-Eintrags ${entryId}`, { error: err });
+      return undefined;
+    }
+  }
+
+  async getFailedSyncEntries(tenantId: string, maxRetries: number = 3): Promise<SyncQueueEntry[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getFailedSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const entries = await this.db.syncQueue
+        .where({ tenantId: tenantId, status: SyncStatus.FAILED })
+        .filter(entry => (entry.attempts ?? 0) < maxRetries)
+        .sortBy('timestamp');
+      debugLog('TenantDbService', `Fehlgeschlagene Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+      return entries;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen fehlgeschlagener Sync-Einträge für Mandant ${tenantId}`, { error: err });
+      return [];
+    }
+  }
+
+  async getProcessingSyncEntries(tenantId: string): Promise<SyncQueueEntry[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getProcessingSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const entries = await this.db.syncQueue
+        .where({ tenantId: tenantId, status: SyncStatus.PROCESSING })
+        .sortBy('timestamp');
+      debugLog('TenantDbService', `Verarbeitende Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+      return entries;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen verarbeitender Sync-Einträge für Mandant ${tenantId}`, { error: err });
+      return [];
+    }
+  }
+
+  async resetStuckProcessingEntries(tenantId: string, timeoutMs: number = 30000): Promise<number> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'resetStuckProcessingEntries: Keine aktive Mandanten-DB verfügbar.');
+      return 0;
+    }
+    try {
+      const cutoffTime = Date.now() - timeoutMs;
+      const stuckEntries = await this.db.syncQueue
+        .where({ tenantId: tenantId, status: SyncStatus.PROCESSING })
+        .filter(entry => (entry.lastAttempt ?? 0) < cutoffTime)
+        .toArray();
+
+      let resetCount = 0;
+      for (const entry of stuckEntries) {
+        const success = await this.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Reset from stuck PROCESSING state');
+        if (success) {
+          resetCount++;
+        }
+      }
+
+      if (resetCount > 0) {
+        debugLog('TenantDbService', `${resetCount} hängende PROCESSING-Einträge für Mandant ${tenantId} zurückgesetzt.`);
+      }
+      return resetCount;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Zurücksetzen hängender PROCESSING-Einträge für Mandant ${tenantId}`, { error: err });
+      return 0;
+    }
+  }
 }
