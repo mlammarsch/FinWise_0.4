@@ -2,19 +2,24 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
 import { watch } from 'vue'; // watch importiert
 import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
 import { useAccountStore } from '@/stores/accountStore'; // accountStore importiert
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
-const MAX_RECONNECT_ATTEMPTS = 5;
+const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
+const LONG_TERM_RECONNECT_INTERVAL = 30000; // 30 Sekunden für langfristige Reconnects
+const BACKEND_HEALTH_CHECK_INTERVAL = 15000; // 15 Sekunden für Backend-Health-Checks
 
 let socket: WebSocket | null = null;
 let reconnectAttempts = 0;
 let explicitClose = false;
 let isSyncProcessRunning = false; // Verhindert mehrfache Ausführung
+let longTermReconnectTimer: NodeJS.Timeout | null = null;
+let backendHealthCheckTimer: NodeJS.Timeout | null = null;
+let isReconnecting = false;
 
 // Neue Properties für automatische Synchronisation
 let autoSyncInterval: NodeJS.Timeout | null = null;
@@ -166,10 +171,19 @@ export const WebSocketService = {
             const { accounts, account_groups } = initialDataMessage.payload;
             debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups });
 
+            // Hole pending DELETE-Operationen um zu vermeiden, dass gelöschte Entitäten wieder hinzugefügt werden
+            const pendingDeletes = await this.getPendingDeleteOperations(tenantStore.activeTenantId!);
+            const pendingAccountDeletes = new Set(pendingDeletes.accounts);
+            const pendingGroupDeletes = new Set(pendingDeletes.accountGroups);
 
             if (accounts && accounts.length > 0) {
               infoLog('[WebSocketService]', `Processing ${accounts.length} initial accounts.`);
               for (const acc of accounts) {
+                // Prüfe ob dieses Konto eine pending DELETE-Operation hat
+                if (pendingAccountDeletes.has(acc.id)) {
+                  warnLog('[WebSocketService]', `Skipping account ${acc.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
                 debugLog('[WebSocketService]', 'Attempting to add account from initial load:', acc);
                 await accountStore.addAccount(acc, true); // fromSync = true
                 infoLog('[WebSocketService]', `Account ${acc.id} added/updated from initial load.`);
@@ -181,6 +195,11 @@ export const WebSocketService = {
             if (account_groups && account_groups.length > 0) {
               infoLog('[WebSocketService]', `Processing ${account_groups.length} initial account groups.`);
               for (const group of account_groups) {
+                // Prüfe ob diese Gruppe eine pending DELETE-Operation hat
+                if (pendingGroupDeletes.has(group.id)) {
+                  warnLog('[WebSocketService]', `Skipping account group ${group.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
                 debugLog('[WebSocketService]', 'Attempting to add account group from initial load:', group);
                 await accountStore.addAccountGroup(group, true); // fromSync = true
                 infoLog('[WebSocketService]', `AccountGroup ${group.id} added/updated from initial load.`);
@@ -201,6 +220,18 @@ export const WebSocketService = {
             const statusResponse = message as DataStatusResponseMessage;
             infoLog('[WebSocketService]', 'Received data_status_response', statusResponse);
             await this.handleDataStatusResponse(statusResponse);
+          } else if (message.type === 'pong') {
+            debugLog('[WebSocketService]', 'Received pong from server', message);
+            // Pong-Antworten können für Connection-Health-Tracking verwendet werden
+          } else if (message.type === 'connection_status_response') {
+            infoLog('[WebSocketService]', 'Received connection_status_response', message);
+            // Verbindungsstatus-Antworten verarbeiten
+          } else if (message.type === 'system_notification') {
+            infoLog('[WebSocketService]', 'Received system notification', message);
+            // System-Benachrichtigungen verarbeiten
+          } else if (message.type === 'maintenance_notification') {
+            warnLog('[WebSocketService]', 'Received maintenance notification', message);
+            // Wartungsbenachrichtigungen verarbeiten
           }
 
         } catch (e) {
@@ -235,15 +266,8 @@ export const WebSocketService = {
         // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
         socket = null;
 
-        if (!explicitClose && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          infoLog('[WebSocketService]', `Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-          setTimeout(() => {
-            this.connect();
-          }, RECONNECT_INTERVAL);
-        } else if (!explicitClose) {
-          errorLog('[WebSocketService]', 'Max reconnect attempts reached. Will not try again automatically.');
-          webSocketStore.setError('Max reconnect attempts reached.');
+        if (!explicitClose) {
+          this.handleReconnection();
         }
       };
     } catch (error) {
@@ -260,8 +284,100 @@ export const WebSocketService = {
       explicitClose = true;
       socket.close();
     }
+
+    // Stoppe alle Reconnection-Timer
+    this.stopReconnectionTimers();
+
     // Der Store-Status wird durch onclose aktualisiert.
     // webSocketStore.reset(); // Optional, um den Store sofort zurückzusetzen
+  },
+
+  stopReconnectionTimers(): void {
+    if (longTermReconnectTimer) {
+      clearTimeout(longTermReconnectTimer);
+      longTermReconnectTimer = null;
+    }
+    if (backendHealthCheckTimer) {
+      clearInterval(backendHealthCheckTimer);
+      backendHealthCheckTimer = null;
+    }
+    isReconnecting = false;
+  },
+
+  handleReconnection(): void {
+    if (isReconnecting) {
+      debugLog('[WebSocketService]', 'Reconnection already in progress, skipping');
+      return;
+    }
+
+    isReconnecting = true;
+
+    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      reconnectAttempts++;
+      infoLog('[WebSocketService]', `Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+      setTimeout(() => {
+        isReconnecting = false;
+        this.connect();
+      }, RECONNECT_INTERVAL);
+    } else {
+      // Nach MAX_RECONNECT_ATTEMPTS wechseln zu langfristiger Reconnection-Strategie
+      infoLog('[WebSocketService]', 'Max short-term reconnect attempts reached. Switching to long-term reconnection strategy.');
+      this.startLongTermReconnection();
+    }
+  },
+
+  startLongTermReconnection(): void {
+    infoLog('[WebSocketService]', 'Starting long-term reconnection strategy...');
+
+    // Starte Backend-Health-Checks
+    this.startBackendHealthChecks();
+
+    // Langfristige Reconnection-Versuche alle 30 Sekunden
+    longTermReconnectTimer = setInterval(() => {
+      if (!explicitClose && (!socket || socket.readyState !== WebSocket.OPEN)) {
+        infoLog('[WebSocketService]', 'Long-term reconnection attempt...');
+        isReconnecting = false; // Reset für neuen Versuch
+        reconnectAttempts = 0; // Reset der Versuche für neue Runde
+        this.connect();
+      }
+    }, LONG_TERM_RECONNECT_INTERVAL);
+  },
+
+  startBackendHealthChecks(): void {
+    if (backendHealthCheckTimer) {
+      clearInterval(backendHealthCheckTimer);
+    }
+
+    backendHealthCheckTimer = setInterval(async () => {
+      if (explicitClose) return;
+
+      try {
+        // Prüfe Backend-Verfügbarkeit über HTTP
+        const wsHost = window.location.hostname;
+        const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000';
+        const healthUrl = `${window.location.protocol}//${wsHost}:${wsPort}/api/v1/websocket/health`;
+
+        const response = await fetch(healthUrl, {
+          method: 'GET',
+          timeout: 5000
+        } as RequestInit);
+
+        if (response.ok) {
+          const healthData = await response.json();
+          debugLog('[WebSocketService]', 'Backend health check successful', healthData);
+
+          // Wenn Backend verfügbar ist, aber WebSocket nicht verbunden, versuche Reconnection
+          if (!socket || socket.readyState !== WebSocket.OPEN) {
+            infoLog('[WebSocketService]', 'Backend is healthy but WebSocket disconnected. Attempting reconnection...');
+            isReconnecting = false;
+            reconnectAttempts = 0;
+            this.connect();
+          }
+        }
+      } catch (error) {
+        debugLog('[WebSocketService]', 'Backend health check failed', { error: error instanceof Error ? error.message : String(error) });
+      }
+    }, BACKEND_HEALTH_CHECK_INTERVAL);
   },
 
   sendMessage(message: unknown): boolean {
@@ -282,6 +398,21 @@ export const WebSocketService = {
       webSocketStore.setError('Cannot send message: WebSocket is not connected.');
       return false;
     }
+  },
+
+  sendPing(): boolean {
+    const pingMessage = {
+      type: 'ping',
+      timestamp: Date.now()
+    };
+    return this.sendMessage(pingMessage);
+  },
+
+  requestConnectionStatus(): boolean {
+    const statusRequest = {
+      type: 'connection_status_request'
+    };
+    return this.sendMessage(statusRequest);
   },
 
   // Hilfsfunktion, um den aktuellen Verbindungsstatus zu bekommen (optional)
@@ -726,6 +857,28 @@ export const WebSocketService = {
 
     } catch (error) {
       errorLog('[WebSocketService]', 'Error handling data status response', { error, message });
+    }
+  },
+
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[]}> {
+    /**
+     * Holt alle pending DELETE-Operationen aus der Sync-Queue um zu vermeiden,
+     * dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
+     */
+    try {
+      const pendingDeletes = await tenantDbService.getPendingDeleteOperations(tenantId);
+      debugLog('[WebSocketService]', 'Retrieved pending DELETE operations', {
+        tenantId,
+        accountDeletes: pendingDeletes.accounts.length,
+        groupDeletes: pendingDeletes.accountGroups.length
+      });
+      return pendingDeletes;
+    } catch (error) {
+      errorLog('[WebSocketService]', 'Error retrieving pending DELETE operations', {
+        error: error instanceof Error ? error.message : String(error),
+        tenantId
+      });
+      return { accounts: [], accountGroups: [] };
     }
   }
 };

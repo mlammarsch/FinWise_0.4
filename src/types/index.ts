@@ -328,8 +328,36 @@ export interface SyncNackMessage extends WebSocketMessageBase {
   detail?: string; // Detaillierte Fehlermeldung
 }
 
+// Neue Nachrichtentypen für erweiterte WebSocket-Funktionalität
+export interface PongMessage extends WebSocketMessageBase {
+  type: 'pong';
+  timestamp?: number;
+}
+
+export interface ConnectionStatusResponseMessage extends WebSocketMessageBase {
+  type: 'connection_status_response';
+  tenant_id: string;
+  backend_status: string;
+  connection_healthy: boolean;
+  stats: Record<string, any>;
+}
+
+export interface SystemNotificationMessage extends WebSocketMessageBase {
+  type: 'system_notification';
+  notification_type: string;
+  message: string;
+  timestamp: number;
+}
+
+export interface MaintenanceNotificationMessage extends WebSocketMessageBase {
+  type: 'maintenance_notification';
+  maintenance_enabled: boolean;
+  message: string;
+  timestamp: number;
+}
+
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage;
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage | PongMessage | ConnectionStatusResponseMessage | SystemNotificationMessage | MaintenanceNotificationMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {

@@ -376,4 +376,43 @@ export class TenantDbService {
       throw error;
     }
   }
+
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[]}> {
+    /**
+     * Holt alle pending DELETE-Operationen aus der Sync-Queue.
+     * Wird verwendet um zu vermeiden, dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
+     */
+    if (!this.db) {
+      warnLog('TenantDbService', 'getPendingDeleteOperations: Keine aktive Mandanten-DB verfügbar.');
+      return { accounts: [], accountGroups: [] };
+    }
+
+    try {
+      // Hole alle pending UND processing DELETE-Operationen
+      // PROCESSING ist wichtig, da DELETE-Einträge während der Verarbeitung noch aktiv sind
+      const pendingDeletes = await this.db.syncQueue
+        .where({ tenantId, operationType: 'delete' })
+        .and(entry => entry.status === SyncStatus.PENDING || entry.status === SyncStatus.PROCESSING)
+        .toArray();
+
+      const accounts: string[] = [];
+      const accountGroups: string[] = [];
+
+      for (const entry of pendingDeletes) {
+        if (entry.entityType === 'Account') {
+          accounts.push(entry.entityId);
+        } else if (entry.entityType === 'AccountGroup') {
+          accountGroups.push(entry.entityId);
+        }
+      }
+
+      debugLog('TenantDbService', `Found ${accounts.length} pending account deletes and ${accountGroups.length} pending group deletes for tenant ${tenantId}`);
+
+      return { accounts, accountGroups };
+
+    } catch (error) {
+      errorLog('TenantDbService', 'Error getting pending DELETE operations', { error, tenantId });
+      return { accounts: [], accountGroups: [] };
+    }
+  }
 }
