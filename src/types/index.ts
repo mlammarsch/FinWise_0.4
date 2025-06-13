@@ -40,6 +40,9 @@ export interface Category {
   isActive: boolean
   sortOrder: number
   categoryGroupId?: string
+  parentCategoryId?: string
+  isSavingsGoal?: boolean
+  updated_at?: string // ISO 8601 Format
 }
 
 export interface CategoryGroup {
@@ -47,6 +50,7 @@ export interface CategoryGroup {
   name: string
   sortOrder: number
   isIncomeGroup: boolean
+  updated_at?: string // ISO 8601 Format
 }
 
 // Tag- und Empfänger-Modelle
@@ -264,6 +268,8 @@ export interface StatusMessage extends WebSocketMessageBase {
 export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity' zu vermeiden
   ACCOUNT = 'Account',
   ACCOUNT_GROUP = 'AccountGroup',
+  CATEGORY = 'Category',
+  CATEGORY_GROUP = 'CategoryGroup',
   // Weitere Entitätstypen hier bei Bedarf
 }
 
@@ -275,8 +281,8 @@ export interface DeletePayload {
 }
 
 // NotificationDataPayload ist eine Union der möglichen Datenstrukturen.
-// Wir verwenden die bestehenden Interfaces Account und AccountGroup.
-export type NotificationDataPayload = Account | AccountGroup | DeletePayload;
+// Wir verwenden die bestehenden Interfaces Account, AccountGroup, Category und CategoryGroup.
+export type NotificationDataPayload = Account | AccountGroup | Category | CategoryGroup | DeletePayload;
 
 export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
   type: 'data_update'; // type wurde im Backend als event_type bezeichnet, hier konsistent mit anderen Messages 'type'
@@ -297,6 +303,8 @@ export interface RequestInitialDataMessage extends WebSocketMessageBase {
 export interface InitialDataPayload {
   accounts: Account[];
   account_groups: AccountGroup[];
+  categories: Category[];
+  category_groups: CategoryGroup[];
 }
 
 // Nachricht vom Server zum Client mit den initialen Daten
@@ -380,7 +388,7 @@ export interface SyncQueueEntry {
   entityType: EntityTypeEnum; // Typ der Entität, Verwendung des neuen Enums
   entityId: string; // ID der betroffenen Entität
   operationType: SyncOperationType; // Art der Operation
-  payload: Account | AccountGroup | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
+  payload: Account | AccountGroup | Category | CategoryGroup | { id: string } | null; // Die Daten bei create/update, nur ID bei delete
   timestamp: number; // Zeitstempel der Änderung (Unix-Timestamp)
   status: SyncStatus; // Status des Sync-Eintrags
   attempts?: number; // Anzahl der Synchronisierungsversuche

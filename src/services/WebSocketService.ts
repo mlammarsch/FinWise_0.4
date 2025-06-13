@@ -1,12 +1,12 @@
-// src/services/WebSocketService.ts
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
-import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger'; // warnLog hinzugefügt
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types'; // Erweiterte Importe für Sync-ACK/NACK
-import { watch } from 'vue'; // watch importiert
-import { TenantDbService } from './TenantDbService'; // TenantDbService importiert
-import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore'; // useTenantStore importiert und DB-Typ
-import { useAccountStore } from '@/stores/accountStore'; // accountStore importiert
+import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger';
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types';
+import { watch } from 'vue';
+import { TenantDbService } from './TenantDbService';
+import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
+import { useAccountStore } from '@/stores/accountStore';
+import { useCategoryStore } from '@/stores/categoryStore';
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
@@ -21,12 +21,11 @@ let longTermReconnectTimer: NodeJS.Timeout | null = null;
 let backendHealthCheckTimer: NodeJS.Timeout | null = null;
 let isReconnecting = false;
 
-// Neue Properties für automatische Synchronisation
 let autoSyncInterval: NodeJS.Timeout | null = null;
 let queueWatcher: (() => void) | null = null;
 let isAutoSyncEnabled = true;
 
-const tenantDbService = new TenantDbService(); // Instanziiere den Service hier
+const tenantDbService = new TenantDbService();
 
 export const WebSocketService = {
   connect(): void {
@@ -47,12 +46,9 @@ export const WebSocketService = {
     }
 
     const tenantId = sessionStore.currentTenantId;
-    // Die Basis-URL für WebSockets muss ggf. konfigurierbar sein oder aus Umgebungsvariablen stammen.
-    // Für lokale Entwicklung nehmen wir an, dass Backend und Frontend auf demselben Host laufen.
-    // Das Backend läuft auf Port 8000 (Standard für FastAPI).
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname; // oder eine konfigurierte Backend-URL
-    const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000'; // Port des Backends
+    const wsHost = window.location.hostname;
+    const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000';
     const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws_finwise/ws/${tenantId}`;
     debugLog('[WebSocketService]', `Constructed WebSocket URL: ${wsUrl}`);
 
@@ -66,13 +62,9 @@ export const WebSocketService = {
       socket.onopen = () => {
         infoLog('[WebSocketService]', 'WebSocket onopen event triggered.');
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTED);
-        // Der Backend-Status wird durch eine explizite Nachricht vom Backend gesetzt.
-        // Hier könnte man einen initialen "optimistischen" Status setzen oder auf die erste Statusnachricht warten.
-        // webSocketStore.setBackendStatus(BackendStatus.ONLINE); // Vorerst nicht, warten auf Nachricht
         webSocketStore.setError(null);
         reconnectAttempts = 0;
         debugLog('[WebSocketService]', 'onopen: Set connectionStatus to CONNECTED, reset error and reconnectAttempts.');
-        // Nach erfolgreicher Verbindung prüfen, ob Sync gestartet werden soll
         this.checkAndProcessSyncQueue();
       };
 
@@ -86,6 +78,7 @@ export const WebSocketService = {
           webSocketStore.setLastMessage(message);
           const tenantStore = useTenantStore(); // tenantStore Instanz
           const accountStore = useAccountStore(); // accountStore Instanz
+          const categoryStore = useCategoryStore(); // categoryStore Instanz
 
           // Nachrichtenbehandlung für Backend-Status
           if (message.type === 'status') {
@@ -148,6 +141,42 @@ export const WebSocketService = {
                     infoLog('[WebSocketService]', `AccountGroup ${accountGroupData.id} deleted via WebSocket.`);
                   }
                   break;
+                case EntityTypeEnum.CATEGORY:
+                  const categoryData = updateMessage.data as Category | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await categoryStore.addCategory(categoryData as Category, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Category ${ (categoryData as Category).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await categoryStore.updateCategory(categoryData as Category, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Category ${ (categoryData as Category).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for Category ${categoryData.id}`, {
+                      categoryData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await categoryStore.deleteCategory(categoryData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Category ${categoryData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.CATEGORY_GROUP:
+                  const categoryGroupData = updateMessage.data as CategoryGroup | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await categoryStore.addCategoryGroup(categoryGroupData as CategoryGroup, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `CategoryGroup ${ (categoryGroupData as CategoryGroup).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await categoryStore.updateCategoryGroup(categoryGroupData as CategoryGroup, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `CategoryGroup ${ (categoryGroupData as CategoryGroup).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for CategoryGroup ${categoryGroupData.id}`, {
+                      categoryGroupData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await categoryStore.deleteCategoryGroup(categoryGroupData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `CategoryGroup ${categoryGroupData.id} deleted via WebSocket.`);
+                  }
+                  break;
                 default:
                   warnLog('[WebSocketService]', `Unknown entity_type: ${updateMessage.entity_type}`);
               }
@@ -168,13 +197,15 @@ export const WebSocketService = {
               return;
             }
 
-            const { accounts, account_groups } = initialDataMessage.payload;
-            debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups });
+            const { accounts, account_groups, categories, category_groups } = initialDataMessage.payload;
+            debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups, categories, category_groups });
 
             // Hole pending DELETE-Operationen um zu vermeiden, dass gelöschte Entitäten wieder hinzugefügt werden
             const pendingDeletes = await this.getPendingDeleteOperations(tenantStore.activeTenantId!);
             const pendingAccountDeletes = new Set(pendingDeletes.accounts);
             const pendingGroupDeletes = new Set(pendingDeletes.accountGroups);
+            const pendingCategoryDeletes = new Set(pendingDeletes.categories);
+            const pendingCategoryGroupDeletes = new Set(pendingDeletes.categoryGroups);
 
             if (accounts && accounts.length > 0) {
               infoLog('[WebSocketService]', `Processing ${accounts.length} initial accounts.`);
@@ -206,6 +237,38 @@ export const WebSocketService = {
               }
             } else {
               infoLog('[WebSocketService]', 'No initial account groups received or accountGroups array is empty.');
+            }
+
+            if (categories && categories.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${categories.length} initial categories.`);
+              for (const category of categories) {
+                // Prüfe ob diese Kategorie eine pending DELETE-Operation hat
+                if (pendingCategoryDeletes.has(category.id)) {
+                  warnLog('[WebSocketService]', `Skipping category ${category.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
+                debugLog('[WebSocketService]', 'Attempting to add category from initial load:', category);
+                await categoryStore.addCategory(category, true); // fromSync = true
+                infoLog('[WebSocketService]', `Category ${category.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial categories received or categories array is empty.');
+            }
+
+            if (category_groups && category_groups.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${category_groups.length} initial category groups.`);
+              for (const categoryGroup of category_groups) {
+                // Prüfe ob diese Kategoriegruppe eine pending DELETE-Operation hat
+                if (pendingCategoryGroupDeletes.has(categoryGroup.id)) {
+                  warnLog('[WebSocketService]', `Skipping category group ${categoryGroup.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
+                debugLog('[WebSocketService]', 'Attempting to add category group from initial load:', categoryGroup);
+                await categoryStore.addCategoryGroup(categoryGroup, true); // fromSync = true
+                infoLog('[WebSocketService]', `CategoryGroup ${categoryGroup.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial category groups received or categoryGroups array is empty.');
             }
             infoLog('[WebSocketService]', 'Finished processing InitialDataLoadMessage.');
           } else if (message.type === 'sync_ack') {
@@ -860,7 +923,7 @@ export const WebSocketService = {
     }
   },
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[]}> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue um zu vermeiden,
      * dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
@@ -870,15 +933,22 @@ export const WebSocketService = {
       debugLog('[WebSocketService]', 'Retrieved pending DELETE operations', {
         tenantId,
         accountDeletes: pendingDeletes.accounts.length,
-        groupDeletes: pendingDeletes.accountGroups.length
+        groupDeletes: pendingDeletes.accountGroups.length,
+        categoryDeletes: pendingDeletes.categories?.length || 0,
+        categoryGroupDeletes: pendingDeletes.categoryGroups?.length || 0
       });
-      return pendingDeletes;
+      return {
+        accounts: pendingDeletes.accounts,
+        accountGroups: pendingDeletes.accountGroups,
+        categories: pendingDeletes.categories || [],
+        categoryGroups: pendingDeletes.categoryGroups || []
+      };
     } catch (error) {
       errorLog('[WebSocketService]', 'Error retrieving pending DELETE operations', {
         error: error instanceof Error ? error.message : String(error),
         tenantId
       });
-      return { accounts: [], accountGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
     }
   }
 };

@@ -1,4 +1,3 @@
-// src/stores/tenantStore.ts
 import { defineStore } from 'pinia';
 import { ref, computed, onMounted, type Ref, type ComputedRef } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
@@ -6,11 +5,13 @@ import Dexie, { type Table } from 'dexie';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
-import type { Account, AccountGroup, SyncQueueEntry } from '../types';
+import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry } from '../types';
 
 export class FinwiseTenantSpecificDB extends Dexie {
   accounts!: Table<Account, string>;
   accountGroups!: Table<AccountGroup, string>;
+  categories!: Table<Category, string>;
+  categoryGroups!: Table<CategoryGroup, string>;
   syncQueue!: Table<SyncQueueEntry, string>;
 
   constructor(databaseName: string) {
@@ -34,6 +35,13 @@ export class FinwiseTenantSpecificDB extends Dexie {
       accountGroups: '&id, name, sortOrder, image, updated_at',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
     });
+    this.version(5).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
   }
 }
 
@@ -52,6 +60,7 @@ class FinwiseUserDBGlobal extends Dexie {
 const userDB = new FinwiseUserDBGlobal();
 
 import { useAccountStore } from './accountStore';
+import { useCategoryStore } from './categoryStore';
 import { useSessionStore } from './sessionStore';
 import { WebSocketService } from '@/services/WebSocketService';
 
@@ -70,10 +79,6 @@ interface TenantStoreState {
   syncCurrentTenantData: () => Promise<void>;
 }
 
-/**
- * Verwaltet die Mandanten-Daten und die aktuelle Mandanten-Auswahl.
- * Zentrale Komponente für die Mandantenverwaltung.
- */
 export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
   const tenants = ref<DbTenant[]>([]);
   const activeTenantId = ref<string | null>(null);
@@ -258,6 +263,12 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       activeTenantDB.value = tenantDB;
       session.currentTenantId = id;
       infoLog('tenantStore', `Tenant "${tenantExists.tenantName}" (DB: ${dbName}) aktiviert und DB verbunden. SessionStore aktualisiert.`);
+
+      const accountStore = useAccountStore();
+      await accountStore.initializeStore();
+
+      const categoryStore = useCategoryStore();
+      await categoryStore.initializeStore();
 
       if (id) {
         WebSocketService.requestInitialData(id);

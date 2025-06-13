@@ -1,6 +1,5 @@
-// src/services/TenantDbService.ts
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
-import type { Account, AccountGroup, SyncQueueEntry, QueueStatistics } from '@/types';
+import type { Account, AccountGroup, Category, CategoryGroup, SyncQueueEntry, QueueStatistics } from '@/types';
 import { SyncStatus } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
@@ -156,9 +155,150 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Fügt einen Eintrag zur Synchronisationswarteschlange hinzu.
-   */
+  async addCategory(category: Category): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addCategory: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categories.put(category);
+      debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen der Kategorie "${category.name}"`, { category, error: err });
+      throw err;
+    }
+  }
+
+  async updateCategory(category: Category): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateCategory: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categories.put(category);
+      debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) aktualisiert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren der Kategorie "${category.name}"`, { category, error: err });
+      throw err;
+    }
+  }
+
+  async deleteCategory(categoryId: string): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteCategory: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categories.delete(categoryId);
+      debugLog('TenantDbService', `Kategorie mit ID "${categoryId}" gelöscht.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der Kategorie mit ID "${categoryId}"`, { categoryId, error: err });
+      throw err;
+    }
+  }
+
+  async getCategoryById(categoryId: string): Promise<Category | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getCategoryById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const category = await this.db.categories.get(categoryId);
+      debugLog('TenantDbService', `Kategorie mit ID "${categoryId}" abgerufen.`, { category });
+      return category;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der Kategorie mit ID "${categoryId}"`, { categoryId, error: err });
+      return undefined;
+    }
+  }
+
+  async getAllCategories(): Promise<Category[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getAllCategories: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const categories = await this.db.categories.toArray();
+      debugLog('TenantDbService', 'Alle Kategorien abgerufen.', { count: categories.length });
+      return categories;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Kategorien', { error: err });
+      return [];
+    }
+  }
+
+  async addCategoryGroup(categoryGroup: CategoryGroup): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categoryGroups.put(categoryGroup);
+      debugLog('TenantDbService', `Kategoriegruppe "${categoryGroup.name}" (ID: ${categoryGroup.id}) hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen der Kategoriegruppe "${categoryGroup.name}"`, { categoryGroup, error: err });
+      throw err;
+    }
+  }
+
+  async updateCategoryGroup(categoryGroup: CategoryGroup): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'updateCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categoryGroups.put(categoryGroup);
+      debugLog('TenantDbService', `Kategoriegruppe "${categoryGroup.name}" (ID: ${categoryGroup.id}) aktualisiert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Aktualisieren der Kategoriegruppe "${categoryGroup.name}"`, { categoryGroup, error: err });
+      throw err;
+    }
+  }
+
+  async deleteCategoryGroup(categoryGroupId: string): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      await this.db.categoryGroups.delete(categoryGroupId);
+      debugLog('TenantDbService', `Kategoriegruppe mit ID "${categoryGroupId}" gelöscht.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der Kategoriegruppe mit ID "${categoryGroupId}"`, { categoryGroupId, error: err });
+      throw err;
+    }
+  }
+
+  async getCategoryGroupById(categoryGroupId: string): Promise<CategoryGroup | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getCategoryGroupById: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const categoryGroup = await this.db.categoryGroups.get(categoryGroupId);
+      debugLog('TenantDbService', `Kategoriegruppe mit ID "${categoryGroupId}" abgerufen.`, { categoryGroup });
+      return categoryGroup;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der Kategoriegruppe mit ID "${categoryGroupId}"`, { categoryGroupId, error: err });
+      return undefined;
+    }
+  }
+
+  async getAllCategoryGroups(): Promise<CategoryGroup[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getAllCategoryGroups: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const categoryGroups = await this.db.categoryGroups.toArray();
+      debugLog('TenantDbService', 'Alle Kategoriegruppen abgerufen.', { count: categoryGroups.length });
+      return categoryGroups;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Kategoriegruppen', { error: err });
+      return [];
+    }
+  }
+
   async addSyncQueueEntry(
     entryData: Omit<SyncQueueEntry, 'id' | 'timestamp' | 'status' | 'tenantId'>,
   ): Promise<SyncQueueEntry | null> {
@@ -377,14 +517,14 @@ export class TenantDbService {
     }
   }
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[]}> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue.
      * Wird verwendet um zu vermeiden, dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
      */
     if (!this.db) {
       warnLog('TenantDbService', 'getPendingDeleteOperations: Keine aktive Mandanten-DB verfügbar.');
-      return { accounts: [], accountGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
     }
 
     try {
@@ -397,22 +537,28 @@ export class TenantDbService {
 
       const accounts: string[] = [];
       const accountGroups: string[] = [];
+      const categories: string[] = [];
+      const categoryGroups: string[] = [];
 
       for (const entry of pendingDeletes) {
         if (entry.entityType === 'Account') {
           accounts.push(entry.entityId);
         } else if (entry.entityType === 'AccountGroup') {
           accountGroups.push(entry.entityId);
+        } else if (entry.entityType === 'Category') {
+          categories.push(entry.entityId);
+        } else if (entry.entityType === 'CategoryGroup') {
+          categoryGroups.push(entry.entityId);
         }
       }
 
-      debugLog('TenantDbService', `Found ${accounts.length} pending account deletes and ${accountGroups.length} pending group deletes for tenant ${tenantId}`);
+      debugLog('TenantDbService', `Found ${accounts.length} pending account deletes, ${accountGroups.length} pending account group deletes, ${categories.length} pending category deletes and ${categoryGroups.length} pending category group deletes for tenant ${tenantId}`);
 
-      return { accounts, accountGroups };
+      return { accounts, accountGroups, categories, categoryGroups };
 
     } catch (error) {
       errorLog('TenantDbService', 'Error getting pending DELETE operations', { error, tenantId });
-      return { accounts: [], accountGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
     }
   }
 }

@@ -1,25 +1,15 @@
-// src/stores/categoryStore.ts
-
-/**
- * Pfad: src/stores/categoryStore.ts
- * Kategorie-Store mandantenspezifisch.
- */
-
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
-import { Category } from '@/types';
-import { debugLog } from '@/utils/logger';
+import type { Category, CategoryGroup } from '@/types';
+import { SyncOperationType, EntityTypeEnum } from '@/types';
+import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { storageKey } from '@/utils/storageKey';
-
-type CategoryGroup = {
-  id: string;
-  name: string;
-  sortOrder: number;
-  isIncomeGroup: boolean;
-};
+import { TenantDbService } from '@/services/TenantDbService';
 
 export const useCategoryStore = defineStore('category', () => {
+  const tenantDbService = new TenantDbService();
+
   /* ----------------------------------------------- State */
   const categories = ref<Category[]>([]);
   const categoryGroups = ref<CategoryGroup[]>([]);
@@ -69,89 +59,305 @@ export const useCategoryStore = defineStore('category', () => {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  function addCategory(category: Omit<Category, 'id' | 'balance' | 'startBalance' | 'transactionCount' | 'averageTransactionValue'>) {
-    // Ableitung des Typs aus der Gruppe
-    const group = categoryGroups.value.find(g => g.id === category.categoryGroupId);
+  async function addCategory(categoryData: Omit<Category, 'id' | 'updated_at'> | Category, fromSync = false): Promise<Category> {
+    const group = categoryGroups.value.find(g => g.id === categoryData.categoryGroupId);
     const isIncome = group?.isIncomeGroup ?? false;
 
-    const c: Category = {
-      ...category,
-      id: uuidv4(),
-      balance: 0,
-      startBalance: 0,
-      transactionCount: 0,
-      averageTransactionValue: 0,
-      isIncomeCategory: isIncome,
+    const categoryWithTimestamp: Category = {
+      ...categoryData,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      id: (categoryData as any).id || uuidv4(),
+      isIncomeCategory: (categoryData as any).isIncomeCategory ?? isIncome,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (categoryData as any).updated_at || new Date().toISOString(),
     };
-    categories.value.push(c);
-    saveCategories();
-    debugLog('[categoryStore] addCategory', c);
-    return c;
-  }
 
-  function updateCategory(id: string, updates: Partial<Category>) {
-    const idx = categories.value.findIndex(c => c.id === id);
-    if (idx === -1) return false;
-
-    // Wenn Gruppe geändert wird, Typ entsprechend ableiten
-    if (updates.categoryGroupId) {
-      const group = categoryGroups.value.find(g => g.id === updates.categoryGroupId);
-      updates.isIncomeCategory = group?.isIncomeGroup ?? false;
+    if (fromSync) {
+      const localCategory = await tenantDbService.getCategoryById(categoryWithTimestamp.id);
+      if (localCategory && localCategory.updated_at && categoryWithTimestamp.updated_at &&
+          new Date(localCategory.updated_at) >= new Date(categoryWithTimestamp.updated_at)) {
+        infoLog('categoryStore', `addCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localCategory;
+      }
+      await tenantDbService.addCategory(categoryWithTimestamp);
+      infoLog('categoryStore', `addCategory (fromSync): Eingehende Kategorie ${categoryWithTimestamp.id} angewendet.`);
+    } else {
+      await tenantDbService.addCategory(categoryWithTimestamp);
     }
 
-    categories.value[idx] = { ...categories.value[idx], ...updates };
-    saveCategories();
-    debugLog('[categoryStore] updateCategory', { id, updates });
-    return true;
+    const existingCategoryIndex = categories.value.findIndex(c => c.id === categoryWithTimestamp.id);
+    if (existingCategoryIndex === -1) {
+      categories.value.push(categoryWithTimestamp);
+    } else {
+      if (!fromSync || (categoryWithTimestamp.updated_at && (!categories.value[existingCategoryIndex].updated_at || new Date(categoryWithTimestamp.updated_at) > new Date(categories.value[existingCategoryIndex].updated_at!)))) {
+        categories.value[existingCategoryIndex] = categoryWithTimestamp;
+      } else if (fromSync) {
+        warnLog('categoryStore', `addCategory (fromSync): Store-Kategorie ${categories.value[existingCategoryIndex].id} war neuer als eingehende ${categoryWithTimestamp.id}. Store nicht geändert.`);
+      }
+    }
+    infoLog('categoryStore', `Category "${categoryWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${categoryWithTimestamp.id}).`);
+
+    if (!fromSync) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.CATEGORY,
+          entityId: categoryWithTimestamp.id,
+          operationType: SyncOperationType.CREATE,
+          payload: categoryWithTimestamp,
+        });
+        infoLog('categoryStore', `Category "${categoryWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
+      } catch (e) {
+        errorLog('categoryStore', `Fehler beim Hinzufügen von Category "${categoryWithTimestamp.name}" zur Sync Queue.`, e);
+      }
+    }
+    return categoryWithTimestamp;
   }
 
-  function deleteCategory(id: string) {
-    categories.value = categories.value.filter(c => c.id !== id);
-    saveCategories();
-    debugLog('[categoryStore] deleteCategory', id);
+  async function updateCategory(categoryUpdatesData: Category, fromSync = false): Promise<boolean> {
+    const categoryUpdatesWithTimestamp: Category = {
+      ...categoryUpdatesData,
+      updated_at: categoryUpdatesData.updated_at || new Date().toISOString(),
+    };
+
+    if (categoryUpdatesWithTimestamp.categoryGroupId) {
+      const group = categoryGroups.value.find(g => g.id === categoryUpdatesWithTimestamp.categoryGroupId);
+      categoryUpdatesWithTimestamp.isIncomeCategory = group?.isIncomeGroup ?? false;
+    }
+
+    if (fromSync) {
+      const localCategory = await tenantDbService.getCategoryById(categoryUpdatesWithTimestamp.id);
+      if (!localCategory) {
+        infoLog('categoryStore', `updateCategory (fromSync): Lokale Kategorie ${categoryUpdatesWithTimestamp.id} nicht gefunden. Behandle als addCategory.`);
+        await addCategory(categoryUpdatesWithTimestamp, true);
+        return true;
+      }
+
+      if (localCategory.updated_at && categoryUpdatesWithTimestamp.updated_at &&
+          new Date(localCategory.updated_at) >= new Date(categoryUpdatesWithTimestamp.updated_at)) {
+        infoLog('categoryStore', `updateCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return true;
+      }
+      await tenantDbService.updateCategory(categoryUpdatesWithTimestamp);
+      infoLog('categoryStore', `updateCategory (fromSync): Eingehendes Update für Kategorie ${categoryUpdatesWithTimestamp.id} angewendet.`);
+    } else {
+      await tenantDbService.updateCategory(categoryUpdatesWithTimestamp);
+    }
+
+    const idx = categories.value.findIndex(c => c.id === categoryUpdatesWithTimestamp.id);
+    if (idx !== -1) {
+      if (!fromSync || (categoryUpdatesWithTimestamp.updated_at && (!categories.value[idx].updated_at || new Date(categoryUpdatesWithTimestamp.updated_at) > new Date(categories.value[idx].updated_at!)))) {
+        categories.value[idx] = { ...categories.value[idx], ...categoryUpdatesWithTimestamp };
+      } else if (fromSync) {
+        warnLog('categoryStore', `updateCategory (fromSync): Store-Kategorie ${categories.value[idx].id} war neuer als eingehende ${categoryUpdatesWithTimestamp.id}. Store nicht geändert.`);
+      }
+      infoLog('categoryStore', `Category "${categoryUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${categoryUpdatesWithTimestamp.id}).`);
+
+      if (!fromSync) {
+        try {
+          await tenantDbService.addSyncQueueEntry({
+            entityType: EntityTypeEnum.CATEGORY,
+            entityId: categoryUpdatesWithTimestamp.id,
+            operationType: SyncOperationType.UPDATE,
+            payload: categoryUpdatesWithTimestamp,
+          });
+          infoLog('categoryStore', `Category "${categoryUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
+        } catch (e) {
+          errorLog('categoryStore', `Fehler beim Hinzufügen von Category Update "${categoryUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
+        }
+      }
+      return true;
+    }
+    if (fromSync) {
+      warnLog('categoryStore', `updateCategory: Category ${categoryUpdatesWithTimestamp.id} not found in store during sync. Adding it.`);
+      await addCategory(categoryUpdatesWithTimestamp, true);
+      return true;
+    }
+    return false;
   }
 
-  function updateCategoryBalance(id: string, amount: number) {
+  async function deleteCategory(categoryId: string, fromSync = false): Promise<void> {
+    const categoryToDelete = categories.value.find(c => c.id === categoryId);
+
+    await tenantDbService.deleteCategory(categoryId);
+    categories.value = categories.value.filter(c => c.id !== categoryId);
+    infoLog('categoryStore', `Category mit ID "${categoryId}" aus Store und lokaler DB entfernt.`);
+
+    // SyncQueue-Logik für alle lokalen Änderungen
+    if (!fromSync && categoryToDelete) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.CATEGORY,
+          entityId: categoryId,
+          operationType: SyncOperationType.DELETE,
+          payload: { id: categoryId },
+        });
+        infoLog('categoryStore', `Category mit ID "${categoryId}" zur Sync Queue hinzugefügt (DELETE).`);
+      } catch (e) {
+        errorLog('categoryStore', `Fehler beim Hinzufügen von Category Delete (ID: "${categoryId}") zur Sync Queue.`, e);
+      }
+    }
+  }
+
+  async function updateCategoryBalance(id: string, amount: number) {
     const category = categories.value.find(c => c.id === id);
     if (!category) return false;
-    category.balance += amount;
-    category.transactionCount = (category.transactionCount || 0) + 1;
-    category.averageTransactionValue = category.balance / category.transactionCount || 0;
-    saveCategories();
-    debugLog('[categoryStore] updateCategoryBalance', {
-      id: category.id,
-      balance: category.balance,
-      transactionCount: category.transactionCount,
-      averageTransactionValue: category.averageTransactionValue,
-    });
+
+    // Update activity (equivalent to balance in the new schema)
+    category.activity += amount;
+    category.updated_at = new Date().toISOString();
+
+    await tenantDbService.updateCategory(category);
+    debugLog('categoryStore', `updateCategoryBalance für Kategorie ${id}`, { amount, newActivity: category.activity });
     return true;
   }
 
-  function addCategoryGroup(group: Omit<CategoryGroup, 'id'>) {
-    const g: CategoryGroup = { ...group, id: uuidv4() };
-    categoryGroups.value.push(g);
-    saveCategoryGroups();
-    debugLog('[categoryStore] addCategoryGroup', g);
-    return g;
+  async function addCategoryGroup(categoryGroupData: Omit<CategoryGroup, 'id' | 'updated_at'> | CategoryGroup, fromSync = false): Promise<CategoryGroup> {
+    const categoryGroupWithTimestamp: CategoryGroup = {
+      ...categoryGroupData,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      id: (categoryGroupData as any).id || uuidv4(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (categoryGroupData as any).updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (CREATE)
+      const localGroup = await tenantDbService.getCategoryGroupById(categoryGroupWithTimestamp.id);
+      if (localGroup && localGroup.updated_at && categoryGroupWithTimestamp.updated_at &&
+          new Date(localGroup.updated_at) >= new Date(categoryGroupWithTimestamp.updated_at)) {
+        infoLog('categoryStore', `addCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localGroup;
+      }
+      await tenantDbService.addCategoryGroup(categoryGroupWithTimestamp);
+      infoLog('categoryStore', `addCategoryGroup (fromSync): Eingehende Gruppe ${categoryGroupWithTimestamp.id} angewendet.`);
+    } else {
+      await tenantDbService.addCategoryGroup(categoryGroupWithTimestamp);
+    }
+
+    const existingGroupIndex = categoryGroups.value.findIndex(g => g.id === categoryGroupWithTimestamp.id);
+    if (existingGroupIndex === -1) {
+      categoryGroups.value.push(categoryGroupWithTimestamp);
+    } else {
+      if (!fromSync || (categoryGroupWithTimestamp.updated_at && (!categoryGroups.value[existingGroupIndex].updated_at || new Date(categoryGroupWithTimestamp.updated_at) > new Date(categoryGroups.value[existingGroupIndex].updated_at!)))) {
+        categoryGroups.value[existingGroupIndex] = categoryGroupWithTimestamp;
+      } else if (fromSync) {
+        warnLog('categoryStore', `addCategoryGroup (fromSync): Store-Gruppe ${categoryGroups.value[existingGroupIndex].id} war neuer als eingehende ${categoryGroupWithTimestamp.id}. Store nicht geändert.`);
+      }
+    }
+    infoLog('categoryStore', `CategoryGroup "${categoryGroupWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${categoryGroupWithTimestamp.id}).`);
+
+    // SyncQueue-Logik für alle lokalen Änderungen
+    if (!fromSync) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.CATEGORY_GROUP,
+          entityId: categoryGroupWithTimestamp.id,
+          operationType: SyncOperationType.CREATE,
+          payload: categoryGroupWithTimestamp,
+        });
+        infoLog('categoryStore', `CategoryGroup "${categoryGroupWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
+      } catch (e) {
+        errorLog('categoryStore', `Fehler beim Hinzufügen von CategoryGroup "${categoryGroupWithTimestamp.name}" zur Sync Queue.`, e);
+      }
+    }
+    return categoryGroupWithTimestamp;
   }
 
-  function deleteCategoryGroup(id: string) {
-    if (categories.value.some(c => c.categoryGroupId === id)) {
-      debugLog('[categoryStore] deleteCategoryGroup', { id, result: 'Failed' });
+  async function updateCategoryGroup(categoryGroupUpdatesData: CategoryGroup, fromSync = false): Promise<boolean> {
+    const categoryGroupUpdatesWithTimestamp: CategoryGroup = {
+      ...categoryGroupUpdatesData,
+      updated_at: categoryGroupUpdatesData.updated_at || new Date().toISOString(),
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (UPDATE)
+      const localGroup = await tenantDbService.getCategoryGroupById(categoryGroupUpdatesWithTimestamp.id);
+      if (!localGroup) {
+        infoLog('categoryStore', `updateCategoryGroup (fromSync): Lokale Gruppe ${categoryGroupUpdatesWithTimestamp.id} nicht gefunden. Behandle als addCategoryGroup.`);
+        await addCategoryGroup(categoryGroupUpdatesWithTimestamp, true);
+        return true;
+      }
+
+      if (localGroup.updated_at && categoryGroupUpdatesWithTimestamp.updated_at &&
+          new Date(localGroup.updated_at) >= new Date(categoryGroupUpdatesWithTimestamp.updated_at)) {
+        infoLog('categoryStore', `updateCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return true;
+      }
+      await tenantDbService.updateCategoryGroup(categoryGroupUpdatesWithTimestamp);
+      infoLog('categoryStore', `updateCategoryGroup (fromSync): Eingehendes Update für Gruppe ${categoryGroupUpdatesWithTimestamp.id} angewendet.`);
+    } else {
+      await tenantDbService.updateCategoryGroup(categoryGroupUpdatesWithTimestamp);
+    }
+
+    const idx = categoryGroups.value.findIndex(g => g.id === categoryGroupUpdatesWithTimestamp.id);
+    if (idx !== -1) {
+      if (!fromSync || (categoryGroupUpdatesWithTimestamp.updated_at && (!categoryGroups.value[idx].updated_at || new Date(categoryGroupUpdatesWithTimestamp.updated_at) > new Date(categoryGroups.value[idx].updated_at!)))) {
+        categoryGroups.value[idx] = { ...categoryGroups.value[idx], ...categoryGroupUpdatesWithTimestamp };
+      } else if (fromSync) {
+        warnLog('categoryStore', `updateCategoryGroup (fromSync): Store-Gruppe ${categoryGroups.value[idx].id} war neuer als eingehende ${categoryGroupUpdatesWithTimestamp.id}. Store nicht geändert.`);
+      }
+      infoLog('categoryStore', `CategoryGroup "${categoryGroupUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${categoryGroupUpdatesWithTimestamp.id}).`);
+
+      // SyncQueue-Logik für alle lokalen Änderungen
+      if (!fromSync) {
+        try {
+          await tenantDbService.addSyncQueueEntry({
+            entityType: EntityTypeEnum.CATEGORY_GROUP,
+            entityId: categoryGroupUpdatesWithTimestamp.id,
+            operationType: SyncOperationType.UPDATE,
+            payload: categoryGroupUpdatesWithTimestamp,
+          });
+          infoLog('categoryStore', `CategoryGroup "${categoryGroupUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
+        } catch (e) {
+          errorLog('categoryStore', `Fehler beim Hinzufügen von CategoryGroup Update "${categoryGroupUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
+        }
+      }
+      return true;
+    }
+    if (fromSync) {
+      warnLog('categoryStore', `updateCategoryGroup: CategoryGroup ${categoryGroupUpdatesWithTimestamp.id} not found in store during sync. Adding it.`);
+      await addCategoryGroup(categoryGroupUpdatesWithTimestamp, true);
+      return true;
+    }
+    return false;
+  }
+
+  async function deleteCategoryGroup(categoryGroupId: string, fromSync = false): Promise<boolean> {
+    if (!fromSync && categories.value.some(c => c.categoryGroupId === categoryGroupId)) {
+      errorLog('categoryStore', `deleteCategoryGroup: Group ${categoryGroupId} is still in use by categories. Deletion aborted.`);
       return false;
     }
-    categoryGroups.value = categoryGroups.value.filter(g => g.id !== id);
-    saveCategoryGroups();
-    debugLog('[categoryStore] deleteCategoryGroup', { id, result: 'Success' });
+    const groupToDelete = categoryGroups.value.find(g => g.id === categoryGroupId);
+
+    await tenantDbService.deleteCategoryGroup(categoryGroupId);
+    categoryGroups.value = categoryGroups.value.filter(g => g.id !== categoryGroupId);
+    infoLog('categoryStore', `CategoryGroup mit ID "${categoryGroupId}" aus Store und lokaler DB entfernt.`);
+
+    // SyncQueue-Logik für alle lokalen Änderungen
+    if (!fromSync && groupToDelete) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.CATEGORY_GROUP,
+          entityId: categoryGroupId,
+          operationType: SyncOperationType.DELETE,
+          payload: { id: categoryGroupId },
+        });
+        infoLog('categoryStore', `CategoryGroup mit ID "${categoryGroupId}" zur Sync Queue hinzugefügt (DELETE).`);
+      } catch (e) {
+        errorLog('categoryStore', `Fehler beim Hinzufügen von CategoryGroup Delete (ID: "${categoryGroupId}") zur Sync Queue.`, e);
+      }
+    }
     return true;
   }
 
-  function setMonthlySnapshot() {
-    categories.value.forEach(c => {
-      c.startBalance = c.balance;
-      debugLog('[categoryStore] setMonthlySnapshot', { id: c.id, newStartBalance: c.startBalance });
-    });
-    saveCategories();
+  async function setMonthlySnapshot() {
+    for (const category of categories.value) {
+      // Reset activity to 0 for new month (equivalent to startBalance logic)
+      category.activity = 0;
+      category.updated_at = new Date().toISOString();
+      await tenantDbService.updateCategory(category);
+      debugLog('categoryStore', `setMonthlySnapshot für Kategorie ${category.id}`, { resetActivity: category.activity });
+    }
   }
 
   function getAvailableFundsCategory() {
@@ -165,9 +371,9 @@ export const useCategoryStore = defineStore('category', () => {
       try {
         const ids = JSON.parse(raw);
         expandedCategories.value = new Set(ids);
-        debugLog('[categoryStore] loadExpandedCategories', [...expandedCategories.value]);
+        debugLog('categoryStore', 'loadExpandedCategories', [...expandedCategories.value].join(', '));
       } catch (error) {
-        debugLog('[categoryStore] loadExpandedCategories - parse error', error);
+        debugLog('categoryStore', 'loadExpandedCategories - parse error', String(error));
       }
     }
   }
@@ -177,7 +383,7 @@ export const useCategoryStore = defineStore('category', () => {
       storageKey('expanded_categories'),
       JSON.stringify([...expandedCategories.value]),
     );
-    debugLog('[categoryStore] saveExpandedCategories', [...expandedCategories.value]);
+    debugLog('categoryStore', 'saveExpandedCategories', [...expandedCategories.value].join(', '));
   }
 
   function toggleCategoryExpanded(id: string) {
@@ -187,88 +393,92 @@ export const useCategoryStore = defineStore('category', () => {
       expandedCategories.value.add(id);
     }
     saveExpandedCategories();
-    debugLog('[categoryStore] toggleCategoryExpanded', id);
+    debugLog('categoryStore', 'toggleCategoryExpanded', id);
   }
 
   function expandAllCategories() {
     const parentIds = categories.value.filter(c => !c.parentCategoryId).map(c => c.id);
     expandedCategories.value = new Set(parentIds);
     saveExpandedCategories();
-    debugLog('[categoryStore] expandAllCategories', [...expandedCategories.value]);
+    debugLog('categoryStore', 'expandAllCategories', [...expandedCategories.value].join(', '));
   }
 
   function collapseAllCategories() {
     expandedCategories.value.clear();
     saveExpandedCategories();
-    debugLog('[categoryStore] collapseAllCategories');
+    debugLog('categoryStore', 'collapseAllCategories', 'completed');
   }
 
   /* ----------------------------------------------- Persistence */
-  function loadCategories() {
-    // 1. Lese gespeicherte Kategorien
-    const rawCats = localStorage.getItem(storageKey('categories'));
-    categories.value = rawCats ? JSON.parse(rawCats) : [];
+  async function loadCategories(): Promise<void> {
+    try {
+      const [loadedCategories, loadedCategoryGroups] = await Promise.all([
+        tenantDbService.getAllCategories(),
+        tenantDbService.getAllCategoryGroups(),
+      ]);
+      categories.value = loadedCategories || [];
+      categoryGroups.value = loadedCategoryGroups || [];
 
-    // 2. Lese gespeicherte Kategoriegruppen
-    const rawGrp = localStorage.getItem(storageKey('categoryGroups'));
-    categoryGroups.value = rawGrp ? JSON.parse(rawGrp) : [];
+      await ensureAvailableFundsCategory();
 
-    // 3. Stelle sicher, dass 'Verfügbare Mittel' existiert
+      let migrated = false;
+      for (const category of categories.value) {
+        const group = categoryGroups.value.find(g => g.id === category.categoryGroupId);
+        const derived = group?.isIncomeGroup ?? false;
+        if (category.isIncomeCategory !== derived) {
+          category.isIncomeCategory = derived;
+          category.updated_at = new Date().toISOString();
+          await tenantDbService.updateCategory(category);
+          migrated = true;
+        }
+      }
+
+      loadExpandedCategories();
+
+      debugLog('categoryStore', 'loadCategories completed', {
+        categories: categories.value.length,
+        groups: categoryGroups.value.length,
+        migrated,
+      });
+    } catch (error) {
+      errorLog('categoryStore', 'Fehler beim Laden der Kategorien', error);
+      categories.value = [];
+      categoryGroups.value = [];
+    }
+  }
+
+  async function ensureAvailableFundsCategory() {
     if (!categories.value.find(c => c.name === 'Verfügbare Mittel')) {
-      addCategory({
+      await addCategory({
         name: 'Verfügbare Mittel',
-        parentCategoryId: null,
+        parentCategoryId: undefined,
         sortOrder: 9999,
         isActive: true,
         isSavingsGoal: false,
-        categoryGroupId: null,
+        categoryGroupId: undefined,
+        icon: undefined,
+        budgeted: 0,
+        activity: 0,
+        available: 0,
+        isIncomeCategory: false,
+        isHidden: false,
       });
-      debugLog('[categoryStore] loadCategories - created AvailableFundsCategory');
+      debugLog('categoryStore', 'ensureAvailableFundsCategory - created AvailableFundsCategory');
     }
-
-    // 4. **Migration**: isIncomeCategory aus Kategoriegruppe ableiten
-    let migrated = false;
-    categories.value.forEach(c => {
-      const grp = categoryGroups.value.find(g => g.id === c.categoryGroupId);
-      const derived = grp?.isIncomeGroup ?? false;
-      if (c.isIncomeCategory !== derived) {
-        c.isIncomeCategory = derived;
-        migrated = true;
-      }
-    });
-    if (migrated) saveCategories();
-
-    // 5. Lade ausgeklappte Kategorien
-    loadExpandedCategories();
-
-    debugLog('[categoryStore] loadCategories', {
-      cats: categories.value.length,
-      groups: categoryGroups.value.length,
-    });
   }
 
-  function saveCategories() {
-    localStorage.setItem(
-      storageKey('categories'),
-      JSON.stringify(categories.value),
-    );
-  }
-
-  function saveCategoryGroups() {
-    localStorage.setItem(
-      storageKey('categoryGroups'),
-      JSON.stringify(categoryGroups.value),
-    );
-  }
-
-  function reset() {
+  async function reset(): Promise<void> {
     categories.value = [];
     categoryGroups.value = [];
-    loadCategories();
+    await loadCategories();
+    debugLog('categoryStore', 'reset completed');
   }
 
-  // Initialisierung
-  loadCategories();
+  /** Initialisiert den Store beim Tenantwechsel oder App-Start */
+  async function initializeStore(): Promise<void> {
+    await loadCategories();
+    debugLog('categoryStore', 'initializeStore completed');
+  }
 
   /* ----------------------------------------------- Exports */
   return {
@@ -287,6 +497,7 @@ export const useCategoryStore = defineStore('category', () => {
     deleteCategory,
     updateCategoryBalance,
     addCategoryGroup,
+    updateCategoryGroup,
     deleteCategoryGroup,
     setMonthlySnapshot,
     getAvailableFundsCategory,
@@ -295,5 +506,6 @@ export const useCategoryStore = defineStore('category', () => {
     collapseAllCategories,
     loadCategories,
     reset,
+    initializeStore,
   };
 });
