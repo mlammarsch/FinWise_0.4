@@ -686,11 +686,9 @@ export class TenantDbService {
         throw new Error('Kein aktiver Mandant verfügbar.');
       }
 
-      // Lösche alle SyncQueue-Einträge für den aktuellen Mandanten
-      const deletedCount = await this.db.syncQueue
-        .where('tenantId')
-        .equals(currentTenantId)
-        .delete();
+      // Einfache Lösung: Lösche alle SyncQueue-Einträge (nicht nur für aktuellen Mandanten)
+      // Da jede Mandanten-DB separate IndexedDB ist, sind sowieso nur Einträge des aktuellen Mandanten drin
+      const deletedCount = await this.db.syncQueue.clear();
 
       debugLog('TenantDbService', `${deletedCount} SyncQueue-Einträge für Mandant ${currentTenantId} gelöscht.`);
     } catch (err) {

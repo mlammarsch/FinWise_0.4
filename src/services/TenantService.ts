@@ -206,11 +206,12 @@ export const TenantService = {
    * Setzt die Datenbank eines Mandanten zurück
    * Löscht lokale IndexedDB und führt Firstload durch
    */
-  async resetTenantDatabase(tenantId: string): Promise<boolean> {
+  async resetTenantDatabase(tenantId: string, router?: any): Promise<boolean> {
     try {
       debugLog('TenantService', `resetTenantDatabase aufgerufen für Mandant ${tenantId}`);
 
       const session = useSessionStore();
+      const tenantStore = useTenantStore();
 
       if (!session.currentUserId) {
         throw new Error('Kein eingeloggter User');
@@ -218,35 +219,40 @@ export const TenantService = {
 
       const isActiveTenant = session.currentTenantId === tenantId;
 
-      infoLog('TenantService', `Setze Datenbank für Mandant ${tenantId} zurück`, {
+      // Mandanten-Name für Neuanlage merken
+      const tenant = tenantStore.tenants.find(t => t.uuid === tenantId);
+      if (!tenant) {
+        throw new Error(`Mandant ${tenantId} nicht gefunden`);
+      }
+
+      const tenantName = tenant.tenantName;
+
+      infoLog('TenantService', `Setze Mandant ${tenantId} ("${tenantName}") komplett zurück (löschen + neu anlegen)`, {
         isActiveTenant,
         currentUserId: session.currentUserId
       });
 
-      // Backend-API aufrufen
-      debugLog('TenantService', `Rufe Backend-API für DB-Reset auf: /tenants/${tenantId}/reset-database`);
-      await apiService.resetTenantDatabase(tenantId, session.currentUserId);
-      debugLog('TenantService', `Backend-API für DB-Reset erfolgreich aufgerufen`);
+      // Schritt 1: Mandanten komplett löschen (Backend + Frontend)
+      debugLog('TenantService', `Lösche Mandant ${tenantId} komplett`);
+      await this.deleteTenantCompletely(tenantId);
+      debugLog('TenantService', `Mandant ${tenantId} erfolgreich gelöscht`);
 
-      if (isActiveTenant) {
-        debugLog('TenantService', `Aktiver Mandant - setze lokale IndexedDB zurück`);
+      // Schritt 2: Neuen Mandanten mit gleichem Namen anlegen
+      debugLog('TenantService', `Lege neuen Mandanten "${tenantName}" an`);
+      const newTenant = await this.createTenant(tenantName);
+      debugLog('TenantService', `Neuer Mandant "${tenantName}" erfolgreich angelegt mit ID ${newTenant.uuid}`);
 
-        // Lokale IndexedDB zurücksetzen
-        const tenantDbService = new (await import('./TenantDbService')).TenantDbService();
-        await tenantDbService.resetTenantDatabase();
-        debugLog('TenantService', `Lokale IndexedDB zurückgesetzt`);
-
-        // Alle Stores neu laden (Firstload)
-        debugLog('TenantService', `Lade alle Stores neu (Firstload)`);
-        await DataService.reloadTenantData();
-        debugLog('TenantService', `Firstload abgeschlossen`);
+      // Schritt 3: Zur TenantSelectView navigieren
+      if (router) {
+        debugLog('TenantService', `Navigiere zur TenantSelectView`);
+        router.push('/tenant-select');
       }
 
-      infoLog('TenantService', `Datenbank für Mandant ${tenantId} erfolgreich zurückgesetzt`);
+      infoLog('TenantService', `Mandant "${tenantName}" erfolgreich zurückgesetzt (gelöscht und neu angelegt)`);
       return true;
 
     } catch (error) {
-      errorLog('TenantService', `Fehler beim Zurücksetzen der Datenbank für Mandant ${tenantId}`, { error });
+      errorLog('TenantService', `Fehler beim Zurücksetzen des Mandanten ${tenantId}`, { error });
       return false;
     }
   },
@@ -270,15 +276,25 @@ export const TenantService = {
       });
 
       // Backend-API aufrufen
+      debugLog('TenantService', `Rufe Backend-API clearTenantSyncQueue auf für Mandant ${tenantId}`);
       await apiService.clearTenantSyncQueue(tenantId, session.currentUserId);
+      debugLog('TenantService', `Backend-API clearTenantSyncQueue erfolgreich für Mandant ${tenantId}`);
 
       if (isActiveTenant) {
         // Lokale SyncQueue löschen
+        debugLog('TenantService', `Lösche lokale SyncQueue für aktiven Mandant ${tenantId}`);
         const tenantDbService = new (await import('./TenantDbService')).TenantDbService();
         await tenantDbService.clearSyncQueue();
+        debugLog('TenantService', `Lokale SyncQueue erfolgreich gelöscht für Mandant ${tenantId}`);
+
+        // KRITISCH: Nach dem Löschen der SyncQueue sollte eine Initial Data Load ausgelöst werden
+        debugLog('TenantService', `Löse Initial Data Load aus für Mandant ${tenantId}`);
+        const { WebSocketService } = await import('./WebSocketService');
+        WebSocketService.requestInitialData(tenantId);
+        debugLog('TenantService', `Initial Data Load angefordert für Mandant ${tenantId}`);
       }
 
-      infoLog('TenantService', `Sync-Queue für Mandant ${tenantId} erfolgreich gelöscht`);
+      infoLog('TenantService', `Sync-Queue für Mandant ${tenantId} erfolgreich gelöscht und Synchronisation ausgelöst`);
       return true;
 
     } catch (error) {

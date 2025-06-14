@@ -9,6 +9,7 @@
  */
 
 import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { TenantService } from "@/services/TenantService";
 import { useTenantStore } from "@/stores/tenantStore";
 import { useSessionStore } from "@/stores/sessionStore";
@@ -20,6 +21,7 @@ import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 
+const router = useRouter();
 const session = useSessionStore();
 const tenantStore = useTenantStore();
 const webSocketStore = useWebSocketStore();
@@ -164,7 +166,8 @@ async function resetDatabase() {
     try {
       debugLog("[AdminTenantsView] Rufe TenantService.resetTenantDatabase auf");
       const result = await TenantService.resetTenantDatabase(
-        resetDbTargetId.value
+        resetDbTargetId.value,
+        router
       );
       debugLog("[AdminTenantsView] resetTenantDatabase erfolgreich", {
         id: resetDbTargetId.value,
