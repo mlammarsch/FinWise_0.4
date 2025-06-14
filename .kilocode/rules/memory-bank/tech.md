@@ -192,6 +192,70 @@ accounts (
   updated_at: DATETIME
 )
 
+-- Kategoriengruppen
+category_groups (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  sortOrder: INTEGER,
+  isIncomeGroup: BOOLEAN,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
+
+-- Kategorien
+categories (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  icon: STRING,
+  budgeted: DECIMAL(10,2),
+  activity: DECIMAL(10,2),
+  available: DECIMAL(10,2),
+  isIncomeCategory: BOOLEAN,
+  isHidden: BOOLEAN,
+  isActive: BOOLEAN,
+  sortOrder: INTEGER,
+  categoryGroupId: STRING FOREIGN KEY,
+  parentCategoryId: STRING FOREIGN KEY,
+  isSavingsGoal: BOOLEAN,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
+
+-- Tags
+tags (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  parentTagId: STRING FOREIGN KEY,
+  color: STRING,
+  icon: STRING,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
+
+-- Empfänger
+recipients (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  defaultCategoryId: STRING FOREIGN KEY,
+  note: TEXT,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
+
+-- Automatisierungsregeln
+automation_rules (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  description: TEXT,
+  stage: STRING,
+  conditions: JSON,
+  actions: JSON,
+  priority: INTEGER,
+  isActive: BOOLEAN,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
+
 -- Planungstransaktionen (NEU - Vollständig implementiert)
 planning_transactions (
   id: STRING PRIMARY KEY,
@@ -224,6 +288,31 @@ planning_transactions (
   created_at: DATETIME,
   updated_at: DATETIME
 )
+
+-- Transaktionen
+transactions (
+  id: STRING PRIMARY KEY,
+  accountId: STRING FOREIGN KEY,
+  categoryId: STRING FOREIGN KEY,
+  date: DATE,
+  valueDate: DATE,
+  amount: DECIMAL(10,2),
+  description: TEXT,
+  note: TEXT,
+  tagIds: JSON,
+  type: STRING,
+  runningBalance: DECIMAL(10,2),
+  counterTransactionId: STRING FOREIGN KEY,
+  planningTransactionId: STRING FOREIGN KEY,
+  isReconciliation: BOOLEAN,
+  isCategoryTransfer: BOOLEAN,
+  transferToAccountId: STRING FOREIGN KEY,
+  reconciled: BOOLEAN,
+  toCategoryId: STRING FOREIGN KEY,
+  payee: STRING,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
 ```
 
 ## API-Architektur
@@ -239,7 +328,7 @@ planning_transactions (
 - **Protokoll**: JSON-basierte Nachrichten
 - **Authentifizierung**: Token in WebSocket-Verbindung
 
-### Nachrichtentypen
+### Nachrichtentypen (NEU - Erweitert)
 ```typescript
 // Status-Nachrichten
 StatusMessage {
@@ -251,30 +340,38 @@ StatusMessage {
 // Daten-Updates
 DataUpdateNotificationMessage {
   type: 'data_update',
+  event_type: 'data_update',
   tenant_id: string,
-  entity_type: 'Account' | 'AccountGroup' | 'PlanningTransaction',
-  operation_type: 'create' | 'update' | 'delete',
-  data: Account | AccountGroup | PlanningTransaction | DeletePayload
+  entity_type: EntityTypeEnum,
+  operation_type: SyncOperationType,
+  data: NotificationDataPayload
 }
 
 // Initiale Daten
 InitialDataLoadMessage {
   type: 'initial_data_load',
+  event_type: 'initial_data_load',
   tenant_id: string,
   payload: {
     accounts: Account[],
     account_groups: AccountGroup[],
-    planning_transactions: PlanningTransaction[] // NEU
+    categories: Category[],
+    category_groups: CategoryGroup[],
+    recipients?: Recipient[],
+    tags?: Tag[],
+    automation_rules?: AutomationRule[],
+    planning_transactions?: PlanningTransaction[],
+    transactions?: Transaction[]
   }
 }
 
-// Sync-Acknowledgment-Nachrichten (NEU - In Entwicklung)
+// Sync-Acknowledgment-Nachrichten (NEU - Vollständig implementiert)
 SyncAckMessage {
   type: 'sync_ack',
   id: string,              // SyncQueueEntry.id
   status: 'processed',
   entityId: string,
-  entityType: EntityType,
+  entityType: EntityTypeEnum,
   operationType: SyncOperationType
 }
 
@@ -283,11 +380,38 @@ SyncNackMessage {
   id: string,              // SyncQueueEntry.id
   status: 'failed',
   entityId: string,
-  entityType: EntityType,
+  entityType: EntityTypeEnum,
   operationType: SyncOperationType,
   reason: string,          // Fehlergrund
-  detail?: string,         // Detaillierte Fehlermeldung
-  attempts?: number        // Anzahl Versuche
+  detail?: string          // Detaillierte Fehlermeldung
+}
+
+// Erweiterte WebSocket-Nachrichten
+PongMessage {
+  type: 'pong',
+  timestamp?: number
+}
+
+ConnectionStatusResponseMessage {
+  type: 'connection_status_response',
+  tenant_id: string,
+  backend_status: string,
+  connection_healthy: boolean,
+  stats: Record<string, any>
+}
+
+SystemNotificationMessage {
+  type: 'system_notification',
+  notification_type: string,
+  message: string,
+  timestamp: number
+}
+
+MaintenanceNotificationMessage {
+  type: 'maintenance_notification',
+  maintenance_enabled: boolean,
+  message: string,
+  timestamp: number
 }
 ```
 
@@ -298,24 +422,25 @@ SyncNackMessage {
 SyncQueueEntry {
   id: string,              // UUID für Queue-Eintrag
   tenantId: string,        // Mandanten-ID
-  entityType: EntityType,  // Typ der Entität
+  entityType: EntityTypeEnum,  // Typ der Entität
   entityId: string,        // ID der Entität
-  operationType: 'create' | 'update' | 'delete' | 'initial_load',
+  operationType: SyncOperationType,
   payload: Entity | { id: string } | null,
   timestamp: number,       // Unix-Timestamp
-  status: 'pending' | 'processing' | 'synced' | 'failed',
+  status: SyncStatus,      // 'pending' | 'processing' | 'synced' | 'failed'
   attempts?: number,       // Anzahl Versuche
   lastAttempt?: number,    // Letzter Versuch
   error?: string          // Fehlermeldung
 }
 ```
 
-### Sync-Acknowledgment-System (NEU - In Entwicklung)
+### Sync-Acknowledgment-System (NEU - Vollständig implementiert)
 - **ACK-Nachrichten**: Backend bestätigt erfolgreiche Verarbeitung
 - **NACK-Nachrichten**: Backend meldet Fehler mit Grund und Details
 - **Queue-Management**: Einträge werden nur nach ACK entfernt
 - **Retry-Mechanismen**: Automatische Wiederholung bei NACK mit exponential backoff
 - **Timeout-Handling**: Stuck processing entries werden automatisch zurückgesetzt
+- **Dead-Letter-Queue**: Dauerhaft fehlgeschlagene Einträge werden markiert
 
 ### Konfliktlösung
 - **Strategie**: Last-Write-Wins (LWW)
@@ -419,7 +544,7 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
   - [`tests/integration/account-sync.test.ts`](../tests/integration/account-sync.test.ts) - Account-spezifische Tests (6 Tests)
   - [`tests/integration/account-group-sync.test.ts`](../tests/integration/account-group-sync.test.ts) - AccountGroup-Tests (6 Tests)
   - [`tests/integration/sync-error-handling.test.ts`](../tests/integration/sync-error-handling.test.ts) - Error-Handling-Tests (6 Tests)
-  - [`tests/planning-store-migration.test.ts`](../tests/planning-store-migration.test.ts) - Planning-Migration-Tests (NEU)
+  - [`tests/planning-store-migration.test.ts`](../tests/planning-store-migration.test.ts) - Planning-Migration-Tests
 
 ### Mock-Architektur
 ```typescript
@@ -445,7 +570,13 @@ class MockTenantService {
 class TestDataGenerator {
   generateAccount(overrides?: Partial<Account>): Account
   generateAccountGroup(overrides?: Partial<AccountGroup>): AccountGroup
+  generateCategory(overrides?: Partial<Category>): Category
+  generateCategoryGroup(overrides?: Partial<CategoryGroup>): CategoryGroup
+  generateTag(overrides?: Partial<Tag>): Tag
+  generateRecipient(overrides?: Partial<Recipient>): Recipient
+  generateAutomationRule(overrides?: Partial<AutomationRule>): AutomationRule
   generatePlanningTransaction(overrides?: Partial<PlanningTransaction>): PlanningTransaction
+  generateTransaction(overrides?: Partial<Transaction>): Transaction
   generateSyncQueueEntry(overrides?: Partial<SyncQueueEntry>): SyncQueueEntry
   generateBatchData(count: number): TestData[]
 }
@@ -502,26 +633,28 @@ class TestDataGenerator {
 - ✅ **WebSocket-Integration**: Echtzeit-Updates zwischen Frontend und Backend
 - ✅ **Testing-Setup**: Umfassende Integration-Tests für Sync-Funktionalität
 - ✅ **Planning-Funktionalität**: Vollständige Planning-Business-Logic implementiert
+- ✅ **Sync-Acknowledgment-System**: ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
+- ✅ **Erweiterte Entitäts-Synchronisation**: Categories, Tags, Recipients, Rules
 
 ### In Entwicklung
-- 🔄 **Sync-Acknowledgment-System**: ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
+- 🔄 **Planning-WebSocket-Integration**: Integration von PlanningTransactions in WebSocket-Service
+- 🔄 **Transaction-Synchronisation**: Erweitern der Sync auf Transaktionen
 - 🔄 **WebSocket-Reconnection**: Verbessertes Reconnection-Handling mit exponential backoff
 - 🔄 **Performance-Optimierung**: Batch-Operationen und Paginierung
-- 🔄 **Planning-Synchronisation**: Integration von PlanningTransactions in Sync-System
 
 ### Geplante Entwicklungen
-- 📋 **Transaction-Synchronisation**: Erweitern der Sync auf Transaktionen
-- 📋 **Category-Synchronisation**: Erweitern der Sync auf Categories/CategoryGroups
+- 📋 **Initial Data Load Optimierung**: Effizienter Bulk-Transfer für neue Clients
 - 📋 **Performance-Monitoring**: Metriken und Monitoring-Dashboard
 - 📋 **PWA-Features**: Service Worker und Offline-Capabilities
+- 📋 **CSV-Import-Integration**: CSV-Import mit Sync-Integration
 
 ## Technische Schulden
 
 ### Hohe Priorität
-- **Sync-Konsistenz**: Einheitliche Sync-Queue-Nutzung für alle Entitäten
-- **Queue-Management**: Automatische Bereinigung nach erfolgreicher Sync
-- **Error-Handling**: Einheitliche Patterns für alle Services
-- **Planning-Sync**: Integration von PlanningTransactions in Sync-System
+- **Planning-WebSocket-Integration**: Integration von PlanningTransactions in WebSocket-Service
+- **Transaction-Sync-Performance**: Optimierung für große Transaktionsmengen
+- **Initial Data Load**: Optimierung für schnelleren App-Start
+- **WebSocket-Reconnection**: Weitere Verbesserungen für robuste Verbindungswiederherstellung
 
 ### Mittlere Priorität
 - **Legacy-Code**: Vollständige Entfernung von localStorage-Resten
@@ -553,3 +686,38 @@ class TestDataGenerator {
 - **WebAssembly**: Für Performance-kritische Berechnungen (Evaluierung)
 - **Web Workers**: Für Background-Sync-Verarbeitung (Planung)
 - **Service Workers**: Für PWA-Funktionalität (Vorbereitung)
+
+## Sync-Acknowledgment-System (NEU - Vollständig implementiert)
+
+### ACK/NACK-Verarbeitung
+- **Automatische Queue-Bereinigung**: Einträge werden nach ACK entfernt
+- **Retry-Mechanismen**: Exponential backoff bei NACK mit konfigurierbaren Limits
+- **Timeout-Handling**: Automatisches Zurücksetzen hängender PROCESSING-Einträge
+- **Dead-Letter-Queue**: Handling für dauerhaft fehlgeschlagene Einträge
+
+### Test-Implementation
+- **Umfassende Tests**: [`src/test-sync-acknowledgment.ts`](../src/test-sync-acknowledgment.ts)
+- **Manuelle Test-Tools**: Hilfsmethoden für Entwicklung und Debugging
+- **Performance-Validierung**: Latenz und Memory-Management
+
+### TypeScript-Integration
+- **SyncAckMessage/SyncNackMessage**: Vollständig typisierte WebSocket-Nachrichten
+- **Retry-Konfiguration**: Konfigurierbare Limits pro Fehlertyp
+- **Queue-Status-Management**: Erweiterte Status-Verfolgung
+
+## Erweiterte Entitäts-Synchronisation (NEU - Implementiert)
+
+### Synchronisierte Entitäten
+- **Accounts/AccountGroups**: ✅ Vollständig synchronisiert
+- **Categories/CategoryGroups**: ✅ Sync-Integration implementiert
+- **Tags**: ✅ Hierarchische Tag-Struktur mit Sync
+- **Recipients**: ✅ Empfänger-Management mit Sync
+- **AutomationRules**: ✅ Regel-Engine mit Sync-Support
+- **PlanningTransactions**: 🔄 Business Logic implementiert, WebSocket-Integration ausstehend
+- **Transactions**: 📋 Nächste Priorität für Sync-Integration
+
+### Einheitliche Patterns
+- **Konsistente Store-Struktur**: Alle Stores folgen demselben Sync-Pattern
+- **Error-Handling**: Einheitliche Fehlerbehandlung in allen Stores
+- **TypeScript-Typisierung**: Vollständige Typisierung für alle Entitäten
+- **IndexedDB-Integration**: Persistierung über TenantDbService
