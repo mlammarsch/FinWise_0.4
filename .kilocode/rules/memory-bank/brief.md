@@ -58,11 +58,16 @@ Entwicklung einer umfassenden Haushaltsfinanzplanungs- und Haushaltskassenführu
 *   ✅ **Last-Write-Wins Konfliktlösung implementiert**
 *   ✅ **Umfassende Testing-Infrastruktur** (Integration Tests für Sync-Funktionalität)
 *   ✅ **Token-basierte Authentifizierung zwischen Frontend und Backend**
+*   ✅ **Planning-Funktionalität vollständig implementiert** (PlanningService, PlanningStore, IndexedDB-Integration)
+*   ✅ **Komplexe Recurrence-Engine** mit Weekend-Handling und Transfer-Logic
+*   ✅ **Auto-Execution für fällige Planungstransaktionen**
+*   ✅ **Vitest-Testing-Setup** mit 26 Integration Tests für Sync-Pipeline
 
 **8. Zu erledigende Aufgaben (High-Level):**
 
+*   **Planning-Synchronisation**: Integration von PlanningTransactions in Sync-System
 *   **Sync-Acknowledgment-System**: Implementierung von Sync-Bestätigungen (ACK/NACK)
-*   **Erweitern der Synchronisation auf weitere Entitäten**: Categories, Transactions, Tags, Recipients, PlanningTransactions
+*   **Erweitern der Synchronisation auf weitere Entitäten**: Categories, Transactions, Tags, Recipients
 *   **Verbesserung der Sync-Robustheit**: Retry-Mechanismen, bessere Fehlerbehandlung
 *   **Performance-Optimierungen**: Paginierung, Lazy Loading, WebSocket-Optimierung
 *   **Produktionsreife**: Umfassende End-to-End-Tests, Deployment-Pipeline
@@ -75,7 +80,8 @@ Entwicklung einer umfassenden Haushaltsfinanzplanungs- und Haushaltskassenführu
 
 **9. Nächste Schritte:**
 
-*   Detaillierte Anforderungsanalyse und Erstellung eines detaillierten Pflichtenhefts.
-*   Definition der API-Endpunkte zwischen Frontend und Backend.
-*   Design des Datenmodells für die SQLite-Datenbanken.
-*   Erstellung eines Prototyps für die Benutzeroberfläche.
+*   Planning-Synchronisation implementieren und testen
+*   Sync-Acknowledgment-System finalisieren
+*   Transaction-Synchronisation als nächste kritische Entität
+*   Performance-Optimierungen für große Datenmengen
+*   Erweiterte Error-Handling und Recovery-Mechanismen

@@ -40,7 +40,7 @@ src/
 │   ├── account/        # Konto-spezifische Komponenten
 │   ├── budget/         # Budget-Komponenten
 │   ├── transaction/    # Transaktions-Komponenten
-│   ├── planning/       # Planungs-Komponenten
+│   ├── planning/       # Planungs-Komponenten (NEU)
 │   ├── rules/          # Regel-Komponenten
 │   └── ui/             # Wiederverwendbare UI-Komponenten
 ├── stores/             # Pinia Stores
@@ -66,7 +66,7 @@ src/
 - **[`accountStore.ts`](src/stores/accountStore.ts)**: Kontenverwaltung (vollständig synchronisiert)
 - **[`transactionStore.ts`](src/stores/transactionStore.ts)**: Transaktionsverwaltung
 - **[`categoryStore.ts`](src/stores/categoryStore.ts)**: Kategorienverwaltung
-- **[`planningStore.ts`](src/stores/planningStore.ts)**: Planungstransaktionen
+- **[`planningStore.ts`](src/stores/planningStore.ts)**: Planungstransaktionen (NEU - vollständig implementiert)
 - **[`tagStore.ts`](src/stores/tagStore.ts)**: Tag-Verwaltung
 - **[`recipientStore.ts`](src/stores/recipientStore.ts)**: Empfänger-Verwaltung
 - **[`ruleStore.ts`](src/stores/ruleStore.ts)**: Automatisierungsregeln
@@ -88,9 +88,9 @@ src/
 #### Business Logic Services:
 - **[`AccountService.ts`](src/services/AccountService.ts)**: Konto-Geschäftslogik
 - **[`TransactionService.ts`](src/services/TransactionService.ts)**: Transaktions-Geschäftslogik
+- **[`PlanningService.ts`](src/services/PlanningService.ts)**: Planning-Geschäftslogik (NEU - vollständig implementiert)
 - **[`BudgetService.ts`](src/services/BudgetService.ts)**: Budget-Berechnungen
 - **[`BalanceService.ts`](src/services/BalanceService.ts)**: Saldo-Berechnungen
-- **[`PlanningService.ts`](src/services/PlanningService.ts)**: Planungs- und Prognosefunktionen
 - **[`ReconciliationService.ts`](src/services/ReconciliationService.ts)**: Kontoabstimmung
 
 #### Utility Services:
@@ -106,7 +106,7 @@ Zentrale Typdefinitionen in [`src/types/index.ts`](src/types/index.ts):
 - **AccountGroup**: Kontengruppen für Organisation
 - **Transaction**: Transaktionen mit Kategorien, Tags, Empfängern
 - **Category/CategoryGroup**: Kategorien für Budgetierung
-- **PlanningTransaction**: Wiederkehrende/geplante Transaktionen
+- **PlanningTransaction**: Wiederkehrende/geplante Transaktionen (NEU - vollständig implementiert)
 - **Tag**: Flexible Tagging-System
 - **Recipient**: Empfänger/Zahlungsempfänger
 - **AutomationRule**: Regeln für automatische Kategorisierung
@@ -155,6 +155,7 @@ app/
 #### Mandanten-DB Schema ([`app/models/financial_models.py`](../FinWise_0.4_BE/app/models/financial_models.py)):
 - **AccountGroup**: Kontengruppen
 - **Account**: Konten mit Beziehung zu AccountGroup
+- **PlanningTransaction**: Geplante Transaktionen (NEU - vollständig implementiert)
 - Weitere Entitäten (Transactions, Categories, etc.) folgen demselben Muster
 
 ### WebSocket-Architektur
@@ -168,6 +169,8 @@ app/
 - **DataUpdateNotificationMessage**: Datenänderungen
 - **InitialDataLoadMessage**: Initiale Daten für neue Clients
 - **RequestInitialDataMessage**: Anfrage für initiale Daten
+- **SyncAckMessage**: Sync-Bestätigungen (NEU - in Entwicklung)
+- **SyncNackMessage**: Sync-Fehler-Nachrichten (NEU - in Entwicklung)
 
 ### Synchronisation-Service
 
@@ -176,6 +179,157 @@ app/
 - **Konfliktlösung**: Last-Write-Wins basierend auf `updated_at`
 - **Broadcast-Funktionalität**: Sendet Änderungen an alle Clients eines Mandanten
 - **Initial Data Load**: Stellt initiale Daten für neue Verbindungen bereit
+- **ACK/NACK-System**: Sync-Bestätigungen (NEU - in Entwicklung)
+
+## Planning-Architektur (NEU - Vollständig implementiert)
+
+### PlanningService ([`src/services/PlanningService.ts`](src/services/PlanningService.ts))
+
+#### Kernfunktionalitäten:
+- **CRUD-Operationen**: Vollständige Verwaltung von Planungstransaktionen
+- **Recurrence-Engine**: Komplexe Wiederholungsmuster mit intelligenter Datumsberechnung
+- **Transfer-Logic**: Automatische Gegenbuchungen für Account- und Category-Transfers
+- **Auto-Execution**: Automatische Ausführung fälliger Planungstransaktionen
+- **Forecast-Updates**: Intelligente Prognoseberechnung für zukünftige Perioden
+
+#### Recurrence-Patterns:
+```typescript
+enum RecurrencePattern {
+  ONCE = 'once',
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  BIWEEKLY = 'biweekly',
+  MONTHLY = 'monthly',
+  QUARTERLY = 'quarterly',
+  YEARLY = 'yearly'
+}
+```
+
+#### Weekend-Handling:
+```typescript
+enum WeekendHandlingType {
+  NONE = 'none',
+  BEFORE = 'before',  // Verschiebe auf Freitag
+  AFTER = 'after'     // Verschiebe auf Montag
+}
+```
+
+#### Transfer-Handling:
+- **Account-Transfers**: Automatische Gegenbuchung zwischen Konten
+- **Category-Transfers**: Automatische Gegenbuchung zwischen Kategorien
+- **Counter-Planning**: Verknüpfte Planungstransaktionen für Transfers
+
+### PlanningStore ([`src/stores/planningStore.ts`](src/stores/planningStore.ts))
+
+#### Architektur-Features:
+- **IndexedDB-Integration**: Vollständige Persistierung über TenantDbService
+- **Migration-Support**: Automatische Migration von localStorage zu IndexedDB
+- **Reactive State**: Vue 3 Composition API mit computed getters
+- **Error-Handling**: Robuste Fehlerbehandlung mit umfassendem Logging
+
+#### Store-Methoden:
+```typescript
+// CRUD-Operationen
+addPlanningTransaction(planning: Partial<PlanningTransaction>)
+updatePlanningTransaction(id: string, updates: Partial<PlanningTransaction>)
+deletePlanningTransaction(id: string)
+
+// Getter
+getPlanningTransactionById(id: string)
+getUpcomingTransactions(days: number)
+
+// Persistence
+loadPlanningTransactions()
+reset()
+```
+
+### TenantDbService Planning-Integration
+
+#### CRUD-Methoden:
+```typescript
+// Planning-spezifische Methoden
+createPlanningTransaction(planningTransaction: PlanningTransaction)
+updatePlanningTransaction(id: string, updates: Partial<PlanningTransaction>)
+deletePlanningTransaction(id: string)
+getPlanningTransactions()
+getPlanningTransactionById(id: string)
+```
+
+#### Timestamp-Management:
+- Automatische `updated_at` Timestamps für LWW-Konfliktlösung
+- Plain-Object-Conversion für sichere IndexedDB-Serialisierung
+
+## Testing-Architektur (NEU - Vollständig implementiert)
+
+### Testing-Guidelines ([`TESTING_GUIDELINES.md`](TESTING_GUIDELINES.md))
+
+#### Vitest-Setup:
+- **TypeScript-Konfiguration**: Vollständige Integration mit Vue 3 und Pinia
+- **Mock-Strategien**: Patterns für Stores, Services und externe Libraries
+- **AAA-Pattern**: Strukturierte Test-Organisation (Arrange, Act, Assert)
+- **Debugging-Tools**: Temporäres Logging und Debug-Strategien
+
+#### Mocking-Patterns:
+```typescript
+// Store-Mocking
+vi.mock('@/stores/tenantStore', () => ({
+  useTenantStore: vi.fn()
+}));
+
+// Service-Mocking
+vi.mock('@/utils/logger', () => ({
+  debugLog: vi.fn(),
+  infoLog: vi.fn(),
+  errorLog: vi.fn()
+}));
+
+// External Library-Mocking
+vi.mock('uuid', () => ({
+  v4: vi.fn()
+}));
+```
+
+### Integration Testing ([`TESTING_INTEGRATION.md`](TESTING_INTEGRATION.md))
+
+#### Test-Kategorien:
+- **sync-integration.test.ts**: Hauptintegrationstests für Sync-Pipeline (8 Tests)
+- **account-sync.test.ts**: Account-spezifische Sync-Tests (6 Tests)
+- **account-group-sync.test.ts**: AccountGroup-spezifische Sync-Tests (6 Tests)
+- **sync-error-handling.test.ts**: Error-Handling und Recovery-Tests (6 Tests)
+- **planning-store-migration.test.ts**: Planning-Store-Migration-Tests (NEU)
+
+#### Mock-Architektur:
+```typescript
+// MockWebSocketServer
+class MockWebSocketServer {
+  simulateOnlineMode()
+  simulateOfflineMode()
+  simulateAutoACK()
+  simulateAutoNACK()
+  simulatePartialFailure()
+}
+
+// MockTenantService
+class MockTenantService {
+  mockIndexedDB()
+  mockStores()
+  generateTestData()
+  manageSyncQueue()
+}
+
+// TestDataGenerator
+class TestDataGenerator {
+  generateAccount()
+  generateAccountGroup()
+  generatePlanningTransaction()
+  generateSyncQueueEntry()
+}
+```
+
+#### Performance-Metriken:
+- **Sync-Latenz**: < 200ms für Online-Operationen
+- **Error-Recovery**: Exponential backoff verhindert Server-Überlastung
+- **Memory-Management**: Cleanup nach jedem Test verhindert Memory-Akkumulation
 
 ## Synchronisations-Architektur
 
@@ -192,6 +346,37 @@ app/
 2. **Verbindung verfügbar** → Queue-Verarbeitung
 3. **Batch-Sync** → Backend verarbeitet Queue-Einträge
 4. **Konfliktlösung** → Last-Write-Wins bei Konflikten
+
+### Sync-Acknowledgment-System (NEU - In Entwicklung)
+
+#### ACK/NACK-Nachrichten:
+```typescript
+interface SyncAckMessage {
+  type: 'sync_ack';
+  id: string;              // SyncQueueEntry.id
+  status: 'processed';
+  entityId: string;
+  entityType: EntityType;
+  operationType: SyncOperationType;
+}
+
+interface SyncNackMessage {
+  type: 'sync_nack';
+  id: string;              // SyncQueueEntry.id
+  status: 'failed';
+  entityId: string;
+  entityType: EntityType;
+  operationType: SyncOperationType;
+  reason: string;          // Fehlergrund
+  detail?: string;         // Detaillierte Fehlermeldung
+  attempts?: number;       // Anzahl Versuche
+}
+```
+
+#### Retry-Mechanismen:
+- **Exponential Backoff**: 1s, 2s, 4s, 8s, 16s, max 30s
+- **Max Retries**: Abhängig vom Fehlertyp (validation_error: 2, network_error: 5)
+- **Stuck Processing Recovery**: Automatisches Zurücksetzen nach Timeout
 
 ### Konfliktlösung
 
@@ -215,30 +400,41 @@ if (incoming_data.updated_at > db_obj.updated_at:
 ## Kritische Implementierungspfade
 
 ### 1. Account/AccountGroup Synchronisation (✅ Vollständig implementiert)
-- **Frontend**: [`accountStore.ts`](../src/stores/accountStore.ts) mit vollständiger Sync-Integration
+- **Frontend**: [`accountStore.ts`](src/stores/accountStore.ts) mit vollständiger Sync-Integration
 - **Backend**: [`crud_account.py`](../FinWise_0.4_BE/app/crud/crud_account.py) und [`crud_account_group.py`](../FinWise_0.4_BE/app/crud/crud_account_group.py)
 - **WebSocket**: Bidirektionale Updates zwischen allen Clients
 - **Testing**: Umfassende Integration Tests implementiert
 
-### 2. Sync-Acknowledgment-System (🔄 In aktiver Entwicklung)
+### 2. Planning-Funktionalität (✅ Vollständig implementiert)
+- **Frontend**: [`PlanningService.ts`](src/services/PlanningService.ts) und [`planningStore.ts`](src/stores/planningStore.ts)
+- **IndexedDB**: Vollständige Integration in [`TenantDbService.ts`](src/services/TenantDbService.ts)
+- **Business Logic**: Komplexe Recurrence-Engine und Transfer-Handling
+- **Migration**: Automatische localStorage zu IndexedDB Migration
+
+### 3. Sync-Acknowledgment-System (🔄 In aktiver Entwicklung)
 - **Priorität**: Kritisch für zuverlässige Synchronisation
-- **Frontend**: [`WebSocketService.ts`](../src/services/WebSocketService.ts) - ACK/NACK-Verarbeitung
+- **Frontend**: [`WebSocketService.ts`](src/services/WebSocketService.ts) - ACK/NACK-Verarbeitung
 - **Backend**: Sync-Service erweitert um Bestätigungsnachrichten
 - **Features**: Retry-Mechanismen, Queue-Bereinigung, Timeout-Handling
 
-### 3. Transaction Synchronisation (📋 Nächste Priorität)
-- **Priorität**: Höchste nach ACK/NACK-System
+### 4. Planning-Synchronisation (📋 Nächste Priorität)
+- **Status**: Planning-Funktionalität implementiert, Sync-Integration ausstehend
+- **Herausforderung**: Komplexe Recurrence-Patterns und Counter-Bookings
+- **Strategie**: Erweitern der bestehenden Sync-Architektur auf PlanningTransactions
+
+### 5. Transaction Synchronisation (📋 Hohe Priorität nach Planning-Sync)
+- **Priorität**: Höchste nach Planning-Sync-System
 - **Komplexität**: Hoch wegen Volumen und Beziehungen zu anderen Entitäten
 - **Herausforderung**: Performance bei großen Datenmengen
 - **Strategie**: Batch-Synchronisation und Incremental Sync
 
-### 4. Session Management (✅ Implementiert)
-- **[`SessionService.ts`](../src/services/SessionService.ts)**: Router Guards und Authentifizierung
-- **[`sessionStore.ts`](../src/stores/sessionStore.ts)**: Persistente Session-Daten in IndexedDB
+### 6. Session Management (✅ Implementiert)
+- **[`SessionService.ts`](src/services/SessionService.ts)**: Router Guards und Authentifizierung
+- **[`sessionStore.ts`](src/stores/sessionStore.ts)**: Persistente Session-Daten in IndexedDB
 - **Backend**: Token-basierte Authentifizierung
 
-### 5. IndexedDB-Integration (✅ Vollständig migriert)
-- **[`TenantDbService.ts`](../src/services/TenantDbService.ts)**: Zentrale Datenbank-Operationen
+### 7. IndexedDB-Integration (✅ Vollständig migriert)
+- **[`TenantDbService.ts`](src/services/TenantDbService.ts)**: Zentrale Datenbank-Operationen
 - **Dexie.js**: Typisierte IndexedDB-Wrapper
 - **Mandantenspezifische DBs**: Separate Datenbanken pro Mandant
 - **Migration**: Vollständig von localStorage zu IndexedDB migriert
@@ -311,14 +507,16 @@ if (incoming_data.updated_at > db_obj.updated_at:
 ## Aktuelle Architektur-Herausforderungen
 
 ### Kritische Issues (Hohe Priorität):
-1. **Sync-Queue-Konsistenz**: Einheitliche Nutzung der Sync-Queue für alle Entitäten
-2. **Queue-Management**: Automatische Bereinigung nach erfolgreicher Synchronisation
-3. **Stuck Processing Entries**: Timeout-Handling für hängende Sync-Operationen
+1. **Planning-Sync-Integration**: PlanningTransactions in Sync-System integrieren
+2. **Sync-Queue-Konsistenz**: Einheitliche Nutzung der Sync-Queue für alle Entitäten
+3. **Queue-Management**: Automatische Bereinigung nach erfolgreicher Synchronisation
+4. **Stuck Processing Entries**: Timeout-Handling für hängende Sync-Operationen
 
 ### Performance-Optimierungen (Mittlere Priorität):
 1. **WebSocket-Reconnection**: Verbessertes Handling mit exponential backoff
 2. **Batch-Operations**: Effiziente Verarbeitung großer Datenmengen
 3. **Initial Data Load**: Optimierung für schnelleren App-Start
+4. **Planning-Performance**: Optimierung für große Mengen von Planungstransaktionen
 
 ### Skalierungs-Vorbereitung (Niedrige Priorität):
 1. **Multi-User-Support**: Vorbereitung auf mehrere Benutzer pro Mandant

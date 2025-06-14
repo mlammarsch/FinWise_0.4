@@ -47,11 +47,15 @@ FinWise löst das Problem der ineffizienten und unübersichtlichen Haushaltsfina
 - Import von CSV-Dateien
 - Verschiedene Transaktionstypen (Ausgaben, Einnahmen, Kontoübertragungen, Kategorieübertragungen)
 
-#### 4. Planungs- und Prognosefunktionen
-- Regelbuchungen für wiederkehrende Transaktionen
-- Kontoprognosen basierend auf historischen Daten
-- Verschiedene Wiederholungsmuster (täglich, wöchentlich, monatlich, etc.)
-- Approximative Beträge und Bereiche für flexible Planung
+#### 4. Planungs- und Prognosefunktionen (✅ Vollständig implementiert)
+- **Regelbuchungen für wiederkehrende Transaktionen** mit komplexer Recurrence-Engine
+- **Kontoprognosen** basierend auf historischen Daten und Planungstransaktionen
+- **Verschiedene Wiederholungsmuster** (täglich, wöchentlich, monatlich, quartalsweise, jährlich)
+- **Weekend-Handling** mit intelligenter Datumsverschiebung
+- **Transfer-Planungen** mit automatischen Gegenbuchungen
+- **Auto-Execution** für fällige Planungstransaktionen
+- **Approximative Beträge und Bereiche** für flexible Planung
+- **Forecast-System** für automatische Prognoseberechnung
 
 #### 5. Automatisierung durch Regeln
 - Bedingungsbasierte Regeln für automatische Kategorisierung
@@ -123,14 +127,17 @@ FinWise löst das Problem der ineffizienten und unübersichtlichen Haushaltsfina
 - **Offline-First-Funktionalität** mit IndexedDB-Persistierung
 - **WebSocket-basierte Echtzeit-Updates**
 - **Last-Write-Wins Konfliktlösung**
+- **Planning-Funktionalität** mit komplexer Recurrence-Engine, Transfer-Handling und Auto-Execution
+- **Testing-Infrastruktur** mit umfassenden Integration Tests
 
 ### 🔄 In aktiver Entwicklung:
 - **Sync-Acknowledgment-System** für zuverlässige Queue-Verarbeitung
+- **Planning-Synchronisation** - Integration von PlanningTransactions in Sync-System
 - **Erweiterte Fehlerbehandlung** mit Retry-Mechanismen
 - **WebSocket-Reconnection-Optimierung**
 
 ### 📋 Geplant:
-- **Transaction-Synchronisation** (höchste Priorität)
+- **Transaction-Synchronisation** (höchste Priorität nach Planning-Sync)
 - **Category/CategoryGroup-Synchronisation**
 - **Automatisierungsregeln** mit Synchronisation
 - **CSV-Import** mit Sync-Integration

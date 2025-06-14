@@ -16,7 +16,7 @@
 - **TailwindCSS 4.0.14**: Utility-First CSS Framework
 - **DaisyUI 5.0.4**: Komponenten-Bibliothek für TailwindCSS
 - **PostCSS 8.5.3**: CSS-Postprocessor
-- **Sass 1.85.1**: CSS-Präprozessor für erweiterte Styling-Features
+- **Sass-Embedded 1.85.1**: CSS-Präprozessor für erweiterte Styling-Features
 
 ### Charts & Visualisierung
 - **ApexCharts 4.5.0**: Moderne, interaktive Charts
@@ -36,8 +36,13 @@
 
 ### Development Tools
 - **Vue TSC 2.1.6**: TypeScript-Compiler für Vue
-- **Vitest 3.2.1**: Unit-Testing-Framework
+- **Vitest 3.2.1**: Unit-Testing-Framework (NEU - aktualisiert)
 - **Autoprefixer 10.4.21**: CSS-Vendor-Präfixe automatisch hinzufügen
+
+### Testing Dependencies (NEU - Vollständig implementiert)
+- **fake-indexeddb 6.0.0**: IndexedDB-Mock für Tests
+- **jsdom 25.0.1**: DOM-Simulation für Tests
+- **@types/node 22.15.29**: Node.js-Typen für Test-Umgebung
 
 ## Backend-Technologien
 
@@ -80,10 +85,14 @@
 ```json
 {
   "scripts": {
-    "dev": "vite",                    // Entwicklungsserver
-    "build": "vue-tsc -b && vite build", // Produktions-Build
-    "preview": "vite preview",        // Build-Vorschau
-    "test:unit": "vitest"            // Unit-Tests
+    "dev": "vite",                           // Entwicklungsserver
+    "build": "vue-tsc -b && vite build",     // Produktions-Build
+    "preview": "vite preview",               // Build-Vorschau
+    "test": "vitest",                        // Unit-Tests
+    "test:unit": "vitest",                   // Unit-Tests (alias)
+    "test:integration": "vitest run tests/integration", // Integration Tests (NEU)
+    "test:watch": "vitest --watch",          // Tests im Watch-Modus (NEU)
+    "test:coverage": "vitest --coverage"     // Test-Coverage (NEU)
   }
 }
 ```
@@ -99,6 +108,30 @@
 - **Module**: ESNext für Tree-Shaking
 - **Strict Mode**: Aktiviert für bessere Typsicherheit
 - **Path Mapping**: `@/*` → `src/*`
+
+### Vitest-Konfiguration (NEU - Vollständig implementiert)
+```typescript
+// vitest.config.ts
+export default defineConfig({
+  plugins: [vue()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['./tests/setup.ts'],
+  },
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, './src'),
+    },
+  },
+});
+```
+
+#### Test-Setup Features:
+- **jsdom Environment**: DOM-Simulation für Vue-Komponenten
+- **Global Test Functions**: `describe`, `it`, `expect` global verfügbar
+- **Setup Files**: Automatische Initialisierung von Mocks und Test-Utilities
+- **Path Aliases**: Konsistente `@/` Imports in Tests
 
 ## Datenbank-Schema
 
@@ -158,6 +191,39 @@ accounts (
   created_at: DATETIME,
   updated_at: DATETIME
 )
+
+-- Planungstransaktionen (NEU - Vollständig implementiert)
+planning_transactions (
+  id: STRING PRIMARY KEY,
+  name: STRING,
+  accountId: STRING,
+  categoryId: STRING,
+  tagIds: JSON,
+  recipientId: STRING,
+  amount: DECIMAL(10,2),
+  amountType: STRING,
+  approximateAmount: DECIMAL(10,2),
+  minAmount: DECIMAL(10,2),
+  maxAmount: DECIMAL(10,2),
+  note: TEXT,
+  startDate: DATE,
+  valueDate: DATE,
+  endDate: DATE,
+  recurrencePattern: STRING,
+  recurrenceEndType: STRING,
+  recurrenceCount: INTEGER,
+  executionDay: INTEGER,
+  weekendHandling: STRING,
+  isActive: BOOLEAN,
+  forecastOnly: BOOLEAN,
+  transactionType: STRING,
+  transferToAccountId: STRING,
+  transferToCategoryId: STRING,
+  counterPlanningTransactionId: STRING,
+  autoExecute: BOOLEAN,
+  created_at: DATETIME,
+  updated_at: DATETIME
+)
 ```
 
 ## API-Architektur
@@ -186,9 +252,9 @@ StatusMessage {
 DataUpdateNotificationMessage {
   type: 'data_update',
   tenant_id: string,
-  entity_type: 'Account' | 'AccountGroup',
+  entity_type: 'Account' | 'AccountGroup' | 'PlanningTransaction',
   operation_type: 'create' | 'update' | 'delete',
-  data: Account | AccountGroup | DeletePayload
+  data: Account | AccountGroup | PlanningTransaction | DeletePayload
 }
 
 // Initiale Daten
@@ -197,11 +263,12 @@ InitialDataLoadMessage {
   tenant_id: string,
   payload: {
     accounts: Account[],
-    account_groups: AccountGroup[]
+    account_groups: AccountGroup[],
+    planning_transactions: PlanningTransaction[] // NEU
   }
 }
 
-// Sync-Acknowledgment-Nachrichten (NEU)
+// Sync-Acknowledgment-Nachrichten (NEU - In Entwicklung)
 SyncAckMessage {
   type: 'sync_ack',
   id: string,              // SyncQueueEntry.id
@@ -219,7 +286,8 @@ SyncNackMessage {
   entityType: EntityType,
   operationType: SyncOperationType,
   reason: string,          // Fehlergrund
-  detail?: string         // Detaillierte Fehlermeldung
+  detail?: string,         // Detaillierte Fehlermeldung
+  attempts?: number        // Anzahl Versuche
 }
 ```
 
@@ -242,7 +310,7 @@ SyncQueueEntry {
 }
 ```
 
-### Sync-Acknowledgment-System (NEU)
+### Sync-Acknowledgment-System (NEU - In Entwicklung)
 - **ACK-Nachrichten**: Backend bestätigt erfolgreiche Verarbeitung
 - **NACK-Nachrichten**: Backend meldet Fehler mit Grund und Details
 - **Queue-Management**: Einträge werden nur nach ACK entfernt
@@ -300,6 +368,11 @@ npm run dev          # Port 5173
 
 # Backend
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+# Tests
+npm run test:integration  # Integration Tests
+npm run test:watch       # Tests im Watch-Modus
+npm run test:coverage    # Test-Coverage
 ```
 
 ### Produktion (geplant)
@@ -328,31 +401,72 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 - **Data Volume**: SQLite-Performance bei sehr großen Datenmengen
 - **Sync Performance**: Abhängig von Netzwerklatenz und Datenvolumen
 
-## Testing-Infrastruktur
+## Testing-Infrastruktur (NEU - Vollständig implementiert)
 
 ### Frontend-Testing
 - **Framework**: Vitest 3.2.1 für Unit-Tests
+- **Environment**: jsdom 25.0.1 für DOM-Simulation
 - **Integration Tests**: Umfassende Sync-Funktionalitäts-Tests
 - **Test-Utilities**:
   - [`tests/mocks/mock-websocket-server.ts`](../tests/mocks/mock-websocket-server.ts) - WebSocket-Mock
   - [`tests/mocks/mock-tenant-service.ts`](../tests/mocks/mock-tenant-service.ts) - TenantDbService-Mock
   - [`tests/mocks/test-data-generators.ts`](../tests/mocks/test-data-generators.ts) - Test-Daten-Generierung
-- **Sync-Tests**:
-  - [`tests/integration/sync-integration.test.ts`](../tests/integration/sync-integration.test.ts)
-  - [`tests/integration/sync-error-handling.test.ts`](../tests/integration/sync-error-handling.test.ts)
-  - [`tests/integration/account-sync.test.ts`](../tests/integration/account-sync.test.ts)
-  - [`tests/integration/account-group-sync.test.ts`](../tests/integration/account-group-sync.test.ts)
+
+### Test-Kategorien
+- **Unit Tests**: Isolierte Tests für einzelne Funktionen
+- **Integration Tests**: End-to-End-Tests für Sync-Szenarien
+  - [`tests/integration/sync-integration.test.ts`](../tests/integration/sync-integration.test.ts) - Hauptintegrationstests (8 Tests)
+  - [`tests/integration/account-sync.test.ts`](../tests/integration/account-sync.test.ts) - Account-spezifische Tests (6 Tests)
+  - [`tests/integration/account-group-sync.test.ts`](../tests/integration/account-group-sync.test.ts) - AccountGroup-Tests (6 Tests)
+  - [`tests/integration/sync-error-handling.test.ts`](../tests/integration/sync-error-handling.test.ts) - Error-Handling-Tests (6 Tests)
+  - [`tests/planning-store-migration.test.ts`](../tests/planning-store-migration.test.ts) - Planning-Migration-Tests (NEU)
+
+### Mock-Architektur
+```typescript
+// MockWebSocketServer - Vollständiges Backend-Verhalten
+class MockWebSocketServer {
+  simulateOnlineMode(): void
+  simulateOfflineMode(): void
+  simulateAutoACK(): void
+  simulateAutoNACK(): void
+  simulatePartialFailure(): void
+  simulateNetworkDelay(ms: number): void
+}
+
+// MockTenantService - Isolierte Test-Umgebung
+class MockTenantService {
+  mockIndexedDB(): void
+  mockStores(): void
+  generateTestData(): TestData
+  manageSyncQueue(): SyncQueueManager
+}
+
+// TestDataGenerator - Konsistente Test-Daten
+class TestDataGenerator {
+  generateAccount(overrides?: Partial<Account>): Account
+  generateAccountGroup(overrides?: Partial<AccountGroup>): AccountGroup
+  generatePlanningTransaction(overrides?: Partial<PlanningTransaction>): PlanningTransaction
+  generateSyncQueueEntry(overrides?: Partial<SyncQueueEntry>): SyncQueueEntry
+  generateBatchData(count: number): TestData[]
+}
+```
+
+### Test-Strategien
+- **AAA-Pattern**: Arrange, Act, Assert für strukturierte Tests
+- **Mock-Driven**: Isolierte Tests ohne externe Abhängigkeiten
+- **Data-Driven**: Parametrisierte Tests mit `it.each`
+- **Performance-Tests**: Validierung von Sync-Latenz und Memory-Management
 
 ### Backend-Testing
 - **Framework**: Pytest 8.3.5
 - **Test-Coverage**: User/Tenant-Management, CRUD-Operationen
 - **Sync-Tests**: Geplant für WebSocket und Sync-Service
 
-### Test-Strategien
-- **Unit-Tests**: Isolierte Tests für einzelne Funktionen
-- **Integration-Tests**: End-to-End-Tests für Sync-Szenarien
-- **Mock-Services**: Isolierte Tests ohne externe Abhängigkeiten
-- **Performance-Tests**: Geplant für große Datenmengen
+### Test-Metriken
+- **Performance**: Sync-Latenz < 200ms für Online-Operationen
+- **Reliability**: Error-Recovery mit exponential backoff
+- **Memory**: Cleanup nach jedem Test verhindert Memory-Akkumulation
+- **Coverage**: 26 Integration Tests für kritische Sync-Szenarien
 
 ## Monitoring & Logging
 
@@ -369,6 +483,11 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 - **Format**: Strukturierte JSON-Logs mit Modulnamen und Details
 - **Sync-Logging**: Umfassende Logs für WebSocket und Sync-Service
 
+### Test-Logging (NEU)
+- **Debug-Modus**: Temporäres Logging in Tests für Debugging
+- **Test-Output**: Strukturierte Test-Ergebnisse mit Performance-Metriken
+- **Mock-Logging**: Verfolgung von Mock-Aufrufen und -Responses
+
 ### Metriken (geplant)
 - **Performance**: Response Times, Query Performance, Sync-Latenz
 - **Usage**: Feature Usage, User Engagement, Sync-Häufigkeit
@@ -382,11 +501,13 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 - ✅ **Sync-Architektur**: Bidirektionale Synchronisation für Accounts/AccountGroups
 - ✅ **WebSocket-Integration**: Echtzeit-Updates zwischen Frontend und Backend
 - ✅ **Testing-Setup**: Umfassende Integration-Tests für Sync-Funktionalität
+- ✅ **Planning-Funktionalität**: Vollständige Planning-Business-Logic implementiert
 
 ### In Entwicklung
 - 🔄 **Sync-Acknowledgment-System**: ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
 - 🔄 **WebSocket-Reconnection**: Verbessertes Reconnection-Handling mit exponential backoff
 - 🔄 **Performance-Optimierung**: Batch-Operationen und Paginierung
+- 🔄 **Planning-Synchronisation**: Integration von PlanningTransactions in Sync-System
 
 ### Geplante Entwicklungen
 - 📋 **Transaction-Synchronisation**: Erweitern der Sync auf Transaktionen
@@ -400,13 +521,35 @@ gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker
 - **Sync-Konsistenz**: Einheitliche Sync-Queue-Nutzung für alle Entitäten
 - **Queue-Management**: Automatische Bereinigung nach erfolgreicher Sync
 - **Error-Handling**: Einheitliche Patterns für alle Services
+- **Planning-Sync**: Integration von PlanningTransactions in Sync-System
 
 ### Mittlere Priorität
 - **Legacy-Code**: Vollständige Entfernung von localStorage-Resten
 - **API-Dokumentation**: Vollständige WebSocket-API-Dokumentation
 - **Performance**: Optimierung für große Datenmengen
+- **Test-Coverage**: Erweiterte Unit-Tests für alle Stores und Services
 
 ### Niedrige Priorität
 - **Code-Duplikation**: Refactoring ähnlicher Patterns in Stores
 - **Type-Safety**: Erweiterte TypeScript-Typisierung
 - **Bundle-Size**: Weitere Optimierung der Bundle-Größe
+- **Documentation**: Umfassende Code-Dokumentation
+
+## Neue Technologien und Updates
+
+### Kürzlich hinzugefügte Dependencies
+- **Vitest 3.2.1**: Upgrade von vorheriger Version für bessere Performance
+- **fake-indexeddb 6.0.0**: Für realistische IndexedDB-Tests
+- **jsdom 25.0.1**: Aktuelle Version für DOM-Simulation
+- **@types/node 22.15.29**: Aktuelle Node.js-Typen
+
+### Geplante Technology-Updates
+- **Vue 3.6**: Upgrade bei Verfügbarkeit
+- **TypeScript 5.6**: Upgrade für neue Features
+- **Vite 6.0**: Upgrade für Performance-Verbesserungen
+- **Dexie 5.0**: Upgrade für erweiterte IndexedDB-Features
+
+### Experimentelle Features
+- **WebAssembly**: Für Performance-kritische Berechnungen (Evaluierung)
+- **Web Workers**: Für Background-Sync-Verarbeitung (Planung)
+- **Service Workers**: Für PWA-Funktionalität (Vorbereitung)
