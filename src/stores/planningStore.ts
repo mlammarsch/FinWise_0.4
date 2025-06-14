@@ -24,6 +24,7 @@ import {
   AmountType,
   RecurrenceEndType,
   WeekendHandlingType,
+  SyncOperationType,
 } from '@/types';
 
 dayjs.extend(isSameOrBefore);
@@ -49,10 +50,9 @@ export const usePlanningStore = defineStore('planning', () => {
   );
 
   /* ---------------------------------------------- Actions */
-  async function addPlanningTransaction(p: Partial<PlanningTransaction>, fromSync = false) {
-    const id = uuidv4();
-    const tx: PlanningTransaction = {
-      id,
+  async function addPlanningTransaction(p: Partial<PlanningTransaction>, fromSync = false): Promise<PlanningTransaction> {
+    const planningTransactionWithTimestamp: PlanningTransaction = {
+      id: p.id || uuidv4(),
       name: p.name || '',
       accountId: p.accountId || '',
       categoryId: p.categoryId ?? null,
@@ -79,29 +79,65 @@ export const usePlanningStore = defineStore('planning', () => {
       transferToCategoryId: p.transferToCategoryId,
       counterPlanningTransactionId: p.counterPlanningTransactionId || null,
       autoExecute: p.autoExecute || false,
+      updated_at: p.updated_at || new Date().toISOString(),
     };
 
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (CREATE)
+      const localPlanningTransaction = await tenantDbService.getPlanningTransactionById(planningTransactionWithTimestamp.id);
+      if (localPlanningTransaction && localPlanningTransaction.updated_at && planningTransactionWithTimestamp.updated_at &&
+          new Date(localPlanningTransaction.updated_at) >= new Date(planningTransactionWithTimestamp.updated_at)) {
+        debugLog('PlanningStore', `addPlanningTransaction (fromSync): Lokale Planungstransaktion ${localPlanningTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localPlanningTransaction; // Gib die lokale, "gewinnende" Planungstransaktion zurück
+      }
+    }
+
     try {
-      const savedTx = await tenantDbService.createPlanningTransaction(tx);
-      planningTransactions.value.push(savedTx);
+      const savedTx = await tenantDbService.createPlanningTransaction(planningTransactionWithTimestamp);
+
+      // Lokaler State aktualisieren
+      const existingIndex = planningTransactions.value.findIndex(pt => pt.id === savedTx.id);
+      if (existingIndex !== -1) {
+        planningTransactions.value[existingIndex] = savedTx;
+      } else {
+        planningTransactions.value.push(savedTx);
+      }
 
       if (!fromSync) {
+        // Sync-Queue hinzufügen
+        await tenantDbService.addToSyncQueue('planningTransactions', 'create', savedTx);
+
         BalanceService.calculateMonthlyBalances();
         // TransactionService.schedule(tx); // Kommentiert aus, da Methode nicht existiert
         // ruleStore.evaluateRules(); // Kommentiert aus, da Methode nicht existiert
       }
 
-      debugLog('PlanningStore', `Planungstransaktion "${tx.name}" hinzugefügt`, { id });
+      debugLog('PlanningStore', `Planungstransaktion "${savedTx.name}" hinzugefügt`, { id: savedTx.id });
       return savedTx;
     } catch (error) {
-      debugLog('PlanningStore', `Fehler beim Hinzufügen der Planungstransaktion "${tx.name}"`, String(error));
+      debugLog('PlanningStore', `Fehler beim Hinzufügen der Planungstransaktion "${planningTransactionWithTimestamp.name}"`, String(error));
       throw error;
     }
   }
 
-  async function updatePlanningTransaction(id: string, upd: Partial<PlanningTransaction>, fromSync = false) {
+  async function updatePlanningTransaction(id: string, upd: Partial<PlanningTransaction>, fromSync = false): Promise<boolean> {
+    const updatesWithTimestamp = {
+      ...upd,
+      updated_at: upd.updated_at || new Date().toISOString()
+    };
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (UPDATE)
+      const localPlanningTransaction = await tenantDbService.getPlanningTransactionById(id);
+      if (localPlanningTransaction && localPlanningTransaction.updated_at && updatesWithTimestamp.updated_at &&
+          new Date(localPlanningTransaction.updated_at) >= new Date(updatesWithTimestamp.updated_at)) {
+        debugLog('PlanningStore', `updatePlanningTransaction (fromSync): Lokale Planungstransaktion ${id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return true; // Erfolgreich, aber keine Änderung
+      }
+    }
+
     try {
-      const success = await tenantDbService.updatePlanningTransaction(id, upd);
+      const success = await tenantDbService.updatePlanningTransaction(id, updatesWithTimestamp);
       if (!success) {
         debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" nicht gefunden für Update`);
         return false;
@@ -111,8 +147,13 @@ export const usePlanningStore = defineStore('planning', () => {
       if (idx !== -1) {
         planningTransactions.value[idx] = {
           ...planningTransactions.value[idx],
-          ...upd,
+          ...updatesWithTimestamp,
         };
+
+        if (!fromSync) {
+          // Sync-Queue hinzufügen
+          await tenantDbService.addToSyncQueue('planningTransactions', 'update', planningTransactions.value[idx]);
+        }
       }
 
       if (!fromSync) {
@@ -120,7 +161,7 @@ export const usePlanningStore = defineStore('planning', () => {
         // TransactionService.reschedule(planningTransactions.value[idx]); // Kommentiert aus, da Methode nicht existiert
       }
 
-      debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" aktualisiert`, Object.keys(upd).join(', '));
+      debugLog('PlanningStore', `Planungstransaktion mit ID "${id}" aktualisiert`, Object.keys(updatesWithTimestamp).join(', '));
       return true;
     } catch (error) {
       debugLog('PlanningStore', `Fehler beim Aktualisieren der Planungstransaktion mit ID "${id}"`, String(error));
@@ -128,9 +169,15 @@ export const usePlanningStore = defineStore('planning', () => {
     }
   }
 
-  async function deletePlanningTransaction(id: string, fromSync = false) {
+  async function deletePlanningTransaction(id: string, fromSync = false): Promise<boolean> {
     try {
       const tx = planningTransactions.value.find(p => p.id === id);
+
+      if (!fromSync && tx) {
+        // Sync-Queue hinzufügen vor dem Löschen
+        await tenantDbService.addToSyncQueue('planningTransactions', 'delete', { id });
+      }
+
       const success = await tenantDbService.deletePlanningTransaction(id);
 
       if (success) {
@@ -230,6 +277,25 @@ export const usePlanningStore = defineStore('planning', () => {
     debugLog('PlanningStore', 'Fehler bei der Initialisierung', String(error));
   });
 
+  /* ---------------------------------------- Sync-Handling */
+  function handleSyncMessage(operation: SyncOperationType, planningTransaction: PlanningTransaction) {
+    debugLog('PlanningStore', `handleSyncMessage: ${operation} für PlanningTransaction ${planningTransaction.id}`);
+
+    switch (operation) {
+      case SyncOperationType.CREATE:
+        addPlanningTransaction(planningTransaction, true);
+        break;
+      case SyncOperationType.UPDATE:
+        updatePlanningTransaction(planningTransaction.id, planningTransaction, true);
+        break;
+      case SyncOperationType.DELETE:
+        deletePlanningTransaction(planningTransaction.id, true);
+        break;
+      default:
+        debugLog('PlanningStore', `Unbekannte Sync-Operation: ${operation}`);
+    }
+  }
+
   /* ----------------------------------------------- Exports */
   return {
     planningTransactions,
@@ -241,5 +307,6 @@ export const usePlanningStore = defineStore('planning', () => {
     loadPlanningTransactions,
     savePlanningTransactions,
     reset,
+    handleSyncMessage,
   };
 });

@@ -1,12 +1,17 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger';
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types';
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type Recipient, type Tag, type AutomationRule, type PlanningTransaction, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types';
 import { watch } from 'vue';
 import { TenantDbService } from './TenantDbService';
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import { useAccountStore } from '@/stores/accountStore';
 import { useCategoryStore } from '@/stores/categoryStore';
+import { useRecipientStore } from '@/stores/recipientStore';
+import { useTagStore } from '@/stores/tagStore';
+import { useRuleStore } from '@/stores/ruleStore';
+import { usePlanningStore } from '@/stores/planningStore';
+import { useTransactionStore } from '@/stores/transactionStore';
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
@@ -79,6 +84,10 @@ export const WebSocketService = {
           const tenantStore = useTenantStore(); // tenantStore Instanz
           const accountStore = useAccountStore(); // accountStore Instanz
           const categoryStore = useCategoryStore(); // categoryStore Instanz
+          const recipientStore = useRecipientStore(); // recipientStore Instanz
+          const tagStore = useTagStore(); // tagStore Instanz
+          const ruleStore = useRuleStore(); // ruleStore Instanz
+          const planningStore = usePlanningStore(); // planningStore Instanz
 
           // Nachrichtenbehandlung für Backend-Status
           if (message.type === 'status') {
@@ -177,6 +186,97 @@ export const WebSocketService = {
                     infoLog('[WebSocketService]', `CategoryGroup ${categoryGroupData.id} deleted via WebSocket.`);
                   }
                   break;
+                case EntityTypeEnum.RECIPIENT:
+                  const recipientData = updateMessage.data as Recipient | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await recipientStore.addRecipient(recipientData as Recipient, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Recipient ${ (recipientData as Recipient).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await recipientStore.updateRecipient(recipientData as Recipient, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Recipient ${ (recipientData as Recipient).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for Recipient ${recipientData.id}`, {
+                      recipientData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await recipientStore.deleteRecipient(recipientData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Recipient ${recipientData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.TAG:
+                  const tagData = updateMessage.data as Tag | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await tagStore.addTag(tagData as Tag, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Tag ${ (tagData as Tag).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await tagStore.updateTag(tagData as Tag, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Tag ${ (tagData as Tag).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for Tag ${tagData.id}`, {
+                      tagData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await tagStore.deleteTag(tagData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Tag ${tagData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.RULE:
+                  const ruleData = updateMessage.data as AutomationRule | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await ruleStore.addRule(ruleData as AutomationRule, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await ruleStore.updateRule(ruleData as AutomationRule, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for AutomationRule ${ruleData.id}`, {
+                      ruleData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await ruleStore.deleteRule(ruleData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `AutomationRule ${ruleData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.PLANNING_TRANSACTION:
+                  const planningTransactionData = updateMessage.data as PlanningTransaction | DeletePayload;
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await planningStore.addPlanningTransaction(planningTransactionData as PlanningTransaction, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `PlanningTransaction ${ (planningTransactionData as PlanningTransaction).id } created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await planningStore.updatePlanningTransaction((planningTransactionData as PlanningTransaction).id, planningTransactionData as PlanningTransaction, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `PlanningTransaction ${ (planningTransactionData as PlanningTransaction).id } updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for PlanningTransaction ${planningTransactionData.id}`, {
+                      planningTransactionData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await planningStore.deletePlanningTransaction(planningTransactionData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `PlanningTransaction ${planningTransactionData.id} deleted via WebSocket.`);
+                  }
+                  break;
+                case EntityTypeEnum.TRANSACTION:
+                  const transactionStore = useTransactionStore();
+                  const transactionData = updateMessage.data as any | DeletePayload; // Using any for ExtendedTransaction compatibility
+                  if (updateMessage.operation_type === SyncOperationType.CREATE) {
+                    await transactionStore.addTransaction(transactionData as any, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} created via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
+                    await transactionStore.updateTransaction((transactionData as any).id, transactionData as any, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} updated via WebSocket.`);
+                  } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
+                    debugLog('[WebSocketService]', `Processing DELETE for Transaction ${transactionData.id}`, {
+                      transactionData,
+                      tenant_id: updateMessage.tenant_id,
+                      operation_type: updateMessage.operation_type
+                    });
+                    await transactionStore.deleteTransaction(transactionData.id, true); // true für 'fromSync'
+                    infoLog('[WebSocketService]', `Transaction ${transactionData.id} deleted via WebSocket.`);
+                  }
+                  break;
                 default:
                   warnLog('[WebSocketService]', `Unknown entity_type: ${updateMessage.entity_type}`);
               }
@@ -197,8 +297,8 @@ export const WebSocketService = {
               return;
             }
 
-            const { accounts, account_groups, categories, category_groups } = initialDataMessage.payload;
-            debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups, categories, category_groups });
+            const { accounts, account_groups, categories, category_groups, recipients, tags, automation_rules, planning_transactions, transactions } = initialDataMessage.payload;
+            debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups, categories, category_groups, recipients, tags, automation_rules, planning_transactions, transactions });
 
             // Hole pending DELETE-Operationen um zu vermeiden, dass gelöschte Entitäten wieder hinzugefügt werden
             const pendingDeletes = await this.getPendingDeleteOperations(tenantStore.activeTenantId!);
@@ -206,6 +306,8 @@ export const WebSocketService = {
             const pendingGroupDeletes = new Set(pendingDeletes.accountGroups);
             const pendingCategoryDeletes = new Set(pendingDeletes.categories);
             const pendingCategoryGroupDeletes = new Set(pendingDeletes.categoryGroups);
+            const pendingRecipientDeletes = new Set(pendingDeletes.recipients || []);
+            const pendingTagDeletes = new Set(pendingDeletes.tags || []);
 
             if (accounts && accounts.length > 0) {
               infoLog('[WebSocketService]', `Processing ${accounts.length} initial accounts.`);
@@ -269,6 +371,72 @@ export const WebSocketService = {
               }
             } else {
               infoLog('[WebSocketService]', 'No initial category groups received or categoryGroups array is empty.');
+            }
+
+            if (recipients && recipients.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${recipients.length} initial recipients.`);
+              for (const recipient of recipients) {
+                // Prüfe ob dieser Empfänger eine pending DELETE-Operation hat
+                if (pendingRecipientDeletes.has(recipient.id)) {
+                  warnLog('[WebSocketService]', `Skipping recipient ${recipient.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
+                debugLog('[WebSocketService]', 'Attempting to add recipient from initial load:', recipient);
+                await recipientStore.addRecipient(recipient, true); // fromSync = true
+                infoLog('[WebSocketService]', `Recipient ${recipient.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial recipients received or recipients array is empty.');
+            }
+
+            if (tags && tags.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${tags.length} initial tags.`);
+              for (const tag of tags) {
+                // Prüfe ob dieser Tag eine pending DELETE-Operation hat
+                if (pendingTagDeletes.has(tag.id)) {
+                  warnLog('[WebSocketService]', `Skipping tag ${tag.id} from initial load - pending DELETE operation exists`);
+                  continue;
+                }
+                debugLog('[WebSocketService]', 'Attempting to add tag from initial load:', tag);
+                await tagStore.addTag(tag, true); // fromSync = true
+                infoLog('[WebSocketService]', `Tag ${tag.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial tags received or tags array is empty.');
+            }
+
+            if (automation_rules && automation_rules.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${automation_rules.length} initial automation rules.`);
+              for (const rule of automation_rules) {
+                debugLog('[WebSocketService]', 'Attempting to add automation rule from initial load:', rule);
+                await ruleStore.addRule(rule, true); // fromSync = true
+                infoLog('[WebSocketService]', `AutomationRule ${rule.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial automation rules received or automation_rules array is empty.');
+            }
+
+            if (planning_transactions && planning_transactions.length > 0) {
+              infoLog('[WebSocketService]', `Processing ${planning_transactions.length} initial planning transactions.`);
+              for (const planningTransaction of planning_transactions) {
+                debugLog('[WebSocketService]', 'Attempting to add planning transaction from initial load:', planningTransaction);
+                await planningStore.addPlanningTransaction(planningTransaction, true); // fromSync = true
+                infoLog('[WebSocketService]', `PlanningTransaction ${planningTransaction.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial planning transactions received or planning_transactions array is empty.');
+            }
+
+            if (transactions && transactions.length > 0) {
+              const transactionStore = useTransactionStore();
+              infoLog('[WebSocketService]', `Processing ${transactions.length} initial transactions.`);
+              for (const transaction of transactions) {
+                debugLog('[WebSocketService]', 'Attempting to add transaction from initial load:', transaction);
+                await transactionStore.addTransaction(transaction as any, true); // fromSync = true, using any for ExtendedTransaction compatibility
+                infoLog('[WebSocketService]', `Transaction ${transaction.id} added/updated from initial load.`);
+              }
+            } else {
+              infoLog('[WebSocketService]', 'No initial transactions received or transactions array is empty.');
             }
             infoLog('[WebSocketService]', 'Finished processing InitialDataLoadMessage.');
           } else if (message.type === 'sync_ack') {
@@ -923,7 +1091,7 @@ export const WebSocketService = {
     }
   },
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[]}> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue um zu vermeiden,
      * dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
@@ -935,20 +1103,24 @@ export const WebSocketService = {
         accountDeletes: pendingDeletes.accounts.length,
         groupDeletes: pendingDeletes.accountGroups.length,
         categoryDeletes: pendingDeletes.categories?.length || 0,
-        categoryGroupDeletes: pendingDeletes.categoryGroups?.length || 0
+        categoryGroupDeletes: pendingDeletes.categoryGroups?.length || 0,
+        recipientDeletes: pendingDeletes.recipients?.length || 0,
+        tagDeletes: pendingDeletes.tags?.length || 0
       });
       return {
         accounts: pendingDeletes.accounts,
         accountGroups: pendingDeletes.accountGroups,
         categories: pendingDeletes.categories || [],
-        categoryGroups: pendingDeletes.categoryGroups || []
+        categoryGroups: pendingDeletes.categoryGroups || [],
+        recipients: pendingDeletes.recipients || [],
+        tags: pendingDeletes.tags || []
       };
     } catch (error) {
       errorLog('[WebSocketService]', 'Error retrieving pending DELETE operations', {
         error: error instanceof Error ? error.message : String(error),
         tenantId
       });
-      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
     }
   }
 };

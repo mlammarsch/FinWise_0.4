@@ -314,6 +314,11 @@ export interface InitialDataPayload {
   account_groups: AccountGroup[];
   categories: Category[];
   category_groups: CategoryGroup[];
+  recipients?: Recipient[];
+  tags?: Tag[];
+  automation_rules?: AutomationRule[];
+  planning_transactions?: PlanningTransaction[];
+  transactions?: Transaction[];
 }
 
 // Nachricht vom Server zum Client mit den initialen Daten

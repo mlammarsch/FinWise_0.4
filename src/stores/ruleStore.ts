@@ -19,68 +19,114 @@ export const useRuleStore = defineStore('rule', () => {
   const rules = ref<AutomationRule[]>([]);
 
   // ------------------------------------------------------------------ CRUD
-  async function addRule(rule: Omit<AutomationRule, 'id'>, fromSync: boolean = false) {
-    try {
-      const newRule: AutomationRule = {
-        ...rule,
-        id: uuidv4(),
-        updated_at: new Date().toISOString()
-      };
+  async function addRule(ruleData: Omit<AutomationRule, 'updated_at'> | AutomationRule, fromSync: boolean = false): Promise<AutomationRule> {
+    const ruleWithTimestamp: AutomationRule = {
+      ...ruleData,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updated_at: (ruleData as any).updated_at || new Date().toISOString(),
+    };
 
-      const tenantDbService = new TenantDbService();
-      const createdRule = await tenantDbService.createRule(newRule);
+    const tenantDbService = new TenantDbService();
 
-      rules.value.push(createdRule);
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (CREATE)
+      const localRule = await tenantDbService.getRuleById(ruleWithTimestamp.id);
+      if (localRule && localRule.updated_at && ruleWithTimestamp.updated_at &&
+          new Date(localRule.updated_at) >= new Date(ruleWithTimestamp.updated_at)) {
+        debugLog('RuleStore', `addRule (fromSync): Lokale Regel ${localRule.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        return localRule; // Gib die lokale, "gewinnende" Regel zurück
+      }
+      // Wenn eingehend neuer ist oder lokal nicht existiert, fahre fort mit DB-Update und Store-Update
+      await tenantDbService.createRule(ruleWithTimestamp); // createRule ist wie put, überschreibt wenn ID existiert
+      debugLog('RuleStore', `addRule (fromSync): Eingehende Regel ${ruleWithTimestamp.id} angewendet (neuer oder lokal nicht vorhanden).`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.createRule(ruleWithTimestamp);
+    }
 
-      if (!fromSync) {
+    const existingRuleIndex = rules.value.findIndex(r => r.id === ruleWithTimestamp.id);
+    if (existingRuleIndex === -1) {
+      rules.value.push(ruleWithTimestamp);
+    } else {
+      // LWW-Logik für den Store
+      if (!fromSync || (ruleWithTimestamp.updated_at && (!rules.value[existingRuleIndex].updated_at || new Date(ruleWithTimestamp.updated_at) > new Date(rules.value[existingRuleIndex].updated_at!)))) {
+        rules.value[existingRuleIndex] = ruleWithTimestamp;
+      }
+    }
+    debugLog('RuleStore', `Regel "${ruleWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${ruleWithTimestamp.id}).`);
+
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync) {
+      try {
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.RULE,
-          entityId: createdRule.id,
+          entityId: ruleWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: createdRule,
+          payload: ruleWithTimestamp,
         });
+        debugLog('RuleStore', `Regel "${ruleWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
+      } catch (e) {
+        errorLog('RuleStore', `Fehler beim Hinzufügen von Regel "${ruleWithTimestamp.name}" zur Sync Queue.`, e);
       }
-
-      debugLog('RuleStore', `Regel "${createdRule.name}" hinzugefügt`, { id: createdRule.id });
-      return createdRule;
-    } catch (error) {
-      errorLog('RuleStore', 'Fehler beim Hinzufügen der Regel', error);
-      throw error;
     }
+    return ruleWithTimestamp;
   }
 
   const getRuleById = computed(() => {
     return (id: string) => rules.value.find((r) => r.id === id);
   });
 
-  async function updateRule(id: string, updates: Partial<AutomationRule>, fromSync: boolean = false) {
-    try {
-      const tenantDbService = new TenantDbService();
-      const success = await tenantDbService.updateRule(id, updates);
+  async function updateRule(ruleUpdatesData: AutomationRule, fromSync: boolean = false): Promise<boolean> {
+    const ruleUpdatesWithTimestamp: AutomationRule = {
+      ...ruleUpdatesData,
+      updated_at: ruleUpdatesData.updated_at || new Date().toISOString(),
+    };
 
-      if (success) {
-        const idx = rules.value.findIndex((r) => r.id === id);
-        if (idx !== -1) {
-          rules.value[idx] = { ...rules.value[idx], ...updates, updated_at: new Date().toISOString() };
+    const tenantDbService = new TenantDbService();
+
+    if (fromSync) {
+      // LWW-Logik für eingehende Sync-Daten (UPDATE)
+      const localRule = await tenantDbService.getRuleById(ruleUpdatesWithTimestamp.id);
+      if (localRule && localRule.updated_at && ruleUpdatesWithTimestamp.updated_at &&
+          new Date(localRule.updated_at) >= new Date(ruleUpdatesWithTimestamp.updated_at)) {
+        debugLog('RuleStore', `updateRule (fromSync): Lokale Regel ${localRule.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        // Store mit lokalen Daten "auffrischen", falls er abweicht
+        const storeIdx = rules.value.findIndex(r => r.id === localRule.id);
+        if (storeIdx !== -1 && JSON.stringify(rules.value[storeIdx]) !== JSON.stringify(localRule)) {
+          rules.value[storeIdx] = localRule;
         }
-
-        if (!fromSync) {
-          await tenantDbService.addSyncQueueEntry({
-            entityType: EntityTypeEnum.RULE,
-            entityId: id,
-            operationType: SyncOperationType.UPDATE,
-            payload: { ...updates, id },
-          });
-        }
-
-        debugLog('RuleStore', `Regel mit ID ${id} aktualisiert`);
+        return true; // Erfolgreich, aber lokale Daten beibehalten
       }
-
-      return success;
-    } catch (error) {
-      errorLog('RuleStore', 'Fehler beim Aktualisieren der Regel', error);
-      return false;
+      // Wenn eingehend neuer ist, fahre fort mit DB-Update und Store-Update
+      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, ruleUpdatesWithTimestamp);
+      debugLog('RuleStore', `updateRule (fromSync): Eingehende Regel ${ruleUpdatesWithTimestamp.id} angewendet (neuer).`);
+    } else { // Lokale Änderung (!fromSync)
+      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, ruleUpdatesWithTimestamp);
     }
+
+    // Store-Update mit LWW-Logik
+    const existingRuleIndex = rules.value.findIndex(r => r.id === ruleUpdatesWithTimestamp.id);
+    if (existingRuleIndex !== -1) {
+      if (!fromSync || (ruleUpdatesWithTimestamp.updated_at && (!rules.value[existingRuleIndex].updated_at || new Date(ruleUpdatesWithTimestamp.updated_at) > new Date(rules.value[existingRuleIndex].updated_at!)))) {
+        rules.value[existingRuleIndex] = ruleUpdatesWithTimestamp;
+      }
+    }
+    debugLog('RuleStore', `Regel "${ruleUpdatesWithTimestamp.name}" im Store aktualisiert (ID: ${ruleUpdatesWithTimestamp.id}).`);
+
+    // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
+    if (!fromSync) {
+      try {
+        await tenantDbService.addSyncQueueEntry({
+          entityType: EntityTypeEnum.RULE,
+          entityId: ruleUpdatesWithTimestamp.id,
+          operationType: SyncOperationType.UPDATE,
+          payload: ruleUpdatesWithTimestamp,
+        });
+        debugLog('RuleStore', `Regel "${ruleUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
+      } catch (e) {
+        errorLog('RuleStore', `Fehler beim Hinzufügen von Regel "${ruleUpdatesWithTimestamp.name}" zur Sync Queue.`, e);
+      }
+    }
+    return true;
   }
 
   async function deleteRule(id: string, fromSync: boolean = false) {
@@ -215,6 +261,25 @@ export const useRuleStore = defineStore('rule', () => {
     await loadRules();
   }
 
+  // WebSocket-Sync-Message-Handler
+  function handleSyncMessage(operation: SyncOperationType, rule: AutomationRule) {
+    debugLog('RuleStore', `handleSyncMessage: ${operation} für Regel ${rule.id}`, rule);
+
+    switch (operation) {
+      case SyncOperationType.CREATE:
+        addRule(rule, true); // fromSync = true
+        break;
+      case SyncOperationType.UPDATE:
+        updateRule(rule, true); // fromSync = true
+        break;
+      case SyncOperationType.DELETE:
+        deleteRule(rule.id, true); // fromSync = true
+        break;
+      default:
+        errorLog('RuleStore', `Unbekannte Sync-Operation: ${operation}`, { rule });
+    }
+  }
+
   // Initialisierung
   loadRules();
 
@@ -229,6 +294,8 @@ export const useRuleStore = defineStore('rule', () => {
     loadRules,
     /* engine */
     applyRulesToTransaction,
+    /* sync */
+    handleSyncMessage,
     /* util */
     reset,
   };

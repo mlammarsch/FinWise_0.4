@@ -1,7 +1,7 @@
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, QueueStatistics, PlanningTransaction } from '@/types';
 import type { ExtendedTransaction } from '@/stores/transactionStore';
-import { SyncStatus } from '@/types';
+import { SyncStatus, EntityTypeEnum, SyncOperationType } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -522,14 +522,14 @@ export class TenantDbService {
     }
   }
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[]}> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue.
      * Wird verwendet um zu vermeiden, dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
      */
     if (!this.db) {
       warnLog('TenantDbService', 'getPendingDeleteOperations: Keine aktive Mandanten-DB verfügbar.');
-      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
     }
 
     try {
@@ -544,6 +544,8 @@ export class TenantDbService {
       const accountGroups: string[] = [];
       const categories: string[] = [];
       const categoryGroups: string[] = [];
+      const recipients: string[] = [];
+      const tags: string[] = [];
 
       for (const entry of pendingDeletes) {
         if (entry.entityType === 'Account') {
@@ -554,16 +556,20 @@ export class TenantDbService {
           categories.push(entry.entityId);
         } else if (entry.entityType === 'CategoryGroup') {
           categoryGroups.push(entry.entityId);
+        } else if (entry.entityType === 'Recipient') {
+          recipients.push(entry.entityId);
+        } else if (entry.entityType === 'Tag') {
+          tags.push(entry.entityId);
         }
       }
 
-      debugLog('TenantDbService', `Found ${accounts.length} pending account deletes, ${accountGroups.length} pending account group deletes, ${categories.length} pending category deletes and ${categoryGroups.length} pending category group deletes for tenant ${tenantId}`);
+      debugLog('TenantDbService', `Found ${accounts.length} pending account deletes, ${accountGroups.length} pending account group deletes, ${categories.length} pending category deletes, ${categoryGroups.length} pending category group deletes, ${recipients.length} pending recipient deletes and ${tags.length} pending tag deletes for tenant ${tenantId}`);
 
-      return { accounts, accountGroups, categories, categoryGroups };
+      return { accounts, accountGroups, categories, categoryGroups, recipients, tags };
 
     } catch (error) {
       errorLog('TenantDbService', 'Error getting pending DELETE operations', { error, tenantId });
-      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [] };
+      return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
     }
   }
 
@@ -1078,5 +1084,59 @@ export class TenantDbService {
       errorLog('TenantDbService', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, { id, error: err });
       return false;
     }
+  }
+
+  // Sync-Queue-Methoden
+  async addToSyncQueue(tableName: string, operation: 'create' | 'update' | 'delete', entity: any): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addToSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    try {
+      const tenantStore = useTenantStore();
+      const syncEntry: SyncQueueEntry = {
+        id: uuidv4(),
+        tenantId: tenantStore.activeTenantId || '',
+        entityType: this.getEntityTypeFromTableName(tableName),
+        entityId: entity.id,
+        operationType: this.getSyncOperationType(operation),
+        payload: entity,
+        timestamp: Date.now(),
+        status: SyncStatus.PENDING,
+        attempts: 0
+      };
+
+      const plainSyncEntry = this.toPlainObject(syncEntry);
+      await this.db.syncQueue.add(plainSyncEntry);
+      debugLog('TenantDbService', `Sync-Queue-Eintrag für ${tableName} ${operation} hinzugefügt`, { entityId: entity.id });
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen zur Sync-Queue für ${tableName} ${operation}`, { entity, error: err });
+      throw err;
+    }
+  }
+
+  private getEntityTypeFromTableName(tableName: string): EntityTypeEnum {
+    const mapping: Record<string, EntityTypeEnum> = {
+      'accounts': EntityTypeEnum.ACCOUNT,
+      'accountGroups': EntityTypeEnum.ACCOUNT_GROUP,
+      'categories': EntityTypeEnum.CATEGORY,
+      'categoryGroups': EntityTypeEnum.CATEGORY_GROUP,
+      'recipients': EntityTypeEnum.RECIPIENT,
+      'tags': EntityTypeEnum.TAG,
+      'automationRules': EntityTypeEnum.RULE,
+      'planningTransactions': EntityTypeEnum.PLANNING_TRANSACTION,
+      'transactions': EntityTypeEnum.TRANSACTION
+    };
+    return mapping[tableName] || EntityTypeEnum.ACCOUNT;
+  }
+
+  private getSyncOperationType(operation: 'create' | 'update' | 'delete'): SyncOperationType {
+    const mapping: Record<string, SyncOperationType> = {
+      'create': SyncOperationType.CREATE,
+      'update': SyncOperationType.UPDATE,
+      'delete': SyncOperationType.DELETE
+    };
+    return mapping[operation];
   }
 }
