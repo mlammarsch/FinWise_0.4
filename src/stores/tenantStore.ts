@@ -218,7 +218,7 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
           tenants.value[idx].tenantName = tenantName.trim();
           tenants.value[idx].updatedAt = now;
         }
-        debugLog('tenantStore', 'updateTenant: Tenant aktualisiert', { id, tenantName });
+        debugLog('tenantStore', 'updateTenant: Tenant lokal aktualisiert', { id, tenantName });
         return true;
       }
       warnLog('tenantStore', 'updateTenant: Tenant nicht gefunden oder keine Änderungen', { id });

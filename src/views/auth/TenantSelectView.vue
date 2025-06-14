@@ -6,19 +6,36 @@
  * erlaubt Auswahl oder Neuanlage.
  */
 
-import { ref, computed, nextTick } from "vue";
+import { ref, computed, nextTick, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { TenantService } from "@/services/TenantService";
 import { useSessionStore } from "@/stores/sessionStore";
-import { debugLog } from "@/utils/logger";
+import { useWebSocketStore } from "@/stores/webSocketStore";
+import { BackendAvailabilityService } from "@/services/BackendAvailabilityService";
+import { debugLog, infoLog, errorLog } from "@/utils/logger";
+import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
+import { Icon } from "@iconify/vue";
 
 const router = useRouter();
 const session = useSessionStore();
+const webSocketStore = useWebSocketStore();
 
 const newTenantName = ref("");
 const showCreate = ref(false);
 
+// Neue State-Variablen für Lösch-Funktionalität
+const showDeleteModal = ref(false);
+const deleteTargetId = ref<string | null>(null);
+
 const tenants = computed(() => TenantService.getOwnTenants());
+
+// Backend-Verfügbarkeit über zentralen Service
+const isButtonEnabled = BackendAvailabilityService.isButtonEnabled;
+
+// Backend-Status beim Mount prüfen
+onMounted(() => {
+  BackendAvailabilityService.startPeriodicChecks();
+});
 
 function selectTenant(id: string) {
   debugLog("[TenantSelectView] selectTenant", JSON.stringify({ tenantId: id }));
@@ -36,6 +53,27 @@ async function createTenant() {
   router.push("/");
 }
 
+// Neue Funktionen für Lösch-Funktionalität
+function confirmDeleteTenant(tenantId: string) {
+  deleteTargetId.value = tenantId;
+  showDeleteModal.value = true;
+}
+
+async function deleteTenant() {
+  if (deleteTargetId.value) {
+    try {
+      await TenantService.deleteTenantCompletely(deleteTargetId.value);
+      debugLog("[TenantSelectView] deleteTenantCompletely", {
+        id: deleteTargetId.value,
+      });
+    } catch (error) {
+      debugLog("[TenantSelectView] deleteTenantCompletely error", error);
+    }
+  }
+  showDeleteModal.value = false;
+  deleteTargetId.value = null;
+}
+
 nextTick(() => {
   // Falls bereits ein Tenant aktiv ist → sofort weiter
   if (session.currentTenantId) router.push("/");
@@ -49,16 +87,54 @@ nextTick(() => {
         <h2 class="text-xl font-bold text-center">Mandant wählen</h2>
 
         <template v-if="tenants.length">
-          <ul class="menu w-full">
-            <li
+          <div class="space-y-2">
+            <div
               v-for="t in tenants"
               :key="t.uuid"
-              @click="selectTenant(t.uuid)"
-              class="rounded-box cursor-pointer hover:bg-base-200"
+              class="flex items-center justify-between p-3 rounded-box hover:bg-base-200 border border-base-300"
             >
-              <span>{{ t.tenantName }}</span>
-            </li>
-          </ul>
+              <span
+                @click="selectTenant(t.uuid)"
+                class="flex-1 cursor-pointer text-left"
+              >
+                {{ t.tenantName }}
+              </span>
+              <!-- Trashcan-Button (immer sichtbar aber disabled wenn offline) -->
+              <button
+                class="btn btn-ghost btn-sm"
+                :class="
+                  isButtonEnabled ? 'text-error' : 'text-error opacity-50'
+                "
+                :disabled="!isButtonEnabled"
+                @click="
+                  if (isButtonEnabled) {
+                    confirmDeleteTenant(t.uuid);
+                  } else {
+                    debugLog(
+                      '[TenantSelectView] Trash-Button disabled - Backend offline',
+                      {
+                        tenantId: t.uuid,
+                        isBackendOnline:
+                          BackendAvailabilityService.isOnline.value,
+                        isCheckingBackend:
+                          BackendAvailabilityService.isChecking.value,
+                      }
+                    );
+                  }
+                "
+                :title="
+                  BackendAvailabilityService.getTooltipText('Mandant löschen')
+                "
+              >
+                <Icon
+                  :icon="
+                    isButtonEnabled ? 'mdi:trash-can' : 'mdi:trash-can-outline'
+                  "
+                  class="text-base"
+                />
+              </button>
+            </div>
+          </div>
         </template>
 
         <p
@@ -95,5 +171,16 @@ nextTick(() => {
         </div>
       </div>
     </div>
+
+    <!-- Delete Confirmation -->
+    <ConfirmationModal
+      v-if="showDeleteModal"
+      title="Mandant löschen"
+      message="Möchtest Du diesen Mandanten wirklich vollständig löschen? Alle Daten gehen verloren!"
+      confirmText="Löschen"
+      cancelText="Abbrechen"
+      @confirm="deleteTenant"
+      @cancel="showDeleteModal = false"
+    />
   </div>
 </template>

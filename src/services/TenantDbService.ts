@@ -585,6 +585,120 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Löscht die komplette IndexedDB für den aktuellen Mandanten
+   */
+  async deleteTenantDatabase(): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteTenantDatabase: Keine aktive Mandanten-DB verfügbar.');
+      return;
+    }
+
+    try {
+      const tenantStore = useTenantStore();
+      const currentTenantId = tenantStore.activeTenantId;
+
+      if (!currentTenantId) {
+        throw new Error('Kein aktiver Mandant verfügbar.');
+      }
+
+      // Schließe die Datenbank-Verbindung
+      this.db.close();
+
+      // Lösche die komplette Datenbank
+      await this.db.delete();
+
+      // Setze die DB-Referenz im TenantStore zurück
+      tenantStore.activeTenantDB = null;
+
+      debugLog('TenantDbService', `IndexedDB für Mandant ${currentTenantId} vollständig gelöscht.`);
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Löschen der Mandanten-Datenbank', { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Setzt die IndexedDB für den aktuellen Mandanten zurück und initialisiert sie neu
+   */
+  async resetTenantDatabase(): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'resetTenantDatabase: Keine aktive Mandanten-DB verfügbar.');
+      return;
+    }
+
+    try {
+      const tenantStore = useTenantStore();
+      const currentTenantId = tenantStore.activeTenantId;
+
+      if (!currentTenantId) {
+        throw new Error('Kein aktiver Mandant verfügbar.');
+      }
+
+      // Lösche alle Daten aus allen Tabellen
+      await this.db.transaction('rw', [
+        this.db.accounts,
+        this.db.accountGroups,
+        this.db.categories,
+        this.db.categoryGroups,
+        this.db.transactions,
+        this.db.planningTransactions,
+        this.db.tags,
+        this.db.recipients,
+        this.db.rules,
+        this.db.syncQueue
+      ], async () => {
+        await Promise.all([
+          this.db!.accounts.clear(),
+          this.db!.accountGroups.clear(),
+          this.db!.categories.clear(),
+          this.db!.categoryGroups.clear(),
+          this.db!.transactions.clear(),
+          this.db!.planningTransactions.clear(),
+          this.db!.tags.clear(),
+          this.db!.recipients.clear(),
+          this.db!.rules.clear(),
+          this.db!.syncQueue.clear()
+        ]);
+      });
+
+      debugLog('TenantDbService', `IndexedDB für Mandant ${currentTenantId} zurückgesetzt.`);
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Zurücksetzen der Mandanten-Datenbank', { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Löscht alle SyncQueue-Einträge für den aktuellen Mandanten
+   */
+  async clearSyncQueue(): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'clearSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+      return;
+    }
+
+    try {
+      const tenantStore = useTenantStore();
+      const currentTenantId = tenantStore.activeTenantId;
+
+      if (!currentTenantId) {
+        throw new Error('Kein aktiver Mandant verfügbar.');
+      }
+
+      // Lösche alle SyncQueue-Einträge für den aktuellen Mandanten
+      const deletedCount = await this.db.syncQueue
+        .where('tenantId')
+        .equals(currentTenantId)
+        .delete();
+
+      debugLog('TenantDbService', `${deletedCount} SyncQueue-Einträge für Mandant ${currentTenantId} gelöscht.`);
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Löschen der SyncQueue-Einträge', { error: err });
+      throw err;
+    }
+  }
+
   async addTransaction(transaction: ExtendedTransaction): Promise<void> {
     if (!this.db) {
       warnLog('TenantDbService', 'addTransaction: Keine aktive Mandanten-DB verfügbar.');

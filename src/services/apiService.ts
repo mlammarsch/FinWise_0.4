@@ -81,6 +81,21 @@ export const apiService = {
     apiService.get<TenantFromApi[]>(`/tenants?user_id=${userId}`),
   createTenant: (tenantData: Omit<TenantFromApi, 'uuid' | 'createdAt' | 'updatedAt'>) =>
     apiService.post<TenantFromApi, Omit<TenantFromApi, 'uuid' | 'createdAt' | 'updatedAt'>>('/tenants', tenantData),
+
+  // Mandanten-Verwaltungs-APIs
+  updateTenant: (tenantId: string, tenantData: { name: string }, userId: string) =>
+    apiService.put<TenantFromApi, { name: string }>(`/tenants/${tenantId}?user_id=${userId}`, tenantData),
+  deleteTenantCompletely: (tenantId: string, userId: string) =>
+    apiService.delete<void>(`/tenants/${tenantId}/complete?user_id=${userId}`),
+  resetTenantDatabase: (tenantId: string, userId: string) =>
+    apiService.post<void, {}>(`/tenants/${tenantId}/reset-database?user_id=${userId}`, {}),
+  resetTenantToInitialState: (tenantId: string, userId: string) =>
+    apiService.post<void, {}>(`/tenants/${tenantId}/reset-to-initial?user_id=${userId}`, {}),
+  clearTenantSyncQueue: (tenantId: string, userId: string) =>
+    apiService.delete<void>(`/tenants/${tenantId}/sync-queue?user_id=${userId}`),
+
+  // Backend-Verfügbarkeits-Check
+  ping: () => apiService.get<{ status: string; message: string }>('/ping'),
 };
 
 export interface RegisterUserPayload {

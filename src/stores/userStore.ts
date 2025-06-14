@@ -519,14 +519,25 @@ export const useUserStore = defineStore('user', () => {
       }
 
       for (const lTenantToPush of tenantsToPushToBackend) {
+        const bTenant = backendTenants.find(t => t.uuid === lTenantToPush.uuid);
+
         try {
-          infoLog('userStore', `syncUserTenants: Versuche, lokalen Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") zum Backend zu pushen.`);
-          const payload = {
-            uuid: lTenantToPush.uuid,
-            name: lTenantToPush.tenantName,
-            user_id: lTenantToPush.user_id,
-          };
-          const backendTenantResponse = await apiService.createTenant(payload);
+          let backendTenantResponse: TenantFromApi;
+
+          if (!bTenant) {
+            // Tenant existiert nicht im Backend - erstellen
+            infoLog('userStore', `syncUserTenants: Erstelle neuen Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") im Backend.`);
+            const payload = {
+              uuid: lTenantToPush.uuid,
+              name: lTenantToPush.tenantName,
+              user_id: lTenantToPush.user_id,
+            };
+            backendTenantResponse = await apiService.createTenant(payload);
+          } else {
+            // Tenant existiert bereits - aktualisieren
+            infoLog('userStore', `syncUserTenants: Aktualisiere existierenden Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") im Backend.`);
+            backendTenantResponse = await apiService.updateTenant(lTenantToPush.uuid, { name: lTenantToPush.tenantName }, lTenantToPush.user_id);
+          }
 
           const updatedDbTenant: DbTenant = {
             uuid: backendTenantResponse.uuid,
@@ -542,10 +553,10 @@ export const useUserStore = defineStore('user', () => {
           let errorMessage = 'Unbekannter Synchronisationsfehler beim Pushen des Tenants';
           if (error instanceof Error) {
             errorMessage = error.message;
-            if (errorMessage.includes('already exists for this user')) {
+            if (errorMessage.includes('already exists for this user') || errorMessage.includes('400')) {
                warnLog(
                 'userStore',
-                `syncUserTenants: Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") existiert bereits im Backend. Synchronisation wird als behandelt betrachtet.`,
+                `syncUserTenants: Tenant ${lTenantToPush.uuid} ("${lTenantToPush.tenantName}") existiert bereits im Backend oder Validierungsfehler. Überspringe.`,
                 { tenantUuid: lTenantToPush.uuid, originalErrorMessage: errorMessage },
               );
               continue;
