@@ -17,7 +17,8 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.accounts.put(account);
+      const plainAccount = this.toPlainObject(account);
+      await this.db.accounts.put(plainAccount);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) hinzugefügt.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen des Kontos "${account.name}"`, { account, error: err });
@@ -32,7 +33,8 @@ export class TenantDbService {
     }
     try {
       debugLog('TenantDbService', 'updateAccount', 'Putting account into DB', account);
-      await this.db.accounts.put(account);
+      const plainAccount = this.toPlainObject(account);
+      await this.db.accounts.put(plainAccount);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) aktualisiert.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren des Kontos "${account.name}"`, { account, error: err });
@@ -162,7 +164,8 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.categories.put(category);
+      const plainCategory = this.toPlainObject(category);
+      await this.db.categories.put(plainCategory);
       debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) hinzugefügt.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen der Kategorie "${category.name}"`, { category, error: err });
@@ -176,7 +179,8 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.categories.put(category);
+      const plainCategory = this.toPlainObject(category);
+      await this.db.categories.put(plainCategory);
       debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) aktualisiert.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren der Kategorie "${category.name}"`, { category, error: err });
@@ -569,7 +573,10 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.transactions.put(transaction);
+      // Konvertiere transaction zu plain object
+      const plainTransaction = this.toPlainObject(transaction);
+
+      await this.db.transactions.put(plainTransaction);
       debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) hinzugefügt.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen der Transaktion "${transaction.description}"`, { transaction, error: err });
@@ -583,7 +590,10 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
-      await this.db.transactions.put(transaction);
+      // Konvertiere transaction zu plain object
+      const plainTransaction = this.toPlainObject(transaction);
+
+      await this.db.transactions.put(plainTransaction);
       debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) aktualisiert.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren der Transaktion "${transaction.description}"`, { transaction, error: err });
@@ -978,7 +988,8 @@ export class TenantDbService {
         ...planningTransaction,
         updated_at: new Date().toISOString()
       };
-      await this.db.planningTransactions.put(planningTransactionWithTimestamp);
+      const plainPlanningTransaction = this.toPlainObject(planningTransactionWithTimestamp);
+      await this.db.planningTransactions.put(plainPlanningTransaction);
       debugLog('TenantDbService', `Planungstransaktion "${planningTransaction.name}" (ID: ${planningTransaction.id}) erstellt.`);
       return planningTransactionWithTimestamp;
     } catch (err) {
@@ -1038,7 +1049,8 @@ export class TenantDbService {
         updated_at: new Date().toISOString()
       };
 
-      await this.db.planningTransactions.put(updatedPlanningTransaction);
+      const plainUpdatedPlanningTransaction = this.toPlainObject(updatedPlanningTransaction);
+      await this.db.planningTransactions.put(plainUpdatedPlanningTransaction);
       debugLog('TenantDbService', `Planungstransaktion "${updatedPlanningTransaction.name}" (ID: ${id}) aktualisiert.`);
       return true;
     } catch (err) {
