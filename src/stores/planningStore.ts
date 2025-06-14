@@ -56,7 +56,7 @@ export const usePlanningStore = defineStore('planning', () => {
       name: p.name || '',
       accountId: p.accountId || '',
       categoryId: p.categoryId ?? null,
-      tagIds: p.tagIds || [],
+      tagIds: Array.isArray(p.tagIds) ? [...p.tagIds] : [], // Ensure plain array
       recipientId: p.recipientId ?? null,
       amount: p.amount || 0,
       amountType: p.amountType || AmountType.EXACT,

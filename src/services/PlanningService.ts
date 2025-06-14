@@ -733,5 +733,27 @@ export const PlanningService = {
     }
 
     return updatedForecastsCount;
+  },
+
+  /**
+   * Aktualisiert eine bestehende Planungstransaktion
+   */
+  async updatePlanningTransaction(planningId: string, updatedPlanning: Partial<PlanningTransaction>) {
+    const planningStore = usePlanningStore();
+
+    debugLog("[PlanningService]", `updatePlanningTransaction - Aktualisiere Planung ${planningId}`, {
+      planningId,
+      updatedPlanning
+    });
+
+    // Planungstransaktion im Store aktualisieren
+    const result = await planningStore.updatePlanningTransaction(planningId, updatedPlanning);
+
+    debugLog("[PlanningService]", "updatePlanningTransaction - Aktualisiert", { result });
+
+    // Balance neu berechnen
+    BalanceService.calculateMonthlyBalances();
+
+    return result;
   }
 };

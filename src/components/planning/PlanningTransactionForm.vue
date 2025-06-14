@@ -473,9 +473,10 @@ function savePlanningTransaction() {
       : null;
 
   // Basis-Daten für alle Transaktionstypen
+
   let finalData = {
     name: name.value,
-    tagIds: tagIds.value,
+    tagIds: Array.isArray(tagIds.value) ? [...tagIds.value] : [], // Shallow copy to break Vue reactivity
     amount: amount.value,
     amountType: amountType.value,
     approximateAmount: approximateAmount.value,
@@ -929,7 +930,13 @@ function saveRuleAndCloseModal(ruleData: any) {
                 required
                 aria-describedby="target-account-validation"
               >
-                <option value="" disabled selected>Bitte wählen</option>
+                <option
+                  value=""
+                  disabled
+                  selected
+                >
+                  Bitte wählen
+                </option>
                 <option
                   v-for="account in filteredAccounts"
                   :key="account.id"
@@ -1017,7 +1024,10 @@ function saveRuleAndCloseModal(ruleData: any) {
       </div>
 
       <!-- TAB 2 -->
-      <div v-if="activeTab === 'recurrence'" class="space-y-4">
+      <div
+        v-if="activeTab === 'recurrence'"
+        class="space-y-4"
+      >
         <fieldset class="fieldset">
           <div class="card bg-base-200 p-4 rounded-lg">
             <legend class="fieldset-legend">Einstellungen Wiederholung</legend>
@@ -1033,7 +1043,10 @@ function saveRuleAndCloseModal(ruleData: any) {
                     />
                   </label>
                 </div>
-                <div v-if="repeatsEnabled" class="space-y-4">
+                <div
+                  v-if="repeatsEnabled"
+                  class="space-y-4"
+                >
                   <div class="form-control">
                     <label class="label pb-1">
                       <span class="label-text">Frequenz</span>
@@ -1235,7 +1248,10 @@ function saveRuleAndCloseModal(ruleData: any) {
                     {{ upcomingDates[0].date }} ({{ upcomingDates[0].day }})
                   </div>
                 </div>
-                <p v-else-if="!startDate" class="text-sm text-warning">
+                <p
+                  v-else-if="!startDate"
+                  class="text-sm text-warning"
+                >
                   Bitte ein Startdatum wählen.
                 </p>
               </div>
@@ -1250,7 +1266,11 @@ function saveRuleAndCloseModal(ruleData: any) {
       <div class="form-control">
         <label class="cursor-pointer label">
           <span class="label-text">Aktiv</span>
-          <input type="checkbox" class="toggle" v-model="isActive" />
+          <input
+            type="checkbox"
+            class="toggle"
+            v-model="isActive"
+          />
         </label>
       </div>
     </fieldset>
@@ -1260,19 +1280,33 @@ function saveRuleAndCloseModal(ruleData: any) {
       <div class="form-control">
         <label class="cursor-pointer label">
           <span class="label-text">Nur Prognosebuchung</span>
-          <input type="checkbox" class="toggle" v-model="forecastOnly" />
+          <input
+            type="checkbox"
+            class="toggle"
+            v-model="forecastOnly"
+          />
         </label>
-        <p class="text-xs text-base-content/70 pl-4" v-if="forecastOnly">
+        <p
+          class="text-xs text-base-content/70 pl-4"
+          v-if="forecastOnly"
+        >
           Bei aktivierter Option werden keine echten Transaktionen erzeugt.
         </p>
       </div>
     </fieldset>
 
     <div class="flex justify-end space-x-2 pt-6">
-      <button type="button" class="btn btn-ghost" @click="$emit('cancel')">
+      <button
+        type="button"
+        class="btn btn-ghost"
+        @click="$emit('cancel')"
+      >
         Abbrechen
       </button>
-      <button type="submit" class="btn btn-primary">
+      <button
+        type="submit"
+        class="btn btn-primary"
+      >
         {{ isEdit ? "Änderungen speichern" : "Planung erstellen" }}
       </button>
     </div>
