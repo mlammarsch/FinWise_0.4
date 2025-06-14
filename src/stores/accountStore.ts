@@ -78,7 +78,7 @@ export const useAccountStore = defineStore('account', () => {
           entityType: EntityTypeEnum.ACCOUNT,
           entityId: accountWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: accountWithTimestamp,
+          payload: tenantDbService.toPlainObject(accountWithTimestamp),
         });
         infoLog('accountStore', `Account "${accountWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -139,7 +139,7 @@ export const useAccountStore = defineStore('account', () => {
             entityType: EntityTypeEnum.ACCOUNT,
             entityId: accountUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: accountUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(accountUpdatesWithTimestamp),
           });
           infoLog('accountStore', `Account "${accountUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
@@ -225,7 +225,7 @@ export const useAccountStore = defineStore('account', () => {
           entityType: EntityTypeEnum.ACCOUNT_GROUP,
           entityId: accountGroupWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: accountGroupWithTimestamp,
+          payload: tenantDbService.toPlainObject(accountGroupWithTimestamp),
         });
         infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -278,7 +278,7 @@ export const useAccountStore = defineStore('account', () => {
             entityType: EntityTypeEnum.ACCOUNT_GROUP,
             entityId: accountGroupUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: accountGroupUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(accountGroupUpdatesWithTimestamp),
           });
           infoLog('accountStore', `AccountGroup "${accountGroupUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {

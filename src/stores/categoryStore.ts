@@ -103,7 +103,7 @@ export const useCategoryStore = defineStore('category', () => {
           entityType: EntityTypeEnum.CATEGORY,
           entityId: categoryWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: categoryWithTimestamp,
+          payload: tenantDbService.toPlainObject(categoryWithTimestamp),
         });
         infoLog('categoryStore', `Category "${categoryWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -158,7 +158,7 @@ export const useCategoryStore = defineStore('category', () => {
             entityType: EntityTypeEnum.CATEGORY,
             entityId: categoryUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: categoryUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(categoryUpdatesWithTimestamp),
           });
           infoLog('categoryStore', `Category "${categoryUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
@@ -253,7 +253,7 @@ export const useCategoryStore = defineStore('category', () => {
           entityType: EntityTypeEnum.CATEGORY_GROUP,
           entityId: categoryGroupWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: categoryGroupWithTimestamp,
+          payload: tenantDbService.toPlainObject(categoryGroupWithTimestamp),
         });
         infoLog('categoryStore', `CategoryGroup "${categoryGroupWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -305,7 +305,7 @@ export const useCategoryStore = defineStore('category', () => {
             entityType: EntityTypeEnum.CATEGORY_GROUP,
             entityId: categoryGroupUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: categoryGroupUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(categoryGroupUpdatesWithTimestamp),
           });
           infoLog('categoryStore', `CategoryGroup "${categoryGroupUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {

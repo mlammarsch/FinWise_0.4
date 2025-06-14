@@ -19,9 +19,11 @@ export const useRuleStore = defineStore('rule', () => {
   const rules = ref<AutomationRule[]>([]);
 
   // ------------------------------------------------------------------ CRUD
-  async function addRule(ruleData: Omit<AutomationRule, 'updated_at'> | AutomationRule, fromSync: boolean = false): Promise<AutomationRule> {
+  async function addRule(ruleData: Omit<AutomationRule, 'updated_at' | 'id'> & Partial<Pick<AutomationRule, 'id'>> | AutomationRule, fromSync: boolean = false): Promise<AutomationRule> {
     const ruleWithTimestamp: AutomationRule = {
       ...ruleData,
+      // Generiere ID falls nicht vorhanden (für neue Rules)
+      id: ruleData.id || uuidv4(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       updated_at: (ruleData as any).updated_at || new Date().toISOString(),
     };
@@ -61,7 +63,7 @@ export const useRuleStore = defineStore('rule', () => {
           entityType: EntityTypeEnum.RULE,
           entityId: ruleWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: ruleWithTimestamp,
+          payload: tenantDbService.toPlainObject(ruleWithTimestamp),
         });
         debugLog('RuleStore', `Regel "${ruleWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -75,9 +77,10 @@ export const useRuleStore = defineStore('rule', () => {
     return (id: string) => rules.value.find((r) => r.id === id);
   });
 
-  async function updateRule(ruleUpdatesData: AutomationRule, fromSync: boolean = false): Promise<boolean> {
+  async function updateRule(id: string, ruleUpdatesData: Omit<AutomationRule, 'id'>, fromSync: boolean = false): Promise<boolean> {
     const ruleUpdatesWithTimestamp: AutomationRule = {
       ...ruleUpdatesData,
+      id,
       updated_at: ruleUpdatesData.updated_at || new Date().toISOString(),
     };
 
@@ -97,10 +100,10 @@ export const useRuleStore = defineStore('rule', () => {
         return true; // Erfolgreich, aber lokale Daten beibehalten
       }
       // Wenn eingehend neuer ist, fahre fort mit DB-Update und Store-Update
-      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, ruleUpdatesWithTimestamp);
+      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, { ...ruleUpdatesWithTimestamp });
       debugLog('RuleStore', `updateRule (fromSync): Eingehende Regel ${ruleUpdatesWithTimestamp.id} angewendet (neuer).`);
     } else { // Lokale Änderung (!fromSync)
-      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, ruleUpdatesWithTimestamp);
+      await tenantDbService.updateRule(ruleUpdatesWithTimestamp.id, { ...ruleUpdatesWithTimestamp });
     }
 
     // Store-Update mit LWW-Logik
@@ -119,7 +122,7 @@ export const useRuleStore = defineStore('rule', () => {
           entityType: EntityTypeEnum.RULE,
           entityId: ruleUpdatesWithTimestamp.id,
           operationType: SyncOperationType.UPDATE,
-          payload: ruleUpdatesWithTimestamp,
+          payload: tenantDbService.toPlainObject(ruleUpdatesWithTimestamp),
         });
         debugLog('RuleStore', `Regel "${ruleUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
       } catch (e) {
@@ -270,7 +273,7 @@ export const useRuleStore = defineStore('rule', () => {
         addRule(rule, true); // fromSync = true
         break;
       case SyncOperationType.UPDATE:
-        updateRule(rule, true); // fromSync = true
+        updateRule(rule.id, rule, true); // fromSync = true
         break;
       case SyncOperationType.DELETE:
         deleteRule(rule.id, true); // fromSync = true

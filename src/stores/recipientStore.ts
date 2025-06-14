@@ -65,7 +65,7 @@ export const useRecipientStore = defineStore('recipient', () => {
           entityType: EntityTypeEnum.RECIPIENT,
           entityId: recipientWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: recipientWithTimestamp,
+          payload: tenantDbService.toPlainObject(recipientWithTimestamp),
         });
         infoLog('recipientStore', `Recipient "${recipientWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -121,7 +121,7 @@ export const useRecipientStore = defineStore('recipient', () => {
             entityType: EntityTypeEnum.RECIPIENT,
             entityId: recipientUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: recipientUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(recipientUpdatesWithTimestamp),
           });
           infoLog('recipientStore', `Recipient "${recipientUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {

@@ -367,7 +367,9 @@ export class TenantDbService {
         updateData.error = undefined;
       }
 
-      const updatedCount = await this.db.syncQueue.update(entryId, updateData);
+      const updatedCount = await this.db!.transaction('rw', this.db!.syncQueue, async () => {
+        return await this.db!.syncQueue.update(entryId, updateData);
+      });
       if (updatedCount > 0) {
         debugLog('TenantDbService', `Status für SyncQueue-Eintrag ${entryId} auf ${newStatus} aktualisiert.`);
         return true;
@@ -387,16 +389,24 @@ export class TenantDbService {
       return false;
     }
     try {
-      // Prüfen, ob der Eintrag existiert, bevor wir ihn löschen
-      const existingEntry = await this.db.syncQueue.get(entryId);
-      if (!existingEntry) {
+      const result = await this.db.transaction('rw', this.db.syncQueue, async () => {
+        // Prüfen, ob der Eintrag existiert, bevor wir ihn löschen
+        const existingEntry = await this.db!.syncQueue.get(entryId);
+        if (!existingEntry) {
+          return false;
+        }
+
+        await this.db!.syncQueue.delete(entryId);
+        return true;
+      });
+
+      if (result) {
+        debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt.`);
+        return true;
+      } else {
         warnLog('TenantDbService', `SyncQueue-Eintrag ${entryId} für Löschung nicht gefunden.`);
         return false;
       }
-
-      await this.db.syncQueue.delete(entryId);
-      debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt.`);
-      return true;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}`, { error: err });
       return false;
@@ -409,7 +419,9 @@ export class TenantDbService {
       return undefined;
     }
     try {
-      const entry = await this.db.syncQueue.get(entryId);
+      const entry = await this.db.transaction('r', this.db.syncQueue, async () => {
+        return await this.db!.syncQueue.get(entryId);
+      });
       if (entry) {
         debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} abgerufen.`);
       }
@@ -852,7 +864,7 @@ export class TenantDbService {
   // ============================================================================
 
   // Hilfsfunktion: Konvertiert Vue Reactive Proxies zu plain JavaScript-Objekten
-  private toPlainObject(obj: any): any {
+  public toPlainObject(obj: any): any {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) {

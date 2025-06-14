@@ -95,7 +95,7 @@ export const useTransactionStore = defineStore('transaction', () => {
           entityType: EntityTypeEnum.TRANSACTION,
           entityId: transactionWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: transactionWithTimestamp,
+          payload: tenantDbService.toPlainObject(transactionWithTimestamp),
         });
         infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -153,7 +153,7 @@ export const useTransactionStore = defineStore('transaction', () => {
             entityType: EntityTypeEnum.TRANSACTION,
             entityId: id,
             operationType: SyncOperationType.UPDATE,
-            payload: transactions.value[idx],
+            payload: tenantDbService.toPlainObject(transactions.value[idx]),
           });
           infoLog('transactionStore', `Transaction mit ID "${id}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {

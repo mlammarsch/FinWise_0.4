@@ -228,7 +228,7 @@ export const WebSocketService = {
                     await ruleStore.addRule(ruleData as AutomationRule, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
-                    await ruleStore.updateRule(ruleData as AutomationRule, true); // true für 'fromSync'
+                    await ruleStore.updateRule((ruleData as AutomationRule).id, ruleData as AutomationRule, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for AutomationRule ${ruleData.id}`, {
@@ -879,17 +879,21 @@ export const WebSocketService = {
       const maxRetries = this.getMaxRetriesForReason(nackMessage.reason);
 
       if (currentAttempts >= maxRetries) {
-        // Maximale Anzahl von Versuchen erreicht - als dauerhaft fehlgeschlagen markieren
-        const success = await tenantDbService.updateSyncQueueEntryStatus(
-          nackMessage.id,
-          SyncStatus.FAILED,
-          `Max retries (${maxRetries}) exceeded: ${nackMessage.reason} - ${nackMessage.detail || ''}`
-        );
+        // Maximale Anzahl von Versuchen erreicht - aus Queue entfernen
+        const success = await tenantDbService.removeSyncQueueEntry(nackMessage.id);
         if (success) {
-          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} als dauerhaft fehlgeschlagen markiert nach ${currentAttempts} Versuchen.`, {
+          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} nach ${currentAttempts} fehlgeschlagenen Versuchen aus Queue entfernt.`, {
             reason: nackMessage.reason,
             detail: nackMessage.detail,
-            maxRetries
+            maxRetries,
+            entityId: nackMessage.entityId,
+            entityType: nackMessage.entityType,
+            operationType: nackMessage.operationType
+          });
+        } else {
+          errorLog('[WebSocketService]', `Konnte dauerhaft fehlgeschlagenen Sync-Queue-Eintrag ${nackMessage.id} nicht aus Queue entfernen.`, {
+            reason: nackMessage.reason,
+            detail: nackMessage.detail
           });
         }
       } else {

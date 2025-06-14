@@ -278,7 +278,7 @@ export enum EntityTypeEnum { // Umbenannt, um Konflikt mit dem Interface 'Entity
   PLANNING_TRANSACTION = 'PlanningTransaction',
   RECIPIENT = 'Recipient',
   TAG = 'Tag',
-  RULE = 'Rule',
+  RULE = 'AutomationRule',
   // Weitere Entitätstypen hier bei Bedarf
 }
 

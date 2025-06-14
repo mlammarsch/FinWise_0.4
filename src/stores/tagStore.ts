@@ -102,7 +102,7 @@ export const useTagStore = defineStore('tag', () => {
           entityType: EntityTypeEnum.TAG,
           entityId: tagWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tagWithTimestamp,
+          payload: tenantDbService.toPlainObject(tagWithTimestamp),
         });
         infoLog('tagStore', `Tag "${tagWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -163,7 +163,7 @@ export const useTagStore = defineStore('tag', () => {
             entityType: EntityTypeEnum.TAG,
             entityId: tagUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: tagUpdatesWithTimestamp,
+            payload: tenantDbService.toPlainObject(tagUpdatesWithTimestamp),
           });
           infoLog('tagStore', `Tag "${tagUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
