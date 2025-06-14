@@ -835,16 +835,45 @@ export class TenantDbService {
   // AUTOMATION RULES CRUD OPERATIONS
   // ============================================================================
 
+  // Hilfsfunktion: Konvertiert Vue Reactive Proxies zu plain JavaScript-Objekten
+  private toPlainObject(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.toPlainObject(item));
+    }
+
+    // Erstelle plain object ohne reactive properties
+    const plain: any = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key) && !key.startsWith('__v_')) {
+        plain[key] = this.toPlainObject(obj[key]);
+      }
+    }
+    return plain;
+  }
+
   async createRule(rule: AutomationRule): Promise<AutomationRule> {
     if (!this.db) {
       warnLog('TenantDbService', 'createRule: Keine aktive Mandanten-DB verfügbar.');
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
+      // Konvertiere rule zu plain object
+      const plainRule = this.toPlainObject(rule);
+
       const ruleWithTimestamp = {
-        ...rule,
+        ...plainRule,
         updated_at: new Date().toISOString()
       };
+
+      debugLog('TenantDbService', 'createRule - Vue Reactive Proxies konvertiert', {
+        ruleName: rule.name,
+        ruleId: rule.id,
+        conditionsCount: ruleWithTimestamp.conditions?.length || 0,
+        actionsCount: ruleWithTimestamp.actions?.length || 0
+      });
+
       await this.db.rules.put(ruleWithTimestamp);
       debugLog('TenantDbService', `Regel "${rule.name}" (ID: ${rule.id}) erstellt.`);
       return ruleWithTimestamp;
@@ -898,9 +927,12 @@ export class TenantDbService {
         return false;
       }
 
+      // Konvertiere updates zu plain object
+      const plainUpdates = this.toPlainObject(updates);
+
       const updatedRule = {
         ...existingRule,
-        ...updates,
+        ...plainUpdates,
         id, // ID darf nicht überschrieben werden
         updated_at: new Date().toISOString()
       };
