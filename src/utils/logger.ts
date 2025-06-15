@@ -15,6 +15,20 @@ export enum LogLevel {
     ERROR = 3
 }
 
+export const LogLevelToString: Record<LogLevel, string> = {
+  [LogLevel.DEBUG]: "DEBUG",
+  [LogLevel.INFO]: "INFO",
+  [LogLevel.WARN]: "WARN",
+  [LogLevel.ERROR]: "ERROR",
+};
+
+export const StringToLogLevel: Record<string, LogLevel> = {
+  "DEBUG": LogLevel.DEBUG,
+  "INFO": LogLevel.INFO,
+  "WARN": LogLevel.WARN,
+  "ERROR": LogLevel.ERROR,
+};
+
 /**
  * Globales Cache-Objekt
  */
@@ -139,11 +153,19 @@ function extractDetails(data: any): any {
         details.changes = {};
         Object.entries(data.updates).forEach(([key, value]) => {
             if (key === 'accountId') {
-                const account = accountStore.getAccountById(value);
-                details.changes["accountName"] = account ? account.name : 'Unbekanntes Konto';
+                if (typeof value === 'string') {
+                    const account = accountStore.getAccountById(value);
+                    details.changes["accountName"] = account ? account.name : 'Unbekanntes Konto';
+                } else {
+                    details.changes["accountName"] = 'Ungültige Konto-ID';
+                }
             } else if (key === 'categoryId') {
-                const cat = categoryStore.getCategoryById(value);
-                details.changes["categoryName"] = cat ? cat.name : 'Unbekannte Kategorie';
+                if (typeof value === 'string') {
+                    const cat = categoryStore.getCategoryById(value);
+                    details.changes["categoryName"] = cat ? cat.name : 'Unbekannte Kategorie';
+                } else {
+                    details.changes["categoryName"] = 'Ungültige Kategorie-ID';
+                }
             } else if (key === 'amount') {
                 details.changes[key] = formatCurrency(Number(value));
             } else {

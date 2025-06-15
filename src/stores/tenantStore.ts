@@ -148,6 +148,7 @@ interface TenantStoreState {
   setActiveTenant: (id: string | null) => Promise<boolean>;
   reset: () => Promise<void>;
   syncCurrentTenantData: () => Promise<void>;
+  initializeTenantStore: () => Promise<void>;
 }
 
 export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
@@ -182,7 +183,10 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     }
   }
 
-  onMounted(loadTenants);
+  // Initialisierung wird jetzt explizit aufgerufen, nicht automatisch bei Store-Erstellung
+  async function initializeTenantStore(): Promise<void> {
+    await loadTenants();
+  }
 
   async function addTenant(tenantName: string, userId: string): Promise<DbTenant | null> {
     if (!tenantName.trim() || !userId) {
@@ -431,5 +435,6 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     setActiveTenant,
     reset,
     syncCurrentTenantData,
+    initializeTenantStore, // Exportiere für explizite Initialisierung
   };
 });

@@ -104,6 +104,9 @@ export class DataService {
     await tagStore.reset(); // Annahme: tagStore.reset ist oder wird async
     await ruleStore.reset(); // Annahme: ruleStore.reset ist oder wird async
 
+    // Explizite Initialisierung des MonthlyBalanceStore
+    await monthlyBalanceStore.loadMonthlyBalances();
+
     useSearchStore().clearSearch(); // Diese sind nicht datenladend, bleiben synchron
     useTransactionFilterStore().clearFilters(); // Diese sind nicht datenladend, bleiben synchron
 

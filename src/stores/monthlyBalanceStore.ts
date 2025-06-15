@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { storageKey } from '@/utils/storageKey';
-import { debugLog, errorLog, infoLog } from '@/utils/logger';
+import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { TenantDbService } from '@/services/TenantDbService';
 
 export interface MonthlyBalance {
@@ -26,6 +26,8 @@ export interface BalanceInfo {
 export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
   const monthlyBalances = ref<MonthlyBalance[]>([]);
   const isLoaded = ref(false);
+
+  // TenantDbService-Instanz (wird bei Bedarf initialisiert)
   const tenantDbService = new TenantDbService();
 
   /* ----------------------------------------- CRUD-ähnliche Methoden */
@@ -59,6 +61,10 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
 
     // IndexedDB aktualisieren
     try {
+      if (!tenantDbService) {
+        warnLog('monthlyBalanceStore', 'Kein TenantDbService verfügbar für setMonthlyBalance');
+        return;
+      }
       await tenantDbService.saveMonthlyBalance(monthlyBalance);
       debugLog('monthlyBalanceStore', `MonthlyBalance für ${year}/${month + 1} gespeichert`);
     } catch (error) {
@@ -155,6 +161,13 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
     if (isLoaded.value) return;
 
     try {
+      if (!tenantDbService) {
+        warnLog('monthlyBalanceStore', 'Kein TenantDbService verfügbar für loadMonthlyBalances');
+        monthlyBalances.value = [];
+        isLoaded.value = true;
+        return;
+      }
+
       // Versuche Migration von localStorage
       await migrateFromLocalStorage();
 
@@ -173,6 +186,11 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
 
   async function saveMonthlyBalances(): Promise<void> {
     try {
+      if (!tenantDbService) {
+        warnLog('monthlyBalanceStore', 'Kein TenantDbService verfügbar für saveMonthlyBalances');
+        return;
+      }
+
       // Alle MonthlyBalances in IndexedDB speichern
       for (const balance of monthlyBalances.value) {
         await tenantDbService.saveMonthlyBalance(balance);
@@ -198,6 +216,11 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
 
     if (legacyData && !isLoaded.value) {
       try {
+        if (!tenantDbService) {
+          warnLog('monthlyBalanceStore', 'Kein TenantDbService verfügbar für Migration');
+          return;
+        }
+
         const parsedData: MonthlyBalance[] = JSON.parse(legacyData);
 
         if (parsedData.length > 0) {
@@ -217,9 +240,6 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
       }
     }
   }
-
-  // Initialisierung
-  loadMonthlyBalances();
 
   return {
     monthlyBalances,

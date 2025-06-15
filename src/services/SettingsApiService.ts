@@ -51,42 +51,6 @@ export class SettingsApiService {
   }
 
   /**
-   * Synchronisiert Settings mit dem Backend (Create oder Update)
-   */
-  static async syncUserSettings(
-    userId: string,
-    settingsPayload: UserSettingsPayload
-  ): Promise<UserSettingsResponse> {
-    debugLog(MODULE_NAME, `Synchronisiere Settings für User ${userId}`, {
-      logLevel: settingsPayload.log_level,
-      categoriesCount: settingsPayload.enabled_log_categories.length,
-      retentionDays: settingsPayload.history_retention_days
-    });
-
-    try {
-      const response = await fetch(`${BASE_URL}/settings/${userId}/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(settingsPayload)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const settings = await response.json();
-      infoLog(MODULE_NAME, `Settings erfolgreich synchronisiert für User ${userId}`);
-      return settings;
-
-    } catch (error) {
-      errorLog(MODULE_NAME, `Fehler beim Synchronisieren der Settings für User ${userId}`, error);
-      throw error;
-    }
-  }
-
-  /**
    * Aktualisiert Settings im Backend
    */
   static async updateUserSettings(
@@ -161,39 +125,5 @@ export class SettingsApiService {
       debugLog(MODULE_NAME, 'Backend nicht erreichbar', error);
       return false;
     }
-  }
-
-  /**
-   * Wrapper für API-Calls mit Retry-Mechanismus
-   */
-  static async withRetry<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = 3,
-    delay: number = 1000
-  ): Promise<T> {
-    let lastError: Error;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (attempt === maxRetries) {
-          break;
-        }
-
-        debugLog(MODULE_NAME, `Versuch ${attempt} fehlgeschlagen, wiederhole in ${delay}ms`, {
-          error: lastError.message,
-          attempt,
-          maxRetries
-        });
-
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2; // Exponential backoff
-      }
-    }
-
-    throw lastError!;
   }
 }

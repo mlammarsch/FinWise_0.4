@@ -91,14 +91,15 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  onMounted(async () => {
+  // Initialisierung wird jetzt explizit aufgerufen, nicht automatisch bei Store-Erstellung
+  async function initializeUserStore(): Promise<void> {
     await _loadUsersFromDb();
     await syncUsers();
     const sessionStore = useSessionStore();
     if (sessionStore.currentUserId) {
       await syncUserTenants(sessionStore.currentUserId);
     }
-  });
+  }
 
   const getUserById = computed(() => (id: string) =>
     users.value.find(u => u.id === id),
@@ -587,5 +588,7 @@ export const useUserStore = defineStore('user', () => {
     reset,
     syncUsers,
     syncUserTenants,
+    _loadUsersFromDb, // Exportiere für sessionStore
+    initializeUserStore, // Exportiere für explizite Initialisierung
   };
 });

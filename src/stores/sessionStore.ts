@@ -102,6 +102,12 @@ export const useSessionStore = defineStore('session', () => {
            await tenantStore.setActiveTenant(null);
         }
 
+        // Prüfe auf inkonsistenten Zustand: Tenant ohne User
+        if (currentTenantId.value && !currentUserId.value) {
+          warnLog('sessionStore', 'loadSession - Inkonsistenter Zustand: Tenant ohne User gefunden. Erstelle Default-User.', { tenantId: currentTenantId.value });
+          await ensureDefaultUser();
+        }
+
       } else {
         debugLog('sessionStore', 'loadSession - Keine Session in DB gefunden.');
         currentUserId.value = null;
@@ -113,6 +119,51 @@ export const useSessionStore = defineStore('session', () => {
       currentUserId.value = null;
       currentTenantId.value = null;
       await tenantStore.setActiveTenant(null); // Sicherstellen, dass tenantStore keinen aktiven Tenant hat
+    }
+  }
+
+  /**
+   * Erstellt einen Default-User, wenn ein Tenant vorhanden ist, aber kein User angemeldet ist.
+   * Dies löst das Problem der fehlenden User-Session für Settings-Synchronisation.
+   */
+  async function ensureDefaultUser(): Promise<void> {
+    try {
+      // Prüfe, ob bereits ein User in der DB existiert
+      const existingUsers = await db.dbUsers.toArray();
+
+      if (existingUsers.length > 0) {
+        // Verwende den ersten verfügbaren User
+        const defaultUser = existingUsers[0];
+        currentUserId.value = defaultUser.uuid;
+        await saveSession();
+        debugLog('sessionStore', 'ensureDefaultUser - Existierenden User als Default gesetzt', { userId: defaultUser.uuid });
+        return;
+      }
+
+      // Erstelle einen neuen Default-User
+      const defaultUserId = 'default-user-' + Date.now();
+      const now = new Date().toISOString();
+
+      const defaultDbUser = {
+        uuid: defaultUserId,
+        username: 'Default User',
+        email: 'default@finwise.local',
+        createdAt: now,
+        updatedAt: now,
+        needsBackendSync: false
+      };
+
+      await db.dbUsers.add(defaultDbUser);
+      currentUserId.value = defaultUserId;
+      await saveSession();
+
+      debugLog('sessionStore', 'ensureDefaultUser - Default-User erstellt und Session aktualisiert', { userId: defaultUserId });
+
+      // Lade User-Store neu, damit der neue User verfügbar ist
+      await userStore._loadUsersFromDb();
+
+    } catch (err) {
+      errorLog('sessionStore', 'ensureDefaultUser: Fehler beim Erstellen des Default-Users', err);
     }
   }
 
@@ -129,6 +180,7 @@ export const useSessionStore = defineStore('session', () => {
     logoutTenant,
     switchTenant,
     loadSession,
+    ensureDefaultUser,
     // saveSession wird nicht exportiert, da es eine interne Hilfsfunktion ist
   };
 });
