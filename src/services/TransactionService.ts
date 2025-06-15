@@ -29,7 +29,7 @@ export const TransactionService = {
 /* --------------------------- Write APIs --------------------------- */
 /* ------------------------------------------------------------------ */
 
-  addTransaction(txData: Omit<Transaction, 'id' | 'runningBalance'>): Transaction {
+  async addTransaction(txData: Omit<Transaction, 'id' | 'runningBalance'>): Promise<Transaction> {
     const txStore = useTransactionStore();
     const catStore = useCategoryStore();
     const ruleStore = useRuleStore();
@@ -48,34 +48,66 @@ export const TransactionService = {
         ? toDateOnlyString(txData.valueDate)
         : toDateOnlyString(txData.date),
       runningBalance: 0,
+      payee: txData.payee || '', // Sicherstellen dass payee nie undefined ist
+      description: txData.description || '', // Fehlende Eigenschaft hinzufügen
     };
 
-    const added = txStore.addTransaction(newTx);
+    const added = await txStore.addTransaction(newTx);
 
     // → Regeln anwenden & speichern
-    ruleStore.applyRulesToTransaction(added);
+    await ruleStore.applyRulesToTransaction(added);
 
-    debugLog('[TransactionService] addTransaction', added);
+    debugLog('[TransactionService]', 'addTransaction completed', added);
 
     /* Automatischer Kategorie‑Transfer bei Einnahmen */
+    debugLog('[TransactionService]', 'Category Transfer Check - Transaction', {
+      type: added.type,
+      amount: added.amount,
+      categoryId: added.categoryId,
+      isIncome: added.type === TransactionType.INCOME
+    });
+
     if (
       added.type === TransactionType.INCOME &&
       added.amount > 0 &&
       added.categoryId
     ) {
+      debugLog('[TransactionService]', 'Category Transfer - Conditions met, checking categories...');
+
       const available = catStore.getAvailableFundsCategory();
-      if (!available) throw new Error("Kategorie 'Verfügbare Mittel' fehlt");
+      debugLog('[TransactionService]', 'Available Funds Category found', available);
+
+      if (!available) {
+        debugLog('[TransactionService]', 'ERROR: Verfügbare Mittel Kategorie fehlt!');
+        throw new Error("Kategorie 'Verfügbare Mittel' fehlt");
+      }
 
       const cat = catStore.getCategoryById(added.categoryId);
+      debugLog('[TransactionService]', 'Source Category details', {
+        category: cat,
+        isIncomeCategory: cat?.isIncomeCategory
+      });
+
       if (cat?.isIncomeCategory) {
-        this.addCategoryTransfer(
+        debugLog('[TransactionService]', 'Executing Category Transfer', {
+          from: added.categoryId,
+          to: available.id,
+          amount: added.amount,
+          date: added.date
+        });
+
+        await this.addCategoryTransfer(
           added.categoryId,
           available.id,
           added.amount,
           added.date,
           'Automatischer Transfer von Einnahmen'
         );
+      } else {
+        debugLog('[TransactionService]', 'Category Transfer SKIPPED - Category is not income category');
       }
+    } else {
+      debugLog('[TransactionService]', 'Category Transfer SKIPPED - Conditions not met');
     }
 
     // Salden aktualisieren
@@ -85,7 +117,7 @@ export const TransactionService = {
 
 /* -------------------- Konto‑zu‑Konto‑Transfer -------------------- */
 
-  addAccountTransfer(
+  async addAccountTransfer(
     fromAccountId: string,
     toAccountId: string,
     amount: number,
@@ -109,7 +141,7 @@ export const TransactionService = {
       type: TransactionType.ACCOUNTTRANSFER,
       date: dt,
       valueDate: vdt,
-      categoryId: null,
+      categoryId: undefined, // null zu undefined ändern
       tagIds: [],
       payee: '',
       note,
@@ -121,16 +153,17 @@ export const TransactionService = {
       transferToAccountId: undefined,
       accountId: '', // wird weiter unten gesetzt
       amount: 0,
+      description: '', // Fehlende Eigenschaft hinzufügen
     };
 
-    const fromTx = this.addTransaction({
+    const fromTx = await this.addTransaction({
       ...base,
       accountId: fromAccountId,
       amount: -abs,
       payee: `Transfer zu ${toName}`,
       transferToAccountId: toAccountId,
     });
-    const toTx = this.addTransaction({
+    const toTx = await this.addTransaction({
       ...base,
       accountId: toAccountId,
       amount: abs,
@@ -142,7 +175,7 @@ export const TransactionService = {
     this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
     this.updateTransaction(toTx.id,   { counterTransactionId: fromTx.id });
 
-    debugLog('[TransactionService] addAccountTransfer', { fromTx, toTx });
+    debugLog('[TransactionService]', 'addAccountTransfer completed', { fromTx, toTx });
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
@@ -151,7 +184,7 @@ export const TransactionService = {
 
 /* -------------------- Kategorie‑zu‑Kategorie‑Transfer -------------------- */
 
-  addCategoryTransfer(
+  async addCategoryTransfer(
     fromCategoryId: string,
     toCategoryId: string,
     amount: number,
@@ -179,6 +212,7 @@ export const TransactionService = {
       isCategoryTransfer: true,
       toCategoryId: toCategoryId,
       reconciled: false,
+      description: '', // Fehlende Eigenschaft hinzufügen
     };
 
     const toTx = {
@@ -189,13 +223,13 @@ export const TransactionService = {
       toCategoryId: fromCategoryId,
     };
 
-    const newFromTx = this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>);
-    const newToTx = this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>);
+    const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>);
+    const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>);
 
     this.updateTransaction(newFromTx.id, { counterTransactionId: newToTx.id });
     this.updateTransaction(newToTx.id, { counterTransactionId: newFromTx.id });
 
-    debugLog('[TransactionService] addCategoryTransfer', { fromTransaction: newFromTx, toTransaction: newToTx });
+    debugLog('[TransactionService]', 'addCategoryTransfer completed', { fromTransaction: newFromTx, toTransaction: newToTx });
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
@@ -239,7 +273,7 @@ export const TransactionService = {
     this.updateTransaction(transactionId, updatedFromTx);
     this.updateTransaction(gegentransactionId, updatedToTx);
 
-    debugLog('[TransactionService] updateCategoryTransfer', { transactionId, gegentransactionId, updatedFromTx, updatedToTx });
+    debugLog('[TransactionService]', 'updateCategoryTransfer completed', { transactionId, gegentransactionId, updatedFromTx, updatedToTx });
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
@@ -286,7 +320,7 @@ export const TransactionService = {
       date: toDateOnlyString(date),
       valueDate: toDateOnlyString(date),
       accountId,
-      categoryId: catId,
+      categoryId: catId || undefined,
       amount,
       tagIds: [],
       payee: 'Kontoabgleich',
@@ -296,6 +330,7 @@ export const TransactionService = {
       isReconciliation: true,
       isCategoryTransfer: false,
       reconciled: true,
+      description: '', // Fehlende Eigenschaft hinzufügen
     });
 
     // Salden aktualisieren
@@ -430,7 +465,7 @@ updateTransaction(
     let deleted = 0;
     unique.forEach(id => this.deleteTransaction(id) && deleted++);
     const success = deleted === unique.length;
-    debugLog('[TransactionService] deleteMultipleTransactions', { requested: unique.length, deleted });
+    debugLog('[TransactionService]', 'deleteMultipleTransactions completed', { requested: unique.length, deleted });
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
