@@ -135,10 +135,23 @@ function confirmDelete(id: string) {
 async function deleteTenant() {
   if (deleteTargetId.value) {
     try {
+      const isActiveTenant = session.currentTenantId === deleteTargetId.value;
+
       await TenantService.deleteTenantCompletely(deleteTargetId.value);
       debugLog("[AdminTenantsView] deleteTenantCompletely", {
         id: deleteTargetId.value,
+        isActiveTenant,
       });
+
+      // Bei aktivem Mandanten: Nur Mandant abmelden, zur TenantSelectView weiterleiten
+      if (isActiveTenant) {
+        debugLog(
+          "[AdminTenantsView] Aktiver Mandant gelöscht, navigiere zu TenantSelectView"
+        );
+        // Mandant aus Session entfernen (ohne User-Logout)
+        session.currentTenantId = null;
+        router.push("/tenant-select");
+      }
     } catch (error) {
       debugLog("[AdminTenantsView] deleteTenantCompletely error", error);
     }
@@ -164,17 +177,39 @@ async function resetDatabase() {
     });
 
     try {
-      debugLog("[AdminTenantsView] Rufe TenantService.resetTenantDatabase auf");
-      const result = await TenantService.resetTenantDatabase(
-        resetDbTargetId.value,
-        router
+      const isActiveTenant = session.currentTenantId === resetDbTargetId.value;
+
+      // Mandanten-Name für Neuanlage merken
+      const tenant = TenantService.getOwnTenants().find(
+        (t) => t.uuid === resetDbTargetId.value
       );
-      debugLog("[AdminTenantsView] resetTenantDatabase erfolgreich", {
-        id: resetDbTargetId.value,
-        result,
+      const tenantName = tenant?.tenantName || "Unbekannt";
+
+      debugLog(
+        "[AdminTenantsView] Lösche Mandant und lege neuen mit gleichem Namen an",
+        {
+          tenantId: resetDbTargetId.value,
+          tenantName,
+          isActiveTenant,
+        }
+      );
+
+      // Schritt 1: Mandanten komplett löschen
+      await TenantService.deleteTenantCompletely(resetDbTargetId.value);
+
+      // Schritt 2: Neuen Mandanten mit gleichem Namen anlegen
+      const newTenant = await TenantService.createTenant(tenantName);
+
+      debugLog("[AdminTenantsView] Mandant erfolgreich zurückgesetzt", {
+        oldId: resetDbTargetId.value,
+        newId: newTenant.uuid,
+        tenantName,
       });
+
+      // Schritt 3: Direkt zur Hauptseite weiterleiten (Mandant ist bereits aktiv)
+      router.push("/");
     } catch (error) {
-      debugLog("[AdminTenantsView] resetTenantDatabase error", error);
+      debugLog("[AdminTenantsView] resetDatabase error", error);
     }
   } else {
     debugLog("[AdminTenantsView] resetDatabase: Keine resetDbTargetId gesetzt");

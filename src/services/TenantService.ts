@@ -169,27 +169,27 @@ export const TenantService = {
         currentUserId: session.currentUserId
       });
 
-      // Backend-API aufrufen
+      // Backend-API aufrufen - löscht auch die Tenant-Datenbank
       await apiService.deleteTenantCompletely(tenantId, session.currentUserId);
 
       // Lokalen Mandanten aus Store entfernen
       await tenantStore.deleteTenant(tenantId);
 
       if (isActiveTenant) {
-        // Bei aktivem Mandanten: IndexedDB löschen und Logout
+        // Bei aktivem Mandanten: IndexedDB löschen
         try {
           const tenantDbService = new (await import('./TenantDbService')).TenantDbService();
           await tenantDbService.deleteTenantDatabase();
         } catch (dbError) {
-          warnLog('TenantService', 'Fehler beim Löschen der IndexedDB, fahre mit Logout fort', { error: dbError });
+          warnLog('TenantService', 'Fehler beim Löschen der IndexedDB, fahre fort', { error: dbError });
         }
 
-        // Logout und Redirect
+        // Mandant aus Session entfernen (OHNE User-Logout)
+        session.currentTenantId = null;
+
+        // Optional: Router-Redirect (wird von aufrufender Komponente gesteuert)
         if (router) {
-          const { SessionService } = await import('./SessionService');
-          await SessionService.logoutWithCleanupAndRedirect(router);
-        } else {
-          session.logout();
+          debugLog('TenantService', 'Router-Redirect wird von aufrufender Komponente gesteuert');
         }
       }
 

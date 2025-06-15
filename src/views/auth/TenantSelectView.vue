@@ -161,6 +161,7 @@ nextTick(() => {
             placeholder="Name des Mandanten"
             class="input input-bordered w-full"
             autocomplete="off"
+            @keyup.enter="createTenant"
           />
           <button
             class="btn btn-secondary w-full"
