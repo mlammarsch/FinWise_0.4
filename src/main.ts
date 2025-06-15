@@ -30,7 +30,10 @@ app.component('Icon', Icon);
 window.ApexCharts = ApexCharts;
 
 const settingsStore = useSettingsStore();
-settingsStore.loadFromStorage();
+// Settings werden async geladen, um Backend-Sync zu ermöglichen
+settingsStore.loadFromStorage().catch(error => {
+  console.error('Fehler beim Laden der Settings:', error);
+});
 
 initializeLogger();
 

@@ -4,7 +4,7 @@ import { usePlanningStore } from '@/stores/planningStore';
 import { useMonthlyBalanceStore, MonthlyBalance } from '@/stores/monthlyBalanceStore';
 import { useAccountStore } from '@/stores/accountStore';
 import { useCategoryStore } from '@/stores/categoryStore';
-import { TransactionType, BalanceInfo } from '@/types';
+import { TransactionType, BalanceInfo, Transaction } from '@/types';
 import { toDateOnlyString } from '@/utils/formatters';
 import { PlanningService } from './PlanningService';
 import { debugLog } from '@/utils/logger';
@@ -36,51 +36,56 @@ export const BalanceService = {
    * Berechnet alle Monatsbilanzen und speichert sie im Store.
    * Diese Methode sollte aufgerufen werden, wenn sich Transaktionen oder Planungen ändern.
    */
-  calculateMonthlyBalances(): void {
-    debugLog('[BalanceService] calculateMonthlyBalances - Start calculation');
+  async calculateMonthlyBalances(): Promise<void> {
+    debugLog('BalanceService', 'calculateMonthlyBalances - Start calculation');
 
     const transactionStore = useTransactionStore();
     const mbStore = useMonthlyBalanceStore();
 
-    // 1. Sammle alle relevanten Monate
-    const months: Set<string> = new Set();
+    try {
+      // Stelle sicher, dass der Store geladen ist
+      await mbStore.loadMonthlyBalances();
 
-    if (transactionStore.transactions && transactionStore.transactions.length > 0) {
-      transactionStore.transactions.forEach(tx => {
-        const date = new Date(tx.date);
+      // 1. Sammle alle relevanten Monate
+      const months: Set<string> = new Set();
+
+      if (transactionStore.transactions && transactionStore.transactions.length > 0) {
+        transactionStore.transactions.forEach(tx => {
+          const date = new Date(tx.date);
+          const key = `${date.getFullYear()}-${date.getMonth()}`;
+          months.add(key);
+
+          // Für Kategorietransaktionen auch das ValueDate berücksichtigen
+          if (tx.type === TransactionType.CATEGORYTRANSFER || tx.categoryId) {
+            const valueDate = new Date(tx.valueDate);
+            const valueDateKey = `${valueDate.getFullYear()}-${valueDate.getMonth()}`;
+            months.add(valueDateKey);
+          }
+        });
+      } else {
+        debugLog('BalanceService', 'Keine Transaktionen gefunden - Erstelle nur Zukunftsmonate');
+      }
+
+      // 2. Füge die nächsten 24 Monate hinzu
+      const now = new Date();
+      for (let i = 0; i < 24; i++) {
+        const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
         const key = `${date.getFullYear()}-${date.getMonth()}`;
         months.add(key);
+      }
 
-        // Für Kategorietransaktionen auch das ValueDate berücksichtigen
-        if (tx.type === TransactionType.CATEGORYTRANSFER || tx.categoryId) {
-          const valueDate = new Date(tx.valueDate);
-          const valueDateKey = `${valueDate.getFullYear()}-${valueDate.getMonth()}`;
-          months.add(valueDateKey);
-        }
-      });
-    } else {
-      debugLog('[BalanceService] Keine Transaktionen gefunden - Erstelle nur Zukunftsmonate');
+      // 3. Berechne alle Monatsbilanzen
+      for (const key of Array.from(months).sort()) {
+        const [year, month] = key.split('-').map(Number);
+        const balanceData = this.calculateBalanceForMonth(year, month);
+        await mbStore.setMonthlyBalance(year, month, balanceData);
+      }
+
+      debugLog('BalanceService', `calculateMonthlyBalances - Calculated balances for ${months.size} months`);
+    } catch (error) {
+      debugLog('BalanceService', 'Fehler bei calculateMonthlyBalances', error);
+      throw error;
     }
-
-    // 2. Füge die nächsten 24 Monate hinzu
-    const now = new Date();
-    for (let i = 0; i < 24; i++) {
-      const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const key = `${date.getFullYear()}-${date.getMonth()}`;
-      months.add(key);
-    }
-
-    // 3. Berechne alle Monatsbilanzen
-    Array.from(months).sort().forEach(key => {
-      const [year, month] = key.split('-').map(Number);
-      const balanceData = this.calculateBalanceForMonth(year, month);
-      mbStore.setMonthlyBalance(year, month, balanceData);
-    });
-
-    // 4. Speichere die Ergebnisse
-    mbStore.saveMonthlyBalances();
-
-    debugLog('[BalanceService] calculateMonthlyBalances - Calculated balances for', months.size, 'months');
   },
 
     /**
@@ -130,10 +135,10 @@ export const BalanceService = {
     const prevMonth = month === 0 ? 11 : month - 1;
     const prevYear  = month === 0 ? year - 1  : year;
     const prevMb = mbStore.getMonthlyBalance(prevYear, prevMonth) || {
-      accountBalances:          {},
-      categoryBalances:         {},
-      projectedAccountBalances: {},
-      projectedCategoryBalances:{}
+      accountBalances:          {} as Record<string, number>,
+      categoryBalances:         {} as Record<string, number>,
+      projectedAccountBalances: {} as Record<string, number>,
+      projectedCategoryBalances:{} as Record<string, number>
     };
 
     // 6. Kategorie-Projektion

@@ -6,6 +6,7 @@
 import { Router } from 'vue-router';
 import { useSessionStore } from '@/stores/sessionStore';
 import { TenantService } from './TenantService';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { infoLog, debugLog, errorLog } from '@/utils/logger';
 
 export const SessionService = {
@@ -16,7 +17,12 @@ export const SessionService = {
     router.beforeEach(async (to, _from, next) => {
       const session = useSessionStore();
 
-      if (!session.currentUserId) session.loadSession();
+      if (!session.currentUserId) {
+        await session.loadSession();
+      } else {
+        // Initialisiere Settings für angemeldeten Benutzer
+        await this.initializeUserSettings();
+      }
 
       const isAuthRoute    = ['/login', '/register'].includes(to.path);
       const isTenantRoute  = to.path === '/tenant-select';
@@ -83,6 +89,20 @@ export const SessionService = {
       errorLog('SessionService', 'Fehler beim Logout mit Cleanup', { error });
       // Fallback: Normaler Logout
       this.logoutAndRedirect(router);
+    }
+  },
+
+  /**
+   * Initialisiert Settings für den angemeldeten Benutzer
+   */
+  async initializeUserSettings() {
+    try {
+      const settingsStore = useSettingsStore();
+      await settingsStore.initializeForUser();
+      debugLog('SessionService', 'Settings für Benutzer initialisiert');
+    } catch (error) {
+      errorLog('SessionService', 'Fehler beim Initialisieren der Settings', error);
+      // Graceful degradation - App funktioniert weiter mit Default-Settings
     }
   },
 };

@@ -7,6 +7,7 @@ import { apiService } from '@/services/apiService';
 import type { DbTenant, DbUser } from './userStore';
 import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, PlanningTransaction } from '../types';
 import type { ExtendedTransaction } from './transactionStore';
+import type { MonthlyBalance } from './monthlyBalanceStore';
 
 export class FinwiseTenantSpecificDB extends Dexie {
   accounts!: Table<Account, string>;
@@ -18,6 +19,7 @@ export class FinwiseTenantSpecificDB extends Dexie {
   recipients!: Table<Recipient, string>;
   tags!: Table<Tag, string>;
   rules!: Table<AutomationRule, string>;
+  monthlyBalances!: Table<MonthlyBalance, [number, number]>;
   syncQueue!: Table<SyncQueueEntry, string>;
 
   constructor(databaseName: string) {
@@ -96,6 +98,19 @@ export class FinwiseTenantSpecificDB extends Dexie {
       recipients: '&id, name, defaultCategoryId, updated_at',
       tags: '&id, name, parentTagId, color, updated_at',
       rules: '&id, name, stage, priority, isActive, updated_at',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(11).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, valueDate, amount, description, type, runningBalance, [accountId+date], [categoryId+date]',
+      planningTransactions: '&id, name, accountId, categoryId, startDate, isActive, recurrencePattern, transactionType, updated_at',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      tags: '&id, name, parentTagId, color, updated_at',
+      rules: '&id, name, stage, priority, isActive, updated_at',
+      monthlyBalances: '&[year+month], year, month',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
     });
   }

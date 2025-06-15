@@ -108,9 +108,7 @@ export class DataService {
     useTransactionFilterStore().clearFilters(); // Diese sind nicht datenladend, bleiben synchron
 
     // Nach dem Reset alle Monatsbilanzen neu berechnen
-    // BalanceService.calculateMonthlyBalances() könnte auch async werden, wenn es auf async Daten wartet.
-    // Fürs Erste belassen wir es synchron, aber dies könnte eine zukünftige Anpassung sein.
-    BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateMonthlyBalances();
 
     debugLog('DataService', 'reloadTenantData', 'Completed');
   }

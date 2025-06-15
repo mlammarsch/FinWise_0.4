@@ -6,7 +6,8 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { storageKey } from '@/utils/storageKey';
-import { debugLog } from '@/utils/logger';
+import { debugLog, errorLog, infoLog } from '@/utils/logger';
+import { TenantDbService } from '@/services/TenantDbService';
 
 export interface MonthlyBalance {
   year: number;
@@ -24,6 +25,8 @@ export interface BalanceInfo {
 
 export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
   const monthlyBalances = ref<MonthlyBalance[]>([]);
+  const isLoaded = ref(false);
+  const tenantDbService = new TenantDbService();
 
   /* ----------------------------------------- CRUD-ähnliche Methoden */
   function getAllMonthlyBalances(): MonthlyBalance[] {
@@ -37,18 +40,30 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
     );
   }
 
-  function setMonthlyBalance(
+  async function setMonthlyBalance(
     year: number,
     month: number,
     data: Omit<MonthlyBalance, 'year' | 'month'>,
-  ): void {
+  ): Promise<void> {
+    const monthlyBalance: MonthlyBalance = { year, month, ...data };
+
+    // Lokaler State aktualisieren
     const idx = monthlyBalances.value.findIndex(
       mb => mb.year === year && mb.month === month,
     );
     if (idx >= 0) {
-      monthlyBalances.value[idx] = { year, month, ...data };
+      monthlyBalances.value[idx] = monthlyBalance;
     } else {
-      monthlyBalances.value.push({ year, month, ...data });
+      monthlyBalances.value.push(monthlyBalance);
+    }
+
+    // IndexedDB aktualisieren
+    try {
+      await tenantDbService.saveMonthlyBalance(monthlyBalance);
+      debugLog('monthlyBalanceStore', `MonthlyBalance für ${year}/${month + 1} gespeichert`);
+    } catch (error) {
+      errorLog('monthlyBalanceStore', `Fehler beim Speichern der MonthlyBalance für ${year}/${month + 1}`, error);
+      throw error;
     }
   }
 
@@ -136,30 +151,79 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
   });
 
   /* ---------------------------------------- Persistence */
-  function loadMonthlyBalances() {
-    const raw = localStorage.getItem(storageKey('monthly_balances'));
-    monthlyBalances.value = raw ? JSON.parse(raw) : [];
-    debugLog('[monthlyBalanceStore] load', { cnt: monthlyBalances.value.length });
+  async function loadMonthlyBalances(): Promise<void> {
+    if (isLoaded.value) return;
+
+    try {
+      // Versuche Migration von localStorage
+      await migrateFromLocalStorage();
+
+      // Lade Daten aus IndexedDB
+      const loadedBalances = await tenantDbService.getAllMonthlyBalances();
+      monthlyBalances.value = loadedBalances;
+      isLoaded.value = true;
+
+      debugLog('monthlyBalanceStore', `${loadedBalances.length} MonthlyBalances geladen`);
+    } catch (error) {
+      errorLog('monthlyBalanceStore', 'Fehler beim Laden der MonthlyBalances', error);
+      monthlyBalances.value = [];
+      isLoaded.value = true;
+    }
   }
 
-  function saveMonthlyBalances() {
-    localStorage.setItem(
-      storageKey('monthly_balances'),
-      JSON.stringify(monthlyBalances.value),
-    );
-    debugLog('[monthlyBalanceStore] save', { cnt: monthlyBalances.value.length });
+  async function saveMonthlyBalances(): Promise<void> {
+    try {
+      // Alle MonthlyBalances in IndexedDB speichern
+      for (const balance of monthlyBalances.value) {
+        await tenantDbService.saveMonthlyBalance(balance);
+      }
+      debugLog('monthlyBalanceStore', `${monthlyBalances.value.length} MonthlyBalances gespeichert`);
+    } catch (error) {
+      errorLog('monthlyBalanceStore', 'Fehler beim Speichern der MonthlyBalances', error);
+      throw error;
+    }
   }
 
-  function reset() {
+  async function reset(): Promise<void> {
     monthlyBalances.value = [];
-    loadMonthlyBalances();
-    debugLog('[monthlyBalanceStore] reset');
+    isLoaded.value = false;
+    await loadMonthlyBalances();
+    debugLog('monthlyBalanceStore', 'MonthlyBalanceStore zurückgesetzt');
   }
 
+  // Migration von localStorage zu IndexedDB
+  async function migrateFromLocalStorage(): Promise<void> {
+    const legacyKey = storageKey('monthly_balances');
+    const legacyData = localStorage.getItem(legacyKey);
+
+    if (legacyData && !isLoaded.value) {
+      try {
+        const parsedData: MonthlyBalance[] = JSON.parse(legacyData);
+
+        if (parsedData.length > 0) {
+          infoLog('monthlyBalanceStore', `Migriere ${parsedData.length} MonthlyBalances von localStorage zu IndexedDB`);
+
+          // Daten in IndexedDB speichern
+          for (const balance of parsedData) {
+            await tenantDbService.saveMonthlyBalance(balance);
+          }
+
+          // Legacy-Daten entfernen
+          localStorage.removeItem(legacyKey);
+          infoLog('monthlyBalanceStore', 'Migration von localStorage zu IndexedDB abgeschlossen');
+        }
+      } catch (error) {
+        errorLog('monthlyBalanceStore', 'Fehler bei der Migration von localStorage', error);
+      }
+    }
+  }
+
+  // Initialisierung
   loadMonthlyBalances();
 
   return {
     monthlyBalances,
+    isLoaded,
     getAllMonthlyBalances,
     getMonthlyBalance,
     setMonthlyBalance,

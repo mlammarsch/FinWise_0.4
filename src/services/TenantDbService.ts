@@ -1,5 +1,6 @@
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, QueueStatistics, PlanningTransaction } from '@/types';
+import type { MonthlyBalance } from '@/stores/monthlyBalanceStore';
 import type { ExtendedTransaction } from '@/stores/transactionStore';
 import { SyncStatus, EntityTypeEnum, SyncOperationType } from '@/types';
 import { errorLog, warnLog, debugLog } from '@/utils/logger';
@@ -1206,6 +1207,88 @@ export class TenantDbService {
       return true;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, { id, error: err });
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // MONTHLY BALANCE CRUD OPERATIONS
+  // ============================================================================
+
+  async getAllMonthlyBalances(): Promise<MonthlyBalance[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getAllMonthlyBalances: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const monthlyBalances = await this.db.monthlyBalances.orderBy('[year+month]').toArray();
+      debugLog('TenantDbService', 'Alle MonthlyBalances abgerufen.', { count: monthlyBalances.length });
+      return monthlyBalances;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller MonthlyBalances', { error: err });
+      return [];
+    }
+  }
+
+  async saveMonthlyBalance(monthlyBalance: MonthlyBalance): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'saveMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+    try {
+      const plainMonthlyBalance = this.toPlainObject(monthlyBalance);
+      await this.db.monthlyBalances.put(plainMonthlyBalance);
+      debugLog('TenantDbService', `MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1} gespeichert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Speichern der MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1}`, { monthlyBalance, error: err });
+      throw err;
+    }
+  }
+
+  async getMonthlyBalancesByYear(year: number): Promise<MonthlyBalance[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getMonthlyBalancesByYear: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      const monthlyBalances = await this.db.monthlyBalances
+        .where('year')
+        .equals(year)
+        .sortBy('month');
+      debugLog('TenantDbService', `MonthlyBalances für Jahr ${year} abgerufen.`, { count: monthlyBalances.length });
+      return monthlyBalances;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalances für Jahr ${year}`, { year, error: err });
+      return [];
+    }
+  }
+
+  async getMonthlyBalance(year: number, month: number): Promise<MonthlyBalance | undefined> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+      return undefined;
+    }
+    try {
+      const monthlyBalance = await this.db.monthlyBalances.get([year, month]);
+      debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} abgerufen.`, { found: !!monthlyBalance });
+      return monthlyBalance;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
+      return undefined;
+    }
+  }
+
+  async deleteMonthlyBalance(year: number, month: number): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'deleteMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      await this.db.monthlyBalances.delete([year, month]);
+      debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} gelöscht.`);
+      return true;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Löschen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
       return false;
     }
   }
