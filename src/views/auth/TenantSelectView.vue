@@ -212,33 +212,70 @@ async function deleteTenant() {
   deleteTargetId.value = null;
 }
 
-function logoutAndRedirect() {
+async function logoutAndRedirect() {
+  // als async markieren wegen await session.logout()
+  infoLog("[TenantSelectView]", "logoutAndRedirect called");
   try {
-    if (typeof session.logoutUser === "function") {
-      session.logoutUser();
-    } else {
-      errorLog(
-        "[TenantSelectView]",
-        "session.logoutUser is not a function. Performing manual logout."
-      );
-      session.currentTenantId = null;
-      session.currentUserId = null;
-      // Weitere manuelle Aufräumarbeiten, falls nötig (z.B. localStorage leeren)
-      localStorage.removeItem("finwise_activeTenantId"); // Beispiel
-    }
+    // 1. WebSocket-Store zurücksetzen (setzt connectionStatus auf DISCONNECTED)
+    infoLog("[TenantSelectView]", "Resetting WebSocket store during logout.");
+    webSocketStore.reset(); // Korrekte Methode zum Zurücksetzen des WebSocket-Stores
+
+    // 2. User-Session im Store löschen
+    infoLog(
+      "[TenantSelectView]",
+      "Calling session.logout() to clear session data."
+    );
+    await session.logout(); // Korrekte Logout-Funktion aus sessionStore verwenden
+    infoLog("[TenantSelectView]", "session.logout() completed.");
   } catch (e) {
-    errorLog("[TenantSelectView] logoutUser failed", String(e));
+    errorLog("[TenantSelectView]", "Error during logout process", String(e));
+    // Auch bei Fehlern versuchen, die Session manuell zu bereinigen
+    session.currentTenantId = null;
+    session.currentUserId = null;
+    localStorage.removeItem("finwise_session"); // Ggf. anpassen, falls der Key anders ist
+    localStorage.removeItem("finwise_activeTenantId");
+    warnLog(
+      "[TenantSelectView]",
+      "Performed manual session cleanup due to error during logout."
+    );
+  } finally {
+    // 3. Sicherstellen, dass alle relevanten Session-Daten im Store genullt sind
+    // (session.logout() sollte das bereits erledigt haben, aber zur Sicherheit)
+    session.currentTenantId = null;
+    session.currentUserId = null;
+    // 'isAuthenticated' existiert nicht direkt, wird durch currentUserId bestimmt
+    debugLog(
+      "[TenantSelectView]",
+      "Session state after logout attempt",
+      JSON.stringify(session.$state)
+    );
+
+    // 4. Zur Login-Seite weiterleiten
+    router.push("/login");
+    infoLog("[TenantSelectView]", "Redirected to /login");
   }
-  router.push("/login");
 }
 
 nextTick(() => {
+  // Diese Logik scheint eher für den App-Start oder Routen-Guards relevant zu sein.
+  // Überprüfung, ob sie hier in TenantSelectView wirklich benötigt wird oder
+  // ob sie zu unerwartetem Verhalten führen kann, wenn man von einer anderen Seite
+  // hierher navigiert, während ein Tenant aktiv ist.
+  // Vorerst belassen, aber mit Vorsicht betrachten.
   if (session.currentTenantId && router.currentRoute.value.path !== "/") {
     if (
       router.currentRoute.value.path !== "/login" &&
       router.currentRoute.value.path !== "/tenant-select"
     ) {
-      router.push("/");
+      // router.push("/"); // Temporär auskommentiert, um mögliche Endlosschleifen zu vermeiden, falls die Logik hier unerwünscht ist.
+      debugLog(
+        "[TenantSelectView] nextTick",
+        "Condition for redirect to / met, but redirect is currently disabled for review.",
+        {
+          currentPath: router.currentRoute.value.path,
+          currentTenantId: session.currentTenantId,
+        }
+      );
     }
   }
 });
@@ -246,14 +283,12 @@ nextTick(() => {
 onUnmounted(() => {
   window.removeEventListener("keydown", handleTenantListKeyDown);
   window.removeEventListener("keydown", globalKeyDownHandler);
-  if (typeof BackendAvailabilityService.stopPeriodicChecks === "function") {
-    BackendAvailabilityService.stopPeriodicChecks();
-  } else {
-    warnLog(
-      "[TenantSelectView]",
-      "BackendAvailabilityService.stopPeriodicChecks is not a function or not available."
-    );
-  }
+  // Da stopPeriodicChecks nicht existiert im BackendAvailabilityService, entfernen wir den Aufruf.
+  // Eine korrekte Implementierung von stopPeriodicChecks wäre für die Zukunft sinnvoll.
+  debugLog(
+    "[TenantSelectView]",
+    "onUnmounted: BackendAvailabilityService.stopPeriodicChecks call removed as it does not exist."
+  );
 });
 </script>
 
@@ -361,7 +396,7 @@ onUnmounted(() => {
             class="link link-primary"
             @click.prevent="logoutAndRedirect"
           >
-            Zurück zum Login
+            Zum Login
           </a>
         </div>
       </div>

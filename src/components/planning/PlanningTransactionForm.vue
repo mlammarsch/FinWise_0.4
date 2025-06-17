@@ -474,9 +474,9 @@ function savePlanningTransaction() {
 
   // Basis-Daten für alle Transaktionstypen
 
-  let finalData = {
+  let finalData: Partial<PlanningTransaction> = {
     name: name.value,
-    tagIds: Array.isArray(tagIds.value) ? [...tagIds.value] : [], // Shallow copy to break Vue reactivity
+    tagIds: Array.isArray(tagIds.value) ? [...tagIds.value] : [],
     amount: amount.value,
     amountType: amountType.value,
     approximateAmount: approximateAmount.value,
@@ -485,46 +485,45 @@ function savePlanningTransaction() {
     note: note.value,
     startDate: startDate.value,
     valueDate: valueDate.value,
-    endDate: endDate.value,
-    recurrencePattern: recurrencePattern.value,
-    recurrenceEndType: recurrenceEndType.value,
-    recurrenceCount: recurrenceCount.value,
+    endDate: effectiveEndDate,
+    recurrencePattern: effectiveRecurrencePattern,
+    recurrenceEndType: effectiveRecurrenceEndType,
+    recurrenceCount: effectiveRecurrenceCount,
     executionDay: executionDay.value,
-    weekendHandling: weekendHandling.value,
+    weekendHandling: weekendHandlingValue,
     isActive: isActive.value,
     forecastOnly: forecastOnly.value,
-    repeatsEnabled: repeatsEnabled.value,
+    // repeatsEnabled entfernt, da es kein Teil von PlanningTransaction ist
     transactionType: transactionType.value,
+    // Die folgenden Felder werden unten je nach Typ spezifisch gesetzt
+    // accountId: undefined,
+    // categoryId: undefined,
+    // recipientId: undefined,
+    // transferToAccountId: undefined,
+    // transferToCategoryId: undefined,
+    counterPlanningTransactionId:
+      props.transaction?.counterPlanningTransactionId, // Beibehalten, falls es bearbeitet wird
   };
 
   // Je nach Transaktionstyp zusätzliche Felder setzen
   if (isExpense.value || isIncome.value) {
-    finalData = {
-      ...finalData,
-      accountId: accountId.value,
-      categoryId: categoryId.value,
-      recipientId: recipientId.value,
-      transferToAccountId: null,
-      transferToCategoryId: null,
-    };
+    finalData.accountId = accountId.value;
+    finalData.categoryId = categoryId.value;
+    finalData.recipientId = recipientId.value;
+    finalData.transferToAccountId = undefined; // Explizit auf undefined setzen
+    finalData.transferToCategoryId = undefined; // Explizit auf undefined setzen
   } else if (isAccountTransfer.value) {
-    finalData = {
-      ...finalData,
-      accountId: accountId.value,
-      transferToAccountId: toAccountId.value,
-      categoryId: null,
-      transferToCategoryId: null,
-      recipientId: null,
-    };
+    finalData.accountId = accountId.value;
+    finalData.transferToAccountId = toAccountId.value;
+    finalData.categoryId = undefined; // Explizit auf undefined setzen
+    finalData.transferToCategoryId = undefined; // Explizit auf undefined setzen
+    finalData.recipientId = undefined; // Explizit auf undefined setzen
   } else if (isCategoryTransfer.value) {
-    finalData = {
-      ...finalData,
-      categoryId: fromCategoryId.value,
-      transferToCategoryId: categoryId.value,
-      accountId: null,
-      transferToAccountId: null,
-      recipientId: null,
-    };
+    finalData.categoryId = fromCategoryId.value; // Dies ist die Quellkategorie
+    finalData.transferToCategoryId = categoryId.value; // Dies ist die Zielkategorie
+    finalData.accountId = undefined; // Explizit auf undefined setzen
+    finalData.transferToAccountId = undefined; // Explizit auf undefined setzen
+    finalData.recipientId = undefined; // Explizit auf undefined setzen
   }
 
   debugLog("[PlanningTransactionForm] Final data for save:", finalData);

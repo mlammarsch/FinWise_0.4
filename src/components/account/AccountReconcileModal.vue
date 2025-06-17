@@ -13,6 +13,7 @@ import { ReconciliationService } from "@/services/ReconciliationService";
 import { AccountService } from "@/services/AccountService"; // neu
 import DatePicker from "@/components/ui/DatePicker.vue";
 import CurrencyInput from "@/components/ui/CurrencyInput.vue";
+import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import { Icon } from "@iconify/vue";
 import { debugLog } from "@/utils/logger";
 
@@ -35,6 +36,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits(["close", "reconciled"]);
+
+// Debug-Log beim Erstellen der Komponente
+debugLog("AccountReconcileModal", "Component created", {
+  account: props.account,
+  isOpen: props.isOpen,
+});
 
 const reconciliationStore = useReconciliationStore();
 const transactionStore = useTransactionStore();
@@ -82,8 +89,19 @@ const hasPendingTransactions = computed(() => {
 watch(
   () => props.isOpen,
   (open) => {
+    debugLog("AccountReconcileModal", "Watcher triggered", {
+      open,
+      account: props.account,
+    });
     if (open) {
       isProcessing.value = false;
+      // Reconciliation im Store starten
+      debugLog(
+        "AccountReconcileModal",
+        "Starting reconciliation for account",
+        props.account
+      );
+      reconciliationService.startReconciliation(props.account);
       nextTick(() => dateInputRef.value?.focusInput());
     }
   }
@@ -91,6 +109,12 @@ watch(
 
 // --- Actions -----------------------------------------------------------
 async function performReconciliation() {
+  debugLog("AccountReconcileModal", "performReconciliation called", {
+    isProcessing: isProcessing.value,
+    difference: difference.value,
+    currentAccount: reconciliationStore.currentAccount,
+  });
+
   if (isProcessing.value || difference.value === 0) return;
   isProcessing.value = true;
   try {
@@ -111,13 +135,20 @@ function closeModal() {
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal modal-open" @keydown.esc="closeModal">
+  <div
+    v-if="isOpen"
+    class="modal modal-open"
+    @keydown.esc="closeModal"
+  >
     <div class="modal-box max-w-lg">
       <h3 class="font-bold text-lg mb-4">
         Konto abgleichen: {{ account.name }}
       </h3>
 
-      <form @submit.prevent="performReconciliation" class="space-y-4">
+      <form
+        @submit.prevent="performReconciliation"
+        class="space-y-4"
+      >
         <!-- Datum -->
         <fieldset>
           <legend class="text-sm font-semibold mb-1">
@@ -135,7 +166,10 @@ function closeModal() {
           <legend class="text-sm font-semibold mb-1">
             Externer Kontostand <span class="text-error">*</span>
           </legend>
-          <CurrencyInput v-model="actualBalance" required />
+          <CurrencyInput
+            v-model="actualBalance"
+            required
+          />
         </fieldset>
 
         <!-- Zusammenfassung -->
@@ -143,7 +177,10 @@ function closeModal() {
           <div class="flex justify-between">
             <span>Aktueller Kontostand (App):</span>
             <span class="font-medium">
-              <CurrencyDisplay :amount="currentBalance" :showZero="true" />
+              <CurrencyDisplay
+                :amount="currentBalance"
+                :showZero="true"
+              />
             </span>
           </div>
           <div class="flex justify-between border-t border-base-300 pt-1">
@@ -180,7 +217,10 @@ function closeModal() {
           v-if="hasPendingTransactions"
           class="alert alert-warning text-xs p-2 mt-4"
         >
-          <Icon icon="mdi:alert-outline" class="text-lg" />
+          <Icon
+            icon="mdi:alert-outline"
+            class="text-lg"
+          />
           <span
             >Es gibt noch nicht abgeglichene Transaktionen. Der
             "Aktuelle Kontostand (App)" enthält diese bereits.</span
@@ -189,7 +229,11 @@ function closeModal() {
 
         <!-- Aktionen -->
         <div class="modal-action mt-6">
-          <button type="button" class="btn btn-ghost" @click="closeModal">
+          <button
+            type="button"
+            class="btn btn-ghost"
+            @click="closeModal"
+          >
             Abbrechen
           </button>
           <button
@@ -206,6 +250,9 @@ function closeModal() {
         </div>
       </form>
     </div>
-    <div class="modal-backdrop bg-black/30" @click="closeModal" />
+    <div
+      class="modal-backdrop bg-black/30"
+      @click="closeModal"
+    />
   </div>
 </template>

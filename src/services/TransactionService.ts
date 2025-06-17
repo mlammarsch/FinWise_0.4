@@ -302,7 +302,7 @@ export const TransactionService = {
 
 /* --------------------- Ausgleichs‑Buchung ------------------------ */
 
-  addReconcileTransaction(
+  async addReconcileTransaction(
     accountId: string,
     amount: number,
     date: string,
@@ -315,7 +315,7 @@ export const TransactionService = {
       catStore.categories.find(c => c.name === 'Ausgleichskorrekturen')?.id ??
       null;
 
-    const tx = this.addTransaction({
+    const tx = await this.addTransaction({
       type: TransactionType.RECONCILE,
       date: toDateOnlyString(date),
       valueDate: toDateOnlyString(date),

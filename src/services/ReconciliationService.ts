@@ -35,11 +35,11 @@ export const ReconciliationService = {
 
   /* ------------------------- Haupt‑Durchführung ------------------------- */
 
-  reconcileAccount(): boolean {
+  async reconcileAccount(): Promise<boolean> {
     const store = useReconciliationStore();
 
     if (!store.currentAccount) {
-      debugLog('[ReconciliationService] no currentAccount – abort');
+      debugLog('ReconciliationService', 'no currentAccount – abort', store.currentAccount);
       return false;
     }
 
@@ -50,13 +50,13 @@ export const ReconciliationService = {
     );
 
     if (diff === 0) {
-      debugLog('[ReconciliationService] difference 0 – nothing to do');
+      debugLog('ReconciliationService', 'difference 0 – nothing to do');
       store.reset();
       return true;
     }
 
     // Ausgleichsbuchung anlegen
-    const newTx = TransactionService.addReconcileTransaction(
+    const newTx = await TransactionService.addReconcileTransaction(
       store.currentAccount.id,
       diff,
       store.reconcileDate,
@@ -64,11 +64,11 @@ export const ReconciliationService = {
     );
 
     if (!newTx) {
-      debugLog('[ReconciliationService] failed to create reconcile tx');
+      debugLog('ReconciliationService', 'failed to create reconcile tx');
       return false;
     }
 
-    debugLog('[ReconciliationService] reconcile OK', {
+    debugLog('ReconciliationService', 'reconcile OK', {
       accountId: store.currentAccount.id,
       currentBalance: current,
       difference: diff,
@@ -99,7 +99,7 @@ export const ReconciliationService = {
       }
     });
 
-    debugLog('[ReconciliationService] reconciled historic txs', { count });
+    debugLog('ReconciliationService', 'reconciled historic txs', { count });
     return count;
   },
 
@@ -111,7 +111,7 @@ export const ReconciliationService = {
     TransactionService.updateTransaction(transactionId, {
       reconciled: !tx.reconciled,
     });
-    debugLog('[ReconciliationService] toggled reconciled', {
+    debugLog('ReconciliationService', 'toggled reconciled', {
       id: transactionId,
       newVal: !tx.reconciled,
     });

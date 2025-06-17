@@ -9,6 +9,7 @@ import AccountForm from "./AccountForm.vue";
 import { useAccountStore } from "../../stores/accountStore";
 import { AccountService } from "../../services/AccountService"; // neu
 import TransactionImportModal from "../transaction/TransactionImportModal.vue"; // neu für CSV-Import
+import { Icon } from "@iconify/vue";
 
 const emit = defineEmits(["select"]);
 

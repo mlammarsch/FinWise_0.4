@@ -284,7 +284,10 @@ function onTransferComplete() {
               </div>
             </th>
             <th class="text-center cursor-pointer px-1">
-              <Icon icon="mdi:note-text-outline" class="text-base" />
+              <Icon
+                icon="mdi:note-text-outline"
+                class="text-base"
+              />
             </th>
             <th class="text-right px-2">Aktionen</th>
           </tr>
@@ -310,7 +313,7 @@ function onTransferComplete() {
                 {{ CategoryService.getCategoryName(tx.toCategoryId) }}
               </template>
               <template v-else>
-                {{ AccountService.getAccountName(tx.accountId) }}
+                {{ AccountService.getAccountNameSync(tx.accountId) }}
               </template>
             </td>
             <td class="px-2">
@@ -332,7 +335,10 @@ function onTransferComplete() {
             </td>
             <td class="text-center px-1">
               <template v-if="tx.note && tx.note.trim()">
-                <div class="tooltip tooltip-left" :data-tip="tx.note">
+                <div
+                  class="tooltip tooltip-left"
+                  :data-tip="tx.note"
+                >
                   <Icon
                     icon="mdi:comment-text-outline"
                     class="text-base opacity-60 cursor-help"
@@ -347,20 +353,29 @@ function onTransferComplete() {
                   @click="editTransactionLocal(tx)"
                   title="Bearbeiten"
                 >
-                  <Icon icon="mdi:pencil" class="text-base" />
+                  <Icon
+                    icon="mdi:pencil"
+                    class="text-base"
+                  />
                 </button>
                 <button
                   class="btn btn-ghost btn-xs border-none text-error/75 px-1"
                   @click="$emit('delete', tx)"
                   title="Löschen"
                 >
-                  <Icon icon="mdi:trash-can" class="text-base" />
+                  <Icon
+                    icon="mdi:trash-can"
+                    class="text-base"
+                  />
                 </button>
               </div>
             </td>
           </tr>
           <tr v-if="displayTransactions.length === 0">
-            <td colspan="8" class="text-center py-4 text-base-content/70">
+            <td
+              colspan="8"
+              class="text-center py-4 text-base-content/70"
+            >
               Keine Transaktionen für die Filter gefunden.
             </td>
           </tr>

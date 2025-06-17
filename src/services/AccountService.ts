@@ -125,6 +125,13 @@ export const AccountService = {
     return account?.name || 'Unbekanntes Konto';
   },
 
+  getAccountNameSync(id: string | null): string {
+    if (!id) return 'Kein Konto';
+    const accountStore = useAccountStore();
+    const account = accountStore.getAccountById(id);
+    return account?.name || 'Unbekanntes Konto';
+  },
+
   // ---------------------------------------------------- Account‑Groups CRUD
 
   getAllAccountGroups(): AccountGroup[] {
