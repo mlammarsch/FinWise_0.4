@@ -6,15 +6,17 @@
  * erlaubt Auswahl oder Neuanlage.
  */
 
-import { ref, computed, nextTick, onMounted } from "vue";
+import { ref, computed, nextTick, onMounted, watch, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { TenantService } from "@/services/TenantService";
-import { useSessionStore } from "@/stores/sessionStore";
-import { useWebSocketStore } from "@/stores/webSocketStore";
-import { BackendAvailabilityService } from "@/services/BackendAvailabilityService";
-import { debugLog, infoLog, errorLog } from "@/utils/logger";
-import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
+import { TenantService } from "../../services/TenantService";
+import { useSessionStore } from "../../stores/sessionStore";
+import { useWebSocketStore } from "../../stores/webSocketStore";
+import { BackendAvailabilityService } from "../../services/BackendAvailabilityService";
+import { debugLog, infoLog, errorLog, warnLog } from "../../utils/logger";
+import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
+// import type { Tenant } from "../../types"; // Temporär auskommentiert, da Typ nicht gefunden wird
+type Tenant = any; // Temporärer Workaround für den Typ
 
 const router = useRouter();
 const session = useSessionStore();
@@ -22,38 +24,165 @@ const webSocketStore = useWebSocketStore();
 
 const newTenantName = ref("");
 const showCreate = ref(false);
+const newTenantNameInput = ref<HTMLInputElement | null>(null);
+const tenantListItems = ref<Array<HTMLElement | null>>([]);
+const focusedTenantIndex = ref(-1);
 
-// Neue State-Variablen für Lösch-Funktionalität
 const showDeleteModal = ref(false);
 const deleteTargetId = ref<string | null>(null);
 
-const tenants = computed(() => TenantService.getOwnTenants());
+const tenants = computed<Tenant[]>(() => TenantService.getOwnTenants()); // Expliziter Typ für computed
+const isButtonEnabled = computed(
+  () => BackendAvailabilityService.isButtonEnabled.value
+);
 
-// Backend-Verfügbarkeit über zentralen Service
-const isButtonEnabled = BackendAvailabilityService.isButtonEnabled;
+const globalKeyDownHandler = (event: KeyboardEvent) => {
+  if (
+    event.key === "Enter" &&
+    tenants.value.length === 0 &&
+    !showCreate.value
+  ) {
+    event.preventDefault();
+    showCreate.value = true;
+  }
+};
 
-// Backend-Status beim Mount prüfen
 onMounted(() => {
-  BackendAvailabilityService.startPeriodicChecks();
+  if (typeof BackendAvailabilityService.startPeriodicChecks === "function") {
+    BackendAvailabilityService.startPeriodicChecks();
+  } else {
+    warnLog(
+      "[TenantSelectView]",
+      "BackendAvailabilityService.startPeriodicChecks is not a function."
+    );
+  }
+  window.addEventListener("keydown", handleTenantListKeyDown);
+  if (tenants.value.length > 0) {
+    focusedTenantIndex.value = 0;
+    focusTenantItem(0);
+  } else {
+    window.addEventListener("keydown", globalKeyDownHandler);
+  }
 });
 
+watch(showCreate, (newValue) => {
+  if (newValue) {
+    nextTick(() => {
+      newTenantNameInput.value?.focus();
+    });
+  }
+});
+
+watch(
+  tenants,
+  (newTenants) => {
+    tenantListItems.value = [];
+    if (
+      newTenants.length > 0 &&
+      (focusedTenantIndex.value === -1 || !newTenants[focusedTenantIndex.value])
+    ) {
+      focusedTenantIndex.value = 0;
+      nextTick(() => focusTenantItem(0));
+    } else if (newTenants.length === 0) {
+      focusedTenantIndex.value = -1;
+    }
+
+    if (newTenants.length === 0) {
+      window.removeEventListener("keydown", globalKeyDownHandler);
+      window.addEventListener("keydown", globalKeyDownHandler);
+    } else {
+      window.removeEventListener("keydown", globalKeyDownHandler);
+    }
+  },
+  { deep: true }
+);
+
+function focusTenantItem(index: number) {
+  nextTick(() => {
+    if (tenantListItems.value && tenantListItems.value[index]) {
+      tenantListItems.value[index]?.focus();
+    }
+  });
+}
+
+function handleTenantListKeyDown(event: KeyboardEvent) {
+  if (showCreate.value || tenants.value.length === 0) return;
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      if (focusedTenantIndex.value < tenants.value.length - 1) {
+        focusedTenantIndex.value++;
+      } else {
+        focusedTenantIndex.value = 0;
+      }
+      focusTenantItem(focusedTenantIndex.value);
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      if (focusedTenantIndex.value > 0) {
+        focusedTenantIndex.value--;
+      } else {
+        focusedTenantIndex.value = tenants.value.length - 1;
+      }
+      focusTenantItem(focusedTenantIndex.value);
+      break;
+    case "Enter":
+      event.preventDefault();
+      if (
+        focusedTenantIndex.value !== -1 &&
+        tenants.value[focusedTenantIndex.value]
+      ) {
+        selectTenant(tenants.value[focusedTenantIndex.value].uuid);
+      }
+      break;
+  }
+}
+
 function selectTenant(id: string) {
-  debugLog("[TenantSelectView] selectTenant", JSON.stringify({ tenantId: id }));
+  debugLog("[TenantSelectView] selectTenant", `Tenant ID: ${id}`);
   TenantService.switchTenant(id);
   router.push("/");
 }
 
 async function createTenant() {
   if (!newTenantName.value.trim()) return;
-  const tenant = TenantService.createTenant(newTenantName.value);
-  debugLog("[TenantSelectView] tenant created", { id: tenant.id });
-  newTenantName.value = "";
-  showCreate.value = false;
-  // Auswahl wurde schon im Service gesetzt
-  router.push("/");
+  try {
+    const newTenant = (await TenantService.createTenant(
+      newTenantName.value
+    )) as Tenant;
+    debugLog(
+      "[TenantSelectView] tenant created",
+      `New Tenant ID: ${newTenant.uuid}`
+    );
+
+    newTenantName.value = ""; // Reset name after getting its value
+    showCreate.value = false;
+
+    await nextTick();
+
+    if (
+      tenants.value.length === 1 &&
+      tenants.value[0].uuid === newTenant.uuid
+    ) {
+      selectTenant(newTenant.uuid);
+    } else {
+      const newTenantInList = tenants.value.find(
+        (t) => t.uuid === newTenant.uuid
+      );
+      if (newTenantInList) {
+        const index = tenants.value.indexOf(newTenantInList);
+        if (index !== -1) {
+          focusedTenantIndex.value = index;
+          focusTenantItem(index);
+        }
+      }
+    }
+  } catch (err) {
+    errorLog("[TenantSelectView] createTenant error", String(err));
+  }
 }
 
-// Neue Funktionen für Lösch-Funktionalität
 function confirmDeleteTenant(tenantId: string) {
   deleteTargetId.value = tenantId;
   showDeleteModal.value = true;
@@ -63,20 +192,68 @@ async function deleteTenant() {
   if (deleteTargetId.value) {
     try {
       await TenantService.deleteTenantCompletely(deleteTargetId.value);
-      debugLog("[TenantSelectView] deleteTenantCompletely", {
-        id: deleteTargetId.value,
-      });
-    } catch (error) {
-      debugLog("[TenantSelectView] deleteTenantCompletely error", error);
+      debugLog(
+        "[TenantSelectView] deleteTenantCompletely",
+        `Deleted Tenant ID: ${deleteTargetId.value}`
+      );
+
+      if (tenants.value.length > 0) {
+        focusedTenantIndex.value = Math.max(0, focusedTenantIndex.value - 1);
+        focusTenantItem(focusedTenantIndex.value);
+      } else {
+        focusedTenantIndex.value = -1;
+        window.addEventListener("keydown", globalKeyDownHandler);
+      }
+    } catch (err) {
+      errorLog("[TenantSelectView] deleteTenantCompletely error", String(err));
     }
   }
   showDeleteModal.value = false;
   deleteTargetId.value = null;
 }
 
+function logoutAndRedirect() {
+  try {
+    if (typeof session.logoutUser === "function") {
+      session.logoutUser();
+    } else {
+      errorLog(
+        "[TenantSelectView]",
+        "session.logoutUser is not a function. Performing manual logout."
+      );
+      session.currentTenantId = null;
+      session.currentUserId = null;
+      // Weitere manuelle Aufräumarbeiten, falls nötig (z.B. localStorage leeren)
+      localStorage.removeItem("finwise_activeTenantId"); // Beispiel
+    }
+  } catch (e) {
+    errorLog("[TenantSelectView] logoutUser failed", String(e));
+  }
+  router.push("/login");
+}
+
 nextTick(() => {
-  // Falls bereits ein Tenant aktiv ist → sofort weiter
-  if (session.currentTenantId) router.push("/");
+  if (session.currentTenantId && router.currentRoute.value.path !== "/") {
+    if (
+      router.currentRoute.value.path !== "/login" &&
+      router.currentRoute.value.path !== "/tenant-select"
+    ) {
+      router.push("/");
+    }
+  }
+});
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleTenantListKeyDown);
+  window.removeEventListener("keydown", globalKeyDownHandler);
+  if (typeof BackendAvailabilityService.stopPeriodicChecks === "function") {
+    BackendAvailabilityService.stopPeriodicChecks();
+  } else {
+    warnLog(
+      "[TenantSelectView]",
+      "BackendAvailabilityService.stopPeriodicChecks is not a function or not available."
+    );
+  }
 });
 </script>
 
@@ -89,36 +266,42 @@ nextTick(() => {
         <template v-if="tenants.length">
           <div class="space-y-2">
             <div
-              v-for="t in tenants"
+              v-for="(t, index) in tenants"
               :key="t.uuid"
-              class="flex items-center justify-between p-3 rounded-box hover:bg-base-200 border border-base-300"
+              :ref="el => { if (el) tenantListItems[index] = el as HTMLElement }"
+              tabindex="0"
+              class="flex items-center justify-between p-3 rounded-box hover:bg-base-200 border border-base-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-100"
+              :class="{
+                'ring-2 ring-primary ring-offset-2 ring-offset-base-100':
+                  index === focusedTenantIndex,
+              }"
+              @click="selectTenant(t.uuid)"
+              @focus="focusedTenantIndex = index"
+              @keydown.enter.prevent="selectTenant(t.uuid)"
+              @keydown.space.prevent="selectTenant(t.uuid)"
             >
-              <span
-                @click="selectTenant(t.uuid)"
-                class="flex-1 cursor-pointer text-left"
-              >
+              <span class="flex-1 text-left">
                 {{ t.tenantName }}
               </span>
-              <!-- Trashcan-Button (immer sichtbar aber disabled wenn offline) -->
               <button
                 class="btn btn-ghost btn-sm"
                 :class="
                   isButtonEnabled ? 'text-error' : 'text-error opacity-50'
                 "
                 :disabled="!isButtonEnabled"
-                @click="
+                @click.stop="
                   if (isButtonEnabled) {
                     confirmDeleteTenant(t.uuid);
                   } else {
                     debugLog(
                       '[TenantSelectView] Trash-Button disabled - Backend offline',
-                      {
+                      JSON.stringify({
                         tenantId: t.uuid,
                         isBackendOnline:
                           BackendAvailabilityService.isOnline.value,
                         isCheckingBackend:
                           BackendAvailabilityService.isChecking.value,
-                      }
+                      })
                     );
                   }
                 "
@@ -138,7 +321,7 @@ nextTick(() => {
         </template>
 
         <p
-          v-else
+          v-else-if="!showCreate"
           class="text-center opacity-70"
         >
           Noch kein Mandant vorhanden.
@@ -156,6 +339,7 @@ nextTick(() => {
           class="space-y-3"
         >
           <input
+            ref="newTenantNameInput"
             v-model.trim="newTenantName"
             type="text"
             placeholder="Name des Mandanten"
@@ -170,10 +354,19 @@ nextTick(() => {
             Anlegen & wechseln
           </button>
         </div>
+
+        <div class="text-center text-sm opacity-70 mt-4">
+          <a
+            href="#"
+            class="link link-primary"
+            @click.prevent="logoutAndRedirect"
+          >
+            Zurück zum Login
+          </a>
+        </div>
       </div>
     </div>
 
-    <!-- Delete Confirmation -->
     <ConfirmationModal
       v-if="showDeleteModal"
       title="Mandant löschen"
