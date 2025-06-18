@@ -66,7 +66,7 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
         return;
       }
       await tenantDbService.saveMonthlyBalance(monthlyBalance);
-      debugLog('monthlyBalanceStore', `MonthlyBalance für ${year}/${month + 1} gespeichert`);
+      // debugLog('monthlyBalanceStore', `MonthlyBalance für ${year}/${month + 1} gespeichert`);
     } catch (error) {
       errorLog('monthlyBalanceStore', `Fehler beim Speichern der MonthlyBalance für ${year}/${month + 1}`, error);
       throw error;
@@ -176,7 +176,7 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
       monthlyBalances.value = loadedBalances;
       isLoaded.value = true;
 
-      debugLog('monthlyBalanceStore', `${loadedBalances.length} MonthlyBalances geladen`);
+      // debugLog('monthlyBalanceStore', `${loadedBalances.length} MonthlyBalances geladen`);
     } catch (error) {
       errorLog('monthlyBalanceStore', 'Fehler beim Laden der MonthlyBalances', error);
       monthlyBalances.value = [];
@@ -195,7 +195,7 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
       for (const balance of monthlyBalances.value) {
         await tenantDbService.saveMonthlyBalance(balance);
       }
-      debugLog('monthlyBalanceStore', `${monthlyBalances.value.length} MonthlyBalances gespeichert`);
+      // debugLog('monthlyBalanceStore', `${monthlyBalances.value.length} MonthlyBalances gespeichert`);
     } catch (error) {
       errorLog('monthlyBalanceStore', 'Fehler beim Speichern der MonthlyBalances', error);
       throw error;
@@ -206,7 +206,7 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
     monthlyBalances.value = [];
     isLoaded.value = false;
     await loadMonthlyBalances();
-    debugLog('monthlyBalanceStore', 'MonthlyBalanceStore zurückgesetzt');
+    // debugLog('monthlyBalanceStore', 'MonthlyBalanceStore zurückgesetzt');
   }
 
   // Migration von localStorage zu IndexedDB

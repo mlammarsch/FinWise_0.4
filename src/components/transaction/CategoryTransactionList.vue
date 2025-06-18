@@ -25,6 +25,12 @@ import { AccountService } from "@/services/AccountService";
 import { CategoryService } from "@/services/CategoryService";
 import { debugLog } from "@/utils/logger";
 import { BalanceService } from "@/services/BalanceService";
+import { TransactionService } from "@/services/TransactionService"; // Import hinzugefügt
+
+debugLog(
+  "[CategoryTransactionList] TransactionService on setup:",
+  TransactionService
+); // Log zur Validierung
 
 const props = defineProps<{
   transactions: Transaction[];

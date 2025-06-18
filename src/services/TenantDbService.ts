@@ -1270,7 +1270,7 @@ export class TenantDbService {
     }
     try {
       const monthlyBalances = await this.db.monthlyBalances.orderBy('[year+month]').toArray();
-      debugLog('TenantDbService', 'Alle MonthlyBalances abgerufen.', { count: monthlyBalances.length });
+      // debugLog('TenantDbService', 'Alle MonthlyBalances abgerufen.', { count: monthlyBalances.length });
       return monthlyBalances;
     } catch (err) {
       errorLog('TenantDbService', 'Fehler beim Abrufen aller MonthlyBalances', { error: err });
@@ -1286,7 +1286,7 @@ export class TenantDbService {
     try {
       const plainMonthlyBalance = this.toPlainObject(monthlyBalance);
       await this.db.monthlyBalances.put(plainMonthlyBalance);
-      debugLog('TenantDbService', `MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1} gespeichert.`);
+      // debugLog('TenantDbService', `MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1} gespeichert.`);
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Speichern der MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1}`, { monthlyBalance, error: err });
       throw err;
@@ -1303,7 +1303,7 @@ export class TenantDbService {
         .where('year')
         .equals(year)
         .sortBy('month');
-      debugLog('TenantDbService', `MonthlyBalances für Jahr ${year} abgerufen.`, { count: monthlyBalances.length });
+      // debugLog('TenantDbService', `MonthlyBalances für Jahr ${year} abgerufen.`, { count: monthlyBalances.length });
       return monthlyBalances;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalances für Jahr ${year}`, { year, error: err });
@@ -1318,7 +1318,7 @@ export class TenantDbService {
     }
     try {
       const monthlyBalance = await this.db.monthlyBalances.get([year, month]);
-      debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} abgerufen.`, { found: !!monthlyBalance });
+      // debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} abgerufen.`, { found: !!monthlyBalance });
       return monthlyBalance;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
@@ -1333,7 +1333,7 @@ export class TenantDbService {
     }
     try {
       await this.db.monthlyBalances.delete([year, month]);
-      debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} gelöscht.`);
+      // debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} gelöscht.`);
       return true;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
