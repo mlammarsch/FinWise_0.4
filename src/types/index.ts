@@ -16,6 +16,7 @@ export interface Account {
   creditLimit?: number
   offset: number
   image?: string
+  logoUrl?: string | null | undefined
   updated_at?: string // ISO 8601 Format
 }
 
@@ -24,6 +25,7 @@ export interface AccountGroup {
   name: string
   sortOrder: number
   image?: string
+  logoUrl?: string | null | undefined
   updated_at?: string // ISO 8601 Format
 }
 

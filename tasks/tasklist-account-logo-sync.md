@@ -1,11 +1,11 @@
 # Taskliste: Account & Account Group Logo Synchronisation
 
-## 1. Datenmodell-Anpassungen
+## 1. [x] Datenmodell-Anpassungen
 
-1.1. [ ] Backend: Datenbanktabelle `accounts` um ein Feld für den Logo-Pfad erweitern (z.B. `logo_path`) (FR2.3, TechConsideration 7.8.2)
-1.2. [ ] Backend: Datenbanktabelle `account_groups` um ein Feld für den Logo-Pfad erweitern (z.B. `logo_path`) (FR2.3, TechConsideration 7.8.2)
-1.3. [ ] Frontend: Interface `Account` in [`src/types/index.ts`](src/types/index.ts:1) um ein Feld für den Logo-Pfad erweitern (z.B. `logoUrl` oder `logoPath`) (TechConsideration 7.8.2)
-1.4. [ ] Frontend: Interface `AccountGroup` in [`src/types/index.ts`](src/types/index.ts:1) um ein Feld für den Logo-Pfad erweitern (z.B. `logoUrl` oder `logoPath`) (TechConsideration 7.8.2)
+1.1. [x] Backend: Datenbanktabelle `accounts` um ein Feld für den Logo-Pfad erweitern (z.B. `logo_path`) (FR2.3, TechConsideration 7.8.2)
+1.2. [x] Backend: Datenbanktabelle `account_groups` um ein Feld für den Logo-Pfad erweitern (z.B. `logo_path`) (FR2.3, TechConsideration 7.8.2)
+1.3. [x] Frontend: Interface `Account` in [`src/types/index.ts`](src/types/index.ts:1) um ein Feld für den Logo-Pfad erweitern (z.B. `logoUrl` oder `logoPath`) (TechConsideration 7.8.2)
+1.4. [x] Frontend: Interface `AccountGroup` in [`src/types/index.ts`](src/types/index.ts:1) um ein Feld für den Logo-Pfad erweitern (z.B. `logoUrl` oder `logoPath`) (TechConsideration 7.8.2)
 
 ## 2. Backend-Anpassungen
 
