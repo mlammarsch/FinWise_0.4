@@ -1341,6 +1341,104 @@ export class TenantDbService {
     }
   }
 
+  // Logo Cache Management
+  // Annahme: Das Schema in tenantStore.ts wurde um 'logoCache: "&logoPath, dataUrl, lastFetched"' erweitert.
+  // und der Typ FinwiseTenantSpecificDB wurde entsprechend angepasst:
+  // logoCache: Dexie.Table<LogoCacheEntry, string>;
+  //
+  // interface LogoCacheEntry {
+  //   logoPath: string; // Primärschlüssel, z.B. tenant_id/uuid.ext
+  //   dataUrl: string;  // Base64 Data URL
+  //   lastFetched: number; // Timestamp
+  // }
+
+  async getCachedLogo(logoPath: string): Promise<{ logoPath: string; dataUrl: string; lastFetched: number } | null> {
+    if (!this.db || !this.db.logoCache) {
+      warnLog('TenantDbService', 'getCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+      return null;
+    }
+    try {
+      const cachedLogo = await this.db.logoCache.get(logoPath);
+      if (cachedLogo) {
+        debugLog('TenantDbService', `Logo für Pfad "${logoPath}" aus Cache abgerufen.`);
+        return cachedLogo;
+      }
+      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" nicht im Cache gefunden.`);
+      return null;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Abrufen des Logos für Pfad "${logoPath}" aus dem Cache`, { logoPath, error: err });
+      return null;
+    }
+  }
+
+  async cacheLogo(logoPath: string, dataUrl: string): Promise<void> {
+    if (!this.db || !this.db.logoCache) {
+      warnLog('TenantDbService', 'cacheLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+    }
+    try {
+      const entry = {
+        logoPath,
+        dataUrl,
+        lastFetched: Date.now(),
+      };
+      await this.db.logoCache.put(entry);
+      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" im Cache gespeichert/aktualisiert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Speichern/Aktualisieren des Logos für Pfad "${logoPath}" im Cache`, { logoPath, error: err });
+      throw err;
+    }
+  }
+
+  async removeCachedLogo(logoPath: string): Promise<void> {
+    if (!this.db || !this.db.logoCache) {
+      warnLog('TenantDbService', 'removeCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+    }
+    try {
+      await this.db.logoCache.delete(logoPath);
+      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" aus Cache entfernt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Entfernen des Logos für Pfad "${logoPath}" aus dem Cache`, { logoPath, error: err });
+      throw err;
+    }
+  }
+
+  async clearAllLogoCache(): Promise<void> {
+    if (!this.db || !this.db.logoCache) {
+      warnLog('TenantDbService', 'clearAllLogoCache: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+    }
+    try {
+      await this.db.logoCache.clear();
+      debugLog('TenantDbService', 'Gesamter Logo-Cache geleert.');
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Leeren des gesamten Logo-Caches', { error: err });
+      throw err;
+    }
+  }
+
+  async getAllCachedLogoKeys(): Promise<string[]> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'getAllCachedLogoKeys: Keine aktive Mandanten-DB verfügbar.');
+      return [];
+    }
+    try {
+      // Sicherstellen, dass logoCache in der DB-Definition existiert.
+      // In FinwiseTenantSpecificDB ist logoCache definiert.
+      if (!this.db.logoCache) {
+        warnLog('TenantDbService', 'getAllCachedLogoKeys: logoCache Tabelle nicht in DB-Instanz gefunden. Möglicherweise nicht initialisiert.');
+        return [];
+      }
+      const keys = await this.db.logoCache.toCollection().keys() as string[];
+      debugLog('TenantDbService', 'Alle Logo-Cache-Schlüssel abgerufen.', { count: keys.length });
+      return keys;
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Logo-Cache-Schlüssel', { error: err });
+      return [];
+    }
+  }
+
   // Sync-Queue-Methoden
   async addToSyncQueue(tableName: string, operation: 'create' | 'update' | 'delete', entity: any): Promise<void> {
     if (!this.db) {

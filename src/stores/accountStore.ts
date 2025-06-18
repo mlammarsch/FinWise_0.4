@@ -330,6 +330,7 @@ export const useAccountStore = defineStore('account', () => {
   async function updateAccountLogo(accountId: string, newLogoPath: string | null): Promise<void> {
     const account = getAccountById(accountId);
     if (account) {
+      const oldLogoPath = account.logoUrl; // Alten Pfad speichern
       // Erstelle ein Update-Objekt, das nur die zu ändernden Felder und die ID enthält.
       // updated_at wird in updateAccount gesetzt.
       const accountUpdates: Partial<Account> & { id: string } = {
@@ -340,6 +341,14 @@ export const useAccountStore = defineStore('account', () => {
       // fromSync ist false, da dies eine lokale Änderung ist.
       await updateAccount(accountUpdates as Account, false);
       infoLog('accountStore', `Logo für Konto ${accountId} aktualisiert auf ${newLogoPath}.`);
+
+      if (oldLogoPath && newLogoPath === null) { // Wenn Logo entfernt wurde
+        // const tenantDb = useTenantDbService().value; // useTenantDbService ist nicht definiert, tenantDbService ist direkt verfügbar
+        if (tenantDbService) {
+          await tenantDbService.removeCachedLogo(oldLogoPath);
+          infoLog('accountStore', `Altes Logo ${oldLogoPath} für Konto ${accountId} aus Cache entfernt.`);
+        }
+      }
     } else {
       errorLog('accountStore', `Konto ${accountId} für Logo-Update nicht gefunden.`);
     }
@@ -348,12 +357,21 @@ export const useAccountStore = defineStore('account', () => {
   async function updateAccountGroupLogo(accountGroupId: string, newLogoPath: string | null): Promise<void> {
     const group = accountGroups.value.find(g => g.id === accountGroupId);
     if (group) {
+      const oldLogoPath = group.logoUrl; // Alten Pfad speichern
       const groupUpdates: Partial<AccountGroup> & { id: string } = {
         id: accountGroupId,
         logoUrl: newLogoPath,
       };
       await updateAccountGroup(groupUpdates as AccountGroup, false);
       infoLog('accountStore', `Logo für Kontogruppe ${accountGroupId} aktualisiert auf ${newLogoPath}.`);
+
+      if (oldLogoPath && newLogoPath === null) { // Wenn Logo entfernt wurde
+        // const tenantDb = useTenantDbService().value; // useTenantDbService ist nicht definiert, tenantDbService ist direkt verfügbar
+        if (tenantDbService) {
+          await tenantDbService.removeCachedLogo(oldLogoPath);
+          infoLog('accountStore', `Altes Logo ${oldLogoPath} für Kontogruppe ${accountGroupId} aus Cache entfernt.`);
+        }
+      }
     } else {
       errorLog('accountStore', `Kontogruppe ${accountGroupId} für Logo-Update nicht gefunden.`);
     }

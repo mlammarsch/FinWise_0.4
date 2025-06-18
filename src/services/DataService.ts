@@ -14,8 +14,10 @@ import type { // Als Typ-Importe markiert
   PlanningTransaction,
   Recipient,
 } from '@/types';
-import { debugLog } from '@/utils/logger';
+import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger'; // warnLog importiert
 import { storageKey } from '@/utils/storageKey';
+import { ImageService } from './ImageService'; // Hinzugefügt für Logo-Caching
+import { TenantDbService } from '@/services/TenantDbService'; // Korrigierter Import
 
 // ---------- NEW – Store-Imports für reload ----------
 import { useAccountStore } from '@/stores/accountStore';
@@ -112,6 +114,53 @@ export class DataService {
 
     // Nach dem Reset alle Monatsbilanzen neu berechnen
     await BalanceService.calculateMonthlyBalances();
+
+    // Neue Logik für Logo-Cache-Aktualisierung
+    const accounts = accountStore.accounts;
+    for (const acc of accounts) {
+      if (acc.logoUrl) {
+        ImageService.fetchAndCacheLogo(acc.logoUrl).catch(err => {
+          errorLog('DataService', `Failed to pre-cache logo for account ${acc.id}`, err);
+        });
+      }
+    }
+
+    const accountGroups = accountStore.accountGroups;
+    for (const group of accountGroups) {
+      if (group.logoUrl) {
+        ImageService.fetchAndCacheLogo(group.logoUrl).catch(err => {
+          errorLog('DataService', `Failed to pre-cache logo for account group ${group.id}`, err);
+        });
+      }
+    }
+
+    // Bereinigung verwaister Logos
+    const tenantDbInstance = new TenantDbService();
+    // Prüfen, ob der tenantDbService eine aktive DB-Verbindung hat.
+    // Die TenantDbService-Klasse selbst hat keinen direkten 'dbInitialized'-Status,
+    // aber der Zugriff auf 'this.db' innerhalb seiner Methoden prüft, ob eine DB aktiv ist.
+    // Wir können hier nicht direkt auf 'tenantDbInstance.db' zugreifen, da es private ist.
+    // Stattdessen rufen wir die neue Methode auf und prüfen, ob sie erfolgreich war.
+    try {
+      const accountStore = useAccountStore(); // Sicherstellen, dass der Store hier verfügbar ist
+      const validLogoPaths = new Set<string>();
+      accountStore.accounts.forEach(acc => { if (acc.logoUrl) validLogoPaths.add(acc.logoUrl); });
+      accountStore.accountGroups.forEach(group => { if (group.logoUrl) validLogoPaths.add(group.logoUrl); });
+
+      const cachedLogoKeys = await tenantDbInstance.getAllCachedLogoKeys();
+      if (cachedLogoKeys) { // Prüfen, ob die Methode erfolgreich war (nicht leeres Array bedeutet nicht unbedingt Erfolg)
+        for (const cachedKey of cachedLogoKeys) {
+          if (!validLogoPaths.has(cachedKey)) {
+            await tenantDbInstance.removeCachedLogo(cachedKey);
+            infoLog('DataService', `Removed orphaned logo from cache: ${cachedKey}`);
+          }
+        }
+      } else {
+        warnLog('DataService', 'Could not retrieve cached logo keys, skipping orphaned logo cleanup.');
+      }
+    } catch (e) {
+      errorLog('DataService', 'Error cleaning orphaned logos from cache', e);
+    }
 
     debugLog('DataService', 'reloadTenantData', 'Completed');
   }

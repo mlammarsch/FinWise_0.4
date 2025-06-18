@@ -1,12 +1,15 @@
 <!-- Datei: src/components/account/AccountGroupCard.vue -->
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch, onMounted } from "vue";
 import { AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import AccountCard from "./AccountCard.vue";
 import AccountGroupForm from "./AccountGroupForm.vue";
 import { AccountService } from "../../services/AccountService"; // neu
+import { useTenantDbService } from "../../services/TenantDbService"; // Import TenantDbService
+import ImageService from "../../services/ImageService"; // Import ImageService
+import { Icon } from "@iconify/vue"; // Icon importieren
 
 const emit = defineEmits(["selectAccount"]);
 
@@ -16,9 +19,56 @@ const props = defineProps<{
 }>();
 
 const accountStore = useAccountStore();
+const tenantDbService = useTenantDbService();
 
 // State für Modal
 const showEditModal = ref(false);
+
+const displayLogoSrc = ref<string | null>(null);
+
+// Logo laden
+const loadDisplayLogo = async () => {
+  const logoPath = props.group.logoUrl;
+  if (!logoPath) {
+    displayLogoSrc.value = null;
+    return;
+  }
+  if (tenantDbService) {
+    const cachedLogo = await tenantDbService.getCachedLogo(logoPath);
+    if (cachedLogo?.dataUrl) {
+      displayLogoSrc.value = cachedLogo.dataUrl;
+    }
+  }
+
+  if (
+    !displayLogoSrc.value ||
+    (tenantDbService &&
+      !(await tenantDbService.getCachedLogo(logoPath))?.dataUrl)
+  ) {
+    const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
+    if (dataUrl) {
+      displayLogoSrc.value = dataUrl;
+    } else {
+      if (!displayLogoSrc.value) {
+        displayLogoSrc.value = null;
+      }
+    }
+  }
+};
+
+watch(
+  () => props.group.logoUrl,
+  async (newLogoUrl, oldLogoUrl) => {
+    if (newLogoUrl !== oldLogoUrl) {
+      await loadDisplayLogo();
+    }
+  },
+  { immediate: false }
+);
+
+onMounted(async () => {
+  await loadDisplayLogo();
+});
 
 // Konten der Gruppe
 const accountsInGroup = computed(() =>
@@ -90,8 +140,8 @@ const onAccountSelect = (account) => emit("selectAccount", account);
           class="w-12 h-12 rounded-md overflow-hidden flex items-center justify-center bg-base-200 opacity-80"
         >
           <img
-            v-if="props.group.logoUrl"
-            :src="props.group.logoUrl"
+            v-if="displayLogoSrc"
+            :src="displayLogoSrc"
             :alt="props.group.name + ' Logo'"
             class="w-full h-full object-cover"
           />

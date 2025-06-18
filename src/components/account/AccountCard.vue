@@ -1,6 +1,6 @@
 <!-- Datei: src/components/account/AccountCard.vue -->
 <script setup lang="ts">
-import { defineProps, computed, ref } from "vue";
+import { defineProps, computed, ref, watch, onMounted } from "vue";
 import { Account } from "../../types";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { useRouter } from "vue-router";
@@ -10,6 +10,8 @@ import { useAccountStore } from "../../stores/accountStore";
 import { AccountService } from "../../services/AccountService"; // neu
 import TransactionImportModal from "../transaction/TransactionImportModal.vue"; // neu für CSV-Import
 import { Icon } from "@iconify/vue";
+import { useTenantDbService } from "../../services/TenantDbService"; // Import TenantDbService
+import ImageService from "../../services/ImageService"; // Import ImageService
 
 const emit = defineEmits(["select"]);
 
@@ -20,11 +22,71 @@ const props = defineProps<{
 
 const router = useRouter();
 const accountStore = useAccountStore();
+const tenantDbService = useTenantDbService();
 
 // State für Modals
 const showReconcileModal = ref(false);
 const showEditModal = ref(false);
 const showImportModal = ref(false); // neu für CSV-Import
+
+const displayLogoSrc = ref<string | null>(null);
+
+// Logo laden
+const loadDisplayLogo = async () => {
+  const logoPath = props.account.logoUrl;
+  if (!logoPath) {
+    displayLogoSrc.value = null;
+    return;
+  }
+
+  if (tenantDbService) {
+    const cachedLogo = await tenantDbService.getCachedLogo(logoPath);
+    if (cachedLogo?.dataUrl) {
+      displayLogoSrc.value = cachedLogo.dataUrl;
+      // Optional: Überprüfen, ob das Logo im Cache aktuell genug ist und ggf. neu laden
+      // Für diesen Task ist das aber nicht erforderlich.
+      // Man könnte hier z.B. prüfen, ob props.account.updated_at neuer ist als cachedLogo.timestamp
+      // und dann trotzdem fetchAndCacheLogo aufrufen.
+      // Für den Moment reicht es, das gecachte Logo zu verwenden, wenn vorhanden.
+      // Wenn das Backend nicht erreichbar ist, wird das gecachte Logo trotzdem angezeigt.
+    }
+  }
+
+  // Wenn nicht im Cache oder tenantDbService nicht verfügbar (sollte nicht passieren, aber sicher ist sicher)
+  // oder wenn eine Veraltungslogik implementiert wäre und das Logo neu geladen werden müsste:
+  if (
+    !displayLogoSrc.value ||
+    (tenantDbService &&
+      !(await tenantDbService.getCachedLogo(logoPath))?.dataUrl)
+  ) {
+    const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
+    if (dataUrl) {
+      displayLogoSrc.value = dataUrl;
+    } else {
+      // Fehler beim Abrufen oder Cachen, oder Backend nicht erreichbar
+      // Wenn es vorher einen Wert im Cache gab, diesen beibehalten,
+      // ansonsten auf null setzen, um Standardbild anzuzeigen.
+      if (!displayLogoSrc.value) {
+        // Nur auf null setzen, wenn nicht schon aus Cache geladen
+        displayLogoSrc.value = null;
+      }
+    }
+  }
+};
+
+watch(
+  () => props.account.logoUrl,
+  async (newLogoUrl, oldLogoUrl) => {
+    if (newLogoUrl !== oldLogoUrl) {
+      await loadDisplayLogo();
+    }
+  },
+  { immediate: false } // immediate false, da onMounted bereits aufruft
+);
+
+onMounted(async () => {
+  await loadDisplayLogo();
+});
 
 // IBAN‑Formatierung
 const formattedIban = computed(() => {
@@ -118,8 +180,8 @@ const selectAccount = () => {
         class="w-16 h-16 flex-shrink-0 mr-1 ml-2 flex items-center justify-center rounded-full overflow-hidden bg-gray-200"
       >
         <img
-          v-if="props.account.logoUrl"
-          :src="props.account.logoUrl"
+          v-if="displayLogoSrc"
+          :src="displayLogoSrc"
           :alt="props.account.name + ' Logo'"
           class="w-full h-full object-cover"
         />

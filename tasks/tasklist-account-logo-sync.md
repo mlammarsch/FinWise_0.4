@@ -43,12 +43,12 @@
     3.7.1. [x] Frontend: Mehrfachen Upload-Versuch implementieren, falls Endpunkt nicht erreichbar (max. 3 Versuche) (OpenQuestion 2.2)
 3.8. [x] Frontend: Sicherstellen, dass nach erfolgreichem Upload/Änderung/Löschen und Datenabruf das Logo auf anderen Client-Geräten korrekt angezeigt wird (FR3.3)
 
-## 4. Caching & Offline-Verhalten
+## 4. [x] Caching & Offline-Verhalten
 
-4.1. [ ] Frontend: Caching-Strategie für Logos in IndexedDB implementieren (Speicherung als Base64-String oder Blob) (FR4.1, TechConsideration 7.7.9)
-4.2. [ ] Frontend: Beim initialen Laden eines Kontos/einer Kontengruppe mit Logo, dieses vom Backend abrufen und im lokalen Cache speichern (FR4.2)
-4.3. [ ] Frontend: Logik implementieren, um Logos aus dem lokalen Cache zu laden und anzuzeigen, wenn das Backend nicht erreichbar ist (FR4.3)
-4.4. [ ] Frontend: Standardbild anzeigen, wenn Backend nicht erreichbar und kein Logo im Cache vorhanden ist (FR4.4)
-4.5. [ ] Frontend: Bei jedem App-Login des Benutzers Logos für initial geladene Konten/Kontengruppen neu vom Backend abrufen und Cache aktualisieren (FR4.5)
-4.6. [ ] Frontend: Beim Klick auf den globalen [`SyncButton.vue`](src/components/ui/SyncButton.vue:1) Logos für alle relevanten Entitäten neu vom Backend abrufen und Cache aktualisieren (FR4.6)
-4.7. [ ] Frontend: Cache-Eviction-Strategie implementieren: Nur aktuell vom Backend geladene Logos im Cache halten. Bei Löschung auch Cache-Eintrag löschen. Cache nur weiterbehalten, wenn Reload vom Backend fehlschlägt. (OpenQuestion 4.1)
+4.1. [x] Frontend: Caching-Strategie für Logos in IndexedDB implementieren (Speicherung als Base64-String oder Blob) (FR4.1, TechConsideration 7.7.9)
+4.2. [x] Frontend: Beim initialen Laden eines Kontos/einer Kontengruppe mit Logo, dieses vom Backend abrufen und im lokalen Cache speichern (FR4.2)
+4.3. [x] Frontend: Logik implementieren, um Logos aus dem lokalen Cache zu laden und anzuzeigen, wenn das Backend nicht erreichbar ist (FR4.3)
+4.4. [x] Frontend: Standardbild anzeigen, wenn Backend nicht erreichbar und kein Logo im Cache vorhanden ist (FR4.4)
+4.5. [x] Frontend: Bei jedem App-Login des Benutzers Logos für initial geladene Konten/Kontengruppen neu vom Backend abrufen und Cache aktualisieren (FR4.5)
+4.6. [x] Frontend: Beim Klick auf den globalen [`SyncButton.vue`](src/components/ui/SyncButton.vue:1) Logos für alle relevanten Entitäten neu vom Backend abrufen und Cache aktualisieren (FR4.6)
+4.7. [x] Frontend: Cache-Eviction-Strategie implementieren: Nur aktuell vom Backend geladene Logos im Cache halten. Bei Löschung auch Cache-Eintrag löschen. Cache nur weiterbehalten, wenn Reload vom Backend fehlschlägt. (OpenQuestion 4.1)

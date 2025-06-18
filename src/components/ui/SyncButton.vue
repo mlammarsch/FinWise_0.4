@@ -2,7 +2,7 @@
 import { Icon } from "@iconify/vue";
 import { computed, ref, onMounted, onUnmounted, watch } from "vue";
 import { WebSocketService } from "../../services/WebSocketService";
-import { infoLog, warnLog, debugLog } from "../../utils/logger";
+import { infoLog, warnLog, debugLog, errorLog } from "../../utils/logger";
 import {
   useWebSocketStore,
   WebSocketConnectionStatus,
@@ -10,10 +10,15 @@ import {
 import { useTenantStore } from "../../stores/tenantStore";
 import { TenantDbService } from "../../services/TenantDbService";
 import type { QueueStatistics } from "../../types";
+import { ImageService } from "../../services/ImageService";
+import { useAccountStore } from "../../stores/accountStore";
+import { useAccountGroupStore } from "../../stores/accountGroupStore";
 
 const webSocketStore = useWebSocketStore();
 const tenantStore = useTenantStore();
 const tenantDbService = new TenantDbService();
+const accountStore = useAccountStore();
+const accountGroupStore = useAccountGroupStore();
 
 // Reactive State
 const isManuallyProcessingSync = ref(false);
@@ -176,6 +181,46 @@ async function handleSyncButtonClick() {
         "SyncButton",
         "Cannot call requestInitialData: activeTenantId not available."
       );
+    }
+
+    // Logo-Cache aktualisieren
+    if (accountStore.accounts && accountStore.accounts.length > 0) {
+      infoLog(
+        "SyncButton",
+        `Starting logo cache update for ${accountStore.accounts.length} accounts.`
+      );
+      for (const account of accountStore.accounts) {
+        if (account.logoUrl) {
+          ImageService.fetchAndCacheLogo(account.logoUrl).catch((err) => {
+            errorLog(
+              "SyncButton",
+              `Failed to fetch/cache logo for account ${account.id}: ${account.logoUrl}`,
+              err
+            );
+          });
+        }
+      }
+    }
+
+    if (
+      accountGroupStore.accountGroups &&
+      accountGroupStore.accountGroups.length > 0
+    ) {
+      infoLog(
+        "SyncButton",
+        `Starting logo cache update for ${accountGroupStore.accountGroups.length} account groups.`
+      );
+      for (const accountGroup of accountGroupStore.accountGroups) {
+        if (accountGroup.logoUrl) {
+          ImageService.fetchAndCacheLogo(accountGroup.logoUrl).catch((err) => {
+            errorLog(
+              "SyncButton",
+              `Failed to fetch/cache logo for account group ${accountGroup.id}: ${accountGroup.logoUrl}`,
+              err
+            );
+          });
+        }
+      }
     }
   } catch (error) {
     warnLog("SyncButton", "Error during manual sync process.", { error });

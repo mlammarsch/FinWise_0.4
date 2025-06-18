@@ -1,5 +1,6 @@
 import { apiService } from './apiService';
-import { errorLog, infoLog } from '@/utils/logger';
+import { errorLog, infoLog, debugLog } from '@/utils/logger';
+import { TenantDbService } from './TenantDbService';
 
 // TypeScript hat Schwierigkeiten, import.meta.env ohne eine korrekte vite-env.d.ts Konfiguration zu erkennen.
 // Für die Zwecke dieses Tasks wird eine Typ-Assertion verwendet.
@@ -136,5 +137,65 @@ export class ImageService {
     }
 
     return `${baseUrl}${apiPrefix}/${cleanLogoPath}`;
+  }
+
+  /**
+   * Ruft ein Logo vom Backend ab, konvertiert es in eine Base64 Data URL und speichert es im Cache.
+   * @param logoPath - Der relative Pfad zum Logo.
+   * @returns Die Base64 Data URL des Logos oder null bei einem Fehler.
+   */
+  static async fetchAndCacheLogo(logoPath: string): Promise<string | null> {
+    if (!logoPath) {
+      errorLog('ImageService', 'fetchAndCacheLogo aufgerufen ohne logoPath.');
+      return null;
+    }
+
+    const tenantDbService = new TenantDbService(); // Instanz des TenantDbService
+
+    const fullLogoUrl = ImageService.getLogoUrl(logoPath);
+
+    if (!fullLogoUrl) {
+      errorLog('ImageService', `Konnte keine URL für logoPath erstellen: ${logoPath}`);
+      return null;
+    }
+
+    try {
+      debugLog('ImageService', `Versuche Logo abzurufen von: ${fullLogoUrl}`);
+      const response = await fetch(fullLogoUrl);
+
+      if (!response.ok) {
+        errorLog(
+          'ImageService',
+          `Fehler beim Abrufen des Logos von ${fullLogoUrl}. Status: ${response.status} ${response.statusText}`
+        );
+        return null;
+      }
+
+      const blob = await response.blob();
+      debugLog('ImageService', `Logo als Blob empfangen für: ${logoPath}, Typ: ${blob.type}, Größe: ${blob.size}`);
+
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = (error) => {
+          errorLog('ImageService', `Fehler beim Konvertieren des Blobs zu Base64 für ${logoPath}`, error);
+          reject(error);
+        };
+      });
+
+      if (dataUrl) {
+        debugLog('ImageService', `Logo erfolgreich zu Base64 konvertiert für: ${logoPath}. Länge: ${dataUrl.length}`);
+        await tenantDbService.cacheLogo(logoPath, dataUrl);
+        infoLog('ImageService', `Logo für ${logoPath} erfolgreich im Cache gespeichert.`);
+        return dataUrl;
+      }
+      errorLog('ImageService', `Konvertierung zu Base64 für ${logoPath} ergab null oder leeren String.`);
+      return null;
+
+    } catch (error) {
+      errorLog('ImageService', `Allgemeiner Fehler in fetchAndCacheLogo für ${logoPath}:`, error);
+      return null;
+    }
   }
 }
