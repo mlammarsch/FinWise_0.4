@@ -134,6 +134,11 @@ const onAccountSelect = (account) => emit("selectAccount", account);
       </div>
     </div>
 
+    <!-- Card Footer -->
+    <div class="card-actions py-4 px-3">
+      <div class="grid grid-cols-1 gap-1"></div>
+    </div>
+
     <!-- Modal -->
     <Teleport to="body">
       <div
