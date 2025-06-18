@@ -21,15 +21,15 @@ import { formatDate } from "../../utils/formatters";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { Icon } from "@iconify/vue";
 import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
-import { AccountService } from "@/services/AccountService";
-import { CategoryService } from "@/services/CategoryService";
-import { debugLog } from "@/utils/logger";
-import { BalanceService } from "@/services/BalanceService";
-import { TransactionService } from "@/services/TransactionService"; // Import hinzugefügt
+import { AccountService } from "../../services/AccountService";
+import { CategoryService } from "../../services/CategoryService";
+import { debugLog } from "../../utils/logger";
+import { BalanceService } from "../../services/BalanceService";
+import { TransactionService } from "../../services/TransactionService"; // Import hinzugefügt
 
 debugLog(
   "[CategoryTransactionList] TransactionService on setup:",
-  TransactionService
+  JSON.stringify(TransactionService, null, 2)
 ); // Log zur Validierung
 
 const props = defineProps<{
@@ -53,8 +53,8 @@ const displayTransactions = computed(() => {
       const fields = [
         formatDate(tx.date),
         formatDate(tx.valueDate),
-        CategoryService.getCategoryName(tx.categoryId),
-        CategoryService.getCategoryName(tx.toCategoryId),
+        CategoryService.getCategoryName(tx.categoryId || null),
+        CategoryService.getCategoryName(tx.toCategoryId || null),
         tx.amount.toString(),
         tx.note || "",
       ];
@@ -80,7 +80,7 @@ function handleHeaderCheckboxChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked;
   if (checked) {
     selectedIds.value = [
-      ...new Set([...selectedIds.value, ...currentPageIds.value]),
+      ...Array.from(new Set([...selectedIds.value, ...currentPageIds.value])),
     ];
   } else {
     const currentPageIdSet = new Set(currentPageIds.value);
@@ -166,20 +166,20 @@ function editTransactionLocal(tx: Transaction) {
       transactionId,
       gegentransactionId,
       prefillAmount: Math.abs(tx.amount),
-      fromCategoryId: fromCatId,
-      toCategoryId: toCatId,
+      fromCategoryId: fromCatId || "",
+      toCategoryId: toCatId || "",
       prefillDate: tx.date,
       note: tx.note,
     };
     debugLog(
       "[CategoryTransactionList] Opening edit modal for transfer",
-      modalData.value
+      JSON.stringify(modalData.value, null, 2)
     );
     showTransferModal.value = true;
   } else {
     debugLog(
       "[CategoryTransactionList] Emitting edit für Standardtransaction",
-      tx
+      JSON.stringify(tx, null, 2)
     );
     emit("edit", tx);
   }
@@ -188,7 +188,8 @@ function editTransactionLocal(tx: Transaction) {
 function onTransferComplete() {
   showTransferModal.value = false;
   debugLog(
-    "[CategoryTransactionList] Transfer modal closed, operation successful."
+    "[CategoryTransactionList] Transfer modal closed, operation successful.",
+    "null"
   );
 }
 </script>
@@ -316,14 +317,14 @@ function onTransferComplete() {
             <td class="px-2">{{ formatDate(tx.valueDate) }}</td>
             <td class="px-2">
               <template v-if="tx.type === TransactionType.CATEGORYTRANSFER">
-                {{ CategoryService.getCategoryName(tx.toCategoryId) }}
+                {{ CategoryService.getCategoryName(tx.toCategoryId || null) }}
               </template>
               <template v-else>
                 {{ AccountService.getAccountNameSync(tx.accountId) }}
               </template>
             </td>
             <td class="px-2">
-              {{ CategoryService.getCategoryName(tx.categoryId) }}
+              {{ CategoryService.getCategoryName(tx.categoryId || null) }}
             </td>
 
             <td class="text-right px-2">
