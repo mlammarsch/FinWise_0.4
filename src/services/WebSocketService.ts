@@ -36,7 +36,7 @@ export const WebSocketService = {
   connect(): void {
     const sessionStore = useSessionStore();
     const webSocketStore = useWebSocketStore();
-    debugLog('[WebSocketService]', 'connect() called. Current socket state:', socket?.readyState, 'Tenant ID from session:', sessionStore.currentTenantId);
+    // debugLog('[WebSocketService]', 'connect() called. Current socket state:', socket?.readyState, 'Tenant ID from session:', sessionStore.currentTenantId);
 
     if (socket && socket.readyState === WebSocket.OPEN) {
       infoLog('[WebSocketService]', 'Already connected.');
@@ -55,7 +55,7 @@ export const WebSocketService = {
     const wsHost = window.location.hostname;
     const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000';
     const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws_finwise/ws/${tenantId}`;
-    debugLog('[WebSocketService]', `Constructed WebSocket URL: ${wsUrl}`);
+    // debugLog('[WebSocketService]', `Constructed WebSocket URL: ${wsUrl}`);
 
     explicitClose = false;
     webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTING);
@@ -79,7 +79,7 @@ export const WebSocketService = {
         try {
           const message = JSON.parse(event.data as string) as ServerWebSocketMessage;
           // Loggen der geparsten Nachricht
-          debugLog('[WebSocketService]', 'Parsed message received:', message);
+          // debugLog('[WebSocketService]', 'Parsed message received:', message);
           webSocketStore.setLastMessage(message);
           const tenantStore = useTenantStore(); // tenantStore Instanz
           const accountStore = useAccountStore(); // accountStore Instanz

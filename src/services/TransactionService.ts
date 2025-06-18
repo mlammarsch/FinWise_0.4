@@ -5,6 +5,8 @@ import { useTransactionStore } from '@/stores/transactionStore';
 import { useAccountStore }     from '@/stores/accountStore';
 import { useCategoryStore }    from '@/stores/categoryStore';
 import { Transaction, TransactionType } from '@/types';
+// ExtendedTransaction muss importiert werden, wenn es als Typ verwendet wird
+import { type ExtendedTransaction } from '@/stores/transactionStore'; // Korrekter Importpfad und `type` Keyword
 import { v4 as uuidv4 } from 'uuid';
 import { debugLog } from '@/utils/logger';
 import { toDateOnlyString } from '@/utils/formatters';
@@ -21,7 +23,10 @@ export const TransactionService = {
 
   getTransactionById(id: string): Transaction | null {
     const tx = useTransactionStore().getTransactionById(id);
-    if (!tx) debugLog('[TransactionService] getTransactionById – not found', id);
+    if (!tx) {
+      debugLog('[TransactionService] getTransactionById – not found', id);
+      return null; // Explizit null zurückgeben, wenn undefined
+    }
     return tx;
   },
 
@@ -40,19 +45,31 @@ export const TransactionService = {
     }
 
     // Normalisieren & anlegen
-    const newTx: Transaction = {
-      ...txData,
-      id: uuidv4(),
-      date:      toDateOnlyString(txData.date),
-      valueDate: txData.valueDate
-        ? toDateOnlyString(txData.valueDate)
-        : toDateOnlyString(txData.date),
-      runningBalance: 0,
-      payee: txData.payee || '', // Sicherstellen dass payee nie undefined ist
-      description: txData.description || '', // Fehlende Eigenschaft hinzufügen
-    };
+    debugLog('[TransactionService]', 'addTransaction - txData input:', txData);
 
-    const added = await txStore.addTransaction(newTx);
+    const transactionDataForStore: ExtendedTransaction = {
+      // Übernehme alle Felder von txData (Omit<Transaction, 'id' | 'runningBalance'>)
+      ...txData,
+      // Setze die Pflichtfelder von ExtendedTransaction oder Felder mit strengeren Typen
+      id: uuidv4(),
+      date: toDateOnlyString(txData.date),
+      valueDate: txData.valueDate ? toDateOnlyString(txData.valueDate) : toDateOnlyString(txData.date),
+      runningBalance: 0, // Pflicht in ExtendedTransaction
+      payee: txData.payee || '', // txData.payee ist string | undefined, hier wird es string
+      description: txData.description || '', // description ist in Transaction Pflicht
+      tagIds: txData.tagIds || [], // tagIds ist in Transaction Pflicht
+      // Stelle sicher, dass optionale Felder, die in ExtendedTransaction string | null sind, korrekt behandelt werden
+      counterTransactionId: txData.counterTransactionId === undefined ? null : txData.counterTransactionId,
+      planningTransactionId: txData.planningTransactionId === undefined ? null : txData.planningTransactionId,
+      // Stelle sicher, dass optionale Felder, die in ExtendedTransaction boolean sind, korrekt behandelt werden
+      isReconciliation: txData.isReconciliation === undefined ? false : txData.isReconciliation,
+      // updated_at wird im Store gesetzt.
+      // Andere Felder wie type, accountId, categoryId, amount, note, isCategoryTransfer, transferToAccountId, reconciled, toCategoryId
+      // werden von ...txData übernommen und sollten mit Transaction und somit ExtendedTransaction kompatibel sein.
+    };
+    debugLog('[TransactionService]', 'addTransaction - transactionDataForStore prepared:', transactionDataForStore);
+
+    const added = await txStore.addTransaction(transactionDataForStore);
 
     // → Regeln anwenden & speichern
     await ruleStore.applyRulesToTransaction(added);
@@ -135,6 +152,7 @@ export const TransactionService = {
     const toName   = accStore.getAccountById(toAccountId)?.name ?? '';
     const dt       = toDateOnlyString(date);
     const vdt      = toDateOnlyString(valueDate ?? date);
+    debugLog('[TransactionService]', 'addAccountTransfer - Calculated dates:', { date, valueDate, dt, vdt });
     const abs      = Math.abs(amount);
 
     const base: Omit<Transaction, 'id' | 'runningBalance'> = {

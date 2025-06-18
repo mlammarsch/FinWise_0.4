@@ -128,7 +128,6 @@ FinWise löst das Problem der ineffizienten und unübersichtlichen Haushaltsfina
 - **WebSocket-basierte Echtzeit-Updates**
 - **Last-Write-Wins Konfliktlösung**
 - **Planning-Funktionalität** mit komplexer Recurrence-Engine, Transfer-Handling und Auto-Execution
-- **Testing-Infrastruktur** mit umfassenden Integration Tests (26 Tests)
 - **Sync-Acknowledgment-System** mit ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
 - **Erweiterte Entitäts-Synchronisation** für Categories, Tags, Recipients, AutomationRules
 

@@ -1,3 +1,4 @@
+import Dexie, { type Transaction } from 'dexie'; // Import für Dexie und Transaction hinzufügen
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
 import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, AutomationRule, SyncQueueEntry, QueueStatistics, PlanningTransaction } from '@/types';
 import type { MonthlyBalance } from '@/stores/monthlyBalanceStore';
@@ -350,66 +351,113 @@ export class TenantDbService {
     }
   }
 
-  async updateSyncQueueEntryStatus(entryId: string, newStatus: SyncStatus, error?: string): Promise<boolean> {
-    if (!this.db) {
-      warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB verfügbar.');
+  async updateSyncQueueEntryStatus(
+    entryId: string,
+    newStatus: SyncStatus,
+    error?: string | undefined,
+    transaction?: Transaction // Optionaler Parameter
+  ): Promise<boolean> {
+    if (!this.db && !transaction) { // Wenn keine DB und keine Transaktion, dann geht nichts
+      warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB oder Transaktion verfügbar.');
       return false;
     }
-    try {
-      const updateData: Partial<SyncQueueEntry> = { status: newStatus };
+
+    const updateData: Partial<SyncQueueEntry> = { status: newStatus };
+
+    // Die Logik für attempts und lastAttempt muss innerhalb der Transaktion erfolgen,
+    // um Konsistenz zu gewährleisten, besonders wenn die Funktion mit einer bestehenden Transaktion aufgerufen wird.
+    // Da wir hier potenziell eine bestehende Transaktion verwenden, können wir nicht einfach this.db.syncQueue.get(entryId) außerhalb aufrufen.
+    // Diese Logik wird in die 'operation' verlagert.
+
+    if (newStatus === SyncStatus.FAILED && error) {
+      updateData.error = error;
+    }
+    if (newStatus === SyncStatus.SYNCED) {
+      updateData.error = undefined; // Fehler zurücksetzen bei erfolgreicher Synchronisation
+    }
+
+    const operation = async (tx: Transaction): Promise<number> => {
+      const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+
       if (newStatus === SyncStatus.PROCESSING) {
-        updateData.attempts = (await this.db.syncQueue.get(entryId))?.attempts ?? 0 + 1;
+        // Wichtig: Lese den aktuellen Eintrag *innerhalb* der Transaktion, um Race Conditions zu vermeiden
+        const currentEntry = await syncQueueTable.get(entryId);
+        updateData.attempts = (currentEntry?.attempts ?? 0) + 1;
         updateData.lastAttempt = Date.now();
       }
-      if (newStatus === SyncStatus.FAILED && error) {
-        updateData.error = error;
-      }
-      if (newStatus === SyncStatus.SYNCED) {
-        updateData.error = undefined;
+
+      return await syncQueueTable.update(entryId, updateData);
+    };
+
+    try {
+      let updatedCount = 0;
+      if (transaction) {
+        updatedCount = await operation(transaction);
+      } else if (this.db) {
+        // Stellen Sie sicher, dass this.db.syncQueue hier korrekt referenziert wird,
+        // oder übergeben Sie die Tabellennamen explizit, wenn Dexie das erfordert.
+        updatedCount = await this.db.transaction('rw', this.db.syncQueue, async (tx) => {
+          return await operation(tx);
+        });
+      } else {
+        // Sollte durch die Prüfung am Anfang nicht erreicht werden, aber als Sicherheitsnetz
+        warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Weder Transaktion noch DB verfügbar für Operation.');
+        return false;
       }
 
-      const updatedCount = await this.db!.transaction('rw', this.db!.syncQueue, async () => {
-        return await this.db!.syncQueue.update(entryId, updateData);
-      });
       if (updatedCount > 0) {
         debugLog('TenantDbService', `Status für SyncQueue-Eintrag ${entryId} auf ${newStatus} aktualisiert.`);
         return true;
       } else {
-        warnLog('TenantDbService', `Konnte SyncQueue-Eintrag ${entryId} für Status-Update nicht finden.`);
+        // Wenn der Eintrag nicht gefunden wurde, könnte das ein Fehler sein oder erwartet (z.B. schon gelöscht)
+        // Das Logging hier beibehalten, aber die aufrufende Stelle muss ggf. Kontext haben.
+        warnLog('TenantDbService', `Konnte SyncQueue-Eintrag ${entryId} für Status-Update nicht finden (innerhalb der Transaktion).`);
         return false;
       }
-    } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Aktualisieren des Status für SyncQueue-Eintrag ${entryId}`, { error: err });
+    } catch (dbError) {
+      errorLog('TenantDbService', `Dexie-Fehler beim Aktualisieren des SyncQueue-Eintrags ${entryId} auf Status ${newStatus}.`, { error: dbError });
       return false;
     }
   }
 
-  async removeSyncQueueEntry(entryId: string): Promise<boolean> {
-    if (!this.db) {
-      warnLog('TenantDbService', 'removeSyncQueueEntry: Keine aktive Mandanten-DB verfügbar.');
+  async removeSyncQueueEntry(
+    entryId: string,
+    transaction?: Transaction // Optionaler Parameter
+  ): Promise<boolean> {
+    if (!this.db && !transaction) {
+      warnLog('TenantDbService', 'removeSyncQueueEntry: Keine aktive Mandanten-DB oder Transaktion verfügbar.');
       return false;
     }
+
+    const operation = async (tx: Transaction): Promise<boolean> => {
+      const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+      const existingEntry = await syncQueueTable.get(entryId);
+      if (!existingEntry) {
+        warnLog('TenantDbService', `removeSyncQueueEntry: Eintrag ${entryId} nicht gefunden (innerhalb der Transaktion), möglicherweise bereits entfernt.`);
+        // Betrachte es als Erfolg, wenn das Ziel "Eintrag ist weg" ist.
+        // Die aufrufende Stelle (WebSocketService) loggt bereits, wenn sie einen Eintrag nicht entfernen konnte,
+        // weil er "möglicherweise bereits entfernt" wurde. Dieses Logging hier ist also konsistent.
+        return true;
+      }
+      await syncQueueTable.delete(entryId);
+      debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt (innerhalb der Transaktion).`);
+      return true;
+    };
+
     try {
-      const result = await this.db.transaction('rw', this.db.syncQueue, async () => {
-        // Prüfen, ob der Eintrag existiert, bevor wir ihn löschen
-        const existingEntry = await this.db!.syncQueue.get(entryId);
-        if (!existingEntry) {
-          return false;
-        }
-
-        await this.db!.syncQueue.delete(entryId);
-        return true;
-      });
-
-      if (result) {
-        debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt.`);
-        return true;
+      if (transaction) {
+        return await operation(transaction);
+      } else if (this.db) {
+        // Stellen Sie sicher, dass this.db.syncQueue hier korrekt referenziert wird.
+        return await this.db.transaction('rw', this.db.syncQueue, async (tx) => {
+          return await operation(tx);
+        });
       } else {
-        warnLog('TenantDbService', `SyncQueue-Eintrag ${entryId} für Löschung nicht gefunden.`);
+        warnLog('TenantDbService', 'removeSyncQueueEntry: Weder Transaktion noch DB verfügbar für Operation.');
         return false;
       }
-    } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}`, { error: err });
+    } catch (dbError) {
+      errorLog('TenantDbService', `Dexie-Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}.`, { error: dbError });
       return false;
     }
   }

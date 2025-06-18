@@ -35,29 +35,29 @@ export const ReconciliationService = {
 
   /* ------------------------- Haupt‑Durchführung ------------------------- */
 
-  async reconcileAccount(): Promise<boolean> {
+  async reconcileAccount(account: Account): Promise<boolean> {
     const store = useReconciliationStore();
 
-    if (!store.currentAccount) {
-      debugLog('ReconciliationService', 'no currentAccount – abort', store.currentAccount);
+    if (!account) {
+      debugLog('ReconciliationService', 'no account provided – abort');
       return false;
     }
 
     const { current, diff } = calcDifference(
-      store.currentAccount.id,
+      account.id,
       store.reconcileDate,
       store.actualBalance,
     );
 
     if (diff === 0) {
       debugLog('ReconciliationService', 'difference 0 – nothing to do');
-      store.reset();
+      // store.reset(); // Reset erfolgt im Modal oder wenn nötig
       return true;
     }
 
     // Ausgleichsbuchung anlegen
     const newTx = await TransactionService.addReconcileTransaction(
-      store.currentAccount.id,
+      account.id,
       diff,
       store.reconcileDate,
       store.note,
@@ -69,7 +69,7 @@ export const ReconciliationService = {
     }
 
     debugLog('ReconciliationService', 'reconcile OK', {
-      accountId: store.currentAccount.id,
+      accountId: account.id,
       currentBalance: current,
       difference: diff,
       txId: newTx.id,
@@ -77,7 +77,7 @@ export const ReconciliationService = {
 
     // Monats­salden neu berechnen
     BalanceService.calculateMonthlyBalances();
-    store.reset();
+    // store.reset(); // Reset erfolgt im Modal oder wenn nötig
     return true;
   },
 

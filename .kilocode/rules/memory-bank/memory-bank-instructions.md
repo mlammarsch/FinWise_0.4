@@ -49,7 +49,6 @@ Create additional files/folders within memory-bank/ when they help organize:
 - Complex feature documentation
 - Integration specifications
 - API documentation
-- Testing strategies
 - Deployment procedures
 
 ## Core workflows
@@ -64,7 +63,6 @@ When user requests initialization of the memory bank (command `initialize memory
 - Project structure and organization patterns
 - Documentation and comments
 - Dependencies and external integrations
-- Testing frameworks and patterns
 
 I must be extremely thorough during initialization, spending extra time and effort to build a comprehensive understanding of the project. A high-quality initialization will dramatically improve all future interactions, while a rushed or incomplete initialization will permanently limit my effectiveness.
 
@@ -119,18 +117,15 @@ Example task entry:
 - `/providers/gemini.md` - Add model to documentation
 - `/src/providers/gemini-config.ts` - Add model configuration
 - `/src/constants/models.ts` - Add to model list
-- `/tests/providers/gemini.test.ts` - Add test cases
 
 **Steps:**
 1. Add model configuration with proper token limits
 2. Update documentation with model capabilities
 3. Add to constants file for UI display
-4. Write tests for new model configuration
 
 **Important notes:**
 - Check Google's documentation for exact token limits
 - Ensure backward compatibility with existing configurations
-- Test with actual API calls before committing
 ```
 
 ### Regular Task Execution

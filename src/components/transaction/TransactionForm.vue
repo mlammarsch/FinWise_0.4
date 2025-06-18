@@ -1,7 +1,7 @@
 // src/components/transaction/TransactionForm.vue
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from "vue";
-import { Transaction, TransactionType } from "../../types";
+import { Transaction, TransactionType, Category } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import { useRecipientStore } from "../../stores/recipientStore";
 import { useCategoryStore } from "../../stores/categoryStore";
@@ -13,7 +13,9 @@ import TagSearchableDropdown from "../ui/TagSearchableDropdown.vue";
 import SelectAccount from "../ui/SelectAccount.vue";
 import SelectCategory from "../ui/SelectCategory.vue";
 import SelectRecipient from "../ui/SelectRecipient.vue";
-import { debugLog } from "@/utils/logger";
+import { debugLog } from "../../utils/logger"; // Korrigierter Pfad
+import { toDateOnlyString } from "../../utils/formatters";
+import { CategoryService } from "../../services/CategoryService"; // CategoryService importiert
 
 const props = defineProps<{
   transaction?: Transaction;
@@ -124,7 +126,7 @@ onMounted(() => {
     valueDate.value = date.value;
     valueDateManuallyChanged.value = false;
 
-    debugLog("[TransactionForm] initial accountId set", accountId.value);
+    debugLog("[TransactionForm]", "initial accountId set:", accountId.value);
   }
 
   focusModalAndAmount();
@@ -136,7 +138,11 @@ watch(
   (newVal) => {
     if (newVal) {
       accountId.value = newVal;
-      debugLog("[TransactionForm] defaultAccountId watcher updated", newVal);
+      debugLog(
+        "[TransactionForm]",
+        "defaultAccountId watcher updated:",
+        newVal
+      );
     }
   }
 );
@@ -204,23 +210,64 @@ const validationErrors = computed(() => {
   return errors;
 });
 
-function onCreateCategory(newCategory: { id: string; name: string }) {
-  const created = categoryStore.addCategory({
-    name: newCategory.name,
-    parentCategoryId: null,
-    sortOrder: categoryStore.categories.length,
-  });
-  categoryId.value = created.id;
-  debugLog("[TransactionForm] onCreateCategory", created);
+async function onCreateCategory(newCategoryInput: {
+  id: string;
+  name: string;
+}) {
+  // Die 'id' von newCategoryInput wird hier nicht direkt verwendet, da der Service/Store die ID generiert.
+  // Annahme: Beim Erstellen über dieses Formular handelt es sich um eine Top-Level-Kategorie ohne spezielle Gruppe oder Icon.
+  try {
+    const newCategoryData: Omit<Category, "id" | "updated_at"> = {
+      name: newCategoryInput.name,
+      parentCategoryId: undefined,
+      sortOrder: categoryStore.categories.length,
+      categoryGroupId: undefined,
+      icon: undefined,
+      // Standardwerte für weitere Felder, die `addCategory` erwartet, falls nötig
+      budgeted: 0,
+      activity: 0,
+      available: 0,
+      isIncomeCategory: false, // Standardmäßig false, wird ggf. durch Gruppe überschrieben
+      isHidden: false,
+      isActive: true,
+      isSavingsGoal: false,
+    };
+    const created = await CategoryService.addCategory(newCategoryData);
+    if (created) {
+      categoryId.value = created.id;
+    } else {
+      // Fehlerbehandlung, falls `addCategory` null zurückgibt
+      debugLog(
+        "[TransactionForm]",
+        "onCreateCategory - Category creation via Service returned null"
+      );
+      // Hier könnte eine Fehlermeldung für den Benutzer angezeigt werden
+    }
+    debugLog(
+      "[TransactionForm]",
+      "onCreateCategory - Category created via Service:",
+      created
+    );
+  } catch (error) {
+    debugLog(
+      "[TransactionForm]",
+      "onCreateCategory - Error creating category via Service:",
+      error
+    );
+    // Hier könnte eine Fehlermeldung für den Benutzer angezeigt werden
+    // z.B. mit einem Toast-Service: toast.error("Fehler beim Erstellen der Kategorie.");
+  }
 }
 
 async function onCreateTag(newTag: { id: string; name: string }) {
   const created = await tagStore.addTag({
     name: newTag.name,
-    parentTagId: null,
+    parentTagId: null, // Standardwert
+    // color und icon könnten hier auch Standardwerte bekommen oder optional sein
+    // z.B. color: 'primary', icon: null
   });
   tagIds.value = [...tagIds.value, created.id];
-  debugLog("[TransactionForm] onCreateTag", created);
+  debugLog("[TransactionForm]", "onCreateTag - Tag created:", created);
 }
 
 async function onCreateRecipient(newRecipient: { id: string; name: string }) {
@@ -228,25 +275,61 @@ async function onCreateRecipient(newRecipient: { id: string; name: string }) {
     name: newRecipient.name,
   });
   recipientId.value = created.id;
-  debugLog("[TransactionForm] onCreateRecipient", created);
+  debugLog(
+    "[TransactionForm]",
+    "onCreateRecipient - Recipient created:",
+    created
+  );
 }
 
 const saveTransaction = () => {
+  const getValidValueDate = () => {
+    debugLog("[TransactionForm]", "getValidValueDate - Input values:", {
+      dateValue: date.value,
+      valueDateValue: valueDate.value,
+      isInvalidDate: new Date(valueDate.value).toString() === "Invalid Date",
+    });
+    // Prüft, ob valueDate.value ein gültiger String für new Date() ist
+    // und nicht 'Invalid Date' ergibt.
+    if (
+      valueDate.value &&
+      new Date(valueDate.value).toString() !== "Invalid Date"
+    ) {
+      const formatted = toDateOnlyString(valueDate.value);
+      debugLog(
+        "[TransactionForm]",
+        "getValidValueDate - Using valueDate.value, formatted:",
+        formatted
+      );
+      return formatted;
+    }
+    const formattedFallback = toDateOnlyString(date.value);
+    debugLog(
+      "[TransactionForm]",
+      "getValidValueDate - Using date.value (fallback), formatted:",
+      formattedFallback
+    );
+    return formattedFallback; // Fallback auf date.value
+  };
+
+  const currentValidValueDate = getValidValueDate();
+  const currentDate = toDateOnlyString(date.value);
+
   if (transactionType.value === TransactionType.ACCOUNTTRANSFER) {
     return {
       type: transactionType.value,
       fromAccountId: accountId.value,
       toAccountId: toAccountId.value,
       amount: Math.abs(amount.value),
-      date: date.value,
-      valueDate: valueDate.value || date.value,
+      date: currentDate,
+      valueDate: currentValidValueDate,
       note: note.value,
       reconciled: reconciled.value,
     };
   } else {
     return {
-      date: date.value,
-      valueDate: valueDate.value || date.value,
+      date: currentDate,
+      valueDate: currentValidValueDate,
       accountId: accountId.value,
       categoryId: categoryId.value,
       tagIds: tagIds.value,
@@ -264,9 +347,9 @@ const saveTransaction = () => {
 };
 
 const submitForm = () => {
-  debugLog("[TransactionForm] submitForm initiated");
+  debugLog("[TransactionForm]", "submitForm initiated");
   if (isSubmitting.value) {
-    debugLog("[TransactionForm] submitForm aborted: already submitting");
+    debugLog("[TransactionForm]", "submitForm aborted: already submitting");
     return;
   }
   isSubmitting.value = true;
@@ -276,15 +359,16 @@ const submitForm = () => {
     alert(
       "Bitte fülle alle Pflichtfelder aus: " + validationErrors.value.join(", ")
     );
-    debugLog(
-      "[TransactionForm] submitForm aborted: validation errors",
-      validationErrors.value
-    );
+    debugLog("[TransactionForm]", "submitForm aborted: validation errors", {
+      errors: validationErrors.value,
+    });
     isSubmitting.value = false;
     return;
   }
   const transactionPayload = saveTransaction();
-  debugLog("[TransactionForm] submitForm payload", transactionPayload);
+  debugLog("[TransactionForm]", "submitForm payload:", {
+    payload: transactionPayload,
+  });
   emit("save", transactionPayload);
   isSubmitting.value = false;
 };

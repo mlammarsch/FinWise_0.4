@@ -360,7 +360,7 @@ function onTransferComplete() {
                 </button>
                 <button
                   class="btn btn-ghost btn-xs border-none text-error/75 px-1"
-                  @click="$emit('delete', tx)"
+                  @click="TransactionService.deleteTransaction(tx.id)"
                   title="Löschen"
                 >
                   <Icon

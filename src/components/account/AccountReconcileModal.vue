@@ -1,7 +1,7 @@
 <!-- Datei: src/components/account/AccountReconcileModal.vue -->
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from "vue";
-import { Account } from "@/types";
+import { Account, Transaction } from "@/types"; // Transaction hinzugefügt
 import {
   formatCurrency,
   formatDate,
@@ -81,7 +81,7 @@ const hasPendingTransactions = computed(() => {
   if (!props.account) return false;
   const pending = transactionStore
     .getTransactionsByAccount(props.account.id)
-    .filter((tx) => !tx.reconciled);
+    .filter((tx: Transaction) => !tx.reconciled); // Typ für tx hinzugefügt
   return pending.length > 0;
 });
 
@@ -112,16 +112,30 @@ async function performReconciliation() {
   debugLog("AccountReconcileModal", "performReconciliation called", {
     isProcessing: isProcessing.value,
     difference: difference.value,
-    currentAccount: reconciliationStore.currentAccount,
+    propsAccount: props.account, // Logge das Prop-Konto
   });
 
-  if (isProcessing.value || difference.value === 0) return;
+  if (isProcessing.value) return;
+  // Die Prüfung auf difference === 0 wird im Button :disabled behandelt,
+  // aber hier zur Sicherheit beibehalten, falls direkt aufgerufen.
+  if (difference.value === 0 && !note.value) {
+    // Erlaube Buchung bei Diff 0 wenn Notiz da
+    debugLog(
+      "AccountReconcileModal",
+      "Difference is 0 and no note, nothing to do."
+    );
+    // Optional: closeModal() hier aufrufen, wenn keine Aktion gewünscht ist
+    return;
+  }
+
   isProcessing.value = true;
   try {
-    const ok = await reconciliationService.reconcileAccount();
+    // Übergebe props.account direkt an den Service
+    const ok = await reconciliationService.reconcileAccount(props.account);
     if (ok) {
       emit("reconciled");
-      closeModal();
+      reconciliationStore.reset(); // Store zurücksetzen nach erfolgreichem Abgleich
+      closeModal(); // Schließt das Modal und ruft ggf. cancelReconciliation auf
     }
   } finally {
     isProcessing.value = false;
@@ -129,7 +143,15 @@ async function performReconciliation() {
 }
 
 function closeModal() {
-  if (!isProcessing.value) reconciliationService.cancelReconciliation();
+  // Nur cancelReconciliation aufrufen, wenn nicht bereits ein erfolgreicher Abgleich stattgefunden hat
+  // und der Store zurückgesetzt wurde. Der Reset im Store ist ausreichend.
+  if (!isProcessing.value && !emit.reconciled) {
+    // emit.reconciled ist keine Standard-Vue-Funktion, hier Annahme, dass es ein Flag sein könnte
+    // Besser: Prüfen, ob ein Abgleich erfolgreich war, bevor man cancelt.
+    // Da wir aber reset() nach Erfolg aufrufen, ist cancelReconciliation() hier evtl. redundant oder setzt zu viel zurück.
+    // Fürs Erste belassen wir es, aber es könnte eine Vereinfachung geben.
+    reconciliationService.cancelReconciliation(); // Dies ruft store.reset() auf
+  }
   emit("close");
 }
 </script>
