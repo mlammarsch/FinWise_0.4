@@ -327,6 +327,38 @@ export const useAccountStore = defineStore('account', () => {
     return true;
   }
 
+  async function updateAccountLogo(accountId: string, newLogoPath: string | null): Promise<void> {
+    const account = getAccountById(accountId);
+    if (account) {
+      // Erstelle ein Update-Objekt, das nur die zu ändernden Felder und die ID enthält.
+      // updated_at wird in updateAccount gesetzt.
+      const accountUpdates: Partial<Account> & { id: string } = {
+        id: accountId,
+        logoUrl: newLogoPath,
+      };
+      // Rufe updateAccount mit dem partiellen Update auf.
+      // fromSync ist false, da dies eine lokale Änderung ist.
+      await updateAccount(accountUpdates as Account, false);
+      infoLog('accountStore', `Logo für Konto ${accountId} aktualisiert auf ${newLogoPath}.`);
+    } else {
+      errorLog('accountStore', `Konto ${accountId} für Logo-Update nicht gefunden.`);
+    }
+  }
+
+  async function updateAccountGroupLogo(accountGroupId: string, newLogoPath: string | null): Promise<void> {
+    const group = accountGroups.value.find(g => g.id === accountGroupId);
+    if (group) {
+      const groupUpdates: Partial<AccountGroup> & { id: string } = {
+        id: accountGroupId,
+        logoUrl: newLogoPath,
+      };
+      await updateAccountGroup(groupUpdates as AccountGroup, false);
+      infoLog('accountStore', `Logo für Kontogruppe ${accountGroupId} aktualisiert auf ${newLogoPath}.`);
+    } else {
+      errorLog('accountStore', `Kontogruppe ${accountGroupId} für Logo-Update nicht gefunden.`);
+    }
+  }
+
   async function loadAccounts(): Promise<void> {
     try {
       const [loadedAccounts, loadedAccountGroups] = await Promise.all([
@@ -364,6 +396,7 @@ export const useAccountStore = defineStore('account', () => {
     activeAccounts, getAccountById, getAccountGroupById,
     addAccount, updateAccount, deleteAccount,
     addAccountGroup, updateAccountGroup, deleteAccountGroup,
+    updateAccountLogo, updateAccountGroupLogo,
     reset, initializeStore,
     loadAccounts,
   };

@@ -86,21 +86,24 @@ const onAccountSelect = (account) => emit("selectAccount", account);
     <!-- Kopf -->
     <div class="card-body flex flex-row p-3">
       <div class="p-0 w-24">
-        <div class="w-10 h-10 rounded-md overflow-hidden opacity-60">
+        <div
+          class="w-12 h-12 rounded-md overflow-hidden flex items-center justify-center bg-base-200 opacity-80"
+        >
           <img
-            v-if="group.image"
-            :src="group.image"
-            alt="Gruppenbild"
+            v-if="props.group.logoUrl"
+            :src="props.group.logoUrl"
+            :alt="props.group.name + ' Logo'"
             class="w-full h-full object-cover"
           />
-          <div
+          <Icon
             v-else
-            class="w-full h-full bg-base-200"
+            icon="mdi:folder-multiple-outline"
+            class="w-8 h-8 text-base-content opacity-50"
           />
         </div>
       </div>
 
-      <div class="flex flex-col md:flex-row w-full mr-1 ml-2">
+      <div class="flex flex-col md:flex-row w-full mr-1 ml-1">
         <div class="self-start flex-grow md:self-center">
           <h3 class="text-lg opacity-50 font-semibold">{{ group.name }}</h3>
         </div>

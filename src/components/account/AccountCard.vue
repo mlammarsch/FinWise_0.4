@@ -33,11 +33,6 @@ const formattedIban = computed(() => {
   return iban.match(/.{1,4}/g)?.join(" ") || iban;
 });
 
-// Logo
-const accountImage = computed(() => {
-  return props.account.image || "https://placehold.co/400x400?text=Logo";
-});
-
 // Aktueller Saldo (Service)
 const currentBalance = computed(() =>
   AccountService.getCurrentBalance(props.account.id)
@@ -119,11 +114,19 @@ const selectAccount = () => {
 
     <div class="card-body min-h-22 flex flex-row items-center p-0">
       <!-- Konto-Logo -->
-      <div class="w-16 flex-shrink-0 mr-1 ml-2">
+      <div
+        class="w-16 h-16 flex-shrink-0 mr-1 ml-2 flex items-center justify-center rounded-full overflow-hidden bg-gray-200"
+      >
         <img
-          :src="accountImage"
-          alt="Account Logo"
-          class="w-full h-full rounded-full object-cover"
+          v-if="props.account.logoUrl"
+          :src="props.account.logoUrl"
+          :alt="props.account.name + ' Logo'"
+          class="w-full h-full object-cover"
+        />
+        <Icon
+          v-else
+          icon="mdi:bank"
+          class="text-3xl text-gray-400"
         />
       </div>
 

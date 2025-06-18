@@ -2,6 +2,7 @@
 import { ref, onMounted } from "vue";
 import { AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
+import { ImageService } from "../../services/ImageService"; // Import ImageService
 
 const props = defineProps<{
   group?: AccountGroup;
@@ -16,6 +17,10 @@ const name = ref("");
 const sortOrder = ref(0);
 const image = ref<string | null>(null);
 const originalImage = ref<string | null>(null);
+const isUploadingLogo = ref(false);
+const uploadMessage = ref<{ type: "success" | "error"; text: string } | null>(
+  null
+);
 
 onMounted(() => {
   if (props.group) {
@@ -26,42 +31,149 @@ onMounted(() => {
   }
 });
 
-const handleImageUpload = (event: Event) => {
+const handleImageUpload = async (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      image.value = reader.result as string;
-    };
-    reader.readAsDataURL(file);
+    isUploadingLogo.value = true;
+    uploadMessage.value = null;
+    try {
+      // Ähnlich wie bei AccountForm, die ID der Entität wird benötigt.
+      const accountGroupId = props.group?.id;
+      if (!accountGroupId && props.isEdit) {
+        uploadMessage.value = {
+          type: "error",
+          text: "Kontogruppen-ID nicht gefunden. Upload nicht möglich.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
+      const currentEntityId = accountGroupId || "temp-new-accountgroup-id"; // Provisorische ID
+
+      const response = await ImageService.uploadLogo(
+        currentEntityId,
+        "account_group",
+        file
+      );
+
+      if (response && response.logo_path) {
+        image.value = response.logo_path; // Speichere den relativen Pfad
+        uploadMessage.value = {
+          type: "success",
+          text: "Logo erfolgreich hochgeladen.",
+        };
+        if (props.group?.id) {
+          accountStore.updateAccountGroupLogo(
+            props.group.id,
+            response.logo_path
+          );
+        }
+      } else {
+        uploadMessage.value = {
+          type: "error",
+          text: "Das Logo konnte nicht hochgeladen werden. Bitte versuchen Sie es später erneut.",
+        };
+        if (originalImage.value) image.value = originalImage.value;
+        else image.value = null;
+      }
+    } catch (error: any) {
+      console.error("Error uploading logo in component:", error);
+      let specificMessage = "Fehler beim Hochladen des Logos.";
+      if (error.status === 415) {
+        specificMessage =
+          "Ungültiges Dateiformat. Bitte JPG oder PNG verwenden.";
+      } else if (error.status === 413) {
+        specificMessage = "Die Datei ist zu groß.";
+      } else if (error.message && error.message.includes("NetworkError")) {
+        specificMessage =
+          "Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung.";
+      }
+      uploadMessage.value = {
+        type: "error",
+        text: specificMessage,
+      };
+      if (originalImage.value) image.value = originalImage.value;
+      else image.value = null;
+    } finally {
+      isUploadingLogo.value = false;
+    }
   }
 };
 
-const removeImage = () => {
+const removeImage = async () => {
+  const logoPathToDelete = image.value; // Dies sollte der relative Pfad sein
   image.value = null;
+  uploadMessage.value = null;
+
+  if (props.group?.id) {
+    if (logoPathToDelete) {
+      try {
+        await ImageService.deleteLogo(logoPathToDelete);
+        uploadMessage.value = {
+          type: "success",
+          text: "Logo erfolgreich vom Server entfernt.",
+        };
+      } catch (error) {
+        console.error("Fehler beim Löschen des Logos vom Server:", error);
+        uploadMessage.value = {
+          type: "error",
+          text: "Fehler beim Entfernen des Logos vom Server.",
+        };
+        // image.value = logoPathToDelete; // Optional: Lokales Bild wiederherstellen
+        // return;
+      }
+    }
+    accountStore.updateAccountGroupLogo(props.group.id, null);
+    if (!uploadMessage.value || uploadMessage.value.type === "success") {
+      uploadMessage.value = {
+        type: "success",
+        text: "Logo im Formular und Store entfernt.",
+      };
+    }
+  }
 };
 
 const saveGroup = () => {
-  if (originalImage.value && originalImage.value !== image.value) {
-    const isStillUsed = accountStore.accountGroups.some(
-      (g) => g.image === originalImage.value && g.id !== props.group?.id
-    );
-    if (!isStillUsed) {
-      // Placeholder für späteren Löschmechanismus (Server/API)
-    }
-  }
-
-  const groupData: Omit<AccountGroup, "id"> = {
+  const groupData: Omit<AccountGroup, "id" | "updated_at"> & {
+    logoUrl?: string | null;
+  } = {
     name: name.value,
     sortOrder: sortOrder.value,
-    image: image.value || undefined,
+    logoUrl: image.value || undefined, // image.value sollte den relativen Pfad enthalten
   };
-  emit("save", groupData);
+  // Wenn props.group.id existiert, fügen wir es hinzu, damit updateAccountGroup es verwenden kann
+  const saveData = props.group?.id
+    ? { ...groupData, id: props.group.id }
+    : groupData;
+  emit("save", saveData);
 };
+
+// Computed Property für die Anzeige des Logos
+const displayLogoUrl = computed(() => {
+  if (image.value) {
+    if (image.value.startsWith("http") || image.value.startsWith("blob:")) {
+      return image.value;
+    }
+    return ImageService.getLogoUrl(image.value);
+  }
+  return null;
+});
+
+// onMounted anpassen, um logoUrl zu verwenden
+onMounted(() => {
+  if (props.group) {
+    name.value = props.group.name;
+    sortOrder.value = props.group.sortOrder;
+    image.value = props.group.logoUrl || null; // Verwende logoUrl
+    originalImage.value = props.group.logoUrl || null; // Verwende logoUrl
+  }
+});
 </script>
 
 <template>
-  <form @submit.prevent="saveGroup" class="space-y-4">
+  <form
+    @submit.prevent="saveGroup"
+    class="space-y-4"
+  >
     <div class="form-control">
       <label class="label">
         <span class="label-text">Name der Kontogruppe</span>
@@ -90,35 +202,88 @@ const saveGroup = () => {
 
     <div class="form-control">
       <label class="label">
-        <span class="label-text">Gruppen Bild (JPG oder PNG)</span>
+        <span class="label-text">Logo (JPG oder PNG)</span>
       </label>
-      <input
-        type="file"
-        class="file-input file-input-bordered w-full"
-        accept="image/jpeg, image/png"
-        @change="handleImageUpload"
-      />
-      <div v-if="image" class="mt-2">
-        <img
-          :src="image"
-          alt="Gruppen Bild Vorschau"
-          class="rounded-md max-h-32"
-        />
-        <button
-          class="btn btn-sm btn-error mt-2"
-          type="button"
-          @click="removeImage"
+      <div class="flex items-center space-x-4">
+        <div
+          v-if="displayLogoUrl"
+          class="avatar"
         >
-          Bild entfernen
-        </button>
+          <div class="w-24 rounded">
+            <img
+              :src="displayLogoUrl"
+              alt="Aktuelles Logo"
+            />
+          </div>
+        </div>
+        <div
+          v-else
+          class="avatar placeholder"
+        >
+          <div class="bg-neutral-focus text-neutral-content rounded w-24">
+            <span>Kein Logo</span>
+          </div>
+        </div>
+
+        <input
+          type="file"
+          accept="image/png, image/jpeg"
+          class="hidden"
+          ref="fileInput"
+          @change="handleImageUpload"
+        />
+
+        <div class="flex flex-col space-y-2">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline"
+            @click="($refs.fileInput as HTMLInputElement)?.click()"
+            :disabled="isUploadingLogo"
+          >
+            <span
+              v-if="isUploadingLogo"
+              class="loading loading-spinner loading-xs mr-2"
+            ></span>
+            {{ displayLogoUrl ? "Logo ändern" : "Logo hochladen" }}
+          </button>
+          <button
+            v-if="displayLogoUrl && !isUploadingLogo"
+            type="button"
+            class="btn btn-sm btn-error btn-outline"
+            @click="removeImage"
+            :disabled="isUploadingLogo"
+          >
+            Logo löschen
+          </button>
+        </div>
+      </div>
+      <div
+        v-if="uploadMessage"
+        :class="[
+          'mt-2 p-2 rounded-md text-sm',
+          uploadMessage.type === 'success'
+            ? 'bg-success text-success-content'
+            : 'bg-error text-error-content',
+        ]"
+      >
+        {{ uploadMessage.text }}
       </div>
     </div>
 
     <div class="flex justify-end space-x-2 pt-4">
-      <button type="button" class="btn" @click="emit('cancel')">
+      <button
+        type="button"
+        class="btn"
+        @click="emit('cancel')"
+      >
         Abbrechen
       </button>
-      <button type="submit" class="btn btn-primary">Speichern</button>
+      <button
+        type="submit"
+        class="btn btn-primary"
+      >
+        Speichern
+      </button>
     </div>
   </form>
 </template>

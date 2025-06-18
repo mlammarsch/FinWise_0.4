@@ -3,6 +3,7 @@ import { ref, computed, onMounted, nextTick } from "vue";
 import { Account } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyInput from "../ui/CurrencyInput.vue";
+import { ImageService } from "../../services/ImageService"; // Import ImageService
 
 const props = defineProps<{ account?: Account; isEdit?: boolean }>();
 const emit = defineEmits(["save", "cancel"]);
@@ -17,7 +18,11 @@ const offset = ref(0);
 const creditLimit = ref(0);
 const image = ref<string | null>(null);
 const originalImage = ref<string | null>(null);
-
+const isUploadingLogo = ref(false);
+const uploadMessage = ref<{ type: "success" | "error"; text: string } | null>(
+  null
+);
+// Die onMounted-Logik wird hierhin verschoben und angepasst, um logoUrl zu verwenden
 onMounted(() => {
   if (props.account) {
     name.value = props.account.name;
@@ -27,8 +32,8 @@ onMounted(() => {
     iban.value = props.account.iban || "";
     offset.value = props.account.offset || 0;
     creditLimit.value = props.account.creditLimit || 0;
-    image.value = props.account.image || null;
-    originalImage.value = props.account.image || null;
+    image.value = props.account.logoUrl || null; // Verwende logoUrl
+    originalImage.value = props.account.logoUrl || null; // Verwende logoUrl
   } else {
     accountGroupId.value = accountStore.accountGroups[0]?.id || "";
     offset.value = 0;
@@ -37,26 +42,122 @@ onMounted(() => {
   nextTick(() => document.getElementById("account-name")?.focus());
 });
 
-const handleImageUpload = (event: Event) => {
+// Die handleImageUpload-Logik wird hierhin verschoben und angepasst
+const handleImageUpload = async (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
-    const reader = new FileReader();
-    reader.onloadend = () => (image.value = reader.result as string);
-    reader.readAsDataURL(file);
+    isUploadingLogo.value = true;
+    uploadMessage.value = null;
+    try {
+      const accountId = props.account?.id;
+      if (!accountId && props.isEdit) {
+        // Im Bearbeitungsmodus eine ID erwarten
+        uploadMessage.value = {
+          type: "error",
+          text: "Konto-ID nicht gefunden. Upload nicht möglich.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
+      // Für neue Konten (props.isEdit = false), könnte der Upload-Button deaktiviert sein,
+      // oder eine temporäre Logik hier greifen. Für diesen Task fokussieren wir uns auf bestehende Konten.
+      // Wenn props.account.id nicht existiert (neues Konto), wird der Upload hier nicht ausgeführt.
+      if (!accountId) {
+        uploadMessage.value = {
+          type: "error",
+          text: "Bitte speichern Sie das Konto zuerst, um ein Logo hochzuladen.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
+
+      const response = await ImageService.uploadLogo(
+        accountId, // Verwende die definitive Account-ID
+        "account",
+        file
+      );
+
+      if (response && response.logo_path) {
+        image.value = response.logo_path; // Speichere den relativen Pfad
+        uploadMessage.value = {
+          type: "success",
+          text: "Logo erfolgreich hochgeladen.",
+        };
+        // Rufe accountStore.updateAccountLogo auf, um den Store zu aktualisieren
+        accountStore.updateAccountLogo(accountId, response.logo_path);
+      } else {
+        uploadMessage.value = {
+          type: "error",
+          text: "Das Logo konnte nicht hochgeladen werden. Bitte versuchen Sie es später erneut.",
+        };
+        if (originalImage.value) image.value = originalImage.value;
+        else image.value = null;
+      }
+    } catch (error: any) {
+      console.error("Error uploading logo in component:", error);
+      let specificMessage = "Fehler beim Hochladen des Logos.";
+      if (error.status === 415) {
+        specificMessage =
+          "Ungültiges Dateiformat. Bitte JPG oder PNG verwenden.";
+      } else if (error.status === 413) {
+        specificMessage = "Die Datei ist zu groß.";
+      } else if (error.message && error.message.includes("NetworkError")) {
+        specificMessage =
+          "Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung.";
+      }
+      uploadMessage.value = {
+        type: "error",
+        text: specificMessage,
+      };
+      if (originalImage.value) image.value = originalImage.value;
+      else image.value = null;
+    } finally {
+      isUploadingLogo.value = false;
+    }
   }
 };
 
-const removeImage = () => (image.value = null);
+// Die removeImage-Logik wird hierhin verschoben und angepasst
+const removeImage = async () => {
+  const logoPathToDelete = image.value; // Dies sollte der relative Pfad sein
+  image.value = null;
+  uploadMessage.value = null;
 
-const saveAccount = () => {
-  if (originalImage.value && originalImage.value !== image.value) {
-    const stillUsed = accountStore.accounts.some(
-      (a) => a.image === originalImage.value && a.id !== props.account?.id
-    );
-    // Keine Dateioperation nötig
+  if (props.account?.id) {
+    if (logoPathToDelete) {
+      try {
+        await ImageService.deleteLogo(logoPathToDelete);
+        uploadMessage.value = {
+          type: "success",
+          text: "Logo erfolgreich vom Server entfernt.",
+        };
+      } catch (error) {
+        console.error("Fehler beim Löschen des Logos vom Server:", error);
+        uploadMessage.value = {
+          type: "error",
+          text: "Fehler beim Entfernen des Logos vom Server.",
+        };
+        // Das Bild könnte lokal wiederhergestellt werden, wenn das serverseitige Löschen fehlschlägt,
+        // aber für diesen Task belassen wir es bei der Fehlermeldung.
+        // image.value = logoPathToDelete; // Optional: Lokales Bild wiederherstellen
+        // return; // Breche ab, um Store nicht zu aktualisieren, wenn Server-Löschen fehlschlägt
+      }
+    }
+    // Unabhängig vom Server-Lösch-Erfolg (oder wenn kein logoPathToDelete vorhanden war),
+    // das Logo im Store auf null setzen.
+    accountStore.updateAccountLogo(props.account.id, null);
+    if (!uploadMessage.value || uploadMessage.value.type === "success") {
+      uploadMessage.value = {
+        type: "success",
+        text: "Logo im Formular und Store entfernt.",
+      };
+    }
   }
+};
+
+// Die saveAccount-Logik wird hierhin verschoben und angepasst
+const saveAccount = () => {
   const accountData = {
-    // Use a more generic type or Omit<Account, 'id' | 'uuid' | 'balance'> if preferred
     name: name.value,
     description: description.value,
     note: note.value,
@@ -64,15 +165,27 @@ const saveAccount = () => {
     iban: iban.value,
     offset: offset.value,
     creditLimit: creditLimit.value,
-    image: image.value || undefined,
+    logoUrl: image.value || undefined, // image.value sollte den relativen Pfad enthalten
     isActive: props.account?.isActive ?? true,
     isOfflineBudget: props.account?.isOfflineBudget ?? false,
-    // balance, uuid, and id will be added by the service
   };
   emit("save", accountData);
 };
 
 const accountGroups = computed(() => accountStore.accountGroups);
+
+// Computed Property für die Anzeige des Logos
+const displayLogoUrl = computed(() => {
+  if (image.value) {
+    // Wenn image.value eine volle URL ist (z.B. von externen Quellen oder alten Daten), gib sie direkt zurück.
+    // Wenn es ein relativer Pfad ist, konstruiere die URL.
+    if (image.value.startsWith("http") || image.value.startsWith("blob:")) {
+      return image.value;
+    }
+    return ImageService.getLogoUrl(image.value);
+  }
+  return null;
+});
 </script>
 
 <template>
@@ -165,16 +278,35 @@ const accountGroups = computed(() => accountStore.accountGroups);
 
     <div class="form-control">
       <label class="label"
-        ><span class="label-text">Konto Bild (JPG/PNG)</span></label
+        ><span class="label-text">Konto Logo (JPG/PNG)</span></label
       >
       <input
         type="file"
         accept="image/jpeg,image/png"
         class="file-input file-input-bordered w-full"
         @change="handleImageUpload"
+        :disabled="isUploadingLogo"
       />
       <div
-        v-if="image"
+        v-if="isUploadingLogo"
+        class="mt-2 flex items-center"
+      >
+        <span class="loading loading-spinner loading-sm mr-2"></span>
+        <span>Wird hochgeladen...</span>
+      </div>
+      <div
+        v-if="uploadMessage"
+        :class="[
+          'mt-2 p-2 rounded-md text-sm',
+          uploadMessage.type === 'success'
+            ? 'bg-success text-success-content'
+            : 'bg-error text-error-content',
+        ]"
+      >
+        {{ uploadMessage.text }}
+      </div>
+      <div
+        v-if="image && !isUploadingLogo"
         class="mt-2"
       >
         <img
@@ -186,6 +318,7 @@ const accountGroups = computed(() => accountStore.accountGroups);
           class="btn btn-error btn-sm mt-2"
           type="button"
           @click="removeImage"
+          :disabled="isUploadingLogo"
         >
           Bild entfernen
         </button>
