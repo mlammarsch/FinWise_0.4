@@ -12,13 +12,11 @@ import { TenantDbService } from "../../services/TenantDbService";
 import type { QueueStatistics } from "../../types";
 import { ImageService } from "../../services/ImageService";
 import { useAccountStore } from "../../stores/accountStore";
-import { useAccountGroupStore } from "../../stores/accountGroupStore";
 
 const webSocketStore = useWebSocketStore();
 const tenantStore = useTenantStore();
 const tenantDbService = new TenantDbService();
 const accountStore = useAccountStore();
-const accountGroupStore = useAccountGroupStore();
 
 // Reactive State
 const isManuallyProcessingSync = ref(false);
@@ -203,14 +201,15 @@ async function handleSyncButtonClick() {
     }
 
     if (
-      accountGroupStore.accountGroups &&
-      accountGroupStore.accountGroups.length > 0
+      accountStore.accountGroups && // Use accountStore here
+      accountStore.accountGroups.length > 0
     ) {
       infoLog(
         "SyncButton",
-        `Starting logo cache update for ${accountGroupStore.accountGroups.length} account groups.`
+        `Starting logo cache update for ${accountStore.accountGroups.length} account groups.`
       );
-      for (const accountGroup of accountGroupStore.accountGroups) {
+      for (const accountGroup of accountStore.accountGroups) {
+        // Use accountStore here
         if (accountGroup.logoUrl) {
           ImageService.fetchAndCacheLogo(accountGroup.logoUrl).catch((err) => {
             errorLog(

@@ -46,12 +46,15 @@ onMounted(() => {
 const handleImageUpload = async (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
+    // Temporäre URL für die Vorschau erstellen
+    const tempImageUrl = URL.createObjectURL(file);
+    image.value = tempImageUrl; // Setze das Bild sofort für die Vorschau
+
     isUploadingLogo.value = true;
     uploadMessage.value = null;
     try {
       const accountId = props.account?.id;
       if (!accountId && props.isEdit) {
-        // Im Bearbeitungsmodus eine ID erwarten
         uploadMessage.value = {
           type: "error",
           text: "Konto-ID nicht gefunden. Upload nicht möglich.",
@@ -59,9 +62,6 @@ const handleImageUpload = async (event: Event) => {
         isUploadingLogo.value = false;
         return;
       }
-      // Für neue Konten (props.isEdit = false), könnte der Upload-Button deaktiviert sein,
-      // oder eine temporäre Logik hier greifen. Für diesen Task fokussieren wir uns auf bestehende Konten.
-      // Wenn props.account.id nicht existiert (neues Konto), wird der Upload hier nicht ausgeführt.
       if (!accountId) {
         uploadMessage.value = {
           type: "error",
@@ -72,18 +72,17 @@ const handleImageUpload = async (event: Event) => {
       }
 
       const response = await ImageService.uploadLogo(
-        accountId, // Verwende die definitive Account-ID
+        accountId,
         "account",
         file
       );
 
       if (response && response.logo_path) {
-        image.value = response.logo_path; // Speichere den relativen Pfad
+        image.value = response.logo_path; // Speichere den relativen Pfad vom Server
         uploadMessage.value = {
           type: "success",
           text: "Logo erfolgreich hochgeladen.",
         };
-        // Rufe accountStore.updateAccountLogo auf, um den Store zu aktualisieren
         accountStore.updateAccountLogo(accountId, response.logo_path);
       } else {
         uploadMessage.value = {
@@ -113,6 +112,13 @@ const handleImageUpload = async (event: Event) => {
       else image.value = null;
     } finally {
       isUploadingLogo.value = false;
+      // Wenn eine temporäre URL erstellt wurde, muss sie freigegeben werden,
+      // sobald sie nicht mehr benötigt wird (z.B. nach dem Upload oder bei Fehler).
+      // Hier ist es wichtig, dass die URL nur freigegeben wird, wenn sie nicht mehr im Gebrauch ist.
+      // Da image.value auf den Server-Pfad gesetzt wird, ist die temporäre URL nicht mehr aktiv.
+      if (tempImageUrl && image.value !== tempImageUrl) {
+        URL.revokeObjectURL(tempImageUrl);
+      }
     }
   }
 };
@@ -177,11 +183,15 @@ const accountGroups = computed(() => accountStore.accountGroups);
 // Computed Property für die Anzeige des Logos
 const displayLogoUrl = computed(() => {
   if (image.value) {
-    // Wenn image.value eine volle URL ist (z.B. von externen Quellen oder alten Daten), gib sie direkt zurück.
-    // Wenn es ein relativer Pfad ist, konstruiere die URL.
-    if (image.value.startsWith("http") || image.value.startsWith("blob:")) {
+    // Wenn image.value eine volle URL ist (z.B. von externen Quellen oder temporäre Blob-URL), gib sie direkt zurück.
+    if (
+      image.value.startsWith("http://") ||
+      image.value.startsWith("https://") ||
+      image.value.startsWith("blob:")
+    ) {
       return image.value;
     }
+    // Wenn es ein relativer Pfad ist, konstruiere die URL über ImageService
     return ImageService.getLogoUrl(image.value);
   }
   return null;
@@ -306,11 +316,11 @@ const displayLogoUrl = computed(() => {
         {{ uploadMessage.text }}
       </div>
       <div
-        v-if="image && !isUploadingLogo"
+        v-if="displayLogoUrl && !isUploadingLogo"
         class="mt-2"
       >
         <img
-          :src="image"
+          :src="displayLogoUrl"
           alt="Vorschau"
           class="rounded-md max-h-32"
         />

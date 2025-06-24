@@ -7,8 +7,8 @@ import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import AccountCard from "./AccountCard.vue";
 import AccountGroupForm from "./AccountGroupForm.vue";
 import { AccountService } from "../../services/AccountService"; // neu
-import { useTenantDbService } from "../../services/TenantDbService"; // Import TenantDbService
-import ImageService from "../../services/ImageService"; // Import ImageService
+import { TenantDbService } from "../../services/TenantDbService"; // Import TenantDbService
+import { ImageService } from "../../services/ImageService"; // Import ImageService
 import { Icon } from "@iconify/vue"; // Icon importieren
 
 const emit = defineEmits(["selectAccount"]);
@@ -19,7 +19,7 @@ const props = defineProps<{
 }>();
 
 const accountStore = useAccountStore();
-const tenantDbService = useTenantDbService();
+const tenantDbService = new TenantDbService();
 
 // State für Modal
 const showEditModal = ref(false);

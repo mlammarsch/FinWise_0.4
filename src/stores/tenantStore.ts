@@ -21,6 +21,7 @@ export class FinwiseTenantSpecificDB extends Dexie {
   rules!: Table<AutomationRule, string>;
   monthlyBalances!: Table<MonthlyBalance, [number, number]>;
   syncQueue!: Table<SyncQueueEntry, string>;
+  logoCache!: Table<{ logoPath: string; dataUrl: string; lastFetched: number }, string>;
 
   constructor(databaseName: string) {
     super(databaseName);
@@ -112,6 +113,9 @@ export class FinwiseTenantSpecificDB extends Dexie {
       rules: '&id, name, stage, priority, isActive, updated_at',
       monthlyBalances: '&[year+month], year, month',
       syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+    });
+    this.version(12).stores({
+      logoCache: '&logoPath,lastFetched',
     });
   }
 }

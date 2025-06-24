@@ -25,7 +25,7 @@ export interface AccountGroup {
   name: string
   sortOrder: number
   image?: string
-  logoUrl?: string | null | undefined
+  logo_path?: string | null | undefined
   updated_at?: string // ISO 8601 Format
 }
 

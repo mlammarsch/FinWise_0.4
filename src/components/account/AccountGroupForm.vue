@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, computed } from "vue";
 import { AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
@@ -34,10 +34,12 @@ onMounted(() => {
 const handleImageUpload = async (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
+    const tempImageUrl = URL.createObjectURL(file);
+    image.value = tempImageUrl;
+
     isUploadingLogo.value = true;
     uploadMessage.value = null;
     try {
-      // Ähnlich wie bei AccountForm, die ID der Entität wird benötigt.
       const accountGroupId = props.group?.id;
       if (!accountGroupId && props.isEdit) {
         uploadMessage.value = {
@@ -47,7 +49,7 @@ const handleImageUpload = async (event: Event) => {
         isUploadingLogo.value = false;
         return;
       }
-      const currentEntityId = accountGroupId || "temp-new-accountgroup-id"; // Provisorische ID
+      const currentEntityId = accountGroupId || "temp-new-accountgroup-id";
 
       const response = await ImageService.uploadLogo(
         currentEntityId,
@@ -56,7 +58,7 @@ const handleImageUpload = async (event: Event) => {
       );
 
       if (response && response.logo_path) {
-        image.value = response.logo_path; // Speichere den relativen Pfad
+        image.value = response.logo_path;
         uploadMessage.value = {
           type: "success",
           text: "Logo erfolgreich hochgeladen.",
@@ -95,6 +97,9 @@ const handleImageUpload = async (event: Event) => {
       else image.value = null;
     } finally {
       isUploadingLogo.value = false;
+      if (tempImageUrl && image.value !== tempImageUrl) {
+        URL.revokeObjectURL(tempImageUrl);
+      }
     }
   }
 };
@@ -134,11 +139,11 @@ const removeImage = async () => {
 
 const saveGroup = () => {
   const groupData: Omit<AccountGroup, "id" | "updated_at"> & {
-    logoUrl?: string | null;
+    logo_path?: string | null;
   } = {
     name: name.value,
     sortOrder: sortOrder.value,
-    logoUrl: image.value || undefined, // image.value sollte den relativen Pfad enthalten
+    logo_path: image.value || undefined, // image.value sollte den relativen Pfad enthalten
   };
   // Wenn props.group.id existiert, fügen wir es hinzu, damit updateAccountGroup es verwenden kann
   const saveData = props.group?.id
@@ -150,7 +155,11 @@ const saveGroup = () => {
 // Computed Property für die Anzeige des Logos
 const displayLogoUrl = computed(() => {
   if (image.value) {
-    if (image.value.startsWith("http") || image.value.startsWith("blob:")) {
+    if (
+      image.value.startsWith("http://") ||
+      image.value.startsWith("https://") ||
+      image.value.startsWith("blob:")
+    ) {
       return image.value;
     }
     return ImageService.getLogoUrl(image.value);
@@ -163,8 +172,8 @@ onMounted(() => {
   if (props.group) {
     name.value = props.group.name;
     sortOrder.value = props.group.sortOrder;
-    image.value = props.group.logoUrl || null; // Verwende logoUrl
-    originalImage.value = props.group.logoUrl || null; // Verwende logoUrl
+    image.value = props.group.logo_path || null; // Verwende logo_path
+    originalImage.value = props.group.logo_path || null; // Verwende logo_path
   }
 });
 </script>

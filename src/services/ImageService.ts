@@ -1,6 +1,7 @@
 import { apiService } from './apiService';
 import { errorLog, infoLog, debugLog } from '@/utils/logger';
 import { TenantDbService } from './TenantDbService';
+import { useTenantStore } from '@/stores/tenantStore'; // Import hinzugefügt
 
 // TypeScript hat Schwierigkeiten, import.meta.env ohne eine korrekte vite-env.d.ts Konfiguration zu erkennen.
 // Für die Zwecke dieses Tasks wird eine Typ-Assertion verwendet.
@@ -96,10 +97,30 @@ export class ImageService {
       errorLog('ImageService', 'deleteLogo aufgerufen ohne logoPath.');
       return false;
     }
+
+    const tenantStore = useTenantStore();
+    const activeTenantId = tenantStore.activeTenantId;
+
+    if (!activeTenantId) {
+      errorLog('ImageService', 'Kein aktiver Tenant gefunden. Logo kann nicht gelöscht werden.');
+      return false;
+    }
+
     try {
-      // Der logoPath ist bereits der relative Pfad, der in der URL verwendet werden soll.
-      // z.B. tenant_xyz/image.png
-      await apiService.delete(`/api/v1/logos/${logoPath}`);
+      // logoPath hat das Format "tenant_name/uuid.ext"
+      // Wir müssen es in "tenant_id/uuid.ext" umwandeln
+      const pathParts = logoPath.split('/');
+      if (pathParts.length < 2) {
+        errorLog('ImageService', `Ungültiger logoPath-Format für Löschung: ${logoPath}`);
+        return false;
+      }
+      const fileName = pathParts[1]; // uuid.ext
+
+      // Die korrekte URL für das Backend ist /api/v1/logos/{tenant_id}/{file_name}
+      const deleteUrl = `/api/v1/logos/${activeTenantId}/${fileName}`;
+      debugLog('ImageService', `Versuche Logo zu löschen unter URL: ${deleteUrl}`);
+
+      await apiService.delete(deleteUrl);
       return true;
     } catch (error) {
       errorLog(

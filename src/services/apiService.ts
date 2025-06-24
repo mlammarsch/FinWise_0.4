@@ -1,12 +1,16 @@
 import { infoLog, errorLog } from '@/utils/logger';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// This is a common workaround for Vite's import.meta.env typing issues in TS files.
+const BASE_URL = (import.meta as any).env.VITE_API_BASE_URL as string;
 
 if (!BASE_URL) {
   errorLog('ApiService', 'VITE_API_BASE_URL ist nicht in den Umgebungsvariablen definiert. Bitte überprüfen Sie Ihre .env Datei.');
 }
 
-interface ApiServiceOptions extends RequestInit {
+// We define a custom options type to allow any type for the body,
+// as we will handle the serialization within the request function.
+interface ApiServiceOptions extends Omit<RequestInit, 'body'> {
+  body?: any;
 }
 
 async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Promise<T> {
@@ -15,26 +19,41 @@ async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Pr
 
   const config: RequestInit = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    body,
+    headers: { ...headers },
   };
 
-  infoLog('ApiService', `Request: ${method} ${url}`, { body: options.body });
+  if (body) {
+    if (body instanceof FormData) {
+      config.body = body;
+      // Let the browser set the Content-Type header for FormData,
+      // it will include the necessary boundary.
+      delete (config.headers as Record<string, string>)['Content-Type'];
+    } else {
+      // For other objects, assume JSON.
+      config.body = JSON.stringify(body);
+      // Set Content-Type to application/json if it's not already set.
+      if (!(config.headers as Record<string, string>)['Content-Type']) {
+        (config.headers as Record<string, string>)['Content-Type'] = 'application/json';
+      }
+    }
+  }
+
+  infoLog('ApiService', `Request: ${method} ${url}`, { body: options.body instanceof FormData ? 'FormData' : options.body });
 
   try {
     const response = await fetch(url, config);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ message: response.statusText }));
+      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
       errorLog('ApiService', `API Error: ${response.status} ${response.statusText}`, {
         url,
         status: response.status,
         errorData,
       });
-      throw new Error(errorData.message || `API request failed with status ${response.status}`);
+      const err = new Error(errorData.detail || `API request failed with status ${response.status}`);
+      (err as any).status = response.status;
+      (err as any).errorData = errorData;
+      throw err;
     }
 
     if (response.status === 204) {
@@ -56,10 +75,13 @@ async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Pr
 export const apiService = {
   get: <T>(endpoint: string, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
     request<T>(endpoint, { ...options, method: 'GET' }),
+
   post: <T, B>(endpoint: string, body: B, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
-    request<T>(endpoint, { ...options, method: 'POST', body: JSON.stringify(body) }),
+    request<T>(endpoint, { ...options, method: 'POST', body }),
+
   put: <T, B>(endpoint: string, body: B, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
-    request<T>(endpoint, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+    request<T>(endpoint, { ...options, method: 'PUT', body }),
+
   delete: <T>(endpoint: string, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
 
