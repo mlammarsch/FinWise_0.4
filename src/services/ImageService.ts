@@ -10,20 +10,14 @@ const VITE_API_BASE_URL = (import.meta as any).env.VITE_API_BASE_URL as string;
 
 export class ImageService {
   /**
-   * Lädt ein Logo für eine Entität (Konto oder Kontengruppe) hoch.
-   * @param entityId - Die ID der Entität.
-   * @param entityType - Der Typ der Entität ('account' oder 'account_group').
+   * Lädt ein Bild hoch.
    * @param file - Die hochzuladende Datei.
-   * @returns Ein Promise, das bei Erfolg ein Objekt mit dem logo_path zurückgibt, sonst null.
+   * @returns Ein Promise, das bei Erfolg ein Objekt mit dem image_url zurückgibt, sonst null.
    */
-  static async uploadLogo(
-    entityId: string,
-    entityType: 'account' | 'account_group',
+  static async uploadImage(
     file: File
-  ): Promise<{ logo_path: string } | null> {
+  ): Promise<{ image_url: string } | null> {
     const formData = new FormData();
-    formData.append('entity_id', entityId);
-    formData.append('entity_type', entityType);
     formData.append('file', file);
 
     const maxRetries = 3;
@@ -31,43 +25,25 @@ export class ImageService {
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        // Der Content-Type Header wird bei FormData automatisch vom Browser/Fetch-API gesetzt.
-        // apiService.post sollte dies korrekt handhaben.
-        // Annahme: apiService.post erwartet <ResponseType, RequestBodyType>
-        const response = await apiService.post<{ logo_path: string }, FormData>(
-          '/api/v1/logos/upload',
+        const response = await apiService.post<{ image_url: string }, FormData>(
+          '/api/v1/logos/upload', // Endpunkt ist jetzt /api/v1/logos/upload
           formData,
-          {
-            // Explizit 'Content-Type': undefined setzen, falls apiService dies nicht automatisch handhabt
-            // und stattdessen einen default JSON Content-Type setzt.
-            // In den meisten modernen Fetch-basierten Clients ist dies nicht nötig.
-            // Wenn apiService.post so konzipiert ist, dass es den Content-Type für FormData
-            // automatisch korrekt setzt oder weglässt, ist dieser options-Block ggf. leer oder nicht notwendig.
-          }
         );
         if (response) {
           return response;
         }
-        // Wenn die Antwort null ist, aber kein Fehler ausgelöst wurde,
-        // könnte dies ein unerwartetes Verhalten des apiService sein.
-        // Für diesen Task behandeln wir es als Fehler und versuchen es erneut, falls zutreffend.
-        // Oder wir geben direkt null zurück, wenn es kein Netzwerkfehler ist.
-        // Hier gehen wir davon aus, dass ein null-Response ohne Fehler nicht retry-würdig ist.
         errorLog(
           'ImageService',
-          `Unerwartete null-Antwort beim Hochladen des Logos für ${entityType} ${entityId} (Versuch ${attempt + 1})`
+          `Unerwartete null-Antwort beim Hochladen des Bildes (Versuch ${attempt + 1})`
         );
-        return null; // Oder spezifischere Behandlung
+        return null;
       } catch (error: any) {
         errorLog(
           'ImageService',
-          `Fehler beim Hochladen des Logos für ${entityType} ${entityId} (Versuch ${attempt + 1}/${maxRetries}):`,
+          `Fehler beim Hochladen des Bildes (Versuch ${attempt + 1}/${maxRetries}):`,
           error
         );
 
-        // Prüfen, ob der Fehler einen Retry rechtfertigt
-        // Dies ist eine vereinfachte Prüfung. In einer realen Anwendung würde man spezifischere Fehlercodes oder -typen prüfen.
-        // z.B. error.status für HTTP-Fehler oder error.name für Netzwerkfehler
         const isNetworkError = error.message?.toLowerCase().includes('network error') || error.message?.toLowerCase().includes('failed to fetch');
         const isServerError = error.status && [500, 502, 503, 504].includes(error.status);
 
@@ -79,22 +55,21 @@ export class ImageService {
           );
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
-          // Kein Retry gerechtfertigt oder maximale Anzahl erreicht
           return null;
         }
       }
     }
-    return null; // Sollte nicht erreicht werden, wenn maxRetries > 0
+    return null;
   }
 
   /**
-   * Löscht ein Logo anhand seines Pfades.
-   * @param logoPath - Der relative Pfad zum Logo (z.B. tenant_id/uuid.ext).
+   * Löscht ein Bild anhand seines Pfades.
+   * @param imageUrl - Der relative Pfad zum Bild (z.B. tenant_id/uuid.ext).
    * @returns Ein Promise, das true bei Erfolg zurückgibt, sonst false.
    */
-  static async deleteLogo(logoPath: string): Promise<boolean> {
-    if (!logoPath) {
-      errorLog('ImageService', 'deleteLogo aufgerufen ohne logoPath.');
+  static async deleteImage(imageUrl: string): Promise<boolean> {
+    if (!imageUrl) {
+      errorLog('ImageService', 'deleteImage aufgerufen ohne imageUrl.');
       return false;
     }
 
@@ -102,30 +77,27 @@ export class ImageService {
     const activeTenantId = tenantStore.activeTenantId;
 
     if (!activeTenantId) {
-      errorLog('ImageService', 'Kein aktiver Tenant gefunden. Logo kann nicht gelöscht werden.');
+      errorLog('ImageService', 'Kein aktiver Tenant gefunden. Bild kann nicht gelöscht werden.');
       return false;
     }
 
     try {
-      // logoPath hat das Format "tenant_name/uuid.ext"
-      // Wir müssen es in "tenant_id/uuid.ext" umwandeln
-      const pathParts = logoPath.split('/');
+      const pathParts = imageUrl.split('/');
       if (pathParts.length < 2) {
-        errorLog('ImageService', `Ungültiger logoPath-Format für Löschung: ${logoPath}`);
+        errorLog('ImageService', `Ungültiges imageUrl-Format für Löschung: ${imageUrl}`);
         return false;
       }
       const fileName = pathParts[1]; // uuid.ext
 
-      // Die korrekte URL für das Backend ist /api/v1/logos/{tenant_id}/{file_name}
-      const deleteUrl = `/api/v1/logos/${activeTenantId}/${fileName}`;
-      debugLog('ImageService', `Versuche Logo zu löschen unter URL: ${deleteUrl}`);
+      const deleteUrl = `/api/v1/logos/${activeTenantId}/${fileName}`; // Endpunkt ist jetzt /api/v1/logos/{tenant_id}/{file_name}
+      debugLog('ImageService', `Versuche Bild zu löschen unter URL: ${deleteUrl}`);
 
       await apiService.delete(deleteUrl);
       return true;
     } catch (error) {
       errorLog(
         'ImageService',
-        `Fehler beim Löschen des Logos unter Pfad ${logoPath}:`,
+        `Fehler beim Löschen des Bildes unter Pfad ${imageUrl}:`,
         error
       );
       return false;
@@ -133,89 +105,83 @@ export class ImageService {
   }
 
   /**
-   * Konstruiert die vollständige URL zum Abrufen eines Logos.
-   * @param logoPath - Der relative Pfad zum Logo oder null/undefined.
-   * @returns Die vollständige URL als String oder null, wenn kein logoPath vorhanden ist.
+   * Konstruiert die vollständige URL zum Abrufen eines Bildes.
+   * @param imageUrl - Der relative Pfad zum Bild oder null/undefined.
+   * @returns Die vollständige URL als String oder null, wenn kein imageUrl vorhanden ist.
    */
-  static getLogoUrl(logoPath: string | null | undefined): string | null {
-    if (!logoPath) {
+  static getImageUrl(imageUrl: string | null | undefined): string | null {
+    if (!imageUrl) {
       return null;
     }
-    // Stellt sicher, dass VITE_API_BASE_URL vorhanden ist und keinen abschließenden Schrägstrich hat,
-    // während der logoPath keinen führenden Schrägstrich hat, um doppelte Schrägstriche zu vermeiden.
-    // Der Backend-Endpunkt ist /api/v1/logos/{logoPath}
-    // VITE_API_BASE_URL könnte z.B. http://localhost:8000 sein
-    // logoPath ist z.B. tenant_id/uuid.ext
-    // Die URL sollte also http://localhost:8000/api/v1/logos/tenant_id/uuid.ext sein.
 
-    const baseUrl = VITE_API_BASE_URL?.replace(/\/$/, ''); // Entfernt abschließenden Slash, falls vorhanden
-    const apiPrefix = '/api/v1/logos';
-    const cleanLogoPath = logoPath.startsWith('/') ? logoPath.substring(1) : logoPath; // Entfernt führenden Slash, falls vorhanden
+    const baseUrl = VITE_API_BASE_URL?.replace(/\/$/, '');
+    const apiPrefix = '/api/v1/logos'; // Endpunkt ist jetzt /api/v1/logos
+    const cleanImageUrl = imageUrl.startsWith('/') ? imageUrl.substring(1) : imageUrl;
 
     if (!baseUrl) {
         errorLog('ImageService', 'VITE_API_BASE_URL ist nicht definiert.');
         return null;
     }
 
-    return `${baseUrl}${apiPrefix}/${cleanLogoPath}`;
+    return `${baseUrl}${apiPrefix}/${cleanImageUrl}`;
   }
 
   /**
-   * Ruft ein Logo vom Backend ab, konvertiert es in eine Base64 Data URL und speichert es im Cache.
-   * @param logoPath - Der relative Pfad zum Logo.
-   * @returns Die Base64 Data URL des Logos oder null bei einem Fehler.
+   * Ruft ein Bild vom Backend ab, konvertiert es in eine Base64 Data URL und speichert es im Cache.
+   * @param imageUrl - Der relative Pfad zum Bild.
+   * @returns Die Base64 Data URL des Bildes oder null bei einem Fehler.
    */
-  static async fetchAndCacheLogo(logoPath: string): Promise<string | null> {
-    if (!logoPath) {
-      errorLog('ImageService', 'fetchAndCacheLogo aufgerufen ohne logoPath.');
+  static async fetchAndCacheImage(imageUrl: string): Promise<string | null> {
+    if (!imageUrl) {
+      errorLog('ImageService', 'fetchAndCacheImage aufgerufen ohne imageUrl.');
       return null;
     }
 
-    const tenantDbService = new TenantDbService(); // Instanz des TenantDbService
+    const tenantDbService = new TenantDbService();
 
-    const fullLogoUrl = ImageService.getLogoUrl(logoPath);
+    const fullImageUrl = ImageService.getImageUrl(imageUrl);
 
-    if (!fullLogoUrl) {
-      errorLog('ImageService', `Konnte keine URL für logoPath erstellen: ${logoPath}`);
+    if (!fullImageUrl) {
+      errorLog('ImageService', `Konnte keine URL für imageUrl erstellen: ${imageUrl}`);
       return null;
     }
 
     try {
-      debugLog('ImageService', `Versuche Logo abzurufen von: ${fullLogoUrl}`);
-      const response = await fetch(fullLogoUrl);
+      debugLog('ImageService', `Versuche Bild abzurufen von: ${fullImageUrl}`);
+      const response = await fetch(fullImageUrl);
 
       if (!response.ok) {
         errorLog(
           'ImageService',
-          `Fehler beim Abrufen des Logos von ${fullLogoUrl}. Status: ${response.status} ${response.statusText}`
+          `Fehler beim Abrufen des Bildes von ${fullImageUrl}. Status: ${response.status} ${response.statusText}`
         );
         return null;
       }
 
       const blob = await response.blob();
-      debugLog('ImageService', `Logo als Blob empfangen für: ${logoPath}, Typ: ${blob.type}, Größe: ${blob.size}`);
+      debugLog('ImageService', `Bild als Blob empfangen für: ${imageUrl}, Typ: ${blob.type}, Größe: ${blob.size}`);
 
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(blob);
         reader.onloadend = () => resolve(reader.result as string);
         reader.onerror = (error) => {
-          errorLog('ImageService', `Fehler beim Konvertieren des Blobs zu Base64 für ${logoPath}`, error);
+          errorLog('ImageService', `Fehler beim Konvertieren des Blobs zu Base64 für ${imageUrl}`, error);
           reject(error);
         };
       });
 
       if (dataUrl) {
-        debugLog('ImageService', `Logo erfolgreich zu Base64 konvertiert für: ${logoPath}. Länge: ${dataUrl.length}`);
-        await tenantDbService.cacheLogo(logoPath, dataUrl);
-        infoLog('ImageService', `Logo für ${logoPath} erfolgreich im Cache gespeichert.`);
+        debugLog('ImageService', `Bild erfolgreich zu Base64 konvertiert für: ${imageUrl}. Länge: ${dataUrl.length}`);
+        await tenantDbService.cacheImage(imageUrl, dataUrl);
+        infoLog('ImageService', `Bild für ${imageUrl} erfolgreich im Cache gespeichert.`);
         return dataUrl;
       }
-      errorLog('ImageService', `Konvertierung zu Base64 für ${logoPath} ergab null oder leeren String.`);
+      errorLog('ImageService', `Konvertierung zu Base64 für ${imageUrl} ergab null oder leeren String.`);
       return null;
 
     } catch (error) {
-      errorLog('ImageService', `Allgemeiner Fehler in fetchAndCacheLogo für ${logoPath}:`, error);
+      errorLog('ImageService', `Allgemeiner Fehler in fetchAndCacheImage für ${imageUrl}:`, error);
       return null;
     }
   }

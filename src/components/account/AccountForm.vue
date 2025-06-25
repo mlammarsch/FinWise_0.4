@@ -32,8 +32,8 @@ onMounted(() => {
     iban.value = props.account.iban || "";
     offset.value = props.account.offset || 0;
     creditLimit.value = props.account.creditLimit || 0;
-    image.value = props.account.logoUrl || null; // Verwende logoUrl
-    originalImage.value = props.account.logoUrl || null; // Verwende logoUrl
+    image.value = props.account.imageUrl || null; // Verwende imageUrl
+    originalImage.value = props.account.imageUrl || null; // Verwende imageUrl
   } else {
     accountGroupId.value = accountStore.accountGroups[0]?.id || "";
     offset.value = 0;
@@ -71,19 +71,20 @@ const handleImageUpload = async (event: Event) => {
         return;
       }
 
-      const response = await ImageService.uploadLogo(
-        accountId,
-        "account",
-        file
-      );
+      const response = await ImageService.uploadImage(file);
 
-      if (response && response.logo_path) {
-        image.value = response.logo_path; // Speichere den relativen Pfad vom Server
+      if (response && response.image_url) {
+        image.value = response.image_url; // Speichere den relativen Pfad vom Server
         uploadMessage.value = {
           type: "success",
-          text: "Logo erfolgreich hochgeladen.",
+          text: "Bild erfolgreich hochgeladen.",
         };
-        accountStore.updateAccountLogo(accountId, response.logo_path);
+        // Direkter Aufruf von updateAccount mit dem neuen imageUrl
+        await accountStore.updateAccount({
+          id: accountId,
+          imageUrl: response.image_url,
+          updated_at: new Date().toISOString(),
+        } as Account);
       } else {
         uploadMessage.value = {
           type: "error",
@@ -132,7 +133,7 @@ const removeImage = async () => {
   if (props.account?.id) {
     if (logoPathToDelete) {
       try {
-        await ImageService.deleteLogo(logoPathToDelete);
+        await ImageService.deleteImage(logoPathToDelete);
         uploadMessage.value = {
           type: "success",
           text: "Logo erfolgreich vom Server entfernt.",
@@ -151,7 +152,12 @@ const removeImage = async () => {
     }
     // Unabhängig vom Server-Lösch-Erfolg (oder wenn kein logoPathToDelete vorhanden war),
     // das Logo im Store auf null setzen.
-    accountStore.updateAccountLogo(props.account.id, null);
+    // Direkter Aufruf von updateAccount, um imageUrl auf null zu setzen
+    await accountStore.updateAccount({
+      id: props.account.id,
+      imageUrl: null,
+      updated_at: new Date().toISOString(),
+    } as Account);
     if (!uploadMessage.value || uploadMessage.value.type === "success") {
       uploadMessage.value = {
         type: "success",
@@ -171,7 +177,7 @@ const saveAccount = () => {
     iban: iban.value,
     offset: offset.value,
     creditLimit: creditLimit.value,
-    logoUrl: image.value || undefined, // image.value sollte den relativen Pfad enthalten
+    imageUrl: image.value || null, // image.value sollte den relativen Pfad enthalten
     isActive: props.account?.isActive ?? true,
     isOfflineBudget: props.account?.isOfflineBudget ?? false,
   };
@@ -192,7 +198,7 @@ const displayLogoUrl = computed(() => {
       return image.value;
     }
     // Wenn es ein relativer Pfad ist, konstruiere die URL über ImageService
-    return ImageService.getLogoUrl(image.value);
+    return ImageService.getImageUrl(image.value);
   }
   return null;
 });
