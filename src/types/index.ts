@@ -17,6 +17,7 @@ export interface Account {
   offset: number
   image?: string
   logoUrl?: string | null | undefined
+  logoPath: string | null
   updated_at?: string // ISO 8601 Format
 }
 
@@ -26,6 +27,7 @@ export interface AccountGroup {
   sortOrder: number
   image?: string
   logo_path?: string | null | undefined
+  logoPath: string | null
   updated_at?: string // ISO 8601 Format
 }
 

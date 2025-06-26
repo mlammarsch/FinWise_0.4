@@ -28,7 +28,7 @@ const displayLogoSrc = ref<string | null>(null);
 
 // Logo laden
 const loadDisplayLogo = async () => {
-  const logoPath = props.group.logoUrl;
+  const logoPath = props.group.logoPath;
   if (!logoPath) {
     displayLogoSrc.value = null;
     return;
@@ -57,9 +57,9 @@ const loadDisplayLogo = async () => {
 };
 
 watch(
-  () => props.group.logoUrl,
-  async (newLogoUrl, oldLogoUrl) => {
-    if (newLogoUrl !== oldLogoUrl) {
+  () => props.group.logoPath,
+  async (newLogoPath, oldLogoPath) => {
+    if (newLogoPath !== oldLogoPath) {
       await loadDisplayLogo();
     }
   },

@@ -31,6 +31,7 @@ onMounted(() => {
   }
 });
 
+// Upload-Logik gemäß Task 3.2: POST /api/v1/logos/upload verwenden
 const handleImageUpload = async (event: Event) => {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (file) {
@@ -49,10 +50,18 @@ const handleImageUpload = async (event: Event) => {
         isUploadingLogo.value = false;
         return;
       }
-      const currentEntityId = accountGroupId || "temp-new-accountgroup-id";
+      if (!accountGroupId) {
+        uploadMessage.value = {
+          type: "error",
+          text: "Bitte speichern Sie die Kontogruppe zuerst, um ein Logo hochzuladen.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
 
+      // Verwende den neuen POST /api/v1/logos/upload Endpunkt
       const response = await ImageService.uploadLogo(
-        currentEntityId,
+        accountGroupId,
         "account_group",
         file
       );
@@ -63,12 +72,11 @@ const handleImageUpload = async (event: Event) => {
           type: "success",
           text: "Logo erfolgreich hochgeladen.",
         };
-        if (props.group?.id) {
-          accountStore.updateAccountGroupLogo(
-            props.group.id,
-            response.logo_path
-          );
-        }
+        // Nach erfolgreichem Upload: logoPath im Store aktualisieren für Synchronisation
+        await accountStore.updateAccountGroupLogo(
+          accountGroupId,
+          response.logo_path
+        );
       } else {
         uploadMessage.value = {
           type: "error",
@@ -97,6 +105,7 @@ const handleImageUpload = async (event: Event) => {
       else image.value = null;
     } finally {
       isUploadingLogo.value = false;
+      // Temporäre URL freigeben
       if (tempImageUrl && image.value !== tempImageUrl) {
         URL.revokeObjectURL(tempImageUrl);
       }
@@ -104,34 +113,50 @@ const handleImageUpload = async (event: Event) => {
   }
 };
 
+// Löschungs-Logik gemäß Task 3.2: Erst Store aktualisieren, dann DELETE-Endpunkt aufrufen
 const removeImage = async () => {
   const logoPathToDelete = image.value; // Dies sollte der relative Pfad sein
   image.value = null;
   uploadMessage.value = null;
 
   if (props.group?.id) {
-    if (logoPathToDelete) {
-      try {
-        await ImageService.deleteLogo(logoPathToDelete);
-        uploadMessage.value = {
-          type: "success",
-          text: "Logo erfolgreich vom Server entfernt.",
-        };
-      } catch (error) {
-        console.error("Fehler beim Löschen des Logos vom Server:", error);
-        uploadMessage.value = {
-          type: "error",
-          text: "Fehler beim Entfernen des Logos vom Server.",
-        };
-        // image.value = logoPathToDelete; // Optional: Lokales Bild wiederherstellen
-        // return;
-      }
-    }
-    accountStore.updateAccountGroupLogo(props.group.id, null);
-    if (!uploadMessage.value || uploadMessage.value.type === "success") {
+    try {
+      // SCHRITT 1: Erst logoPath im Store auf null setzen und synchronisieren
+      await accountStore.updateAccountGroupLogo(props.group.id, null);
+
       uploadMessage.value = {
         type: "success",
-        text: "Logo im Formular und Store entfernt.",
+        text: "Logo-Referenz erfolgreich entfernt.",
+      };
+
+      // SCHRITT 2: Erst NACH erfolgreicher Store-Synchronisation die physische Datei löschen
+      if (logoPathToDelete) {
+        try {
+          await ImageService.deleteLogo(logoPathToDelete);
+          uploadMessage.value = {
+            type: "success",
+            text: "Logo erfolgreich entfernt.",
+          };
+        } catch (error) {
+          console.error(
+            "Fehler beim Löschen der physischen Datei vom Server:",
+            error
+          );
+          // Physische Datei konnte nicht gelöscht werden, aber Store-Referenz ist bereits entfernt
+          // Dies ist weniger kritisch, da die Referenz bereits entfernt wurde
+          uploadMessage.value = {
+            type: "success", // Immer noch Erfolg, da Store-Update erfolgreich war
+            text: "Logo-Referenz entfernt. Physische Datei konnte nicht gelöscht werden.",
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Fehler beim Aktualisieren des Stores:", error);
+      // Store-Update fehlgeschlagen - Bild wiederherstellen
+      image.value = logoPathToDelete;
+      uploadMessage.value = {
+        type: "error",
+        text: "Fehler beim Entfernen der Logo-Referenz. Vorgang abgebrochen.",
       };
     }
   }

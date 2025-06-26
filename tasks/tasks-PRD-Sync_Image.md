@@ -50,11 +50,11 @@
   - [x] 2.6 In den SQLAlchemy-Modellen (`financial_models.py`) das Feld `image` entfernen (beide Felder `image` und `logo_path` existieren derzeit).
   - [x] 2.7 Pydantic-Schemas anpassen, um `logo_path` statt `image` in den Base-Schemas zu verwenden.
 
-- [ ] 3.0 Anforderung 2: Frontend für Bild-Upload und -Anzeige anpassen
-  - [ ] 3.1 TypeScript-Interfaces (z.B. `Account`, `AccountGroup`) um das Feld `logoPath: string | null` erweitern.
-  - [ ] 3.2 In den Formular-Komponenten (`AccountForm`, `AccountGroupForm`) eine UI für den Bild-Upload und die -Löschung erstellen.
-  - [ ] 3.3 Die Upload/Delete-Logik implementieren, die die neuen Backend-Endpunkte aufruft und den `logoPath` im entsprechenden Store aktualisiert.
-  - [ ] 3.4 Anzeige-Komponenten (`AccountCard`, `AccountGroupCard`) anpassen, um das Bild über den `logoPath` zu laden und anzuzeigen.
+- [x] 3.0 Anforderung 2: Frontend für Bild-Upload und -Anzeige anpassen
+  - [x] 3.1 TypeScript-Interfaces (z.B. `Account`, `AccountGroup`) um das Feld `logoPath: string | null` erweitern.
+  - [x] 3.2 In den Formular-Komponenten (`AccountForm`, `AccountGroupForm`) eine UI für den Bild-Upload und die -Löschung erstellen.
+  - [x] 3.3 Die Upload/Delete-Logik implementieren, die die neuen Backend-Endpunkte aufruft und den `logoPath` im entsprechenden Store aktualisiert.
+  - [x] 3.4 Anzeige-Komponenten (`AccountCard`, `AccountGroupCard`) anpassen, um das Bild über den `logoPath` zu laden und anzuzeigen.
 
 - [ ] 4.0 Anforderung 2: Frontend-Caching für Bilder implementieren
   - [ ] 4.1 In `TenantDbService.ts` das IndexedDB-Schema um eine `logoCache`-Tabelle (`{path: string, data: string | Blob}`) erweitern.
