@@ -41,26 +41,22 @@ const loadDisplayLogo = async () => {
     return;
   }
 
-  const activeTenantDB = useTenantStore().activeTenantDB; // Direktzugriff auf activeTenantDB
+  // Zuerst Cache abfragen über TenantDbService für Konsistenz
+  const activeTenantDB = useTenantStore().activeTenantDB;
   if (activeTenantDB) {
     const cachedLogo = await activeTenantDB.logoCache.get(logoPath);
-    if (cachedLogo?.dataUrl) {
-      displayLogoSrc.value = cachedLogo.dataUrl;
+    if (cachedLogo?.data) {
+      displayLogoSrc.value = cachedLogo.data as string;
+      return; // Logo im Cache gefunden, keine Netzwerkanfrage nötig
     }
   }
 
-  if (
-    !displayLogoSrc.value ||
-    (activeTenantDB && !(await activeTenantDB.logoCache.get(logoPath))?.dataUrl)
-  ) {
-    const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
-    if (dataUrl) {
-      displayLogoSrc.value = dataUrl;
-    } else {
-      if (!displayLogoSrc.value) {
-        displayLogoSrc.value = null;
-      }
-    }
+  // Nur wenn nicht im Cache: Netzwerkanfrage an Backend
+  const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
+  if (dataUrl) {
+    displayLogoSrc.value = dataUrl;
+  } else {
+    displayLogoSrc.value = null;
   }
 };
 

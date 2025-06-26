@@ -1352,54 +1352,53 @@ export class TenantDbService {
   //   lastFetched: number; // Timestamp
   // }
 
-  async getCachedLogo(logoPath: string): Promise<{ logoPath: string; dataUrl: string; lastFetched: number } | null> {
+  async getCachedLogo(path: string): Promise<{ path: string; data: string | Blob } | null> {
     if (!this.db || !this.db.logoCache) {
       warnLog('TenantDbService', 'getCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
       return null;
     }
     try {
-      const cachedLogo = await this.db.logoCache.get(logoPath);
+      const cachedLogo = await this.db.logoCache.get(path);
       if (cachedLogo) {
-        debugLog('TenantDbService', `Logo für Pfad "${logoPath}" aus Cache abgerufen.`);
+        debugLog('TenantDbService', `Logo für Pfad "${path}" aus Cache abgerufen.`);
         return cachedLogo;
       }
-      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" nicht im Cache gefunden.`);
+      debugLog('TenantDbService', `Logo für Pfad "${path}" nicht im Cache gefunden.`);
       return null;
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Abrufen des Logos für Pfad "${logoPath}" aus dem Cache`, { logoPath, error: err });
+      errorLog('TenantDbService', `Fehler beim Abrufen des Logos für Pfad "${path}" aus dem Cache`, { path, error: err });
       return null;
     }
   }
 
-  async cacheLogo(logoPath: string, dataUrl: string): Promise<void> {
+  async cacheLogo(path: string, data: string | Blob): Promise<void> {
     if (!this.db || !this.db.logoCache) {
       warnLog('TenantDbService', 'cacheLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
       throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
     }
     try {
       const entry = {
-        logoPath,
-        dataUrl,
-        lastFetched: Date.now(),
+        path,
+        data
       };
       await this.db.logoCache.put(entry);
-      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" im Cache gespeichert/aktualisiert.`);
+      debugLog('TenantDbService', `Logo für Pfad "${path}" im Cache gespeichert/aktualisiert.`);
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Speichern/Aktualisieren des Logos für Pfad "${logoPath}" im Cache`, { logoPath, error: err });
+      errorLog('TenantDbService', `Fehler beim Speichern/Aktualisieren des Logos für Pfad "${path}" im Cache`, { path, error: err });
       throw err;
     }
   }
 
-  async removeCachedLogo(logoPath: string): Promise<void> {
+  async removeCachedLogo(path: string): Promise<void> {
     if (!this.db || !this.db.logoCache) {
       warnLog('TenantDbService', 'removeCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
       throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
     }
     try {
-      await this.db.logoCache.delete(logoPath);
-      debugLog('TenantDbService', `Logo für Pfad "${logoPath}" aus Cache entfernt.`);
+      await this.db.logoCache.delete(path);
+      debugLog('TenantDbService', `Logo für Pfad "${path}" aus Cache entfernt.`);
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Entfernen des Logos für Pfad "${logoPath}" aus dem Cache`, { logoPath, error: err });
+      errorLog('TenantDbService', `Fehler beim Entfernen des Logos für Pfad "${path}" aus dem Cache`, { path, error: err });
       throw err;
     }
   }
@@ -1430,7 +1429,8 @@ export class TenantDbService {
         warnLog('TenantDbService', 'getAllCachedLogoKeys: logoCache Tabelle nicht in DB-Instanz gefunden. Möglicherweise nicht initialisiert.');
         return [];
       }
-      const keys = await this.db.logoCache.toCollection().keys() as string[];
+      const allLogos = await this.db.logoCache.toArray();
+      const keys = allLogos.map(logo => logo.path);
       debugLog('TenantDbService', 'Alle Logo-Cache-Schlüssel abgerufen.', { count: keys.length });
       return keys;
     } catch (err) {

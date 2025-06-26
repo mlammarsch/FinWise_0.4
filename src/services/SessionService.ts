@@ -7,6 +7,8 @@ import { Router } from 'vue-router';
 import { useSessionStore } from '@/stores/sessionStore';
 import { TenantService } from './TenantService';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { useAccountStore } from '@/stores/accountStore';
+import { ImageService } from './ImageService';
 import { infoLog, debugLog, errorLog } from '@/utils/logger';
 
 export const SessionService = {
@@ -94,15 +96,74 @@ export const SessionService = {
 
   /**
    * Initialisiert Settings für den angemeldeten Benutzer
+   * Lädt auch Logo-Cache wenn ein Mandant aktiv ist
    */
   async initializeUserSettings() {
     try {
       const settingsStore = useSettingsStore();
       await settingsStore.initializeForUser();
       debugLog('SessionService', 'Settings für Benutzer initialisiert');
+
+      // Logo-Cache laden wenn Mandant bereits ausgewählt ist
+      const sessionStore = useSessionStore();
+      if (sessionStore.currentTenantId) {
+        await this.preloadLogosForTenant();
+      }
     } catch (error) {
       errorLog('SessionService', 'Fehler beim Initialisieren der Settings', error);
       // Graceful degradation - App funktioniert weiter mit Default-Settings
+    }
+  },
+
+  /**
+   * Sammelt alle logoPath-Pfade und lädt die Bilder vom Backend in den logoCache
+   * Wird beim Login und Mandantenwechsel aufgerufen
+   */
+  async preloadLogosForTenant(): Promise<void> {
+    try {
+      debugLog('SessionService', 'Starte Logo-Preloading für aktuellen Mandanten');
+
+      const accountStore = useAccountStore();
+      const logoPaths = new Set<string>();
+
+      // Sammle alle logoPath-Pfade von Accounts
+      for (const account of accountStore.accounts) {
+        if (account.logoPath) {
+          logoPaths.add(account.logoPath);
+        }
+      }
+
+      // Sammle alle logoPath-Pfade von AccountGroups
+      for (const accountGroup of accountStore.accountGroups) {
+        if (accountGroup.logoPath) {
+          logoPaths.add(accountGroup.logoPath);
+        }
+      }
+
+      debugLog('SessionService', `Gefundene Logo-Pfade für Preloading: ${logoPaths.size}`, {
+        logoPaths: Array.from(logoPaths)
+      });
+
+      // Lade alle Logos parallel und cache sie
+      const logoPromises = Array.from(logoPaths).map(async (logoPath) => {
+        try {
+          const cachedLogo = await ImageService.fetchAndCacheLogo(logoPath);
+          if (cachedLogo) {
+            debugLog('SessionService', `Logo erfolgreich gecacht: ${logoPath}`);
+          } else {
+            debugLog('SessionService', `Logo konnte nicht gecacht werden: ${logoPath}`);
+          }
+        } catch (error) {
+          errorLog('SessionService', `Fehler beim Cachen des Logos: ${logoPath}`, error);
+        }
+      });
+
+      await Promise.allSettled(logoPromises);
+
+      infoLog('SessionService', `Logo-Preloading abgeschlossen. ${logoPaths.size} Logos verarbeitet.`);
+    } catch (error) {
+      errorLog('SessionService', 'Fehler beim Logo-Preloading', error);
+      // Graceful degradation - App funktioniert weiter ohne Logo-Cache
     }
   },
 };

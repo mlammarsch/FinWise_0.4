@@ -10,6 +10,7 @@ import { useSessionStore }  from '@/stores/sessionStore';
 import { CategoryService }  from '@/services/CategoryService';
 import { AccountService }   from '@/services/AccountService';
 import { BalanceService }   from '@/services/BalanceService';
+import { SessionService }   from '@/services/SessionService';
 
 import { infoLog, debugLog, errorLog, warnLog } from '@/utils/logger';
 import { DataService }      from './DataService';
@@ -125,7 +126,9 @@ export const TenantService = {
     debugLog('[TenantService] switchTenant', JSON.stringify({ tenantId }));
     const ok = await useSessionStore().switchTenant(tenantId);
     if (ok) {
-      DataService.reloadTenantData();
+      await DataService.reloadTenantData();
+      // Logo-Cache nach Mandantenwechsel aktualisieren
+      await SessionService.preloadLogosForTenant();
     }
     return ok;
   },

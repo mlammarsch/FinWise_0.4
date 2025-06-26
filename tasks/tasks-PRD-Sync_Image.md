@@ -56,11 +56,11 @@
   - [x] 3.3 Die Upload/Delete-Logik implementieren, die die neuen Backend-Endpunkte aufruft und den `logoPath` im entsprechenden Store aktualisiert.
   - [x] 3.4 Anzeige-Komponenten (`AccountCard`, `AccountGroupCard`) anpassen, um das Bild über den `logoPath` zu laden und anzuzeigen.
 
-- [ ] 4.0 Anforderung 2: Frontend-Caching für Bilder implementieren
-  - [ ] 4.1 In `TenantDbService.ts` das IndexedDB-Schema um eine `logoCache`-Tabelle (`{path: string, data: string | Blob}`) erweitern.
-  - [ ] 4.2 In `TenantDbService.ts` die Methoden `cacheLogo(path, data)` und `getLogoFromCache(path)` implementieren.
-  - [ ] 4.3 Die Login/Mandantenwechsel-Logik (`SessionService.ts`) erweitern, um alle `logoPath`-Pfade zu sammeln, die Bilder vom Backend zu laden und im `logoCache` zu speichern.
-  - [ ] 4.4 Die Logik der Anzeige-Komponenten anpassen, sodass sie zuerst den `logoCache` abfragen, bevor sie eine Netzwerkanfrage an das Backend sendet.
+- [x] 4.0 Anforderung 2: Frontend-Caching für Bilder implementieren
+  - [x] 4.1 In `TenantDbService.ts` das IndexedDB-Schema um eine `logoCache`-Tabelle (`{path: string, data: string | Blob}`) erweitern.
+  - [x] 4.2 In `TenantDbService.ts` die Methoden `cacheLogo(path, data)` und `getLogoFromCache(path)` implementieren.
+  - [x] 4.3 Die Login/Mandantenwechsel-Logik (`SessionService.ts`) erweitern, um alle `logoPath`-Pfade zu sammeln, die Bilder vom Backend zu laden und im `logoCache` zu speichern.
+  - [x] 4.4 Die Logik der Anzeige-Komponenten anpassen, sodass sie zuerst den `logoCache` abfragen, bevor sie eine Netzwerkanfrage an das Backend sendet.
 
 - [ ] 5.0 Aufräumen und Schema-Bereinigung
   - [ ] 5.1 Im gesamten Backend alle alten, nicht mehr verwendeten Bildfelder (z.B. `image`, `logoUrl`) aus Modellen und Schemas entfernen.

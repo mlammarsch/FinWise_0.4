@@ -33,26 +33,22 @@ const loadDisplayLogo = async () => {
     displayLogoSrc.value = null;
     return;
   }
+
+  // Zuerst Cache abfragen
   if (tenantDbService) {
     const cachedLogo = await tenantDbService.getCachedLogo(logoPath);
-    if (cachedLogo?.dataUrl) {
-      displayLogoSrc.value = cachedLogo.dataUrl;
+    if (cachedLogo?.data) {
+      displayLogoSrc.value = cachedLogo.data as string;
+      return; // Logo im Cache gefunden, keine Netzwerkanfrage nötig
     }
   }
 
-  if (
-    !displayLogoSrc.value ||
-    (tenantDbService &&
-      !(await tenantDbService.getCachedLogo(logoPath))?.dataUrl)
-  ) {
-    const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
-    if (dataUrl) {
-      displayLogoSrc.value = dataUrl;
-    } else {
-      if (!displayLogoSrc.value) {
-        displayLogoSrc.value = null;
-      }
-    }
+  // Nur wenn nicht im Cache: Netzwerkanfrage an Backend
+  const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
+  if (dataUrl) {
+    displayLogoSrc.value = dataUrl;
+  } else {
+    displayLogoSrc.value = null;
   }
 };
 
