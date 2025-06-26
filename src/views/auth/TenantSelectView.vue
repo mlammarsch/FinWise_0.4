@@ -305,7 +305,7 @@ onUnmounted(() => {
               :key="t.uuid"
               :ref="el => { if (el) tenantListItems[index] = el as HTMLElement }"
               tabindex="0"
-              class="flex items-center justify-between p-3 rounded-box hover:bg-base-200 border border-base-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-100"
+              class="flex items-center justify-between px-3 py-1 rounded-box hover:bg-base-200 border border-base-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-base-100"
               :class="{
                 'ring-2 ring-primary ring-offset-2 ring-offset-base-100':
                   index === focusedTenantIndex,
