@@ -74,11 +74,27 @@ export const useAccountStore = defineStore('account', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Entferne veraltete Felder wie 'image' und 'logo_path' vor der Synchronisation
+        const cleanAccountForSync = {
+          ...accountWithTimestamp,
+          // Entferne veraltete Felder
+          image: undefined,
+          logo_path: undefined,
+        };
+
+        // Entferne undefined-Werte
+        Object.keys(cleanAccountForSync).forEach(key => {
+          if (cleanAccountForSync[key as keyof Account] === undefined) {
+            delete cleanAccountForSync[key as keyof Account];
+          }
+        });
+
+debugLog('accountStore', `addAccount: Payload für Sync Queue:`, cleanAccountForSync);
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT,
           entityId: accountWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tenantDbService.toPlainObject(accountWithTimestamp),
+          payload: tenantDbService.toPlainObject(cleanAccountForSync),
         });
         infoLog('accountStore', `Account "${accountWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -108,11 +124,6 @@ export const useAccountStore = defineStore('account', () => {
       if (localAccount.updated_at && accountUpdatesWithTimestamp.updated_at &&
           new Date(localAccount.updated_at) >= new Date(accountUpdatesWithTimestamp.updated_at)) {
         infoLog('accountStore', `updateAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
-        // Optional: Store mit lokalen Daten "auffrischen"
-        // const storeIdx = accounts.value.findIndex(a => a.id === localAccount.id);
-        // if (storeIdx !== -1 && JSON.stringify(accounts.value[storeIdx]) !== JSON.stringify(localAccount)) {
-        //   accounts.value[storeIdx] = localAccount;
-        // }
         return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
       }
       // Eingehend ist neuer, fahre fort mit DB-Update und Store-Update
@@ -135,11 +146,29 @@ export const useAccountStore = defineStore('account', () => {
       // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
       if (!fromSync) {
         try {
+          // Hole das vollständige Account-Objekt aus dem Store für die Sync-Queue
+          const fullAccountForSync = accounts.value[idx];
+
+          // Entferne veraltete Felder wie 'image' und 'logo_path' vor der Synchronisation
+          const cleanAccountForSync = {
+            ...fullAccountForSync,
+            // Entferne veraltete Felder
+            image: undefined,
+            logo_path: undefined,
+          };
+
+          // Entferne undefined-Werte
+          Object.keys(cleanAccountForSync).forEach(key => {
+            if (cleanAccountForSync[key as keyof Account] === undefined) {
+              delete cleanAccountForSync[key as keyof Account];
+            }
+          });
+
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT,
             entityId: accountUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: tenantDbService.toPlainObject(accountUpdatesWithTimestamp),
+            payload: tenantDbService.toPlainObject(cleanAccountForSync),
           });
           infoLog('accountStore', `Account "${accountUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
@@ -221,11 +250,25 @@ export const useAccountStore = defineStore('account', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Entferne veraltete Felder wie 'image' vor der Synchronisation
+        const cleanGroupForSync = {
+          ...accountGroupWithTimestamp,
+          // Entferne veraltete Felder
+          image: undefined,
+        };
+
+        // Entferne undefined-Werte
+        Object.keys(cleanGroupForSync).forEach(key => {
+          if (cleanGroupForSync[key as keyof AccountGroup] === undefined) {
+            delete cleanGroupForSync[key as keyof AccountGroup];
+          }
+        });
+
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.ACCOUNT_GROUP,
           entityId: accountGroupWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tenantDbService.toPlainObject(accountGroupWithTimestamp),
+          payload: tenantDbService.toPlainObject(cleanGroupForSync),
         });
         infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -274,11 +317,28 @@ export const useAccountStore = defineStore('account', () => {
       // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
       if (!fromSync) {
         try {
+          // Hole das vollständige AccountGroup-Objekt aus dem Store für die Sync-Queue
+          const fullGroupForSync = accountGroups.value[idx];
+
+          // Entferne veraltete Felder wie 'image' vor der Synchronisation
+          const cleanGroupForSync = {
+            ...fullGroupForSync,
+            // Entferne veraltete Felder
+            image: undefined,
+          };
+
+          // Entferne undefined-Werte
+          Object.keys(cleanGroupForSync).forEach(key => {
+            if (cleanGroupForSync[key as keyof AccountGroup] === undefined) {
+              delete cleanGroupForSync[key as keyof AccountGroup];
+            }
+          });
+
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.ACCOUNT_GROUP,
             entityId: accountGroupUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: tenantDbService.toPlainObject(accountGroupUpdatesWithTimestamp),
+            payload: tenantDbService.toPlainObject(cleanGroupForSync),
           });
           infoLog('accountStore', `AccountGroup "${accountGroupUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
@@ -357,16 +417,15 @@ export const useAccountStore = defineStore('account', () => {
   async function updateAccountGroupLogo(accountGroupId: string, newLogoPath: string | null): Promise<void> {
     const group = accountGroups.value.find(g => g.id === accountGroupId);
     if (group) {
-      const oldLogoPath = group.logoUrl; // Alten Pfad speichern
+      const oldLogoPath = group.logoPath; // Alten Pfad speichern (logoPath statt logoUrl)
       const groupUpdates: Partial<AccountGroup> & { id: string } = {
         id: accountGroupId,
-        logoUrl: newLogoPath,
+        logoPath: newLogoPath, // logoPath statt logoUrl
       };
       await updateAccountGroup(groupUpdates as AccountGroup, false);
       infoLog('accountStore', `Logo für Kontogruppe ${accountGroupId} aktualisiert auf ${newLogoPath}.`);
 
       if (oldLogoPath && newLogoPath === null) { // Wenn Logo entfernt wurde
-        // const tenantDb = useTenantDbService().value; // useTenantDbService ist nicht definiert, tenantDbService ist direkt verfügbar
         if (tenantDbService) {
           await tenantDbService.removeCachedLogo(oldLogoPath);
           infoLog('accountStore', `Altes Logo ${oldLogoPath} für Kontogruppe ${accountGroupId} aus Cache entfernt.`);
