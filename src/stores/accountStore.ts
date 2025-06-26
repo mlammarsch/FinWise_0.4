@@ -362,7 +362,7 @@ export const useAccountStore = defineStore('account', () => {
     if (account) {
       const updatedAccount: Account = {
         ...account,
-        logoPath: newLogoPath,
+        logo_path: newLogoPath,
         updated_at: new Date().toISOString(),
       };
       await updateAccount(updatedAccount);
@@ -377,7 +377,7 @@ export const useAccountStore = defineStore('account', () => {
     if (group) {
       const updatedGroup: AccountGroup = {
         ...group,
-        logoPath: newLogoPath,
+        logo_path: newLogoPath,
         updated_at: new Date().toISOString(),
       };
       await updateAccountGroup(updatedGroup);

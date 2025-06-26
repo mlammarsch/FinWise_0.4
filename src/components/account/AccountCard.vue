@@ -35,7 +35,7 @@ const displayLogoSrc = ref<string | null>(null);
 
 // Logo laden
 const loadDisplayLogo = async () => {
-  const logoPath = props.account.logoPath;
+  const logoPath = props.account.logo_path;
   if (!logoPath) {
     displayLogoSrc.value = null;
     return;
@@ -61,7 +61,7 @@ const loadDisplayLogo = async () => {
 };
 
 watch(
-  () => props.account.logoPath,
+  () => props.account.logo_path,
   async (newLogoPath, oldLogoPath) => {
     if (newLogoPath !== oldLogoPath) {
       await loadDisplayLogo();

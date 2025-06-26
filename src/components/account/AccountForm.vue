@@ -33,8 +33,8 @@ onMounted(() => {
     iban.value = props.account.iban || "";
     offset.value = props.account.offset || 0;
     creditLimit.value = props.account.creditLimit || 0;
-    image.value = props.account.logoUrl || null; // Verwende logoUrl
-    originalImage.value = props.account.logoUrl || null; // Verwende logoUrl
+    image.value = props.account.logo_path || null;
+    originalImage.value = props.account.logo_path || null;
   } else {
     accountGroupId.value = accountStore.accountGroups[0]?.id || "";
     offset.value = 0;
@@ -193,7 +193,7 @@ const saveAccount = () => {
     iban: iban.value,
     offset: offset.value,
     creditLimit: creditLimit.value,
-    logoPath: image.value || undefined, // Korrigiert von logoUrl zu logoPath
+    logo_path: image.value || undefined,
     isActive: props.account?.isActive ?? true,
     isOfflineBudget: props.account?.isOfflineBudget ?? false,
   };
