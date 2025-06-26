@@ -62,7 +62,7 @@
   - [x] 4.3 Die Login/Mandantenwechsel-Logik (`SessionService.ts`) erweitern, um alle `logoPath`-Pfade zu sammeln, die Bilder vom Backend zu laden und im `logoCache` zu speichern.
   - [x] 4.4 Die Logik der Anzeige-Komponenten anpassen, sodass sie zuerst den `logoCache` abfragen, bevor sie eine Netzwerkanfrage an das Backend sendet.
 
-- [ ] 5.0 Aufräumen und Schema-Bereinigung
-  - [ ] 5.1 Im gesamten Backend alle alten, nicht mehr verwendeten Bildfelder (z.B. `image`, `logoUrl`) aus Modellen und Schemas entfernen.
-  - [ ] 5.2 Im gesamten Frontend alle alten, nicht mehr verwendeten Bild-Props und Variablen aus Interfaces und Komponenten entfernen.
-  - [ ] 5.3 Code-Review durchführen, um sicherzustellen, dass alle Teile der Anwendung die neue `logoPath`-Logik konsistent verwenden.
+- [x] 5.0 Aufräumen und Schema-Bereinigung
+  - [x] 5.1 Im gesamten Backend alle alten, nicht mehr verwendeten Bildfelder (z.B. `image`, `logoUrl`) aus Modellen und Schemas entfernen.
+  - [x] 5.2 Im gesamten Frontend alle alten, nicht mehr verwendeten Bild-Props und Variablen aus Interfaces und Komponenten entfernen.
+  - [x] 5.3 Code-Review durchführen, um sicherzustellen, dass alle Teile der Anwendung die neue `logoPath`-Logik konsistent verwenden.

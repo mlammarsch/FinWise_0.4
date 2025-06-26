@@ -188,11 +188,11 @@ async function handleSyncButtonClick() {
         `Starting logo cache update for ${accountStore.accounts.length} accounts.`
       );
       for (const account of accountStore.accounts) {
-        if (account.logoUrl) {
-          ImageService.fetchAndCacheLogo(account.logoUrl).catch((err) => {
+        if (account.logo_path) {
+          ImageService.fetchAndCacheLogo(account.logo_path).catch((err) => {
             errorLog(
               "SyncButton",
-              `Failed to fetch/cache logo for account ${account.id}: ${account.logoUrl}`,
+              `Failed to fetch/cache logo for account ${account.id}: ${account.logo_path}`,
               err
             );
           });
@@ -210,14 +210,16 @@ async function handleSyncButtonClick() {
       );
       for (const accountGroup of accountStore.accountGroups) {
         // Use accountStore here
-        if (accountGroup.logoUrl) {
-          ImageService.fetchAndCacheLogo(accountGroup.logoUrl).catch((err) => {
-            errorLog(
-              "SyncButton",
-              `Failed to fetch/cache logo for account group ${accountGroup.id}: ${accountGroup.logoUrl}`,
-              err
-            );
-          });
+        if (accountGroup.logo_path) {
+          ImageService.fetchAndCacheLogo(accountGroup.logo_path).catch(
+            (err) => {
+              errorLog(
+                "SyncButton",
+                `Failed to fetch/cache logo for account group ${accountGroup.id}: ${accountGroup.logo_path}`,
+                err
+              );
+            }
+          );
         }
       }
     }
