@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from "vue";
 import { AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
+import { useTenantStore } from "../../stores/tenantStore";
 
 const props = defineProps<{
   group?: AccountGroup;
@@ -26,8 +27,8 @@ onMounted(() => {
   if (props.group) {
     name.value = props.group.name;
     sortOrder.value = props.group.sortOrder;
-    image.value = props.group.image || null;
-    originalImage.value = props.group.image || null;
+    image.value = props.group.logoPath || null;
+    originalImage.value = props.group.logoPath || null;
   }
 });
 
@@ -59,11 +60,22 @@ const handleImageUpload = async (event: Event) => {
         return;
       }
 
+      const tenantStore = useTenantStore();
+      const tenantId = tenantStore.activeTenantId;
+      if (!tenantId) {
+        uploadMessage.value = {
+          type: "error",
+          text: "Aktive Mandanten-ID nicht gefunden. Upload nicht möglich.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
       // Verwende den neuen POST /api/v1/logos/upload Endpunkt
       const response = await ImageService.uploadLogo(
         accountGroupId,
         "account_group",
-        file
+        file,
+        tenantId
       );
 
       if (response && response.logo_path) {
@@ -164,11 +176,11 @@ const removeImage = async () => {
 
 const saveGroup = () => {
   const groupData: Omit<AccountGroup, "id" | "updated_at"> & {
-    logo_path?: string | null;
+    logoPath?: string | null;
   } = {
     name: name.value,
     sortOrder: sortOrder.value,
-    logo_path: image.value || undefined, // image.value sollte den relativen Pfad enthalten
+    logoPath: image.value || undefined,
   };
   // Wenn props.group.id existiert, fügen wir es hinzu, damit updateAccountGroup es verwenden kann
   const saveData = props.group?.id
@@ -197,8 +209,8 @@ onMounted(() => {
   if (props.group) {
     name.value = props.group.name;
     sortOrder.value = props.group.sortOrder;
-    image.value = props.group.logo_path || null; // Verwende logo_path
-    originalImage.value = props.group.logo_path || null; // Verwende logo_path
+    image.value = props.group.logoPath || null; // Korrigiert zu logoPath
+    originalImage.value = props.group.logoPath || null; // Korrigiert zu logoPath
   }
 });
 </script>

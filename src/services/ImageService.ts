@@ -19,10 +19,12 @@ export class ImageService {
   static async uploadLogo(
     entityId: string,
     entityType: 'account' | 'account_group',
-    file: File
+    file: File,
+    tenantId: string
   ): Promise<{ logo_path: string } | null> {
     const formData = new FormData();
     formData.append('entity_id', entityId);
+    formData.append('tenant_id', tenantId);
     formData.append('entity_type', entityType);
     formData.append('file', file);
 

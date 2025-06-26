@@ -4,6 +4,7 @@ import { Account } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyInput from "../ui/CurrencyInput.vue";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
+import { useTenantStore } from "../../stores/tenantStore";
 
 const props = defineProps<{ account?: Account; isEdit?: boolean }>();
 const emit = defineEmits(["save", "cancel"]);
@@ -71,11 +72,22 @@ const handleImageUpload = async (event: Event) => {
         return;
       }
 
+      const tenantStore = useTenantStore();
+      const tenantId = tenantStore.activeTenantId;
+      if (!tenantId) {
+        uploadMessage.value = {
+          type: "error",
+          text: "Aktive Mandanten-ID nicht gefunden. Upload nicht möglich.",
+        };
+        isUploadingLogo.value = false;
+        return;
+      }
       // Verwende den neuen POST /api/v1/logos/upload Endpunkt
       const response = await ImageService.uploadLogo(
         accountId,
         "account",
-        file
+        file,
+        tenantId
       );
 
       if (response && response.logo_path) {
@@ -181,7 +193,7 @@ const saveAccount = () => {
     iban: iban.value,
     offset: offset.value,
     creditLimit: creditLimit.value,
-    logoUrl: image.value || undefined, // image.value sollte den relativen Pfad enthalten
+    logoPath: image.value || undefined, // Korrigiert von logoUrl zu logoPath
     isActive: props.account?.isActive ?? true,
     isOfflineBudget: props.account?.isOfflineBudget ?? false,
   };
