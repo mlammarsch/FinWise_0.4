@@ -31,14 +31,14 @@
 
 ## Tasks
 
-- [ ] 1.0 Anforderung 1: WebSocket-Verbindung stabilisieren
-  - [ ] 1.1 In `WebSocketService.ts` Konstanten für `RECONNECT_INITIAL_INTERVAL` (1000ms) und `RECONNECT_MAX_INTERVAL` (30000ms) definieren.
-  - [ ] 1.2 `handleReconnection()`-Logik durch eine Exponential-Backoff-Strategie ersetzen, die das Intervall bei jedem Versuch verdoppelt.
-  - [ ] 1.3 Zähler für `reconnectAttempts` bei erfolgreicher Verbindung (`onopen`) zurücksetzen.
-  - [ ] 1.4 Eine `pingIntervalId`-Variable für den Heartbeat-Timer hinzufügen.
-  - [ ] 1.5 Methoden `startPingInterval()` und `stopPingInterval()` implementieren, um `sendPing()` alle 20 Sekunden aufzurufen.
-  - [ ] 1.6 Den Heartbeat-Mechanismus in den Verbindungs-Lebenszyklus integrieren (`onopen`, `onclose`, `disconnect`).
-  - [ ] 1.7 Detailliertes Logging für Verbindungsstatus, Fehler, Reconnect-Versuche und Ping/Pong-Events hinzufügen.
+- [x] 1.0 Anforderung 1: WebSocket-Verbindung stabilisieren
+  - [x] 1.1 In `WebSocketService.ts` Konstanten für `RECONNECT_INITIAL_INTERVAL` (1000ms) und `RECONNECT_MAX_INTERVAL` (30000ms) definieren.
+  - [x] 1.2 `handleReconnection()`-Logik durch eine Exponential-Backoff-Strategie ersetzen, die das Intervall bei jedem Versuch verdoppelt.
+  - [x] 1.3 Zähler für `reconnectAttempts` bei erfolgreicher Verbindung (`onopen`) zurücksetzen.
+  - [x] 1.4 Eine `pingIntervalId`-Variable für den Heartbeat-Timer hinzufügen.
+  - [x] 1.5 Methoden `startPingInterval()` und `stopPingInterval()` implementieren, um `sendPing()` alle 20 Sekunden aufzurufen.
+  - [x] 1.6 Den Heartbeat-Mechanismus in den Verbindungs-Lebenszyklus integrieren (`onopen`, `onclose`, `disconnect`).
+  - [x] 1.7 Detailliertes Logging für Verbindungsstatus, Fehler, Reconnect-Versuche und Ping/Pong-Events hinzufügen.
 
 - [ ] 2.0 Anforderung 2: Backend für Bildverarbeitung implementieren
   - [ ] 2.1 Neuen API-Router unter `app/api/v1/` für Bild-Endpunkte erstellen.
@@ -59,7 +59,7 @@
   - [ ] 4.1 In `TenantDbService.ts` das IndexedDB-Schema um eine `logoCache`-Tabelle (`{path: string, data: string | Blob}`) erweitern.
   - [ ] 4.2 In `TenantDbService.ts` die Methoden `cacheLogo(path, data)` und `getLogoFromCache(path)` implementieren.
   - [ ] 4.3 Die Login/Mandantenwechsel-Logik (`SessionService.ts`) erweitern, um alle `logoPath`-Pfade zu sammeln, die Bilder vom Backend zu laden und im `logoCache` zu speichern.
-  - [ ] 4.4 Die Logik der Anzeige-Komponenten anpassen, sodass sie zuerst den `logoCache` abfragen, bevor sie eine Netzwerkanfrage an das Backend senden.
+  - [ ] 4.4 Die Logik der Anzeige-Komponenten anpassen, sodass sie zuerst den `logoCache` abfragen, bevor sie eine Netzwerkanfrage an das Backend sendet.
 
 - [ ] 5.0 Aufräumen und Schema-Bereinigung
   - [ ] 5.1 Im gesamten Backend alle alten, nicht mehr verwendeten Bildfelder (z.B. `image`, `logoUrl`) aus Modellen und Schemas entfernen.

@@ -17,6 +17,8 @@ const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
 const LONG_TERM_RECONNECT_INTERVAL = 30000; // 30 Sekunden für langfristige Reconnects
 const BACKEND_HEALTH_CHECK_INTERVAL = 15000; // 15 Sekunden für Backend-Health-Checks
+const RECONNECT_INITIAL_INTERVAL = 1000; // ms
+const RECONNECT_MAX_INTERVAL = 30000; // ms
 
 let socket: WebSocket | null = null;
 let reconnectAttempts = 0;
@@ -29,6 +31,7 @@ let isReconnecting = false;
 let autoSyncInterval: NodeJS.Timeout | null = null;
 let queueWatcher: (() => void) | null = null;
 let isAutoSyncEnabled = true;
+let pingIntervalId: NodeJS.Timeout | null = null;
 
 const tenantDbService = new TenantDbService();
 
@@ -36,15 +39,33 @@ export const WebSocketService = {
   connect(): void {
     const sessionStore = useSessionStore();
     const webSocketStore = useWebSocketStore();
-    // debugLog('[WebSocketService]', 'connect() called. Current socket state:', socket?.readyState, 'Tenant ID from session:', sessionStore.currentTenantId);
+
+    // Detailliertes Logging für Verbindungsversuch
+    infoLog('[WebSocketService]', 'connect() called', {
+      currentSocketState: socket?.readyState,
+      currentSocketUrl: socket?.url,
+      tenantIdFromSession: sessionStore.currentTenantId,
+      reconnectAttempts: reconnectAttempts,
+      explicitClose: explicitClose,
+      isReconnecting: isReconnecting
+    });
 
     if (socket && socket.readyState === WebSocket.OPEN) {
-      infoLog('[WebSocketService]', 'Already connected.');
+      infoLog('[WebSocketService]', 'Already connected - skipping connection attempt', {
+        socketUrl: socket.url,
+        connectionStatus: webSocketStore.connectionStatus,
+        backendStatus: webSocketStore.backendStatus
+      });
       return;
     }
 
     if (!sessionStore.currentTenantId) {
-      errorLog('[WebSocketService]', 'Cannot connect: Tenant ID is missing.');
+      errorLog('[WebSocketService]', 'Cannot connect: Tenant ID is missing', {
+        sessionStoreState: {
+          currentTenantId: sessionStore.currentTenantId,
+          currentUserId: sessionStore.currentUserId
+        }
+      });
       webSocketStore.setError('Tenant ID is missing for WebSocket connection.');
       webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
       return;
@@ -53,24 +74,65 @@ export const WebSocketService = {
     const tenantId = sessionStore.currentTenantId;
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = window.location.hostname;
-    const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000';
+    const wsPort = (import.meta as any).env?.VITE_BACKEND_PORT || '8000';
     const wsUrl = `${wsProtocol}//${wsHost}:${wsPort}/ws_finwise/ws/${tenantId}`;
-    // debugLog('[WebSocketService]', `Constructed WebSocket URL: ${wsUrl}`);
+
+    // Detailliertes Logging der Verbindungsparameter
+    debugLog('[WebSocketService]', 'WebSocket connection parameters', {
+      wsUrl: wsUrl,
+      protocol: wsProtocol,
+      host: wsHost,
+      port: wsPort,
+      tenantId: tenantId,
+      currentLocation: window.location.href
+    });
 
     explicitClose = false;
     webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTING);
-    infoLog('[WebSocketService]', `Connecting to ${wsUrl}`);
+    infoLog('[WebSocketService]', `Initiating WebSocket connection to ${wsUrl}`, {
+      attempt: reconnectAttempts + 1,
+      maxAttempts: MAX_RECONNECT_ATTEMPTS,
+      connectionStatus: WebSocketConnectionStatus.CONNECTING
+    });
 
     try {
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
-        infoLog('[WebSocketService]', 'WebSocket onopen event triggered.');
+        const connectionTime = new Date().toISOString();
+        infoLog('[WebSocketService]', 'WebSocket connection established successfully', {
+          connectionTime: connectionTime,
+          socketUrl: socket?.url,
+          socketReadyState: socket?.readyState,
+          previousReconnectAttempts: reconnectAttempts,
+          wasReconnecting: isReconnecting,
+          connectionDuration: isReconnecting ? `after ${reconnectAttempts} attempts` : 'first attempt'
+        });
+
+        // Status-Updates
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTED);
         webSocketStore.setError(null);
+        const previousAttempts = reconnectAttempts;
         reconnectAttempts = 0;
-        debugLog('[WebSocketService]', 'onopen: Set connectionStatus to CONNECTED, reset error and reconnectAttempts.');
+        isReconnecting = false;
+
+        debugLog('[WebSocketService]', 'Connection state updated', {
+          newConnectionStatus: WebSocketConnectionStatus.CONNECTED,
+          errorCleared: true,
+          reconnectAttemptsReset: `${previousAttempts} -> 0`,
+          isReconnectingReset: false
+        });
+
+        // Heartbeat-Mechanismus starten
+        this.startPingInterval();
+        infoLog('[WebSocketService]', 'Heartbeat mechanism started', {
+          pingInterval: '20 seconds',
+          pingIntervalActive: pingIntervalId !== null
+        });
+
+        // Sync-Queue-Verarbeitung starten
         this.checkAndProcessSyncQueue();
+        debugLog('[WebSocketService]', 'Sync queue processing triggered after connection establishment');
       };
 
       socket.onmessage = async (event) => { // async hinzugefügt
@@ -452,8 +514,29 @@ export const WebSocketService = {
             infoLog('[WebSocketService]', 'Received data_status_response', statusResponse);
             await this.handleDataStatusResponse(statusResponse);
           } else if (message.type === 'pong') {
-            debugLog('[WebSocketService]', 'Received pong from server', message);
-            // Pong-Antworten können für Connection-Health-Tracking verwendet werden
+            const pongMessage = message as PongMessage;
+            const pongReceiveTime = Date.now();
+            const roundTripTime = pongMessage.timestamp ? pongReceiveTime - pongMessage.timestamp : null;
+
+            debugLog('[WebSocketService]', 'Received pong response from server', {
+              pongReceiveTime: pongReceiveTime,
+              pongReceiveTimeISO: new Date(pongReceiveTime).toISOString(),
+              serverTimestamp: pongMessage.timestamp,
+              roundTripTimeMs: roundTripTime,
+              connectionHealth: roundTripTime ? (roundTripTime < 1000 ? 'good' : roundTripTime < 3000 ? 'moderate' : 'poor') : 'unknown',
+              message: pongMessage
+            });
+
+            // Pong-Antworten für Connection-Health-Tracking verwenden
+            if (roundTripTime !== null) {
+              if (roundTripTime > 5000) {
+                warnLog('[WebSocketService]', 'High ping latency detected', {
+                  roundTripTimeMs: roundTripTime,
+                  connectionQuality: 'poor',
+                  threshold: '5000ms'
+                });
+              }
+            }
           } else if (message.type === 'connection_status_response') {
             infoLog('[WebSocketService]', 'Received connection_status_response', message);
             // Verbindungsstatus-Antworten verarbeiten
@@ -479,26 +562,98 @@ export const WebSocketService = {
         }
       };
 
-      socket.onerror = (errorEvent) => { // errorEvent statt error für mehr Klarheit
-        errorLog('[WebSocketService]', 'WebSocket onerror event triggered:', {
-          error: errorEvent,
-          readyState: socket?.readyState,
-          url: wsUrl,
-          tenantId: tenantId
+      socket.onerror = (errorEvent) => {
+        const errorTime = new Date().toISOString();
+        errorLog('[WebSocketService]', 'WebSocket error occurred', {
+          errorTime: errorTime,
+          errorEvent: {
+            type: errorEvent.type,
+            target: errorEvent.target ? {
+              readyState: (errorEvent.target as WebSocket).readyState,
+              url: (errorEvent.target as WebSocket).url
+            } : null
+          },
+          socketState: {
+            readyState: socket?.readyState,
+            url: socket?.url
+          },
+          connectionContext: {
+            wsUrl: wsUrl,
+            tenantId: tenantId,
+            reconnectAttempts: reconnectAttempts,
+            isReconnecting: isReconnecting,
+            explicitClose: explicitClose
+          },
+          previousConnectionStatus: webSocketStore.connectionStatus,
+          previousBackendStatus: webSocketStore.backendStatus
         });
+
         webSocketStore.setError('WebSocket connection error.');
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
-        // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
+
+        debugLog('[WebSocketService]', 'Error state updated', {
+          newConnectionStatus: WebSocketConnectionStatus.ERROR,
+          errorMessage: 'WebSocket connection error.',
+          backendStatusWillBeSetToOffline: true
+        });
       };
 
-      socket.onclose = (closeEvent) => { // closeEvent statt event
-        infoLog('[WebSocketService]', `WebSocket onclose event triggered. Code: ${closeEvent.code}, Reason: ${closeEvent.reason}, Clean: ${closeEvent.wasClean}`, { eventDetails: closeEvent });
-        webSocketStore.setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
-        // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
-        socket = null;
+      socket.onclose = (closeEvent) => {
+        const closeTime = new Date().toISOString();
+        const closeDetails = {
+          closeTime: closeTime,
+          closeCode: closeEvent.code,
+          closeReason: closeEvent.reason || 'No reason provided',
+          wasClean: closeEvent.wasClean,
+          explicitClose: explicitClose,
+          socketUrl: socket?.url
+        };
 
+        // Detailliertes Logging basierend auf Close-Code
+        if (closeEvent.code === 1000) {
+          infoLog('[WebSocketService]', 'WebSocket closed normally', closeDetails);
+        } else if (closeEvent.code === 1001) {
+          warnLog('[WebSocketService]', 'WebSocket closed - endpoint going away', closeDetails);
+        } else if (closeEvent.code === 1006) {
+          errorLog('[WebSocketService]', 'WebSocket closed abnormally - connection lost', closeDetails);
+        } else if (closeEvent.code >= 4000) {
+          errorLog('[WebSocketService]', 'WebSocket closed with custom error code', closeDetails);
+        } else {
+          warnLog('[WebSocketService]', 'WebSocket closed with standard code', closeDetails);
+        }
+
+        // Status-Updates
+        const previousConnectionStatus = webSocketStore.connectionStatus;
+        webSocketStore.setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
+
+        debugLog('[WebSocketService]', 'Connection status updated after close', {
+          previousStatus: previousConnectionStatus,
+          newStatus: WebSocketConnectionStatus.DISCONNECTED,
+          backendStatusWillBeSetToOffline: true
+        });
+
+        // Heartbeat-Mechanismus stoppen
+        this.stopPingInterval();
+        infoLog('[WebSocketService]', 'Heartbeat mechanism stopped after connection close', {
+          pingIntervalWasActive: pingIntervalId !== null
+        });
+
+        socket = null;
+        debugLog('[WebSocketService]', 'Socket reference cleared');
+
+        // Reconnection-Logik
         if (!explicitClose) {
+          infoLog('[WebSocketService]', 'Connection closed unexpectedly - initiating reconnection', {
+            willReconnect: true,
+            currentReconnectAttempts: reconnectAttempts,
+            maxReconnectAttempts: MAX_RECONNECT_ATTEMPTS
+          });
           this.handleReconnection();
+        } else {
+          infoLog('[WebSocketService]', 'Connection closed explicitly - no reconnection', {
+            willReconnect: false,
+            explicitClose: true
+          });
         }
       };
     } catch (error) {
@@ -510,133 +665,502 @@ export const WebSocketService = {
   },
 
   disconnect(): void {
+    const disconnectTime = new Date().toISOString();
+
+    infoLog('[WebSocketService]', 'Initiating explicit WebSocket disconnection', {
+      disconnectTime: disconnectTime,
+      socketExists: socket !== null,
+      socketState: socket?.readyState || 'null',
+      socketUrl: socket?.url,
+      explicitClose: explicitClose
+    });
+
     if (socket) {
-      infoLog('[WebSocketService]', 'Disconnecting WebSocket explicitly.');
+      infoLog('[WebSocketService]', 'Closing WebSocket connection explicitly', {
+        socketReadyState: socket.readyState,
+        socketUrl: socket.url,
+        willSetExplicitClose: true
+      });
       explicitClose = true;
       socket.close();
+      debugLog('[WebSocketService]', 'WebSocket close() method called', {
+        explicitClose: true,
+        closeInitiatedAt: disconnectTime
+      });
+    } else {
+      debugLog('[WebSocketService]', 'No active socket to disconnect', {
+        socketExists: false,
+        explicitClose: explicitClose
+      });
     }
+
+    // Heartbeat-Mechanismus stoppen
+    this.stopPingInterval();
+    infoLog('[WebSocketService]', 'Heartbeat mechanism stopped during disconnect', {
+      pingIntervalStopped: true
+    });
 
     // Stoppe alle Reconnection-Timer
     this.stopReconnectionTimers();
+    infoLog('[WebSocketService]', 'All reconnection timers stopped during disconnect', {
+      reconnectionTimersStopped: true,
+      disconnectComplete: true
+    });
 
-    // Der Store-Status wird durch onclose aktualisiert.
-    // webSocketStore.reset(); // Optional, um den Store sofort zurückzusetzen
+    debugLog('[WebSocketService]', 'Explicit disconnect completed', {
+      disconnectTime: disconnectTime,
+      explicitClose: explicitClose,
+      socketClosed: socket !== null,
+      timersCleared: true
+    });
   },
 
   stopReconnectionTimers(): void {
+    const stopTime = new Date().toISOString();
+
+    debugLog('[WebSocketService]', 'Stopping all reconnection timers', {
+      stopTime: stopTime,
+      longTermTimerActive: longTermReconnectTimer !== null,
+      healthCheckTimerActive: backendHealthCheckTimer !== null,
+      isCurrentlyReconnecting: isReconnecting
+    });
+
     if (longTermReconnectTimer) {
+      infoLog('[WebSocketService]', 'Clearing long-term reconnection timer', {
+        timerWasActive: true,
+        stopTime: stopTime
+      });
       clearTimeout(longTermReconnectTimer);
       longTermReconnectTimer = null;
+    } else {
+      debugLog('[WebSocketService]', 'No long-term reconnection timer to clear', {
+        timerWasActive: false
+      });
     }
+
     if (backendHealthCheckTimer) {
+      infoLog('[WebSocketService]', 'Clearing backend health check timer', {
+        timerWasActive: true,
+        stopTime: stopTime
+      });
       clearInterval(backendHealthCheckTimer);
       backendHealthCheckTimer = null;
+    } else {
+      debugLog('[WebSocketService]', 'No backend health check timer to clear', {
+        timerWasActive: false
+      });
     }
+
+    const wasReconnecting = isReconnecting;
     isReconnecting = false;
+
+    debugLog('[WebSocketService]', 'Reconnection timers cleanup completed', {
+      stopTime: stopTime,
+      longTermReconnectTimer: null,
+      backendHealthCheckTimer: null,
+      isReconnecting: `${wasReconnecting} -> false`,
+      allTimersCleared: true
+    });
   },
 
   handleReconnection(): void {
+    const reconnectionStartTime = new Date().toISOString();
+
     if (isReconnecting) {
-      debugLog('[WebSocketService]', 'Reconnection already in progress, skipping');
+      debugLog('[WebSocketService]', 'Reconnection already in progress - skipping duplicate attempt', {
+        currentReconnectAttempts: reconnectAttempts,
+        isReconnecting: true,
+        skipReason: 'Duplicate reconnection attempt'
+      });
       return;
     }
+
+    debugLog('[WebSocketService]', 'Starting reconnection process', {
+      reconnectionStartTime: reconnectionStartTime,
+      currentAttempts: reconnectAttempts,
+      maxAttempts: MAX_RECONNECT_ATTEMPTS,
+      previousSocketState: socket?.readyState || 'null'
+    });
 
     isReconnecting = true;
 
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       reconnectAttempts++;
-      infoLog('[WebSocketService]', `Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+
+      // Exponential-Backoff-Strategie: Intervall bei jedem Versuch verdoppeln
+      const currentInterval = Math.min(
+        RECONNECT_INITIAL_INTERVAL * Math.pow(2, reconnectAttempts - 1),
+        RECONNECT_MAX_INTERVAL
+      );
+
+      infoLog('[WebSocketService]', `Scheduling reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`, {
+        attemptNumber: reconnectAttempts,
+        totalAttempts: MAX_RECONNECT_ATTEMPTS,
+        delayMs: currentInterval,
+        delaySeconds: Math.round(currentInterval / 1000),
+        exponentialBackoffFormula: `${RECONNECT_INITIAL_INTERVAL} * 2^${reconnectAttempts - 1}`,
+        maxInterval: RECONNECT_MAX_INTERVAL,
+        scheduledTime: new Date(Date.now() + currentInterval).toISOString()
+      });
+
       setTimeout(() => {
+        debugLog('[WebSocketService]', `Executing reconnection attempt ${reconnectAttempts}`, {
+          executionTime: new Date().toISOString(),
+          attemptNumber: reconnectAttempts,
+          wasScheduledFor: currentInterval + 'ms ago'
+        });
         isReconnecting = false;
         this.connect();
-      }, RECONNECT_INTERVAL);
+      }, currentInterval);
     } else {
       // Nach MAX_RECONNECT_ATTEMPTS wechseln zu langfristiger Reconnection-Strategie
-      infoLog('[WebSocketService]', 'Max short-term reconnect attempts reached. Switching to long-term reconnection strategy.');
+      warnLog('[WebSocketService]', 'Maximum short-term reconnection attempts reached', {
+        totalAttempts: reconnectAttempts,
+        maxAttempts: MAX_RECONNECT_ATTEMPTS,
+        nextStrategy: 'long-term reconnection',
+        longTermInterval: LONG_TERM_RECONNECT_INTERVAL,
+        willStartHealthChecks: true
+      });
       this.startLongTermReconnection();
     }
   },
 
   startLongTermReconnection(): void {
-    infoLog('[WebSocketService]', 'Starting long-term reconnection strategy...');
+    const longTermStartTime = new Date().toISOString();
+
+    infoLog('[WebSocketService]', 'Initiating long-term reconnection strategy', {
+      startTime: longTermStartTime,
+      strategy: 'long-term',
+      interval: LONG_TERM_RECONNECT_INTERVAL,
+      intervalSeconds: LONG_TERM_RECONNECT_INTERVAL / 1000,
+      willStartHealthChecks: true,
+      previousShortTermAttempts: reconnectAttempts
+    });
 
     // Starte Backend-Health-Checks
     this.startBackendHealthChecks();
 
     // Langfristige Reconnection-Versuche alle 30 Sekunden
     longTermReconnectTimer = setInterval(() => {
+      const attemptTime = new Date().toISOString();
+
       if (!explicitClose && (!socket || socket.readyState !== WebSocket.OPEN)) {
-        infoLog('[WebSocketService]', 'Long-term reconnection attempt...');
+        infoLog('[WebSocketService]', 'Executing long-term reconnection attempt', {
+          attemptTime: attemptTime,
+          socketState: socket?.readyState || 'null',
+          explicitClose: explicitClose,
+          willResetCounters: true,
+          strategy: 'long-term periodic'
+        });
+
         isReconnecting = false; // Reset für neuen Versuch
+        const previousAttempts = reconnectAttempts;
         reconnectAttempts = 0; // Reset der Versuche für neue Runde
+
+        debugLog('[WebSocketService]', 'Long-term reconnection state reset', {
+          isReconnecting: false,
+          reconnectAttempts: `${previousAttempts} -> 0`,
+          reason: 'Starting fresh reconnection cycle'
+        });
+
         this.connect();
+      } else {
+        debugLog('[WebSocketService]', 'Long-term reconnection check - no action needed', {
+          checkTime: attemptTime,
+          explicitClose: explicitClose,
+          socketState: socket?.readyState || 'null',
+          reason: explicitClose ? 'Explicit close' : 'Socket already connected'
+        });
       }
     }, LONG_TERM_RECONNECT_INTERVAL);
+
+    debugLog('[WebSocketService]', 'Long-term reconnection timer started', {
+      timerId: longTermReconnectTimer ? 'active' : 'failed',
+      intervalMs: LONG_TERM_RECONNECT_INTERVAL
+    });
   },
 
   startBackendHealthChecks(): void {
+    const healthCheckStartTime = new Date().toISOString();
+
     if (backendHealthCheckTimer) {
+      debugLog('[WebSocketService]', 'Clearing existing backend health check timer before starting new one');
       clearInterval(backendHealthCheckTimer);
     }
 
+    infoLog('[WebSocketService]', 'Starting backend health checks', {
+      startTime: healthCheckStartTime,
+      interval: BACKEND_HEALTH_CHECK_INTERVAL,
+      intervalSeconds: BACKEND_HEALTH_CHECK_INTERVAL / 1000,
+      purpose: 'Monitor backend availability during long-term reconnection'
+    });
+
     backendHealthCheckTimer = setInterval(async () => {
-      if (explicitClose) return;
+      const healthCheckTime = new Date().toISOString();
+
+      if (explicitClose) {
+        debugLog('[WebSocketService]', 'Skipping health check - explicit close requested', {
+          healthCheckTime: healthCheckTime,
+          explicitClose: true
+        });
+        return;
+      }
 
       try {
         // Prüfe Backend-Verfügbarkeit über HTTP
         const wsHost = window.location.hostname;
-        const wsPort = import.meta.env.VITE_BACKEND_PORT || '8000';
+        const wsPort = (import.meta as any).env?.VITE_BACKEND_PORT || '8000';
         const healthUrl = `${window.location.protocol}//${wsHost}:${wsPort}/api/v1/websocket/health`;
 
+        debugLog('[WebSocketService]', 'Executing backend health check', {
+          healthCheckTime: healthCheckTime,
+          healthUrl: healthUrl,
+          timeout: 5000,
+          currentSocketState: socket?.readyState || 'null'
+        });
+
+        const healthCheckStart = Date.now();
         const response = await fetch(healthUrl, {
           method: 'GET',
           timeout: 5000
         } as RequestInit);
+        const healthCheckDuration = Date.now() - healthCheckStart;
 
         if (response.ok) {
           const healthData = await response.json();
-          debugLog('[WebSocketService]', 'Backend health check successful', healthData);
+          infoLog('[WebSocketService]', 'Backend health check successful', {
+            healthCheckTime: healthCheckTime,
+            responseTime: healthCheckDuration,
+            status: response.status,
+            statusText: response.statusText,
+            healthData: healthData,
+            backendAvailable: true
+          });
 
           // Wenn Backend verfügbar ist, aber WebSocket nicht verbunden, versuche Reconnection
           if (!socket || socket.readyState !== WebSocket.OPEN) {
-            infoLog('[WebSocketService]', 'Backend is healthy but WebSocket disconnected. Attempting reconnection...');
+            infoLog('[WebSocketService]', 'Backend healthy but WebSocket disconnected - triggering reconnection', {
+              backendHealthy: true,
+              socketState: socket?.readyState || 'null',
+              willReconnect: true,
+              reconnectionReason: 'Backend available but WebSocket disconnected'
+            });
+
             isReconnecting = false;
+            const previousAttempts = reconnectAttempts;
             reconnectAttempts = 0;
+
+            debugLog('[WebSocketService]', 'Resetting reconnection state for health-check-triggered reconnection', {
+              isReconnecting: false,
+              reconnectAttempts: `${previousAttempts} -> 0`,
+              reason: 'Backend health check successful'
+            });
+
             this.connect();
+          } else {
+            debugLog('[WebSocketService]', 'Backend healthy and WebSocket connected - no action needed', {
+              backendHealthy: true,
+              socketState: socket.readyState,
+              socketConnected: true
+            });
           }
+        } else {
+          warnLog('[WebSocketService]', 'Backend health check returned non-OK status', {
+            healthCheckTime: healthCheckTime,
+            responseTime: healthCheckDuration,
+            status: response.status,
+            statusText: response.statusText,
+            backendAvailable: false,
+            url: healthUrl
+          });
         }
       } catch (error) {
-        debugLog('[WebSocketService]', 'Backend health check failed', { error: error instanceof Error ? error.message : String(error) });
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        warnLog('[WebSocketService]', 'Backend health check failed', {
+          healthCheckTime: healthCheckTime,
+          error: errorMessage,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          backendAvailable: false,
+          healthUrl: `${window.location.protocol}//${window.location.hostname}:${(import.meta as any).env?.VITE_BACKEND_PORT || '8000'}/api/v1/websocket/health`,
+          willRetryIn: `${BACKEND_HEALTH_CHECK_INTERVAL / 1000} seconds`
+        });
       }
     }, BACKEND_HEALTH_CHECK_INTERVAL);
+
+    debugLog('[WebSocketService]', 'Backend health check timer created', {
+      timerId: backendHealthCheckTimer ? 'active' : 'failed',
+      intervalMs: BACKEND_HEALTH_CHECK_INTERVAL
+    });
   },
 
   sendMessage(message: unknown): boolean {
+    const sendTime = new Date().toISOString();
     const webSocketStore = useWebSocketStore();
+
+    // Detailliertes Logging für Nachrichtenversand
+    debugLog('[WebSocketService]', 'Attempting to send message', {
+      sendTime: sendTime,
+      messageType: (message as any)?.type || 'unknown',
+      socketExists: socket !== null,
+      socketState: socket?.readyState || 'null',
+      socketUrl: socket?.url,
+      connectionStatus: webSocketStore.connectionStatus,
+      backendStatus: webSocketStore.backendStatus
+    });
+
     if (socket && socket.readyState === WebSocket.OPEN) {
       try {
         const jsonMessage = JSON.stringify(message);
+        const messageSize = new Blob([jsonMessage]).size;
+
         socket.send(jsonMessage);
-        debugLog('[WebSocketService]', 'Message sent:', message);
+
+        debugLog('[WebSocketService]', 'Message sent successfully', {
+          sendTime: sendTime,
+          messageType: (message as any)?.type || 'unknown',
+          messageSize: messageSize,
+          messageSizeKB: Math.round(messageSize / 1024 * 100) / 100,
+          socketState: socket.readyState,
+          success: true
+        });
+
         return true;
       } catch (error) {
-        errorLog('[WebSocketService]', 'Error sending message:', error, message);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errorLog('[WebSocketService]', 'Error sending message', {
+          sendTime: sendTime,
+          error: errorMessage,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          messageType: (message as any)?.type || 'unknown',
+          socketState: socket?.readyState || 'null',
+          message: message
+        });
         webSocketStore.setError('Error sending message.');
         return false;
       }
     } else {
-      errorLog('[WebSocketService]', 'Cannot send message: WebSocket is not connected.');
+      const socketStateText = socket ?
+        (socket.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
+         socket.readyState === WebSocket.CLOSING ? 'CLOSING' :
+         socket.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN') : 'NULL';
+
+      errorLog('[WebSocketService]', 'Cannot send message - WebSocket not ready', {
+        sendTime: sendTime,
+        messageType: (message as any)?.type || 'unknown',
+        socketExists: socket !== null,
+        socketState: socket?.readyState || 'null',
+        socketStateText: socketStateText,
+        connectionStatus: webSocketStore.connectionStatus,
+        backendStatus: webSocketStore.backendStatus,
+        reason: 'WebSocket not in OPEN state'
+      });
       webSocketStore.setError('Cannot send message: WebSocket is not connected.');
       return false;
     }
   },
 
   sendPing(): boolean {
+    const pingTimestamp = Date.now();
     const pingMessage = {
       type: 'ping',
-      timestamp: Date.now()
+      timestamp: pingTimestamp
     };
-    return this.sendMessage(pingMessage);
+
+    debugLog('[WebSocketService]', 'Sending ping to server', {
+      pingTimestamp: pingTimestamp,
+      pingTime: new Date(pingTimestamp).toISOString(),
+      socketState: socket?.readyState,
+      socketUrl: socket?.url,
+      messageType: 'ping'
+    });
+
+    const success = this.sendMessage(pingMessage);
+
+    if (success) {
+      debugLog('[WebSocketService]', 'Ping sent successfully', {
+        pingTimestamp: pingTimestamp,
+        sentAt: new Date().toISOString()
+      });
+    } else {
+      warnLog('[WebSocketService]', 'Failed to send ping', {
+        pingTimestamp: pingTimestamp,
+        failedAt: new Date().toISOString(),
+        socketState: socket?.readyState,
+        reason: 'WebSocket not ready or send failed'
+      });
+    }
+
+    return success;
+  },
+
+  startPingInterval(): void {
+    const startTime = new Date().toISOString();
+    const pingIntervalMs = 20000; // 20 Sekunden
+
+    infoLog('[WebSocketService]', 'Starting heartbeat ping interval', {
+      startTime: startTime,
+      intervalMs: pingIntervalMs,
+      intervalSeconds: pingIntervalMs / 1000,
+      previousIntervalActive: pingIntervalId !== null
+    });
+
+    this.stopPingInterval(); // Stoppe vorhandenes Intervall falls vorhanden
+
+    pingIntervalId = setInterval(() => {
+      const pingAttemptTime = new Date().toISOString();
+
+      debugLog('[WebSocketService]', 'Heartbeat ping interval triggered', {
+        pingAttemptTime: pingAttemptTime,
+        socketState: socket?.readyState,
+        connectionStatus: useWebSocketStore().connectionStatus
+      });
+
+      const pingSuccess = this.sendPing();
+
+      if (pingSuccess) {
+        debugLog('[WebSocketService]', 'Heartbeat ping completed successfully', {
+          pingTime: pingAttemptTime,
+          success: true
+        });
+      } else {
+        warnLog('[WebSocketService]', 'Heartbeat ping failed', {
+          pingTime: pingAttemptTime,
+          success: false,
+          socketState: socket?.readyState,
+          reason: 'WebSocket not ready or send operation failed'
+        });
+      }
+    }, pingIntervalMs);
+
+    debugLog('[WebSocketService]', 'Ping interval timer created', {
+      timerId: pingIntervalId ? 'active' : 'failed',
+      intervalMs: pingIntervalMs
+    });
+  },
+
+  stopPingInterval(): void {
+    const stopTime = new Date().toISOString();
+
+    if (pingIntervalId) {
+      infoLog('[WebSocketService]', 'Stopping heartbeat ping interval', {
+        stopTime: stopTime,
+        intervalWasActive: true,
+        timerId: 'cleared'
+      });
+      clearInterval(pingIntervalId);
+      pingIntervalId = null;
+
+      debugLog('[WebSocketService]', 'Ping interval cleared successfully', {
+        pingIntervalId: null,
+        stopTime: stopTime
+      });
+    } else {
+      debugLog('[WebSocketService]', 'Ping interval stop requested but no active interval', {
+        stopTime: stopTime,
+        intervalWasActive: false,
+        pingIntervalId: null
+      });
+    }
   },
 
   requestConnectionStatus(): boolean {
