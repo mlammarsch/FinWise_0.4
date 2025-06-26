@@ -84,8 +84,8 @@ Die Bildverarbeitung (Logo-Handling für Konten/Kontengruppen) ist:
 - **Verzeichnis:** Serverseitig `static/images/{tenantId}/`
 - **Mandanten-ID:** Aus Benutzer-Token im Backend extrahieren (`@app/api/deps.py`)
 - **API-Endpunkte:**
-  - **Upload:** `POST /api/v1/images/upload`
-  - **Delete:** `DELETE /api/v1/images/delete`
+  - **Upload:** `POST /api/v1/logos/upload`
+  - **Delete:** `DELETE /api/v1/logos/logos/{logo_path}`
 
 #### Feldnamen-Konvention
 
@@ -99,11 +99,13 @@ Die Bildverarbeitung (Logo-Handling für Konten/Kontengruppen) ist:
 - **Validierung (Frontend):** Nur `image/jpeg`, `image/png` zulassen
 - **Validierung (Backend):** Prüfung des Content-Types
 - **Konvertierung:** Serverseitig mit Pillow auf 128x128px, als PNG speichern
+- **Status:** Skalierung auf 128x128px ist noch nicht implementiert
 
 #### Lösch-Prozess
 
-- **API:** `DELETE /api/v1/images/delete`
+- **API:** `DELETE /api/v1/logos/logos/{logo_path}`
 - **Logik:** Bild wird über Pfadangabe gelöscht, nur wenn keine Entität mehr referenziert
+- **Status:** Logik "nur wenn keine Entität mehr referenziert" ist noch nicht implementiert
 
 #### Datenbank
 
@@ -127,9 +129,9 @@ Die Bildverarbeitung (Logo-Handling für Konten/Kontengruppen) ist:
 
 **Backend:**
 - Modelle (`@app/models/financial_models.py`): Feld `image` o.ä. in `logo_path` umbenennen
-- Neuer Router unter `@app/api/v1/`
-- Upload-API (inkl. Mandantenlogik, Validierung, Skalierung, Speicherung)
-- Delete-API (sichere Dateilöschung)
+- Router `logos` unter `@app/api/v1/` (bereits implementiert)
+- Upload-API (bereits implementiert, aber Skalierung auf 128x128px fehlt noch)
+- Delete-API (bereits implementiert, aber Referenzprüfung fehlt noch)
 
 **Frontend:**
 - TypeScript-Interfaces (`logoPath: string | null`)

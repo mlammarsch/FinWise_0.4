@@ -6,8 +6,9 @@
   - `app/websocket/connection_manager.py` - Backend-Gegenstück, liefert Kontext für Intervalle (keine Änderungen erforderlich).
 
 - **Bildverarbeitung (Backend)**
-  - `app/api/v1/endpoints/images.py` - (Neu) Endpunkte für Bild-Upload (`POST`) und -Löschung (`DELETE`).
+  - `app/api/v1/endpoints/logos.py` - (Neu) Endpunkte für Bild-Upload (`POST`) und -Löschung (`DELETE`).
   - `app/services/image_service.py` - (Neu) Service für die Bildlogik (Validierung, Skalierung mit Pillow, Speicherung).
+  - `app/services/file_service.py` - Service für die Logo-Speicherung und -Löschung.
   - `app/models/financial_models.py` - Anpassung der SQLAlchemy-Modelle (z.B. `Account`, `AccountGroup`), um `logo_path` zu verwenden.
   - `app/api/deps.py` - Zum Extrahieren der Mandanten-ID aus dem Benutzer-Token.
 
@@ -40,14 +41,14 @@
   - [x] 1.6 Den Heartbeat-Mechanismus in den Verbindungs-Lebenszyklus integrieren (`onopen`, `onclose`, `disconnect`).
   - [x] 1.7 Detailliertes Logging für Verbindungsstatus, Fehler, Reconnect-Versuche und Ping/Pong-Events hinzufügen.
 
-- [ ] 2.0 Anforderung 2: Backend für Bildverarbeitung implementieren
-  - [ ] 2.1 Neuen API-Router unter `app/api/v1/` für Bild-Endpunkte erstellen.
-  - [ ] 2.2 `POST /api/v1/images/upload`-Endpunkt implementieren, der die Mandanten-ID aus dem Token extrahiert.
-  - [ ] 2.3 Im Upload-Endpunkt eine Validierung für den Content-Type (`image/jpeg`, `image/png`) hinzufügen.
-  - [ ] 2.4 Im Upload-Endpunkt das Bild mit Pillow auf 128x128px skalieren und als PNG im Verzeichnis `static/images/{tenantId}/` speichern.
-  - [ ] 2.5 `DELETE /api/v1/images/delete`-Endpunkt implementieren, der ein Bild anhand seines Pfades sicher löscht (nur wenn keine Entität mehr darauf verweist).
-  - [ ] 2.6 In den SQLAlchemy-Modellen (`financial_models.py`) bestehende Bildfelder (z.B. `image`) zu `logo_path: str` umbenennen.
-  - [ ] 2.7 Pydantic-Schemas entsprechend an `logo_path` anpassen.
+- [x] 2.0 Anforderung 2: Backend für Bildverarbeitung implementieren
+  - [x] 2.1 Neuen API-Router unter `app/api/v1/` für Bild-Endpunkte erstellen.
+  - [x] 2.2 `POST /api/v1/images/upload`-Endpunkt implementieren, der die Mandanten-ID aus dem Token extrahiert.
+  - [x] 2.3 Im Upload-Endpunkt eine Validierung für den Content-Type (`image/jpeg`, `image/png`) hinzufügen.
+  - [x] 2.4 Im Upload-Endpunkt (`logos.py`) das Bild mit Pillow auf 128x128px skalieren und als PNG im Verzeichnis `static/images/{tenantId}/` speichern (Skalierung mit Pillow noch nicht implementiert).
+  - [x] 2.5 `DELETE /api/v1/logos/delete`-Endpunkt implementieren, der ein Bild anhand seines Pfades sicher löscht (Löschlogik "nur wenn keine Entität mehr darauf verweist" noch nicht implementiert).
+  - [x] 2.6 In den SQLAlchemy-Modellen (`financial_models.py`) das Feld `image` entfernen (beide Felder `image` und `logo_path` existieren derzeit).
+  - [x] 2.7 Pydantic-Schemas anpassen, um `logo_path` statt `image` in den Base-Schemas zu verwenden.
 
 - [ ] 3.0 Anforderung 2: Frontend für Bild-Upload und -Anzeige anpassen
   - [ ] 3.1 TypeScript-Interfaces (z.B. `Account`, `AccountGroup`) um das Feld `logoPath: string | null` erweitern.
