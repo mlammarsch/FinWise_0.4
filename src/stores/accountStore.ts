@@ -287,11 +287,9 @@ export const useAccountStore = defineStore('account', () => {
 
       if (!fromSync) {
         try {
-          const fullGroupForSync = accountGroups.value[idx];
-
           // Entferne veraltete Felder wie 'image' vor der Synchronisation
           const cleanGroupForSync = {
-            ...fullGroupForSync,
+            ...accountGroupUpdatesWithTimestamp,
             image: undefined,
           };
 
