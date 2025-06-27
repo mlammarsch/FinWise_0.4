@@ -1,13 +1,13 @@
 <!-- Datei: src/components/account/AccountGroupCard.vue -->
 <script setup lang="ts">
 import { computed, ref, watch, onMounted } from "vue";
-import { AccountGroup } from "../../types";
+import { Account, AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import AccountCard from "./AccountCard.vue";
 import AccountGroupForm from "./AccountGroupForm.vue";
 import { AccountService } from "../../services/AccountService"; // neu
-import { TenantDbService } from "../../services/TenantDbService"; // Import TenantDbService
+import { useTenantStore } from "../../stores/tenantStore";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
 import { Icon } from "@iconify/vue"; // Icon importieren
 
@@ -19,7 +19,6 @@ const props = defineProps<{
 }>();
 
 const accountStore = useAccountStore();
-const tenantDbService = new TenantDbService();
 
 // State für Modal
 const showEditModal = ref(false);
@@ -28,15 +27,16 @@ const displayLogoSrc = ref<string | null>(null);
 
 // Logo laden
 const loadDisplayLogo = async () => {
-  const logoPath = props.group.logoPath;
+  const logoPath = props.group.logo_path;
   if (!logoPath) {
     displayLogoSrc.value = null;
     return;
   }
 
-  // Zuerst Cache abfragen
-  if (tenantDbService) {
-    const cachedLogo = await tenantDbService.getCachedLogo(logoPath);
+  // Zuerst Cache abfragen über TenantDbService für Konsistenz
+  const activeTenantDB = useTenantStore().activeTenantDB;
+  if (activeTenantDB) {
+    const cachedLogo = await activeTenantDB.logoCache.get(logoPath);
     if (cachedLogo?.data) {
       displayLogoSrc.value = cachedLogo.data as string;
       return; // Logo im Cache gefunden, keine Netzwerkanfrage nötig
@@ -53,7 +53,7 @@ const loadDisplayLogo = async () => {
 };
 
 watch(
-  () => props.group.logoPath,
+  () => props.group.logo_path,
   async (newLogoPath, oldLogoPath) => {
     if (newLogoPath !== oldLogoPath) {
       await loadDisplayLogo();
@@ -92,14 +92,14 @@ const deleteAccountGroup = async () => {
 };
 
 // Modal Handler
-const onGroupSaved = async (groupData) => {
+const onGroupSaved = async (groupData: Partial<AccountGroup>) => {
   showEditModal.value = false;
   // Delegate update to AccountService
   await AccountService.updateAccountGroup(props.group.id, groupData);
 };
 
 // Account Selection Handler
-const onAccountSelect = (account) => emit("selectAccount", account);
+const onAccountSelect = (account: Account) => emit("selectAccount", account);
 </script>
 
 <template>

@@ -27,8 +27,8 @@ onMounted(() => {
   if (props.group) {
     name.value = props.group.name;
     sortOrder.value = props.group.sortOrder;
-    image.value = props.group.logoPath || null;
-    originalImage.value = props.group.logoPath || null;
+    image.value = props.group.logo_path || null;
+    originalImage.value = props.group.logo_path || null;
   }
 });
 
@@ -180,7 +180,7 @@ const saveGroup = () => {
   } = {
     name: name.value,
     sortOrder: sortOrder.value,
-    logoPath: image.value || undefined,
+    logo_path: image.value || null,
   };
   // Wenn props.group.id existiert, fügen wir es hinzu, damit updateAccountGroup es verwenden kann
   const saveData = props.group?.id
@@ -209,8 +209,8 @@ onMounted(() => {
   if (props.group) {
     name.value = props.group.name;
     sortOrder.value = props.group.sortOrder;
-    image.value = props.group.logoPath || null; // Korrigiert zu logoPath
-    originalImage.value = props.group.logoPath || null; // Korrigiert zu logoPath
+    image.value = props.group.logo_path || null; // Korrigiert zu logo_path
+    originalImage.value = props.group.logo_path || null; // Korrigiert zu logo_path
   }
 });
 </script>

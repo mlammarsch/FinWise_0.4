@@ -69,7 +69,6 @@ export const useAccountStore = defineStore('account', () => {
         // Entferne veraltete Felder wie 'image' vor der Synchronisation
         const cleanAccountForSync = {
           ...accountWithTimestamp,
-          image: undefined,
         };
 
         // Entferne undefined-Werte
@@ -136,7 +135,6 @@ export const useAccountStore = defineStore('account', () => {
           // Entferne veraltete Felder wie 'image' vor der Synchronisation
           const cleanAccountForSync = {
             ...fullAccountForSync,
-            image: undefined,
           };
 
           // Entferne undefined-Werte
@@ -226,7 +224,6 @@ export const useAccountStore = defineStore('account', () => {
         // Entferne veraltete Felder wie 'image' vor der Synchronisation
         const cleanGroupForSync = {
           ...accountGroupWithTimestamp,
-          image: undefined,
         };
 
         // Entferne undefined-Werte
@@ -290,7 +287,6 @@ export const useAccountStore = defineStore('account', () => {
           // Entferne veraltete Felder wie 'image' vor der Synchronisation
           const cleanGroupForSync = {
             ...accountGroupUpdatesWithTimestamp,
-            image: undefined,
           };
 
           // Entferne undefined-Werte
