@@ -18,7 +18,7 @@ import TransactionCard from "../components/transaction/TransactionCard.vue";
 import TransactionForm from "../components/transaction/TransactionForm.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import { formatDate } from "../utils/formatters";
-import { TransactionType } from "../types";
+import { TransactionType, Account, AccountGroup } from "../types";
 import { TransactionService } from "../services/TransactionService";
 import { AccountService } from "../services/AccountService";
 import { BalanceService } from "../services/BalanceService";
@@ -93,6 +93,35 @@ onMounted(() => {
       items: ".account-group-card", // Dies ist die Klasse, die auf der AccountGroupCard-Komponente erwartet wird
       dragEnabled: true,
       dragHandle: null, // Geändert von '.drag-handle' - die gesamte Karte ist jetzt der Drag-Handle
+    });
+
+    // Event-Listener für dragEnd hinzufügen
+    muuri.on("dragEnd", (item, event) => {
+      debugLog("[AccountsView] Drag ended", "Drag operation completed");
+
+      // Task 3.2: Neue Reihenfolge der Elemente aus der Muuri-Instanz auslesen
+      if (muuri) {
+        const items = muuri.getItems();
+        const newOrder = items
+          .map((item) => {
+            const element = item.getElement();
+            if (element) {
+              const groupId = element.getAttribute("data-id");
+              return groupId;
+            }
+            return null;
+          })
+          .filter((id) => id !== null); // Filtere null-Werte heraus
+
+        // Ausgabe zur Überprüfung in der Konsole
+        console.log(
+          "[AccountsView] Neue Reihenfolge der Kontogruppen-IDs:",
+          newOrder
+        );
+
+        // Task 3.3: Methode aufrufen, die sortOrder neu indiziert
+        handleSortOrderChange(newOrder as string[]);
+      }
     });
   }
 });
@@ -349,6 +378,24 @@ const onReconcileComplete = () => {
   // Aktualisieren der Transaktionsliste nach Abgleich
   showReconcileModal.value = false;
 };
+
+// Task 3.3: Methode erstellen, die sortOrder neu indiziert
+const handleSortOrderChange = (sortedIds: string[]) => {
+  // Mappe über das sortedIds-Array, um ein neues Array von Objekten zu erstellen
+  const sortOrderUpdates = sortedIds.map((id, index) => ({
+    id: id,
+    sortOrder: index,
+  }));
+
+  // Ausgabe zur Überprüfung in der Konsole
+  console.log(
+    "[AccountsView] Neu indizierte sortOrder-Objekte:",
+    sortOrderUpdates
+  );
+
+  // TODO: Task 4.4 - Hier wird später die Store-Action aufgerufen
+  // accountStore.updateAccountGroupOrder(sortOrderUpdates);
+};
 </script>
 
 <template>
@@ -409,6 +456,7 @@ const onReconcileComplete = () => {
             @selectAccount="onSelectAccount"
             @reconcileAccount="startReconcile"
             class="account-group-card"
+            :data-id="group.id"
           />
         </div>
       </div>

@@ -22,9 +22,9 @@
   - [x] 2.2 Die gesamte `AccountGroupCard`-Komponente als Drag-Handle konfigurieren. Dabei beachten, dass die 3-Pinkt-Button Menüstruktur weiterhin bedienbar bleibt.
   - [x] 2.3 Visuelles Feedback für den Drag-Vorgang mithilfe der `muuri-item-dragging`-Klasse stylen (z.B. Schatten, Opazität).
 - [ ] 3.0 Implementierung der Sortierlogik und Persistenz
-  - [ ] 3.1 Einen Event-Listener für das `move`- oder `dragEnd`-Ereignis von `Muuri` in `AccountsView.vue` hinzufügen.
-  - [ ] 3.2 Im Event-Handler die neue Reihenfolge der Elemente aus der `Muuri`-Instanz auslesen.
-  - [ ] 3.3 Eine Methode erstellen, die die `sortOrder` aller Kontogruppen basierend auf ihrer neuen Position im Grid neu indiziert (von 0 an).
+  - [x] 3.1 Einen Event-Listener für das `move`- oder `dragEnd`-Ereignis von `Muuri` in `AccountsView.vue` hinzufügen.
+  - [x] 3.2 Im Event-Handler die neue Reihenfolge der Elemente aus der `Muuri`-Instanz auslesen.
+  - [x] 3.3 Eine Methode erstellen, die die `sortOrder` aller Kontogruppen basierend auf ihrer neuen Position im Grid neu indiziert (von 0 an).
 - [ ] 4.0 Store-Anpassung für Batch-Updates
   - [ ] 4.1 Eine neue Action `updateAccountGroupOrder` im `accountStore` (`src/stores/accountStore.ts`) erstellen.
   - [ ] 4.2 Die Action soll ein Array von Objekten `{ id: string, sortOrder: number }` als Argument akzeptieren.
