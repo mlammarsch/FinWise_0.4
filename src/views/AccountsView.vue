@@ -25,6 +25,7 @@ import { BalanceService } from "../services/BalanceService";
 import { Icon } from "@iconify/vue";
 import { debugLog } from "../utils/logger";
 import MonthSelector from "../components/ui/MonthSelector.vue";
+import Muuri from "muuri";
 
 // Stores
 const accountStore = useAccountStore();
@@ -45,6 +46,10 @@ const showReconcileModal = ref(false);
 
 const selectedAccount = ref<any>(null);
 const selectedTransaction = ref<any>(null);
+
+// Grid reference for Muuri
+const grid = ref<HTMLElement | null>(null);
+let muuri: Muuri | null = null;
 
 //Computed
 const accountGroups = computed(() => accountStore.accountGroups);
@@ -80,6 +85,15 @@ onMounted(() => {
       "[AccountView] onMounted: Selected account set",
       selectedAccount.value
     );
+  }
+
+  // Initialize Muuri
+  if (grid.value) {
+    muuri = new Muuri(grid.value, {
+      items: ".account-group-card", // Dies ist die Klasse, die auf der AccountGroupCard-Komponente erwartet wird
+      dragEnabled: true,
+      dragHandle: ".drag-handle", // Annahme, dass ein Handle existiert oder später hinzugefügt wird
+    });
   }
 });
 
@@ -383,7 +397,10 @@ const onReconcileComplete = () => {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-2">
+        <div
+          ref="grid"
+          class="grid grid-cols-1 gap-2"
+        >
           <AccountGroupCard
             v-for="group in accountGroups"
             :key="group.id"
