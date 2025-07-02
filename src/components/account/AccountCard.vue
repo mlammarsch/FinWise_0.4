@@ -241,9 +241,19 @@ onUnmounted(() => {
     </Teleport>
 
     <div class="card-body min-h-22 flex flex-row items-center p-0">
+      <!-- Drag Handle -->
+      <div
+        class="drag-handle flex-shrink-0 ml-2 mr-1 cursor-grab active:cursor-grabbing flex items-center justify-center w-6 h-16 text-base-content/40 hover:text-base-content/60 transition-colors"
+      >
+        <Icon
+          icon="mdi:drag-vertical"
+          class="text-lg"
+        />
+      </div>
+
       <!-- Konto-Logo -->
       <div
-        class="w-16 h-16 flex-shrink-0 mr-1 ml-2 flex items-center justify-center rounded-full overflow-hidden bg-gray-200"
+        class="w-16 h-16 flex-shrink-0 mr-1 flex items-center justify-center rounded-full overflow-hidden bg-gray-200"
       >
         <img
           v-if="displayLogoSrc"

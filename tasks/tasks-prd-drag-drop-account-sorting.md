@@ -20,10 +20,10 @@
   - [x] 1.3 Erstelle eine neue Methode `moveAccountToGroup(accountId: string, newGroupId: string, newIndex: number)` im `AccountService`, die die `accountGroupId` ändert und die `sortOrder` in der Quell- und Zielgruppe neu berechnet.
   - [x] 1.4 Passe die Komponente `AccountsView.vue` an, um die neuen Methoden aus dem `AccountService` aufzurufen.
 
-- [ ] 2.0 Initialisierung und Konfiguration von Muuri für Drag-and-Drop
-  - [ ] 2.1 Initialisiere in `AccountGroupCard.vue` für jede Kontogruppe eine separate Muuri-Instanz.
-  - [ ] 2.2 Konfiguriere die Muuri-Instanzen so, dass das Ziehen von Elementen zwischen den Gruppen erlaubt ist (Option `dragSort: { group: 'accounts' }`).
-  - [ ] 2.3 Füge in `AccountCard.vue` einen visuellen Indikator (Drag-Handle) hinzu, um die Greifbarkeit zu signalisieren.
+- [x] 2.0 Initialisierung und Konfiguration von Muuri für Drag-and-Drop
+  - [x] 2.1 Initialisiere in `AccountGroupCard.vue` für jede Kontogruppe eine separate Muuri-Instanz.
+  - [x] 2.2 Konfiguriere die Muuri-Instanzen so, dass das Ziehen von Elementen zwischen den Gruppen erlaubt ist (Option `dragSort: { group: 'accounts' }`).
+  - [x] 2.3 Füge in `AccountCard.vue` einen visuellen Indikator (Drag-Handle) hinzu, um die Greifbarkeit zu signalisieren.
 
 - [ ] 3.0 Implementierung der Drag-and-Drop-Interaktionen (Sortieren und Verschieben)
   - [ ] 3.1 Implementiere die Event-Listener für Muuri, insbesondere `dragEnd`.

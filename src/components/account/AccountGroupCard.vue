@@ -1,6 +1,13 @@
 <!-- Datei: src/components/account/AccountGroupCard.vue -->
 <script setup lang="ts">
-import { computed, ref, watch, onMounted } from "vue";
+import {
+  computed,
+  ref,
+  watch,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+} from "vue";
 import { Account, AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
@@ -10,6 +17,10 @@ import { AccountService } from "../../services/AccountService"; // neu
 import { useTenantStore } from "../../stores/tenantStore";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
 import { Icon } from "@iconify/vue"; // Icon importieren
+import Muuri from "muuri"; // Muuri importieren
+
+// Globale Registry für alle Muuri-Instanzen (für Inter-Group-Drag)
+const muuriRegistry = new Set<Muuri>();
 
 const emit = defineEmits(["selectAccount"]);
 
@@ -22,6 +33,10 @@ const accountStore = useAccountStore();
 
 // State für Modal
 const showEditModal = ref(false);
+
+// Muuri-Instanz für diese Kontogruppe
+const muuriGrid = ref<Muuri | null>(null);
+const gridContainer = ref<HTMLElement | null>(null);
 
 const displayLogoSrc = ref<string | null>(null);
 
@@ -64,6 +79,12 @@ watch(
 
 onMounted(async () => {
   await loadDisplayLogo();
+  await nextTick(); // Warten bis DOM gerendert ist
+  initializeMuuri();
+});
+
+onBeforeUnmount(() => {
+  destroyMuuri();
 });
 
 // Konten der Gruppe
@@ -100,6 +121,74 @@ const onGroupSaved = async (groupData: Partial<AccountGroup>) => {
 
 // Account Selection Handler
 const onAccountSelect = (account: Account) => emit("selectAccount", account);
+
+// Muuri-Initialisierung
+const initializeMuuri = () => {
+  if (!gridContainer.value) return;
+
+  try {
+    muuriGrid.value = new Muuri(gridContainer.value, {
+      items: ".account-item",
+      dragEnabled: true,
+      dragHandle: ".drag-handle",
+      dragSort: function () {
+        // Alle anderen Muuri-Instanzen für Inter-Group-Drag zurückgeben
+        return Array.from(muuriRegistry).filter((grid) => grid !== this);
+      },
+      dragSortHeuristics: {
+        sortInterval: 100,
+        minDragDistance: 10,
+        minBounceBackAngle: 1,
+      },
+      dragSortPredicate: {
+        threshold: 50,
+        action: "move",
+      },
+      layout: {
+        fillGaps: false,
+        horizontal: false,
+        alignRight: false,
+        alignBottom: false,
+        rounding: false,
+      },
+      layoutDuration: 300,
+      layoutEasing: "ease",
+    });
+
+    // Instanz zur Registry hinzufügen
+    muuriRegistry.add(muuriGrid.value);
+
+    // Event-Listener für Drag-End
+    muuriGrid.value.on("dragEnd", handleDragEnd);
+  } catch (error) {
+    console.error("Fehler bei Muuri-Initialisierung:", error);
+  }
+};
+
+// Muuri-Cleanup
+const destroyMuuri = () => {
+  if (muuriGrid.value) {
+    // Aus Registry entfernen
+    muuriRegistry.delete(muuriGrid.value);
+    muuriGrid.value.destroy();
+    muuriGrid.value = null;
+  }
+};
+
+// Drag-End Handler (Placeholder für Task 3.0)
+const handleDragEnd = (item: any, event: any) => {
+  console.log("Drag ended:", item, event);
+  // TODO: Implementierung in Task 3.0
+};
+
+// Watch für Änderungen der Konten-Anzahl (für Layout-Update)
+watch(accountCount, async () => {
+  if (muuriGrid.value) {
+    await nextTick();
+    muuriGrid.value.refreshItems();
+    muuriGrid.value.layout();
+  }
+});
 </script>
 
 <template>
@@ -181,14 +270,25 @@ const onAccountSelect = (account: Account) => emit("selectAccount", account);
 
       <!-- Kontenübersicht -->
       <div class="card-body py-0 px-3">
-        <div class="grid grid-cols-1 gap-1">
-          <AccountCard
+        <div
+          ref="gridContainer"
+          class="muuri-grid"
+          style="position: relative"
+        >
+          <div
             v-for="account in accountsInGroup"
             :key="account.id"
-            :account="account"
-            :active="activeAccountId === account.id"
-            @select="onAccountSelect"
-          />
+            class="account-item"
+            style="position: absolute"
+          >
+            <div class="item-content">
+              <AccountCard
+                :account="account"
+                :active="activeAccountId === account.id"
+                @select="onAccountSelect"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
