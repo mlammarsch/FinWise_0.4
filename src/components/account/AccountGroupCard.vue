@@ -135,7 +135,7 @@ const onAccountSelect = (account: Account) => emit("selectAccount", account);
         <div class="drag-handle flex items-center cursor-move">
           <Icon
             icon="mdi:drag-vertical"
-            class="w-12 h-12 text-base-content opacity-30 mr-2"
+            class="w-12 h-12 text-base-content opacity-30 mr-0"
           />
           <div class="p-0 w-24">
             <div

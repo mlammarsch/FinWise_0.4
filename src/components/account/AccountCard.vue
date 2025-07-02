@@ -1,6 +1,6 @@
 <!-- Datei: src/components/account/AccountCard.vue -->
 <script setup lang="ts">
-import { defineProps, computed, ref, watch, onMounted } from "vue";
+import { defineProps, computed, ref, watch, onMounted, onUnmounted } from "vue";
 import { Account } from "../../types";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { useRouter } from "vue-router";
@@ -25,6 +25,12 @@ const props = defineProps<{
 
 const router = useRouter();
 const accountStore = useAccountStore();
+
+// Dropdown-Logik
+const isDropdownOpen = ref(false);
+const dropdownButtonRef = ref<HTMLButtonElement | null>(null);
+const menuRef = ref<HTMLUListElement | null>(null);
+const menuStyle = ref({});
 
 // State für Modals
 const showReconcileModal = ref(false);
@@ -120,6 +126,51 @@ const onImportCompleted = (count: number) => {
 const selectAccount = () => {
   emit("select", props.account);
 };
+
+// Dropdown-Logik
+const openDropdown = () => {
+  if (!dropdownButtonRef.value) return;
+  const rect = dropdownButtonRef.value.getBoundingClientRect();
+  menuStyle.value = {
+    position: "fixed",
+    top: `${rect.bottom}px`,
+    left: `${rect.right}px`,
+    transform: "translateX(-100%)",
+    zIndex: 5000,
+  };
+  isDropdownOpen.value = true;
+};
+
+const closeDropdown = () => {
+  isDropdownOpen.value = false;
+};
+
+const toggleDropdown = () => {
+  if (isDropdownOpen.value) {
+    closeDropdown();
+  } else {
+    openDropdown();
+  }
+};
+
+const handleClickOutside = (event: MouseEvent) => {
+  if (menuRef.value && menuRef.value.contains(event.target as Node)) {
+    return;
+  }
+  closeDropdown();
+};
+
+watch(isDropdownOpen, (isOpen) => {
+  if (isOpen) {
+    document.addEventListener("click", handleClickOutside);
+  } else {
+    document.removeEventListener("click", handleClickOutside);
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", handleClickOutside);
+});
 </script>
 
 <template>
@@ -132,33 +183,62 @@ const selectAccount = () => {
     @click="selectAccount"
   >
     <!-- Dropdown-Menü -->
-    <div
-      class="dropdown dropdown-end absolute top-1 right-1"
-      @click.stop
-    >
+    <div class="absolute top-1 right-1">
       <button
-        tabindex="0"
+        ref="dropdownButtonRef"
+        @click.stop="toggleDropdown"
         class="btn btn-ghost border-none btn-sm btn-circle"
       >
         <Icon icon="mdi:dots-vertical" />
       </button>
+    </div>
+
+    <Teleport to="body">
       <ul
-        tabindex="0"
-        class="dropdown-content menu p-2 shadow bg-base-100 border border-base-300 rounded-box w-52"
+        v-if="isDropdownOpen"
+        ref="menuRef"
+        :style="menuStyle"
+        class="menu p-2 shadow bg-base-100 border border-base-300 rounded-box w-52"
       >
-        <li><a @click="showReconcileModal = true">Kontoabgleich</a></li>
-        <li><a @click="showImportModal = true">Import</a></li>
-        <!-- Eintrag für CSV-Import -->
-        <li><a @click="showEditModal = true">Bearbeiten</a></li>
         <li>
           <a
-            @click="deleteAccount"
+            @click="
+              showReconcileModal = true;
+              closeDropdown();
+            "
+            >Kontoabgleich</a
+          >
+        </li>
+        <li>
+          <a
+            @click="
+              showImportModal = true;
+              closeDropdown();
+            "
+            >Import</a
+          >
+        </li>
+        <li>
+          <a
+            @click="
+              showEditModal = true;
+              closeDropdown();
+            "
+            >Bearbeiten</a
+          >
+        </li>
+        <li>
+          <a
+            @click="
+              deleteAccount();
+              closeDropdown();
+            "
             class="text-error"
             >Löschen</a
           >
         </li>
       </ul>
-    </div>
+    </Teleport>
 
     <div class="card-body min-h-22 flex flex-row items-center p-0">
       <!-- Konto-Logo -->
