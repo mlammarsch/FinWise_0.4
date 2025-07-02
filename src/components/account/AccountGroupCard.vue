@@ -22,7 +22,7 @@ import Muuri from "muuri"; // Muuri importieren
 // Globale Registry für alle Muuri-Instanzen (für Inter-Group-Drag)
 const muuriRegistry = new Set<Muuri>();
 
-const emit = defineEmits(["selectAccount"]);
+const emit = defineEmits(["selectAccount", "request-layout-update"]);
 
 const props = defineProps<{
   group: AccountGroup;
@@ -131,6 +131,7 @@ const initializeMuuri = () => {
       items: ".account-item",
       dragEnabled: true,
       dragHandle: ".drag-handle",
+      dragAxis: "y", // Beschränke Drag auf vertikale Achse
       dragSort: function () {
         // Alle anderen Muuri-Instanzen für Inter-Group-Drag zurückgeben
         return Array.from(muuriRegistry).filter((grid) => grid !== this);
@@ -146,7 +147,7 @@ const initializeMuuri = () => {
       },
       layout: {
         fillGaps: false,
-        horizontal: false,
+        horizontal: false, // Vertikales Layout
         alignRight: false,
         alignBottom: false,
         rounding: false,
@@ -160,6 +161,11 @@ const initializeMuuri = () => {
 
     // Event-Listener für Drag-End
     muuriGrid.value.on("dragEnd", handleDragEnd);
+
+    // Event-Listener für Layout-End - signalisiert Größenänderung an Parent
+    muuriGrid.value.on("layoutEnd", () => {
+      emit("request-layout-update");
+    });
   } catch (error) {
     console.error("Fehler bei Muuri-Initialisierung:", error);
   }
@@ -272,14 +278,12 @@ watch(accountCount, async () => {
       <div class="card-body py-0 px-3">
         <div
           ref="gridContainer"
-          class="muuri-grid"
-          style="position: relative"
+          class="muuri-grid accounts-container"
         >
           <div
             v-for="account in accountsInGroup"
             :key="account.id"
             class="account-item"
-            style="position: absolute"
           >
             <div class="item-content">
               <AccountCard
@@ -321,3 +325,31 @@ watch(accountCount, async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Muuri Grid Container */
+.muuri-grid.accounts-container {
+  position: relative;
+  width: 100%;
+  min-height: 60px; /* Mindesthöhe für leere Gruppen */
+}
+
+/* Account Items für vertikale Anordnung */
+.account-item {
+  position: absolute;
+  width: 100%; /* Volle Breite für einspaltige Darstellung */
+  margin-bottom: 8px; /* Abstand zwischen Konten */
+}
+
+/* Item Content */
+.account-item .item-content {
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+/* Sicherstellen, dass AccountCard die volle Breite nutzt */
+.account-item .item-content > * {
+  width: 100%;
+}
+</style>

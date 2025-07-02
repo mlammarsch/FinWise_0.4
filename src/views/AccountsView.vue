@@ -428,6 +428,13 @@ const handleSortOrderChange = async (sortedIds: string[]) => {
   // Verwende AccountService statt direkten Store-Aufruf
   await AccountService.updateAccountGroupOrder(reindexedGroups);
 };
+
+// Layout-Refresh für AccountGroupCards
+const refreshGroupsLayout = () => {
+  if (muuri) {
+    muuri.refreshItems().layout();
+  }
+};
 </script>
 
 <template>
@@ -487,6 +494,7 @@ const handleSortOrderChange = async (sortedIds: string[]) => {
             :activeAccountId="selectedAccount ? selectedAccount.id : ''"
             @selectAccount="onSelectAccount"
             @reconcileAccount="startReconcile"
+            @request-layout-update="refreshGroupsLayout"
             class="account-group-card"
             :data-id="group.id"
           />
