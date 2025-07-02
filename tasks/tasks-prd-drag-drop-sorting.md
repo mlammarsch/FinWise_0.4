@@ -21,15 +21,15 @@
   - [x] 2.1 Sicherstellen, dass die `v-for`-Schleife für `AccountGroupCard` die notwendigen Attribute für `Muuri`-Items hat.
   - [x] 2.2 Die gesamte `AccountGroupCard`-Komponente als Drag-Handle konfigurieren. Dabei beachten, dass die 3-Pinkt-Button Menüstruktur weiterhin bedienbar bleibt.
   - [x] 2.3 Visuelles Feedback für den Drag-Vorgang mithilfe der `muuri-item-dragging`-Klasse stylen (z.B. Schatten, Opazität).
-- [ ] 3.0 Implementierung der Sortierlogik und Persistenz
+- [x] 3.0 Implementierung der Sortierlogik und Persistenz
   - [x] 3.1 Einen Event-Listener für das `move`- oder `dragEnd`-Ereignis von `Muuri` in `AccountsView.vue` hinzufügen.
   - [x] 3.2 Im Event-Handler die neue Reihenfolge der Elemente aus der `Muuri`-Instanz auslesen.
   - [x] 3.3 Eine Methode erstellen, die die `sortOrder` aller Kontogruppen basierend auf ihrer neuen Position im Grid neu indiziert (von 0 an).
 - [ ] 4.0 Store-Anpassung für Batch-Updates
-  - [ ] 4.1 Eine neue Action `updateAccountGroupOrder` im `accountStore` (`src/stores/accountStore.ts`) erstellen.
-  - [ ] 4.2 Die Action soll ein Array von Objekten `{ id: string, sortOrder: number }` als Argument akzeptieren.
-  - [ ] 4.3 Innerhalb der Action über das Array iterieren und für jede Kontogruppe die `updateAccountGroup`-Methode aufrufen, um die Änderungen in die `SyncQueue` einzutragen.
-  - [ ] 4.4 Die neue Action aus `AccountsView.vue` nach der Neuindizierung aufrufen.
+  - [x] 4.1 Eine neue Action `updateAccountGroupOrder` im `accountStore` (`src/stores/accountStore.ts`) erstellen.
+  - [x] 4.2 Die Action soll ein Array von Objekten `{ id: string, sortOrder: number }` als Argument akzeptieren.
+  - [x] 4.3 Innerhalb der Action über das Array iterieren und für jede Kontogruppe die `updateAccountGroup`-Methode aufrufen, um die Änderungen in die `SyncQueue` einzutragen.
+  - [x] 4.4 Die neue Action aus `AccountsView.vue` nach der Neuindizierung aufrufen.
 - [ ] 5.0 Testing und Validierung
   - [ ] 5.1 Manuell testen, ob das Drag & Drop wie erwartet funktioniert.
   - [ ] 5.2 Überprüfen, ob die `sortOrder` in der IndexedDB nach der Aktion korrekt aktualisiert wird.

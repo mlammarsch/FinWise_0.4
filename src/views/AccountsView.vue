@@ -52,7 +52,9 @@ const grid = ref<HTMLElement | null>(null);
 let muuri: Muuri | null = null;
 
 //Computed
-const accountGroups = computed(() => accountStore.accountGroups);
+const accountGroups = computed(() =>
+  [...accountStore.accountGroups].sort((a, b) => a.sortOrder - b.sortOrder)
+);
 const totalBalance = computed(() => AccountService.getTotalBalance());
 
 // Suchbegriff über den SearchStore
@@ -92,37 +94,42 @@ onMounted(() => {
     muuri = new Muuri(grid.value, {
       items: ".account-group-card", // Dies ist die Klasse, die auf der AccountGroupCard-Komponente erwartet wird
       dragEnabled: true,
-      dragHandle: null, // Geändert von '.drag-handle' - die gesamte Karte ist jetzt der Drag-Handle
+      dragHandle: null,
+      sortData: {
+        order: (item, element) => {
+          const groupId = element.getAttribute("data-id");
+          const group = accountStore.accountGroups.find(
+            (g) => g.id === groupId
+          );
+          return group ? group.sortOrder : 0;
+        },
+      },
     });
 
-    // Event-Listener für dragEnd hinzufügen
-    muuri.on("dragEnd", (item, event) => {
+    muuri.on("dragEnd", async (item, event) => {
       debugLog("[AccountsView] Drag ended", "Drag operation completed");
-
-      // Task 3.2: Neue Reihenfolge der Elemente aus der Muuri-Instanz auslesen
       if (muuri) {
-        const items = muuri.getItems();
-        const newOrder = items
-          .map((item) => {
-            const element = item.getElement();
-            if (element) {
-              const groupId = element.getAttribute("data-id");
-              return groupId;
-            }
-            return null;
-          })
-          .filter((id) => id !== null); // Filtere null-Werte heraus
+        const newOrder = muuri
+          .getItems()
+          .map((item) => item.getElement()?.getAttribute("data-id"))
+          .filter((id): id is string => id !== null);
 
-        // Ausgabe zur Überprüfung in der Konsole
         console.log(
           "[AccountsView] Neue Reihenfolge der Kontogruppen-IDs:",
           newOrder
         );
 
-        // Task 3.3: Methode aufrufen, die sortOrder neu indiziert
-        handleSortOrderChange(newOrder as string[]);
+        await handleSortOrderChange(newOrder);
+        // Wichtig: Muuri neu synchronisieren und layouten
+        muuri.synchronize();
+        muuri.layout(true);
       }
     });
+
+    // Sortiere die Elemente initial basierend auf der sortOrder
+    if (accountGroups.value.length) {
+      muuri.sort("order", { layout: "instant" });
+    }
   }
 });
 
@@ -203,11 +210,7 @@ const filteredTransactions = computed(() => {
     const lower = searchQuery.value.toLowerCase();
     const numeric = lower.replace(",", ".");
     txs = txs.filter((tx) => {
-      const recipientName = tx.recipientId
-        ? (
-            recipientStore.getRecipientById(tx.recipientId)?.name || ""
-          ).toLowerCase()
-        : "";
+      const recipientName = (tx.payee || "").toLowerCase();
       const categoryName = tx.categoryId
         ? (
             categoryStore.getCategoryById(tx.categoryId)?.name || ""
@@ -230,7 +233,9 @@ const filteredTransactions = computed(() => {
 
   txs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  debugLog("[AccountView] filteredTransactions count", txs.length);
+  debugLog("[AccountView]", "filteredTransactions count", {
+    count: txs.length,
+  });
   return txs;
 });
 
@@ -258,7 +263,9 @@ const groupedTransactions = computed(() => {
       };
     })
     .filter((group) => group.transactions.length > 0);
-  debugLog("[AccountView] groupedTransactions groups", groups.length);
+  debugLog("[AccountView]", "groupedTransactions groups", {
+    count: groups.length,
+  });
   return groups;
 });
 
@@ -380,21 +387,15 @@ const onReconcileComplete = () => {
 };
 
 // Task 3.3: Methode erstellen, die sortOrder neu indiziert
-const handleSortOrderChange = (sortedIds: string[]) => {
+const handleSortOrderChange = async (sortedIds: string[]) => {
   // Mappe über das sortedIds-Array, um ein neues Array von Objekten zu erstellen
-  const sortOrderUpdates = sortedIds.map((id, index) => ({
+  const reindexedGroups = sortedIds.map((id, index) => ({
     id: id,
     sortOrder: index,
   }));
 
-  // Ausgabe zur Überprüfung in der Konsole
-  console.log(
-    "[AccountsView] Neu indizierte sortOrder-Objekte:",
-    sortOrderUpdates
-  );
-
-  // TODO: Task 4.4 - Hier wird später die Store-Action aufgerufen
-  // accountStore.updateAccountGroupOrder(sortOrderUpdates);
+  // Task 4.4: Store-Action aufrufen
+  await accountStore.updateAccountGroupOrder(reindexedGroups);
 };
 </script>
 
@@ -446,7 +447,7 @@ const handleSortOrderChange = (sortedIds: string[]) => {
 
         <div
           ref="grid"
-          class="grid grid-cols-1 gap-2"
+          class="relative"
         >
           <AccountGroupCard
             v-for="group in accountGroups"
@@ -472,7 +473,7 @@ const handleSortOrderChange = (sortedIds: string[]) => {
           <SearchGroup
             btnRight="Neue Transaktion"
             btnRightIcon="mdi:plus"
-            @search="(query) => (searchQuery = query)"
+            @search="(query: string) => (searchQuery = query)"
             @btn-right-click="createTransaction"
           />
         </div>
@@ -595,11 +596,32 @@ const handleSortOrderChange = (sortedIds: string[]) => {
   </div>
 </template>
 
-<style scoped>
+<style>
+.account-group-card {
+  display: block;
+  position: absolute;
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
 .account-group-card.muuri-item-dragging {
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
   opacity: 0.8;
   cursor: grabbing;
-  z-index: 10;
+  z-index: 1000;
+}
+
+.account-group-card.muuri-item-releasing {
+  z-index: 500;
+}
+
+.account-group-card.muuri-item-hidden {
+  z-index: 0;
+}
+
+.account-group-card .item-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 </style>
