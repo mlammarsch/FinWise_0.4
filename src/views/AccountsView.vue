@@ -92,7 +92,7 @@ onMounted(() => {
     muuri = new Muuri(grid.value, {
       items: ".account-group-card", // Dies ist die Klasse, die auf der AccountGroupCard-Komponente erwartet wird
       dragEnabled: true,
-      dragHandle: ".drag-handle", // Annahme, dass ein Handle existiert oder später hinzugefügt wird
+      dragHandle: null, // Geändert von '.drag-handle' - die gesamte Karte ist jetzt der Drag-Handle
     });
   }
 });
@@ -408,6 +408,7 @@ const onReconcileComplete = () => {
             :activeAccountId="selectedAccount ? selectedAccount.id : ''"
             @selectAccount="onSelectAccount"
             @reconcileAccount="startReconcile"
+            class="account-group-card"
           />
         </div>
       </div>
@@ -545,3 +546,12 @@ const onReconcileComplete = () => {
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.account-group-card.muuri-item-dragging {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  opacity: 0.8;
+  cursor: grabbing;
+  z-index: 10;
+}
+</style>

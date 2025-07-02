@@ -17,10 +17,10 @@
   - [x] 1.1 `Muuri` als Projektabhängigkeit hinzufügen (`npm install muuri` oder `yarn add muuri`).
   - [x] 1.2 `Muuri` in `src/views/AccountsView.vue` importieren.
   - [x] 1.3 Eine `Muuri`-Instanz in der `onMounted`-Hook von `AccountsView.vue` initialisieren und an das Grid-Element binden.
-- [ ] 2.0 Implementierung der Drag & Drop-Funktionalität
-  - [ ] 2.1 Sicherstellen, dass die `v-for`-Schleife für `AccountGroupCard` die notwendigen Attribute für `Muuri`-Items hat.
-  - [ ] 2.2 Die gesamte `AccountGroupCard`-Komponente als Drag-Handle konfigurieren.
-  - [ ] 2.3 Visuelles Feedback für den Drag-Vorgang mithilfe der `muuri-item-dragging`-Klasse stylen (z.B. Schatten, Opazität).
+- [x] 2.0 Implementierung der Drag & Drop-Funktionalität
+  - [x] 2.1 Sicherstellen, dass die `v-for`-Schleife für `AccountGroupCard` die notwendigen Attribute für `Muuri`-Items hat.
+  - [x] 2.2 Die gesamte `AccountGroupCard`-Komponente als Drag-Handle konfigurieren. Dabei beachten, dass die 3-Pinkt-Button Menüstruktur weiterhin bedienbar bleibt.
+  - [x] 2.3 Visuelles Feedback für den Drag-Vorgang mithilfe der `muuri-item-dragging`-Klasse stylen (z.B. Schatten, Opazität).
 - [ ] 3.0 Implementierung der Sortierlogik und Persistenz
   - [ ] 3.1 Einen Event-Listener für das `move`- oder `dragEnd`-Ereignis von `Muuri` in `AccountsView.vue` hinzufügen.
   - [ ] 3.2 Im Event-Handler die neue Reihenfolge der Elemente aus der `Muuri`-Instanz auslesen.
