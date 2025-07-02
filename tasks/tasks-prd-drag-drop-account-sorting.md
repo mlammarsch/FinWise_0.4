@@ -15,10 +15,10 @@
 ## Tasks
 
 - [ ] 1.0 Vorbereitung und Refactoring der Geschäftslogik
-  - [ ] 1.1 Verschiebe die Methode `updateAccountGroupOrder` von `accountStore.ts` nach `AccountService.ts`.
-  - [ ] 1.2 Erstelle eine neue Methode `updateAccountOrder(groupId: string, accountIds: string[])` im `AccountService`, die die `sortOrder` für alle Konten in einer Gruppe aktualisiert und die Änderungen an den `accountStore` weiterleitet.
-  - [ ] 1.3 Erstelle eine neue Methode `moveAccountToGroup(accountId: string, newGroupId: string, newIndex: number)` im `AccountService`, die die `accountGroupId` ändert und die `sortOrder` in der Quell- und Zielgruppe neu berechnet.
-  - [ ] 1.4 Passe die Komponente `AccountsView.vue` an, um die neuen Methoden aus dem `AccountService` aufzurufen.
+  - [x] 1.1 Verschiebe die Methode `updateAccountGroupOrder` von `accountStore.ts` nach `AccountService.ts`.
+  - [x] 1.2 Erstelle eine neue Methode `updateAccountOrder(groupId: string, accountIds: string[])` im `AccountService`, die die `sortOrder` für alle Konten in einer Gruppe aktualisiert und die Änderungen an den `accountStore` weiterleitet.
+  - [x] 1.3 Erstelle eine neue Methode `moveAccountToGroup(accountId: string, newGroupId: string, newIndex: number)` im `AccountService`, die die `accountGroupId` ändert und die `sortOrder` in der Quell- und Zielgruppe neu berechnet.
+  - [x] 1.4 Passe die Komponente `AccountsView.vue` an, um die neuen Methoden aus dem `AccountService` aufzurufen.
 
 - [ ] 2.0 Initialisierung und Konfiguration von Muuri für Drag-and-Drop
   - [ ] 2.1 Initialisiere in `AccountGroupCard.vue` für jede Kontogruppe eine separate Muuri-Instanz.

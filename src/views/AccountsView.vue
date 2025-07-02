@@ -417,7 +417,7 @@ const onReconcileComplete = () => {
   showReconcileModal.value = false;
 };
 
-// Task 3.3: Methode erstellen, die sortOrder neu indiziert
+// Task 1.4: Methode angepasst, um AccountService zu verwenden
 const handleSortOrderChange = async (sortedIds: string[]) => {
   // Mappe über das sortedIds-Array, um ein neues Array von Objekten zu erstellen
   const reindexedGroups = sortedIds.map((id, index) => ({
@@ -425,8 +425,8 @@ const handleSortOrderChange = async (sortedIds: string[]) => {
     sortOrder: index,
   }));
 
-  // Task 4.4: Store-Action aufrufen
-  await accountStore.updateAccountGroupOrder(reindexedGroups);
+  // Verwende AccountService statt direkten Store-Aufruf
+  await AccountService.updateAccountGroupOrder(reindexedGroups);
 };
 </script>
 

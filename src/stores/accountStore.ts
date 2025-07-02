@@ -388,35 +388,6 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
-  async function updateAccountGroupOrder(orderUpdates: { id: string, sortOrder: number }[]): Promise<void> {
-    infoLog('accountStore', `Batch-Update der AccountGroup-Sortierreihenfolge gestartet für ${orderUpdates.length} Gruppen.`);
-
-    for (const update of orderUpdates) {
-      // Finde die entsprechende AccountGroup im Store-State
-      const existingGroup = accountGroups.value.find(g => g.id === update.id);
-
-      if (existingGroup) {
-        // Prüfe, ob sich die sortOrder tatsächlich geändert hat
-        if (existingGroup.sortOrder !== update.sortOrder) {
-          // Rufe die bestehende updateAccountGroup-Methode auf
-          const updatedGroup: AccountGroup = {
-            ...existingGroup,
-            sortOrder: update.sortOrder,
-            updated_at: new Date().toISOString(),
-          };
-
-          await updateAccountGroup(updatedGroup);
-          debugLog('accountStore', `AccountGroup "${existingGroup.name}" (ID: ${update.id}) sortOrder von ${existingGroup.sortOrder} auf ${update.sortOrder} aktualisiert.`);
-        } else {
-          debugLog('accountStore', `AccountGroup "${existingGroup.name}" (ID: ${update.id}) sortOrder unverändert (${update.sortOrder}).`);
-        }
-      } else {
-        warnLog('accountStore', `AccountGroup mit ID ${update.id} nicht im Store gefunden. Update übersprungen.`);
-      }
-    }
-
-    infoLog('accountStore', `Batch-Update der AccountGroup-Sortierreihenfolge abgeschlossen.`);
-  }
 
   async function loadAccounts(): Promise<void> {
     try {
@@ -454,7 +425,6 @@ export const useAccountStore = defineStore('account', () => {
     deleteAccount,
     addAccountGroup,
     updateAccountGroup,
-    updateAccountGroupOrder,
     deleteAccountGroup,
     updateAccountLogo,
     updateAccountGroupLogo,
