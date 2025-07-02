@@ -132,28 +132,36 @@ const onAccountSelect = (account: Account) => emit("selectAccount", account);
 
       <!-- Kopf -->
       <div class="card-body flex flex-row p-3">
-        <div class="p-0 w-24">
-          <div
-            class="w-12 h-12 rounded-md overflow-hidden flex items-center justify-center bg-base-200 opacity-80"
-          >
-            <img
-              v-if="displayLogoSrc"
-              :src="displayLogoSrc"
-              :alt="props.group.name + ' Logo'"
-              class="w-full h-full object-cover"
-            />
-            <Icon
-              v-else
-              icon="mdi:folder-multiple-outline"
-              class="w-8 h-8 text-base-content opacity-50"
-            />
+        <div class="drag-handle flex items-center cursor-move">
+          <Icon
+            icon="mdi:drag-vertical"
+            class="w-12 h-12 text-base-content opacity-30 mr-2"
+          />
+          <div class="p-0 w-24">
+            <div
+              class="w-12 h-12 rounded-md overflow-hidden flex items-center justify-center bg-base-200 opacity-80"
+            >
+              <img
+                v-if="displayLogoSrc"
+                :src="displayLogoSrc"
+                :alt="props.group.name + ' Logo'"
+                class="w-full h-full object-cover"
+              />
+              <Icon
+                v-else
+                icon="mdi:folder-multiple-outline"
+                class="w-8 h-8 text-base-content opacity-50"
+              />
+            </div>
+          </div>
+
+          <div class="flex flex-col md:flex-row w-full mr-1 ml-1">
+            <div class="self-start flex-grow md:self-center">
+              <h3 class="text-lg opacity-50 font-semibold">{{ group.name }}</h3>
+            </div>
           </div>
         </div>
-
-        <div class="flex flex-col md:flex-row w-full mr-1 ml-1">
-          <div class="self-start flex-grow md:self-center">
-            <h3 class="text-lg opacity-50 font-semibold">{{ group.name }}</h3>
-          </div>
+        <div class="flex flex-col md:flex-row w-full mr-1 ml-1 justify-end">
           <div
             class="self-start w-full md:self-center md:w-25 flex items-center md:justify-end"
           >

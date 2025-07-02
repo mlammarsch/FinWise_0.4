@@ -94,7 +94,7 @@ onMounted(() => {
     muuri = new Muuri(grid.value, {
       items: ".account-group-card", // Dies ist die Klasse, die auf der AccountGroupCard-Komponente erwartet wird
       dragEnabled: true,
-      dragHandle: null,
+      dragHandle: ".drag-handle",
       sortData: {
         order: (item, element) => {
           const groupId = element.getAttribute("data-id");
