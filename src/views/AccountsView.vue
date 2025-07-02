@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { useAccountStore } from "../stores/accountStore";
 import { useTagStore } from "../stores/tagStore";
@@ -144,6 +144,38 @@ watch(
   () => transactionFilterStore.selectedCategoryId,
   (newVal) => {
     localStorage.setItem("accountsView_selectedCategoryId", newVal);
+  }
+);
+
+watch(
+  () => accountGroups.value,
+  async (newGroups, oldGroups) => {
+    const gridInstance = muuri;
+    if (!gridInstance) return;
+
+    if (newGroups.length > oldGroups.length) {
+      await nextTick();
+      const newElements = Array.from(grid.value?.children || []).filter(
+        (child) =>
+          !gridInstance.getItems().some((item) => item.getElement() === child)
+      );
+      if (newElements.length) {
+        gridInstance.add(newElements as HTMLElement[]);
+        gridInstance.layout(true);
+      }
+    }
+  },
+  { deep: true }
+);
+
+watch(
+  () => accountStore.accounts.length,
+  async () => {
+    if (muuri) {
+      await nextTick();
+      muuri.refreshItems();
+      muuri.layout();
+    }
   }
 );
 
@@ -314,13 +346,12 @@ const onGroupSaved = async (groupData: Omit<AccountGroup, "id">) => {
     (g: AccountGroup) => g.name === groupData.name
   );
   if (group) {
-    // Assuming updateAccountGroup in service takes id and partial updates
     await AccountService.updateAccountGroup(group.id, groupData);
   } else {
     await AccountService.addAccountGroup(groupData);
   }
   showNewGroupModal.value = false;
-  debugLog("[AccountView]", "onGroupSaved executed"); // Correct debugLog call
+  debugLog("[AccountView]", "onGroupSaved executed");
 };
 
 const onSelectAccount = (account: any) => {

@@ -187,10 +187,17 @@ export const useAccountStore = defineStore('account', () => {
     }
   }
 
-  async function addAccountGroup(accountGroupData: Omit<AccountGroup, 'updated_at'> | AccountGroup, fromSync = false): Promise<AccountGroup> {
+  async function addAccountGroup(accountGroupData: Omit<AccountGroup, 'updated_at' | 'sortOrder'> | AccountGroup, fromSync = false): Promise<AccountGroup> {
+
+    let sortOrder = (accountGroupData as AccountGroup).sortOrder;
+    if (sortOrder === undefined) {
+      const maxSortOrder = accountGroups.value.reduce((max, g) => Math.max(max, g.sortOrder), -1);
+      sortOrder = maxSortOrder + 1;
+    }
 
     const accountGroupWithTimestamp: AccountGroup = {
       ...accountGroupData,
+      sortOrder,
       updated_at: (accountGroupData as any).updated_at || new Date().toISOString(),
     };
 
