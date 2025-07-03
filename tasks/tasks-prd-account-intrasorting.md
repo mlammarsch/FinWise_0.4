@@ -12,10 +12,10 @@
 
 ## Tasks
 
-- [ ] 1.0 Muuri.js-Integration in der AccountGroupCard-Komponente vorbereiten
-  - [ ] 1.1 Eine neue Muuri-Instanz oder eine Anpassung der bestehenden in `AccountGroupCard.vue` auf dem `onMounted`-Hook initialisieren, die auf die `AccountCard`-Elemente abzielt.
-  - [ ] 1.2 Sicherstellen, dass die Muuri-Optionen das Ziehen innerhalb des Containers (`dragContainer`) und die korrekte Drag-Handle-Klasse (`dragHandle: '.drag-handle'`) verwenden.
-  - [ ] 1.3 Die Kontenliste in der `AccountGroupCard.vue` so anpassen, dass sie reaktiv ist und immer nach `sortOrder` sortiert wird, bevor sie gerendert wird (z.B. über ein `computed` Property).
+- [x] 1.0 Muuri.js-Integration in der AccountGroupCard-Komponente vorbereiten
+  - [x] 1.1 Eine neue Muuri-Instanz oder eine Anpassung der bestehenden in `AccountGroupCard.vue` auf dem `onMounted`-Hook initialisieren, die auf die `AccountCard`-Elemente abzielt.
+  - [x] 1.2 Sicherstellen, dass die Muuri-Optionen das Ziehen innerhalb des Containers (`dragContainer`) und die korrekte Drag-Handle-Klasse (`dragHandle: '.drag-handle'`) verwenden.
+  - [x] 1.3 Die Kontenliste in der `AccountGroupCard.vue` so anpassen, dass sie reaktiv ist und immer nach `sortOrder` sortiert wird, bevor sie gerendert wird (z.B. über ein `computed` Property).
 
 - [ ] 2.0 Drag-End-Event-Handler für die Sortierlogik implementieren
   - [ ] 2.1 Einen Event-Listener für das `dragEnd`-Ereignis der Muuri-Instanz in `AccountGroupCard.vue` hinzufügen.

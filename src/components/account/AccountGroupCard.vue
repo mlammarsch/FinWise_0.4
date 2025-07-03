@@ -87,11 +87,13 @@ onBeforeUnmount(() => {
   destroyMuuri();
 });
 
-// Konten der Gruppe
+// Konten der Gruppe (gefiltert und nach sortOrder sortiert)
 const accountsInGroup = computed(() =>
-  accountStore.accounts.filter(
-    (account) => account.accountGroupId === props.group.id && account.isActive
-  )
+  accountStore.accounts
+    .filter(
+      (account) => account.accountGroupId === props.group.id && account.isActive
+    )
+    .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
 );
 
 // Saldo der Gruppe (Service)
