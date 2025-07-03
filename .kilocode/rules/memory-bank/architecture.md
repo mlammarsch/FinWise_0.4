@@ -259,15 +259,7 @@ getPlanningTransactionById(id: string)
 - Automatische `updated_at` Timestamps für LWW-Konfliktlösung
 - Plain-Object-Conversion für sichere IndexedDB-Serialisierung
 
-## Testing-Architektur (NEU - Vollständig implementiert)
 
-### Testing-Guidelines ([`TESTING_GUIDELINES.md`](TESTING_GUIDELINES.md))
-
-#### Vitest-Setup:
-- **TypeScript-Konfiguration**: Vollständige Integration mit Vue 3 und Pinia
-- **Mock-Strategien**: Patterns für Stores, Services und externe Libraries
-- **AAA-Pattern**: Strukturierte Test-Organisation (Arrange, Act, Assert)
-- **Debugging-Tools**: Temporäres Logging und Debug-Strategien
 
 #### Mocking-Patterns:
 ```typescript
@@ -289,14 +281,6 @@ vi.mock('uuid', () => ({
 }));
 ```
 
-### Integration Testing ([`TESTING_INTEGRATION.md`](TESTING_INTEGRATION.md))
-
-#### Test-Kategorien:
-- **sync-integration.test.ts**: Hauptintegrationstests für Sync-Pipeline (8 Tests)
-- **account-sync.test.ts**: Account-spezifische Sync-Tests (6 Tests)
-- **account-group-sync.test.ts**: AccountGroup-spezifische Sync-Tests (6 Tests)
-- **sync-error-handling.test.ts**: Error-Handling und Recovery-Tests (6 Tests)
-- **planning-store-migration.test.ts**: Planning-Store-Migration-Tests (NEU)
 
 #### Mock-Architektur:
 ```typescript
@@ -453,6 +437,7 @@ if (incoming_data.updated_at > db_obj.updated_at:
 - **Store Pattern**: Pinia für zentrales State Management
 - **Service Layer**: Trennung von UI und Business Logic
 - **Observer Pattern**: Reactive Updates zwischen Stores
+- **UI Sortierung**: [`Muuri.md`](docs\Muuri.md) für Drag and Drop Sortierung im UI
 
 ### Backend Patterns:
 - **Repository Pattern**: CRUD-Layer für Datenzugriff
@@ -482,7 +467,7 @@ if (incoming_data.updated_at > db_obj.updated_at:
 ### Frontend:
 - **Lazy Loading**: Komponenten und Daten bei Bedarf laden
 - **Virtual Scrolling**: Für große Transaktionslisten
-- **Debouncing**: Bei Sucheingaben und Filtern
+- **Debouncing**: Bei Sucheingaben und Filtern, sowie Synchronisationen oder deren Bereitstellung in der Sync Queue
 - **Caching**: Berechnete Werte in Stores cachen
 
 ### Backend:
@@ -530,23 +515,6 @@ if (incoming_data.updated_at > db_obj.updated_at:
 2. **Database-Migration**: Vorbereitung auf PostgreSQL für Produktion
 3. **Microservices**: Aufteilen in kleinere Services bei Bedarf
 
-## Testing-Architektur
-
-### Frontend-Testing:
-- **Unit-Tests**: Vitest für isolierte Store- und Service-Tests
-- **Integration-Tests**: Umfassende Sync-Funktionalitäts-Tests
-- **Mock-Services**: Isolierte Tests ohne Backend-Abhängigkeiten
-- **Test-Daten**: Realistische Test-Daten-Generatoren
-
-### Backend-Testing:
-- **Unit-Tests**: Pytest für CRUD-Operationen und Services
-- **Integration-Tests**: WebSocket und Sync-Service-Tests (geplant)
-- **API-Tests**: FastAPI Test-Client für Endpunkt-Tests
-
-### End-to-End-Testing (geplant):
-- **Sync-Szenarien**: Online/Offline/Konflikt-Tests
-- **Performance-Tests**: Große Datenmengen und Concurrent Users
-- **Browser-Tests**: Cross-Browser-Kompatibilität
 
 ## Erfolgreiche Architektur-Entscheidungen
 
