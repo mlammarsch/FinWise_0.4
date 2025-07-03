@@ -186,6 +186,44 @@ const destroyMuuri = () => {
 // Drag-End Handler (Placeholder für Task 3.0)
 const handleDragEnd = (item: any, event: any) => {
   console.log("Drag ended:", item, event);
+
+  // Aufgabe 2.2: Neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen
+  const sortedItems = muuriGrid.value?.getItems();
+  console.log("Sortierte Elemente nach Drag-End:", sortedItems);
+
+  // Aufgabe 2.3: sortOrder aller Konten in der betroffenen Gruppe neu berechnen
+  if (sortedItems) {
+    // Account-IDs in der neuen Reihenfolge extrahieren
+    const sortedAccountIds: string[] = [];
+
+    sortedItems.forEach((sortedItem) => {
+      // data-account-id aus DOM-Element extrahieren
+      const element = sortedItem.getElement();
+      const accountId = element?.getAttribute("data-account-id");
+
+      if (accountId) {
+        sortedAccountIds.push(accountId);
+      }
+    });
+
+    console.log("Neue Account-Reihenfolge (IDs):", sortedAccountIds);
+
+    // Business Logic aus AccountService nutzen für sortOrder-Neuberechnung
+    // Diese Funktion berechnet automatisch die sortOrder basierend auf Array-Index
+    AccountService.updateAccountOrder(props.group.id, sortedAccountIds)
+      .then(() => {
+        console.log(
+          "Account-Sortierung erfolgreich über AccountService aktualisiert"
+        );
+      })
+      .catch((error) => {
+        console.error(
+          "Fehler beim Aktualisieren der Account-Sortierung:",
+          error
+        );
+      });
+  }
+
   // TODO: Implementierung in Task 3.0
 };
 
@@ -286,6 +324,7 @@ watch(accountCount, async () => {
             v-for="account in accountsInGroup"
             :key="account.id"
             class="account-item"
+            :data-account-id="account.id"
           >
             <div class="item-content">
               <AccountCard

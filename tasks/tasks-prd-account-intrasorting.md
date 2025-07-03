@@ -18,9 +18,9 @@
   - [x] 1.3 Die Kontenliste in der `AccountGroupCard.vue` so anpassen, dass sie reaktiv ist und immer nach `sortOrder` sortiert wird, bevor sie gerendert wird (z.B. über ein `computed` Property).
 
 - [ ] 2.0 Drag-End-Event-Handler für die Sortierlogik implementieren
-  - [ ] 2.1 Einen Event-Listener für das `dragEnd`-Ereignis der Muuri-Instanz in `AccountGroupCard.vue` hinzufügen.
-  - [ ] 2.2 Im Handler die neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen (`grid.getItems()`).
-  - [ ] 2.3 Eine Logik implementieren, die die `sortOrder` aller Konten in der betroffenen Gruppe basierend auf ihrer neuen Position im Array neu berechnet (Index 0 -> `sortOrder: 0`, etc.).
+  - [x] 2.1 Einen Event-Listener für das `dragEnd`-Ereignis der Muuri-Instanz in `AccountGroupCard.vue` hinzufügen.
+  - [x] 2.2 Im Handler die neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen (`grid.getItems()`).
+  - [x] 2.3 Eine Logik implementieren, die die `sortOrder` aller Konten in der betroffenen Gruppe basierend auf ihrer neuen Position im Array neu berechnet (Index 0 -> `sortOrder: 0`, etc.). Prüfe, ob eine solche Funktion nicht schon im AccountServce.ts vorhanden ist.
   - [ ] 2.4 Prüfen, ob das Konto in eine neue Gruppe verschoben wurde. Falls ja, die `accountGroupId` des Kontos aktualisieren und die Sortierlogik für Quell- und Zielgruppe auslösen.
   - [ ] 2.5 Die aktualisierte Liste der Konten an die neue, gedebouncte Speicherfunktion im `AccountService` übergeben.
 
