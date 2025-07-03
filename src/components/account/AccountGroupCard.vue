@@ -183,7 +183,7 @@ const destroyMuuri = () => {
   }
 };
 
-// Drag-End Handler - Subtask 1.1: Inter-Group vs. Intra-Group Erkennung
+// Drag-End Handler - Subtasks 1.1 & 1.2: Inter-Group vs. Intra-Group Erkennung und Ziel-Grid-Extraktion
 const handleDragEnd = (item: any, event: any) => {
   console.log("Drag ended:", item, event);
 
@@ -203,26 +203,87 @@ const handleDragEnd = (item: any, event: any) => {
     return;
   }
 
-  // Bestimme das Ziel-Grid über Muuri's dragSort-Mechanismus
-  // Das Item enthält Informationen über das Ziel-Grid nach einem Inter-Group-Drag
-  const targetGrid = item._dragSort?.targetGrid || sourceGrid;
+  // Subtask 1.2: Extraktion der Ziel-Grid-Information aus Muuri-Event
+  let targetGrid = sourceGrid; // Default: Intra-Group
+  let targetGroupId = props.group.id; // Default: aktuelle Gruppe
+  let targetGridContainer: HTMLElement | null = null;
+
+  // Prüfe verschiedene Quellen für Ziel-Grid-Information
+  if (item._dragSort?.targetGrid) {
+    // Primäre Quelle: Muuri's dragSort-Mechanismus
+    targetGrid = item._dragSort.targetGrid;
+    targetGridContainer = targetGrid.getElement();
+  } else if (item._drag?.targetGrid) {
+    // Alternative Quelle: Drag-Objekt
+    targetGrid = item._drag.targetGrid;
+    targetGridContainer = targetGrid.getElement();
+  } else if (event?.targetGrid) {
+    // Event-basierte Quelle
+    targetGrid = event.targetGrid;
+    targetGridContainer = targetGrid.getElement();
+  }
+
+  // Extrahiere Ziel-Gruppen-ID aus dem Grid-Container
+  if (targetGridContainer && targetGrid !== sourceGrid) {
+    // Suche nach dem übergeordneten AccountGroupCard-Element
+    let groupElement = targetGridContainer.closest("[data-group-id]");
+    if (!groupElement) {
+      // Fallback: Suche in der DOM-Hierarchie nach Gruppe
+      groupElement = targetGridContainer.closest(".card");
+      if (groupElement) {
+        // Versuche Gruppen-ID aus verschiedenen Attributen zu extrahieren
+        const possibleGroupId =
+          groupElement.getAttribute("data-group-id") ||
+          groupElement
+            .querySelector("[data-group-id]")
+            ?.getAttribute("data-group-id");
+        if (possibleGroupId) {
+          targetGroupId = possibleGroupId;
+        }
+      }
+    } else {
+      targetGroupId =
+        groupElement.getAttribute("data-group-id") || props.group.id;
+    }
+
+    // Zusätzliche Validierung: Suche in der Muuri-Registry
+    Array.from(muuriRegistry).forEach((registeredGrid) => {
+      if (registeredGrid === targetGrid) {
+        const registeredContainer = registeredGrid.getElement();
+        const registeredGroupElement =
+          registeredContainer?.closest("[data-group-id]");
+        if (registeredGroupElement) {
+          const registeredGroupId =
+            registeredGroupElement.getAttribute("data-group-id");
+          if (registeredGroupId) {
+            targetGroupId = registeredGroupId;
+          }
+        }
+      }
+    });
+  }
 
   // Prüfe, ob es sich um eine Inter-Group oder Intra-Group Bewegung handelt
-  const isInterGroupMove = targetGrid !== sourceGrid;
+  const isInterGroupMove =
+    targetGrid !== sourceGrid && targetGroupId !== props.group.id;
 
-  console.log("Drag-Operation Details:", {
+  console.log("Drag-Operation Details (erweitert):", {
     draggedAccountId,
     sourceGroupId: props.group.id,
+    targetGroupId,
     isInterGroupMove,
     sourceGrid: sourceGrid,
     targetGrid: targetGrid,
+    targetGridContainer: targetGridContainer,
+    dragSortInfo: item._dragSort,
+    dragInfo: item._drag,
   });
 
   if (isInterGroupMove) {
     console.log(
-      "Inter-Group Bewegung erkannt - wird in nachfolgenden Subtasks implementiert"
+      `Inter-Group Bewegung erkannt: ${props.group.id} → ${targetGroupId}`
     );
-    // TODO: Subtask 1.2-1.4 - Inter-Group-Logik implementieren
+    // TODO: Subtask 1.3-1.4 - Inter-Group-Logik implementieren
   } else {
     // Intra-Group Bewegung - bestehende Logik beibehalten
     console.log("Intra-Group Bewegung erkannt - verwende bestehende Logik");
@@ -278,6 +339,7 @@ watch(accountCount, async () => {
   <div class="item-content">
     <div
       class="card glass-effect bg-none border border-base-300 shadow-md relative"
+      :data-group-id="group.id"
     >
       <!-- Dropdown -->
       <div class="dropdown dropdown-end absolute top-1 right-1">
