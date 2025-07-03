@@ -1,0 +1,46 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "-e",
+        "GITHUB_READ_ONLY",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "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",
+        "GITHUB_TOOLSETS": "",
+        "GITHUB_READ_ONLY": ""
+      },
+      "disabledTools": [
+        "search_users",
+        "search_pull_requests",
+        "search_repositories",
+        "search_orgs",
+        "search_issues",
+        "run_workflow",
+        "rerun_workflow_run",
+        "rerun_failed_jobs",
+        "request_copilot_review",
+        "mark_all_notifications_read",
+        "manage_repository_notification_subscription",
+        "manage_notification_subscription",
+        "list_workflows",
+        "list_workflow_runs",
+        "list_workflow_run_artifacts",
+        "list_workflow_jobs",
+        "list_tags",
+        "list_secret_scanning_alerts"
+      ],
+      "disabled": true,
+      "alwaysAllow": []
+    }
+  }
+}
