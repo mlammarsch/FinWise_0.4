@@ -13,11 +13,12 @@ import { useAccountStore } from "../../stores/accountStore";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import AccountCard from "./AccountCard.vue";
 import AccountGroupForm from "./AccountGroupForm.vue";
-import { AccountService } from "../../services/AccountService"; // neu
+import { AccountService } from "../../services/AccountService";
 import { useTenantStore } from "../../stores/tenantStore";
-import { ImageService } from "../../services/ImageService"; // Import ImageService
-import { Icon } from "@iconify/vue"; // Icon importieren
-import Muuri from "muuri"; // Muuri importieren
+import { ImageService } from "../../services/ImageService";
+import { Icon } from "@iconify/vue";
+import Muuri from "muuri";
+import { debugLog, infoLog, errorLog } from "../../utils/logger";
 
 // Globale Registry für alle Muuri-Instanzen (für Inter-Group-Drag)
 const muuriRegistry = new Set<Muuri>();
@@ -59,10 +60,29 @@ const loadDisplayLogo = async () => {
   }
 
   // Nur wenn nicht im Cache: Netzwerkanfrage an Backend
-  const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
-  if (dataUrl) {
-    displayLogoSrc.value = dataUrl;
-  } else {
+  try {
+    const dataUrl = await ImageService.fetchAndCacheLogo(logoPath);
+    if (dataUrl) {
+      displayLogoSrc.value = dataUrl;
+      debugLog(
+        "AccountGroupCard",
+        `Logo erfolgreich geladen für Gruppe ${props.group.name}`,
+        { logoPath }
+      );
+    } else {
+      displayLogoSrc.value = null;
+      debugLog(
+        "AccountGroupCard",
+        `Kein Logo verfügbar für Gruppe ${props.group.name}`,
+        { logoPath }
+      );
+    }
+  } catch (error) {
+    errorLog(
+      "AccountGroupCard",
+      `Fehler beim Laden des Logos für Gruppe ${props.group.name}`,
+      { logoPath, error }
+    );
     displayLogoSrc.value = null;
   }
 };
@@ -110,15 +130,48 @@ const deleteAccountGroup = async () => {
   if (
     confirm(`Möchtest Du die Gruppe "${props.group.name}" wirklich löschen?`)
   ) {
-    await accountStore.deleteAccountGroup(props.group.id);
+    try {
+      debugLog("AccountGroupCard", `Lösche Kontogruppe ${props.group.name}`, {
+        groupId: props.group.id,
+      });
+      await accountStore.deleteAccountGroup(props.group.id);
+      infoLog(
+        "AccountGroupCard",
+        `Kontogruppe ${props.group.name} erfolgreich gelöscht`,
+        { groupId: props.group.id }
+      );
+    } catch (error) {
+      errorLog(
+        "AccountGroupCard",
+        `Fehler beim Löschen der Kontogruppe ${props.group.name}`,
+        { groupId: props.group.id, error }
+      );
+    }
   }
 };
 
 // Modal Handler
 const onGroupSaved = async (groupData: Partial<AccountGroup>) => {
   showEditModal.value = false;
-  // Delegate update to AccountService
-  await AccountService.updateAccountGroup(props.group.id, groupData);
+  try {
+    debugLog(
+      "AccountGroupCard",
+      `Aktualisiere Kontogruppe ${props.group.name}`,
+      { groupId: props.group.id, groupData }
+    );
+    await AccountService.updateAccountGroup(props.group.id, groupData);
+    infoLog(
+      "AccountGroupCard",
+      `Kontogruppe ${props.group.name} erfolgreich aktualisiert`,
+      { groupId: props.group.id }
+    );
+  } catch (error) {
+    errorLog(
+      "AccountGroupCard",
+      `Fehler beim Aktualisieren der Kontogruppe ${props.group.name}`,
+      { groupId: props.group.id, error }
+    );
+  }
 };
 
 // Account Selection Handler
@@ -126,9 +179,21 @@ const onAccountSelect = (account: Account) => emit("selectAccount", account);
 
 // Muuri-Initialisierung
 const initializeMuuri = () => {
-  if (!gridContainer.value) return;
+  if (!gridContainer.value) {
+    debugLog(
+      "AccountGroupCard",
+      `Grid-Container nicht verfügbar für Gruppe ${props.group.name}`,
+      { groupId: props.group.id }
+    );
+    return;
+  }
 
   try {
+    debugLog(
+      "AccountGroupCard",
+      `Initialisiere Muuri für Gruppe ${props.group.name}`,
+      { groupId: props.group.id }
+    );
     muuriGrid.value = new Muuri(gridContainer.value, {
       items: ".account-item",
       dragEnabled: true,
@@ -160,46 +225,75 @@ const initializeMuuri = () => {
 
     // Instanz zur Registry hinzufügen
     muuriRegistry.add(muuriGrid.value);
+    debugLog(
+      "AccountGroupCard",
+      `Muuri-Instanz zur Registry hinzugefügt für Gruppe ${props.group.name}`,
+      { registrySize: muuriRegistry.size }
+    );
 
     // Event-Listener für Drag-End
     muuriGrid.value.on("dragEnd", handleDragEnd);
 
     // Event-Listener für Layout-End - signalisiert Größenänderung an Parent
     muuriGrid.value.on("layoutEnd", () => {
+      debugLog(
+        "AccountGroupCard",
+        `Layout-Update angefordert für Gruppe ${props.group.name}`
+      );
       emit("request-layout-update");
     });
+
+    infoLog(
+      "AccountGroupCard",
+      `Muuri erfolgreich initialisiert für Gruppe ${props.group.name}`,
+      { groupId: props.group.id }
+    );
   } catch (error) {
-    console.error("Fehler bei Muuri-Initialisierung:", error);
+    errorLog("AccountGroupCard", "Fehler bei Muuri-Initialisierung", error);
   }
 };
 
 // Muuri-Cleanup
 const destroyMuuri = () => {
   if (muuriGrid.value) {
+    debugLog(
+      "AccountGroupCard",
+      `Zerstöre Muuri für Gruppe ${props.group.name}`,
+      { groupId: props.group.id }
+    );
     // Aus Registry entfernen
     muuriRegistry.delete(muuriGrid.value);
     muuriGrid.value.destroy();
     muuriGrid.value = null;
+    debugLog(
+      "AccountGroupCard",
+      `Muuri erfolgreich zerstört für Gruppe ${props.group.name}`,
+      { registrySize: muuriRegistry.size }
+    );
   }
 };
 
 // Drag-End Handler - Subtasks 1.1 & 1.2: Inter-Group vs. Intra-Group Erkennung und Ziel-Grid-Extraktion
-const handleDragEnd = (item: any, event: any) => {
-  console.log("Drag ended:", item, event);
+const handleDragEnd = async (item: any, event: any) => {
+  debugLog("AccountGroupCard", "Drag ended", { item, event });
 
   // Subtask 1.1: Erkennung von Inter-Group vs. Intra-Group Bewegungen
   const draggedElement = item.getElement();
   const draggedAccountId = draggedElement?.getAttribute("data-account-id");
 
   if (!draggedAccountId) {
-    console.error("Keine Account-ID im gedragten Element gefunden");
+    errorLog(
+      "AccountGroupCard",
+      "Keine Account-ID im gedragten Element gefunden",
+      { element: draggedElement }
+    );
     return;
   }
 
   // Bestimme das Quell-Grid (diese Muuri-Instanz)
   const sourceGrid = muuriGrid.value;
   if (!sourceGrid) {
-    console.error("Quell-Grid nicht verfügbar");
+    errorLog("AccountGroupCard", "Quell-Grid nicht verfügbar");
     return;
   }
 
@@ -267,7 +361,7 @@ const handleDragEnd = (item: any, event: any) => {
   const isInterGroupMove =
     targetGrid !== sourceGrid && targetGroupId !== props.group.id;
 
-  console.log("Drag-Operation Details (erweitert):", {
+  debugLog("AccountGroupCard", "Drag-Operation Details", {
     draggedAccountId,
     sourceGroupId: props.group.id,
     targetGroupId,
@@ -280,17 +374,80 @@ const handleDragEnd = (item: any, event: any) => {
   });
 
   if (isInterGroupMove) {
-    console.log(
+    debugLog(
+      "AccountGroupCard",
       `Inter-Group Bewegung erkannt: ${props.group.id} → ${targetGroupId}`
     );
-    // TODO: Subtask 1.3-1.4 - Inter-Group-Logik implementieren
+
+    // Subtask 1.3: Bestimmung der neuen Position im Ziel-Grid
+    let newIndex = 0; // Default: An den Anfang
+
+    if (targetGrid && targetGrid !== sourceGrid) {
+      // Hole alle Items aus dem Ziel-Grid in ihrer aktuellen Reihenfolge
+      const targetItems = targetGrid.getItems();
+
+      // Finde die Position des gedragten Elements im Ziel-Grid
+      const draggedItemInTarget = targetItems.find(
+        (targetItem) => targetItem.getElement() === draggedElement
+      );
+
+      if (draggedItemInTarget) {
+        // Element wurde bereits in das Ziel-Grid eingefügt - finde seine Position
+        newIndex = targetItems.indexOf(draggedItemInTarget);
+      } else {
+        // Fallback: Verwende die Anzahl der Items im Ziel-Grid (ans Ende)
+        newIndex = targetItems.length;
+      }
+
+      debugLog("AccountGroupCard", "Ziel-Grid Position Details", {
+        targetItems: targetItems.length,
+        newIndex,
+        draggedItemFound: !!draggedItemInTarget,
+      });
+    }
+
+    debugLog(
+      "AccountGroupCard",
+      `Inter-Group Position bestimmt: Index ${newIndex} in Gruppe ${targetGroupId}`
+    );
+
+    // Subtask 1.4: Service-Methoden aufrufen
+    try {
+      await AccountService.moveAccountToGroup(
+        draggedAccountId,
+        targetGroupId,
+        newIndex
+      );
+      infoLog(
+        "AccountGroupCard",
+        `Inter-Group Bewegung erfolgreich: Konto ${draggedAccountId} zu Gruppe ${targetGroupId} an Position ${newIndex}`
+      );
+    } catch (error) {
+      errorLog("AccountGroupCard", "Fehler bei Inter-Group Bewegung", error);
+      // Bei Fehler: Muuri-Layout zurücksetzen
+      if (sourceGrid) {
+        sourceGrid.refreshItems();
+        sourceGrid.layout();
+      }
+      if (targetGrid && targetGrid !== sourceGrid) {
+        targetGrid.refreshItems();
+        targetGrid.layout();
+      }
+    }
   } else {
     // Intra-Group Bewegung - bestehende Logik beibehalten
-    console.log("Intra-Group Bewegung erkannt - verwende bestehende Logik");
+    debugLog(
+      "AccountGroupCard",
+      "Intra-Group Bewegung erkannt - verwende bestehende Logik"
+    );
 
     // Neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen
     const sortedItems = sourceGrid.getItems();
-    console.log("Sortierte Elemente nach Drag-End:", sortedItems);
+    debugLog(
+      "AccountGroupCard",
+      "Sortierte Elemente nach Drag-End",
+      sortedItems
+    );
 
     if (sortedItems) {
       // Account-IDs in der neuen Reihenfolge extrahieren
@@ -306,21 +463,34 @@ const handleDragEnd = (item: any, event: any) => {
         }
       });
 
-      console.log("Neue Account-Reihenfolge (IDs):", sortedAccountIds);
+      debugLog(
+        "AccountGroupCard",
+        "Neue Account-Reihenfolge (IDs)",
+        sortedAccountIds
+      );
 
-      // Business Logic aus AccountService nutzen für sortOrder-Neuberechnung
-      AccountService.updateAccountOrder(props.group.id, sortedAccountIds)
-        .then(() => {
-          console.log(
-            "Account-Sortierung erfolgreich über AccountService aktualisiert"
-          );
-        })
-        .catch((error) => {
-          console.error(
-            "Fehler beim Aktualisieren der Account-Sortierung:",
-            error
-          );
-        });
+      // Subtask 1.4: Service-Methoden aufrufen für Intra-Group Bewegungen
+      try {
+        await AccountService.updateAccountOrder(
+          props.group.id,
+          sortedAccountIds
+        );
+        infoLog(
+          "AccountGroupCard",
+          "Account-Sortierung erfolgreich über AccountService aktualisiert"
+        );
+      } catch (error) {
+        errorLog(
+          "AccountGroupCard",
+          "Fehler beim Aktualisieren der Account-Sortierung",
+          error
+        );
+        // Bei Fehler: Muuri-Layout zurücksetzen
+        if (sourceGrid) {
+          sourceGrid.refreshItems();
+          sourceGrid.layout();
+        }
+      }
     }
   }
 };

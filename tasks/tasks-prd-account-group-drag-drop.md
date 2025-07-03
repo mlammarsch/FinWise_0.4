@@ -16,8 +16,8 @@
 - [ ] 1.0 Inter-Group Drag-End Event-Handling implementieren
   - [x] 1.1 Erkennung von Inter-Group vs. Intra-Group Bewegungen in `handleDragEnd`
   - [x] 1.2 Extraktion der Ziel-Grid-Information aus Muuri-Event
-  - [ ] 1.3 Bestimmung der neuen Position im Ziel-Grid
-  - [ ] 1.4 Aufruf der entsprechenden Service-Methoden (`moveAccountToGroup` vs. `updateAccountOrder`)
+  - [x] 1.3 Bestimmung der neuen Position im Ziel-Grid
+  - [x] 1.4 Aufruf der entsprechenden Service-Methoden (`moveAccountToGroup` vs. `updateAccountOrder`)
 - [ ] 2.0 Drag-Feedback und visuelle Rückmeldungen optimieren
   - [ ] 2.1 Verbesserung der Placeholder-Anzeige während Inter-Group-Drag
   - [ ] 2.2 Konsistente Animationen für Drop-Operationen
