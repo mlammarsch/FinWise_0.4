@@ -183,48 +183,85 @@ const destroyMuuri = () => {
   }
 };
 
-// Drag-End Handler (Placeholder für Task 3.0)
+// Drag-End Handler - Subtask 1.1: Inter-Group vs. Intra-Group Erkennung
 const handleDragEnd = (item: any, event: any) => {
   console.log("Drag ended:", item, event);
 
-  // Aufgabe 2.2: Neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen
-  const sortedItems = muuriGrid.value?.getItems();
-  console.log("Sortierte Elemente nach Drag-End:", sortedItems);
+  // Subtask 1.1: Erkennung von Inter-Group vs. Intra-Group Bewegungen
+  const draggedElement = item.getElement();
+  const draggedAccountId = draggedElement?.getAttribute("data-account-id");
 
-  // Aufgabe 2.3: sortOrder aller Konten in der betroffenen Gruppe neu berechnen
-  if (sortedItems) {
-    // Account-IDs in der neuen Reihenfolge extrahieren
-    const sortedAccountIds: string[] = [];
-
-    sortedItems.forEach((sortedItem) => {
-      // data-account-id aus DOM-Element extrahieren
-      const element = sortedItem.getElement();
-      const accountId = element?.getAttribute("data-account-id");
-
-      if (accountId) {
-        sortedAccountIds.push(accountId);
-      }
-    });
-
-    console.log("Neue Account-Reihenfolge (IDs):", sortedAccountIds);
-
-    // Business Logic aus AccountService nutzen für sortOrder-Neuberechnung
-    // Diese Funktion berechnet automatisch die sortOrder basierend auf Array-Index
-    AccountService.updateAccountOrder(props.group.id, sortedAccountIds)
-      .then(() => {
-        console.log(
-          "Account-Sortierung erfolgreich über AccountService aktualisiert"
-        );
-      })
-      .catch((error) => {
-        console.error(
-          "Fehler beim Aktualisieren der Account-Sortierung:",
-          error
-        );
-      });
+  if (!draggedAccountId) {
+    console.error("Keine Account-ID im gedragten Element gefunden");
+    return;
   }
 
-  // TODO: Implementierung in Task 3.0
+  // Bestimme das Quell-Grid (diese Muuri-Instanz)
+  const sourceGrid = muuriGrid.value;
+  if (!sourceGrid) {
+    console.error("Quell-Grid nicht verfügbar");
+    return;
+  }
+
+  // Bestimme das Ziel-Grid über Muuri's dragSort-Mechanismus
+  // Das Item enthält Informationen über das Ziel-Grid nach einem Inter-Group-Drag
+  const targetGrid = item._dragSort?.targetGrid || sourceGrid;
+
+  // Prüfe, ob es sich um eine Inter-Group oder Intra-Group Bewegung handelt
+  const isInterGroupMove = targetGrid !== sourceGrid;
+
+  console.log("Drag-Operation Details:", {
+    draggedAccountId,
+    sourceGroupId: props.group.id,
+    isInterGroupMove,
+    sourceGrid: sourceGrid,
+    targetGrid: targetGrid,
+  });
+
+  if (isInterGroupMove) {
+    console.log(
+      "Inter-Group Bewegung erkannt - wird in nachfolgenden Subtasks implementiert"
+    );
+    // TODO: Subtask 1.2-1.4 - Inter-Group-Logik implementieren
+  } else {
+    // Intra-Group Bewegung - bestehende Logik beibehalten
+    console.log("Intra-Group Bewegung erkannt - verwende bestehende Logik");
+
+    // Neue Reihenfolge der DOM-Elemente aus der Muuri-Instanz abrufen
+    const sortedItems = sourceGrid.getItems();
+    console.log("Sortierte Elemente nach Drag-End:", sortedItems);
+
+    if (sortedItems) {
+      // Account-IDs in der neuen Reihenfolge extrahieren
+      const sortedAccountIds: string[] = [];
+
+      sortedItems.forEach((sortedItem) => {
+        // data-account-id aus DOM-Element extrahieren
+        const element = sortedItem.getElement();
+        const accountId = element?.getAttribute("data-account-id");
+
+        if (accountId) {
+          sortedAccountIds.push(accountId);
+        }
+      });
+
+      console.log("Neue Account-Reihenfolge (IDs):", sortedAccountIds);
+
+      // Business Logic aus AccountService nutzen für sortOrder-Neuberechnung
+      AccountService.updateAccountOrder(props.group.id, sortedAccountIds)
+        .then(() => {
+          console.log(
+            "Account-Sortierung erfolgreich über AccountService aktualisiert"
+          );
+        })
+        .catch((error) => {
+          console.error(
+            "Fehler beim Aktualisieren der Account-Sortierung:",
+            error
+          );
+        });
+    }
+  }
 };
 
 // Watch für Änderungen der Konten-Anzahl (für Layout-Update)
