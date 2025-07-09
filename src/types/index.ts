@@ -202,10 +202,20 @@ export interface Reconciliation {
 
 // Enums
 export enum AccountType {
-  CHECKING = 'CHECKING',
-  SAVINGS = 'SAVINGS',
-  CREDIT = 'CREDIT',
-  CASH = 'CASH'
+  Girokonto = 'giro',
+  Tagesgeldkonto = 'tagesgeld',
+  Festgeldkonto = 'festgeld',
+  Sparkonto = 'spar',
+  Kreditkarte = 'kreditkarte',
+  Depot = 'depot',
+  Bausparvertrag = 'bauspar',
+  Darlehenskonto = 'darlehen',
+  Geschäftskonto = 'geschaeft',
+  Gemeinschaftskonto = 'gemeinschaft',
+  Fremdwährungskonto = 'fremdwaehrung',
+  Virtuell = 'virtuell',
+  Bargeld = 'bar',
+  Sonstiges = 'sonstiges'
 }
 
 export enum TransactionType {

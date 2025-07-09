@@ -24,9 +24,34 @@ const selectedGroup = ref<AccountGroup | null>(null);
 const isEditMode = ref(false);
 const isGroupEditMode = ref(false);
 
-const accounts = computed(() => accountStore.accounts);
+const accounts = computed(() => {
+  return [...accountStore.accounts].sort((a, b) => {
+    // Finde die entsprechenden Gruppen
+    const groupA = accountStore.accountGroups.find(
+      (g) => g.id === a.accountGroupId
+    );
+    const groupB = accountStore.accountGroups.find(
+      (g) => g.id === b.accountGroupId
+    );
 
-const accountGroups = computed(() => accountStore.accountGroups);
+    // Zuerst nach Gruppen-SortOrder sortieren
+    const groupSortA = groupA?.sortOrder || 0;
+    const groupSortB = groupB?.sortOrder || 0;
+
+    if (groupSortA !== groupSortB) {
+      return groupSortA - groupSortB;
+    }
+
+    // Bei gleicher Gruppen-SortOrder nach Account-SortOrder sortieren
+    return (a.sortOrder || 0) - (b.sortOrder || 0);
+  });
+});
+
+const accountGroups = computed(() => {
+  return [...accountStore.accountGroups].sort(
+    (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
+  );
+});
 
 const getGroupName = (groupId: string) => {
   const group = accountGroups.value.find((g: AccountGroup) => g.id === groupId);
@@ -34,9 +59,8 @@ const getGroupName = (groupId: string) => {
 };
 
 const getGroupBalance = (groupId: string) => {
-  return accounts.value
-    .filter((account: Account) => account.accountGroupId === groupId)
-    .reduce((sum: number, account: Account) => sum + account.balance, 0);
+  const balances = AccountService.getGroupBalances();
+  return balances[groupId] ?? 0;
 };
 
 const formatAccountType = (type: AccountType): string => {
@@ -84,20 +108,36 @@ const deleteAccount = (account: Account) => {
 };
 
 const updateAccountGroup = async (account: Account, newGroupId: string) => {
-  const success = await AccountService.updateAccount(account.id, {
-    accountGroupId: newGroupId,
-  });
-  if (success) {
+  // Prüfe, ob sich die Gruppe tatsächlich geändert hat
+  if (account.accountGroupId === newGroupId) {
+    debugLog(
+      "AdminAccountsView",
+      `Account ${account.name} bleibt in derselben Gruppe ${newGroupId}`,
+      { accountId: account.id, groupId: newGroupId }
+    );
+    return;
+  }
+
+  try {
+    // Verwende die gleiche Service-Methode wie beim Drag & Drop
+    // Diese Methode berechnet automatisch die sortOrder für beide Gruppen neu
+    await AccountService.moveAccountToGroup(account.id, newGroupId, 0); // An Position 0 (Anfang der Zielgruppe)
+
     infoLog(
       "AdminAccountsView",
-      `Account ${account.name} group updated successfully to ${newGroupId}`,
-      { accountId: account.id, newGroupId }
+      `Account ${account.name} erfolgreich zu Gruppe ${newGroupId} verschoben`,
+      { accountId: account.id, oldGroupId: account.accountGroupId, newGroupId }
     );
-  } else {
+  } catch (error) {
     errorLog(
       "AdminAccountsView",
-      `Failed to update account ${account.name} group to ${newGroupId}`,
-      { accountId: account.id, newGroupId }
+      `Fehler beim Verschieben von Account ${account.name} zu Gruppe ${newGroupId}`,
+      {
+        accountId: account.id,
+        oldGroupId: account.accountGroupId,
+        newGroupId,
+        error,
+      }
     );
   }
 };
@@ -244,7 +284,7 @@ const updateMonthlyBalances = () => {
                 <td class="text-right">
                   <CurrencyDisplay
                     class="text-right text-base whitespace-nowrap"
-                    :amount="account.balance"
+                    :amount="AccountService.getCurrentBalance(account.id)"
                     :show-zero="true"
                     :asInteger="false"
                   />
@@ -293,7 +333,6 @@ const updateMonthlyBalances = () => {
             <thead>
               <tr>
                 <th>Name</th>
-                <th class="text-center">Sortierung</th>
                 <th class="text-center">Anzahl Konten</th>
                 <th class="text-right">Gesamtsaldo</th>
                 <th class="text-right">Aktionen</th>
@@ -305,7 +344,6 @@ const updateMonthlyBalances = () => {
                 :key="group.id"
               >
                 <td>{{ group.name }}</td>
-                <td class="text-center">{{ group.sortOrder }}</td>
                 <td class="text-center">
                   {{
                     accounts.filter(
