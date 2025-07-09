@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from "vue";
-import { Account } from "../../types";
+import { Account, AccountType } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import CurrencyInput from "../ui/CurrencyInput.vue";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
@@ -14,6 +14,7 @@ const name = ref("");
 const description = ref("");
 const note = ref("");
 const accountGroupId = ref("");
+const accountType = ref<AccountType>(AccountType.Girokonto);
 const iban = ref("");
 const offset = ref(0);
 const creditLimit = ref(0);
@@ -30,6 +31,7 @@ onMounted(() => {
     description.value = props.account.description || "";
     note.value = props.account.note || "";
     accountGroupId.value = props.account.accountGroupId;
+    accountType.value = props.account.accountType;
     iban.value = props.account.iban || "";
     offset.value = props.account.offset || 0;
     creditLimit.value = props.account.creditLimit || 0;
@@ -39,6 +41,7 @@ onMounted(() => {
     accountGroupId.value = accountStore.accountGroups[0]?.id || "";
     offset.value = 0;
     creditLimit.value = 0;
+    accountType.value = AccountType.Girokonto;
   }
   nextTick(() => document.getElementById("account-name")?.focus());
 });
@@ -190,6 +193,7 @@ const saveAccount = () => {
     description: description.value,
     note: note.value,
     accountGroupId: accountGroupId.value,
+    accountType: accountType.value,
     iban: iban.value,
     offset: offset.value,
     creditLimit: creditLimit.value,
@@ -201,6 +205,15 @@ const saveAccount = () => {
 };
 
 const accountGroups = computed(() => accountStore.accountGroups);
+
+const accountTypeOptions = computed(() => {
+  return Object.entries(AccountType)
+    .map(([key, value]) => ({
+      label: key,
+      value: value,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+});
 
 // Computed Property für die Anzeige des Logos
 const displayLogoUrl = computed(() => {
@@ -251,22 +264,40 @@ const displayLogoUrl = computed(() => {
       />
     </div>
 
-    <fieldset class="fieldset">
-      <legend class="fieldset-legend">Kontogruppe</legend>
-      <select
-        v-model="accountGroupId"
-        class="select select-bordered w-full"
-        required
-      >
-        <option
-          v-for="g in accountGroups"
-          :key="g.id"
-          :value="g.id"
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Kontogruppe</legend>
+        <select
+          v-model="accountGroupId"
+          class="select select-bordered w-full"
+          required
         >
-          {{ g.name }}
-        </option>
-      </select>
-    </fieldset>
+          <option
+            v-for="g in accountGroups"
+            :key="g.id"
+            :value="g.id"
+          >
+            {{ g.name }}
+          </option>
+        </select>
+      </fieldset>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Kontotyp</legend>
+        <select
+          v-model="accountType"
+          class="select select-bordered w-full"
+          required
+        >
+          <option
+            v-for="option in accountTypeOptions"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </fieldset>
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div class="form-control">

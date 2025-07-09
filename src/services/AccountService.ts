@@ -392,7 +392,7 @@ export const AccountService = {
         name: 'Girokonto',
         description: 'Initiales Girokonto',
         note: '',
-        accountType: AccountType.CHECKING,
+        accountType: AccountType.Girokonto,
         isActive: true,
         isOfflineBudget: false,
         accountGroupId: giroGroupId, // Hier die ID der zuvor gefundenen/erstellten Gruppe verwenden

@@ -64,18 +64,12 @@ const getGroupBalance = (groupId: string) => {
 };
 
 const formatAccountType = (type: AccountType): string => {
-  switch (type) {
-    case AccountType.CHECKING:
-      return "Girokonto";
-    case AccountType.SAVINGS:
-      return "Sparkonto";
-    case AccountType.CREDIT:
-      return "Kreditkarte";
-    case AccountType.CASH:
-      return "Bargeld";
-    default:
-      return "Unbekannt";
-  }
+  // Das Enum enthält jetzt direkt die lesbaren Namen als Keys.
+  // Wir müssen nur den Wert finden, der dem Key entspricht.
+  const key = Object.keys(AccountType).find(
+    (key) => AccountType[key as keyof typeof AccountType] === type
+  );
+  return key || "Unbekannt";
 };
 
 const editAccount = (account: Account) => {
