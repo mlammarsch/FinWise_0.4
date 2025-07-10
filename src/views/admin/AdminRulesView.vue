@@ -91,7 +91,17 @@ const deleteRule = (rule: AutomationRule) => {
 const toggleRuleActive = async (rule: AutomationRule) => {
   try {
     const newStatus = !rule.isActive;
-    await ruleStore.updateRule(rule.id, { isActive: newStatus });
+    // Vollständige Regel-Daten mit neuem Status übergeben
+    const updatedRule = {
+      ...rule,
+      isActive: newStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    // ID aus dem Update-Objekt entfernen, da updateRule sie als separaten Parameter erwartet
+    const { id, ...ruleWithoutId } = updatedRule;
+
+    await ruleStore.updateRule(rule.id, ruleWithoutId);
     debugLog("[AdminRulesView] Toggled rule active state", {
       id: rule.id,
       isActive: newStatus,
@@ -210,12 +220,12 @@ function formatStage(stage: string): string {
                 v-for="rule in paginatedRules"
                 :key="rule.id"
               >
-                <td>{{ rule.name }}</td>
-                <td>{{ rule.description || "-" }}</td>
-                <td>{{ formatStage(rule.stage) }}</td>
-                <td>{{ rule.priority }}</td>
-                <td>{{ rule.conditions?.length || 0 }}</td>
-                <td>{{ rule.actions?.length || 0 }}</td>
+                <td>{{ rule?.name || "-" }}</td>
+                <td>{{ rule?.description || "-" }}</td>
+                <td>{{ rule?.stage ? formatStage(rule.stage) : "-" }}</td>
+                <td>{{ rule?.priority || 0 }}</td>
+                <td>{{ rule?.conditions?.length || 0 }}</td>
+                <td>{{ rule?.actions?.length || 0 }}</td>
                 <td>
                   <div
                     class="badge rounded-full badge-soft cursor-pointer hover:opacity-80 transition-opacity"
