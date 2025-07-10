@@ -513,7 +513,7 @@ const submitForm = () => {
     <div class="divider pt-5" />
 
     <!-- Empfänger -->
-    <div class="form-control">
+    <fieldset class="fieldset">
       <legend class="fieldset-legend">Empfänger</legend>
       <SelectRecipient
         v-model="recipientId"
@@ -521,18 +521,18 @@ const submitForm = () => {
         :class="isTransfer ? 'opacity-50' : ''"
         :disabled="isTransfer"
       />
-    </div>
+    </fieldset>
 
     <!-- Kategorie & Tags -->
     <div
       v-if="transactionType !== TransactionType.ACCOUNTTRANSFER"
       class="grid grid-cols-1 md:grid-cols-2 gap-4"
     >
-      <div class="form-control">
+      <fieldset class="fieldset">
         <legend class="fieldset-legend">Kategorie</legend>
         <SelectCategory v-model="categoryId" />
-      </div>
-      <div class="form-control">
+      </fieldset>
+      <fieldset class="fieldset">
         <legend class="fieldset-legend">Tags</legend>
         <TagSearchableDropdown
           class="fieldset focus:outline-none focus:ring-2 focus:ring-accent"
@@ -540,7 +540,7 @@ const submitForm = () => {
           :options="tags"
           @create="onCreateTag"
         />
-      </div>
+      </fieldset>
     </div>
 
     <!-- Buttons -->
