@@ -140,6 +140,35 @@ const deleteCategoryGroup = async (groupId: string) => {
   }
 };
 
+/**
+ * Schaltet den aktiven Status einer Kategorie um
+ */
+const toggleCategoryStatus = async (category: Category) => {
+  try {
+    const newStatus = !category.isActive;
+    const success = await CategoryService.updateCategory(category.id, {
+      isActive: newStatus,
+    });
+
+    if (success) {
+      console.log(
+        `Kategorie "${category.name}" Status geändert zu: ${
+          newStatus ? "Aktiv" : "Inaktiv"
+        }`
+      );
+    } else {
+      console.error(
+        `Fehler beim Ändern des Status von Kategorie "${category.name}"`
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Fehler beim Umschalten des Kategorie-Status für "${category.name}":`,
+      error
+    );
+  }
+};
+
 // Helper
 const getGroupName = (groupId: string | undefined): string => {
   if (!groupId) return "Unbekannt";
@@ -228,8 +257,12 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
                 </td>
                 <td>
                   <div
-                    class="badge rounded-full badge-soft"
+                    class="badge rounded-full badge-soft cursor-pointer hover:opacity-80 transition-opacity"
                     :class="category.isActive ? 'badge-success' : 'badge-error'"
+                    @click="toggleCategoryStatus(category)"
+                    :title="`Klicken um Status zu ${
+                      category.isActive ? 'Inaktiv' : 'Aktiv'
+                    } zu ändern`"
                   >
                     {{ category.isActive ? "Aktiv" : "Inaktiv" }}
                   </div>

@@ -186,6 +186,40 @@ const deleteAccountGroup = async (groupId: string) => {
 const updateMonthlyBalances = () => {
   BalanceService.calculateMonthlyBalances();
 };
+
+/**
+ * Schaltet den aktiven Status eines Kontos um
+ */
+const toggleAccountStatus = async (account: Account) => {
+  try {
+    const newStatus = !account.isActive;
+    const success = await AccountService.updateAccount(account.id, {
+      isActive: newStatus,
+    });
+
+    if (success) {
+      infoLog(
+        "AdminAccountsView",
+        `Konto "${account.name}" Status geändert zu: ${
+          newStatus ? "Aktiv" : "Inaktiv"
+        }`,
+        { accountId: account.id, newStatus }
+      );
+    } else {
+      errorLog(
+        "AdminAccountsView",
+        `Fehler beim Ändern des Status von Konto "${account.name}"`,
+        { accountId: account.id, targetStatus: newStatus }
+      );
+    }
+  } catch (error) {
+    errorLog(
+      "AdminAccountsView",
+      `Fehler beim Umschalten des Konto-Status für "${account.name}"`,
+      { accountId: account.id, error }
+    );
+  }
+};
 </script>
 
 <template>
@@ -285,8 +319,12 @@ const updateMonthlyBalances = () => {
                 </td>
                 <td class="text-center">
                   <div
-                    class="badge rounded-full badge-soft"
+                    class="badge rounded-full badge-soft cursor-pointer hover:opacity-80 transition-opacity"
                     :class="account.isActive ? 'badge-success' : 'badge-error'"
+                    @click="toggleAccountStatus(account)"
+                    :title="`Klicken um Status zu ${
+                      account.isActive ? 'Inaktiv' : 'Aktiv'
+                    } zu ändern`"
                   >
                     {{ account.isActive ? "Aktiv" : "Inaktiv" }}
                   </div>
