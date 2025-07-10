@@ -526,6 +526,95 @@ export const PlanningService = {
   },
 
   /**
+   * Überspringt eine geplante Transaktion ohne echte Transaktion zu erstellen.
+   * Markiert die Planung als erledigt und berechnet das nächste Datum oder löscht sie.
+   */
+  skipPlanningTransaction(planningId: string, executionDate: string) {
+    const planningStore = usePlanningStore();
+    const planning = planningStore.getPlanningTransactionById(planningId);
+
+    if (!planning) {
+      debugLog('[PlanningService] skipPlanningTransaction - Planning not found', { planningId });
+      return false;
+    }
+
+    debugLog('[PlanningService] skipPlanningTransaction - Überspringe Planung', {
+      planningId: planning.id,
+      name: planning.name,
+      executionDate,
+      transactionType: planning.transactionType
+    });
+
+    // Prüfen, ob es sich um eine Transferbuchung handelt
+    const counterPlanningId = planning.counterPlanningTransactionId;
+
+    // Prüfen, ob die Planung gelöscht oder aktualisiert werden soll
+    const shouldDelete =
+      planning.recurrencePattern === RecurrencePattern.ONCE ||
+      (planning.recurrenceEndType === RecurrenceEndType.DATE &&
+       planning.endDate &&
+       dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
+      (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
+       planning.recurrenceCount !== null &&
+       PlanningService.calculateNextOccurrences(
+         planning,
+         dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
+         dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')
+       ).length === 0);
+
+    // Update der Planung und eventuell Gegenbuchung durchführen
+    if (shouldDelete) {
+      // Planung und eventuell Gegenbuchung löschen
+      this.deletePlanningTransaction(planning.id);
+      debugLog('[PlanningService] skipPlanningTransaction - Planung gelöscht (einmalig oder letzte Wiederholung)', {
+        planningId: planning.id,
+        isTransfer: !!counterPlanningId
+      });
+    } else {
+      // Nächstes Datum berechnen
+      const nextOcc = PlanningService.calculateNextOccurrences(
+        planning,
+        dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
+        dayjs(executionDate).add(3, 'years').format('YYYY-MM-DD')
+      );
+
+      if (nextOcc.length > 0) {
+        // Nächstes Datum setzen
+        const nextDate = nextOcc[0];
+        planningStore.updatePlanningTransaction(planning.id, { startDate: nextDate });
+
+        // Auch bei Gegenbuchung Datum aktualisieren
+        if (counterPlanningId) {
+          const counterPlanning = planningStore.getPlanningTransactionById(counterPlanningId);
+          if (counterPlanning) {
+            planningStore.updatePlanningTransaction(counterPlanningId, { startDate: nextDate });
+            debugLog('[PlanningService] skipPlanningTransaction - Gegenbuchungsdatum aktualisiert', {
+              counterPlanningId,
+              nextDate
+            });
+          }
+        }
+
+        debugLog('[PlanningService] skipPlanningTransaction - Nächstes Datum gesetzt', {
+          planningId: planning.id,
+          nextDate
+        });
+      }
+    }
+
+    // Bilanzen aktualisieren
+    BalanceService.calculateMonthlyBalances();
+
+    debugLog('[PlanningService] skipPlanningTransaction - Abgeschlossen', {
+      planningId: planning.id,
+      executionDate,
+      deleted: shouldDelete
+    });
+
+    return true;
+  },
+
+  /**
    * Löscht eine Planungstransaktion (CRUD).
    */
   deletePlanningTransaction(id: string) {

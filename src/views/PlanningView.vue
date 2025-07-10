@@ -167,6 +167,11 @@ function executePlanning(planningId: string, date: string) {
   debugLog("[PlanningView] Executed planning", { planningId, date });
 }
 
+function skipPlanning(planningId: string, date: string) {
+  PlanningService.skipPlanningTransaction(planningId, date);
+  debugLog("[PlanningView] Skipped planning", { planningId, date });
+}
+
 // Neue Methoden für die Anzeige von Transaktionstypen
 function getTransactionTypeIcon(type: TransactionType): string {
   switch (type) {
@@ -286,15 +291,30 @@ onMounted(() => {
     <div class="flex justify-between items-center">
       <h2 class="text-xl font-bold">Finanzplanung und Prognose</h2>
       <div class="flex items-center gap-3">
-        <div class="text-sm opacity-70" v-if="lastUpdateDate">
+        <div
+          class="text-sm opacity-70"
+          v-if="lastUpdateDate"
+        >
           Prognosen aktualisiert am: {{ formatDate(lastUpdateDate) }}
         </div>
-        <button class="btn btn-outline" @click="updateForecasts">
-          <Icon icon="mdi:refresh" class="mr-2" />
+        <button
+          class="btn btn-outline"
+          @click="updateForecasts"
+        >
+          <Icon
+            icon="mdi:refresh"
+            class="mr-2"
+          />
           Prognosen aktualisieren
         </button>
-        <button class="btn btn-outline" @click="executeAutomaticTransactions">
-          <Icon icon="mdi:play-circle" class="mr-2" />
+        <button
+          class="btn btn-outline"
+          @click="executeAutomaticTransactions"
+        >
+          <Icon
+            icon="mdi:play-circle"
+            class="mr-2"
+          />
           Auto-Ausführen
         </button>
       </div>
@@ -332,7 +352,10 @@ onMounted(() => {
             class="btn btn-sm btn-ghost btn-circle self-end"
             @click="clearFilters"
           >
-            <Icon icon="mdi:filter-off" class="text-xl" />
+            <Icon
+              icon="mdi:filter-off"
+              class="text-xl"
+            />
           </button>
         </div>
         <SearchGroup
@@ -351,7 +374,10 @@ onMounted(() => {
         :class="{ 'tab-active': activeTab === 'upcoming' }"
         @click="activeTab = 'upcoming'"
       >
-        <Icon icon="mdi:calendar-clock" class="mr-2" />
+        <Icon
+          icon="mdi:calendar-clock"
+          class="mr-2"
+        />
         Anstehende Buchungen
       </a>
       <a
@@ -359,7 +385,10 @@ onMounted(() => {
         :class="{ 'tab-active': activeTab === 'accounts' }"
         @click="activeTab = 'accounts'"
       >
-        <Icon icon="mdi:chart-line" class="mr-2" />
+        <Icon
+          icon="mdi:chart-line"
+          class="mr-2"
+        />
         Kontenprognose
       </a>
       <a
@@ -367,7 +396,10 @@ onMounted(() => {
         :class="{ 'tab-active': activeTab === 'categories' }"
         @click="activeTab = 'categories'"
       >
-        <Icon icon="mdi:chart-areaspline" class="mr-2" />
+        <Icon
+          icon="mdi:chart-areaspline"
+          class="mr-2"
+        />
         Kategorienprognose
       </a>
     </div>
@@ -388,7 +420,6 @@ onMounted(() => {
               <th>Quelle</th>
               <th>Ziel</th>
               <th class="text-right">Betrag</th>
-              <th class="text-center">Status</th>
               <th class="text-right">Aktionen</th>
             </tr>
           </thead>
@@ -400,7 +431,7 @@ onMounted(() => {
               <td>{{ formatDate(e.date) }}</td>
               <td class="text-center">
                 <div
-                  class="tooltip"
+                  class="tooltip tooltip-primary"
                   :data-tip="
                     getTransactionTypeLabel(e.transaction.transactionType)
                   "
@@ -432,46 +463,72 @@ onMounted(() => {
                   :show-zero="true"
                 />
               </td>
-              <td class="text-center">
-                <span
-                  class="badge"
-                  :class="
-                    e.transaction.isActive ? 'badge-success' : 'badge-error'
-                  "
-                >
-                  {{ e.transaction.isActive ? "Aktiv" : "Inaktiv" }}
-                </span>
-                <span
-                  v-if="e.transaction.autoExecute"
-                  class="badge badge-info ml-1"
-                  >Auto</span
-                >
-              </td>
               <td class="text-right">
                 <div class="flex justify-end space-x-1">
-                  <button
-                    class="btn btn-ghost btn-xs border-none"
-                    @click="executePlanning(e.transaction.id, e.date)"
+                  <div
+                    class="tooltip tooltip-success"
+                    data-tip="Planungstransaktion ausführen und echte Transaktion erstellen"
                   >
-                    <Icon icon="mdi:play" class="text-base text-success" />
-                  </button>
-                  <button
-                    class="btn btn-ghost btn-xs border-none"
-                    @click="editPlanning(e.transaction)"
+                    <button
+                      class="btn btn-ghost btn-xs border-none"
+                      @click="executePlanning(e.transaction.id, e.date)"
+                    >
+                      <Icon
+                        icon="mdi:play"
+                        class="text-base text-success"
+                      />
+                    </button>
+                  </div>
+                  <div
+                    class="tooltip tooltip-warning"
+                    data-tip="Planungstransaktion überspringen (als erledigt markieren ohne Transaktion zu erstellen)"
                   >
-                    <Icon icon="mdi:pencil" class="text-base" />
-                  </button>
-                  <button
-                    class="btn btn-ghost btn-xs border-none text-error/75"
-                    @click="deletePlanning(e.transaction)"
+                    <button
+                      class="btn btn-ghost btn-xs border-none"
+                      @click="skipPlanning(e.transaction.id, e.date)"
+                    >
+                      <Icon
+                        icon="mdi:skip-next"
+                        class="text-base text-warning"
+                      />
+                    </button>
+                  </div>
+                  <div
+                    class="tooltip tooltip-info"
+                    data-tip="Planungstransaktion bearbeiten"
                   >
-                    <Icon icon="mdi:trash-can" class="text-base" />
-                  </button>
+                    <button
+                      class="btn btn-ghost btn-xs border-none"
+                      @click="editPlanning(e.transaction)"
+                    >
+                      <Icon
+                        icon="mdi:pencil"
+                        class="text-base"
+                      />
+                    </button>
+                  </div>
+                  <div
+                    class="tooltip tooltip-error"
+                    data-tip="Planungstransaktion löschen"
+                  >
+                    <button
+                      class="btn btn-ghost btn-xs border-none text-error/75"
+                      @click="deletePlanning(e.transaction)"
+                    >
+                      <Icon
+                        icon="mdi:trash-can"
+                        class="text-base"
+                      />
+                    </button>
+                  </div>
                 </div>
               </td>
             </tr>
             <tr v-if="paginatedTransactions.length === 0">
-              <td colspan="9" class="text-center py-4">
+              <td
+                colspan="8"
+                class="text-center py-4"
+              >
                 Keine anstehenden Transaktionen im ausgewählten Zeitraum.
               </td>
             </tr>
@@ -510,7 +567,10 @@ onMounted(() => {
     </div>
 
     <!-- Modals -->
-    <div v-if="showNewPlanningModal" class="modal modal-open">
+    <div
+      v-if="showNewPlanningModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-3xl">
         <h3 class="font-bold text-lg mb-4">Neue geplante Transaktion</h3>
         <PlanningTransactionForm

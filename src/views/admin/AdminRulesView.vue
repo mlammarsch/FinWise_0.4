@@ -88,12 +88,20 @@ const deleteRule = (rule: AutomationRule) => {
 };
 
 // Regel aktivieren/deaktivieren
-const toggleRuleActive = (rule: AutomationRule) => {
-  ruleStore.updateRule(rule.id, { isActive: !rule.isActive });
-  debugLog("[AdminRulesView] Toggled rule active state", {
-    id: rule.id,
-    isActive: !rule.isActive,
-  });
+const toggleRuleActive = async (rule: AutomationRule) => {
+  try {
+    const newStatus = !rule.isActive;
+    await ruleStore.updateRule(rule.id, { isActive: newStatus });
+    debugLog("[AdminRulesView] Toggled rule active state", {
+      id: rule.id,
+      isActive: newStatus,
+    });
+  } catch (error) {
+    console.error(
+      `Fehler beim Umschalten des Regel-Status für "${rule.name}":`,
+      error
+    );
+  }
 };
 
 // Regel auf bestehende Transaktionen anwenden (Test)
@@ -198,62 +206,66 @@ function formatStage(stage: string): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="rule in paginatedRules" :key="rule.id">
+              <tr
+                v-for="rule in paginatedRules"
+                :key="rule.id"
+              >
                 <td>{{ rule.name }}</td>
                 <td>{{ rule.description || "-" }}</td>
                 <td>{{ formatStage(rule.stage) }}</td>
                 <td>{{ rule.priority }}</td>
-                <td>{{ rule.conditions.length }}</td>
-                <td>{{ rule.actions.length }}</td>
+                <td>{{ rule.conditions?.length || 0 }}</td>
+                <td>{{ rule.actions?.length || 0 }}</td>
                 <td>
-                  <span
-                    class="badge"
+                  <div
+                    class="badge rounded-full badge-soft cursor-pointer hover:opacity-80 transition-opacity"
                     :class="rule.isActive ? 'badge-success' : 'badge-error'"
+                    @click="toggleRuleActive(rule)"
+                    :title="`Klicken um Status zu ${
+                      rule.isActive ? 'Inaktiv' : 'Aktiv'
+                    } zu ändern`"
                   >
                     {{ rule.isActive ? "Aktiv" : "Inaktiv" }}
-                  </span>
+                  </div>
                 </td>
                 <td class="text-right">
                   <div class="flex justify-end space-x-1">
                     <button
                       class="btn btn-ghost btn-xs border-none"
-                      @click="toggleRuleActive(rule)"
-                      :title="rule.isActive ? 'Deaktivieren' : 'Aktivieren'"
-                    >
-                      <Icon
-                        :icon="
-                          rule.isActive
-                            ? 'mdi:toggle-switch'
-                            : 'mdi:toggle-switch-off'
-                        "
-                        class="text-base"
-                        :class="rule.isActive ? 'text-success' : 'text-error'"
-                      />
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
                       @click="editRule(rule)"
                     >
-                      <Icon icon="mdi:pencil" class="text-base" />
+                      <Icon
+                        icon="mdi:pencil"
+                        class="text-base"
+                      />
                     </button>
                     <button
                       class="btn btn-ghost btn-xs border-none text-warning"
                       @click="applyRuleToTransactions(rule)"
                     >
-                      <Icon icon="mdi:play" class="text-base" />
+                      <Icon
+                        icon="mdi:play"
+                        class="text-base"
+                      />
                     </button>
                     <button
                       class="btn btn-ghost btn-xs border-none text-error/75"
                       @click="deleteRule(rule)"
                     >
-                      <Icon icon="mdi:trash-can" class="text-base" />
+                      <Icon
+                        icon="mdi:trash-can"
+                        class="text-base"
+                      />
                     </button>
                   </div>
                 </td>
               </tr>
               <!-- Leere Tabelle Hinweis -->
               <tr v-if="paginatedRules.length === 0">
-                <td colspan="8" class="text-center py-4">
+                <td
+                  colspan="8"
+                  class="text-center py-4"
+                >
                   Keine Regeln vorhanden. Erstellen Sie eine mit dem Button
                   "Neue Regel".
                 </td>
@@ -274,7 +286,10 @@ function formatStage(stage: string): string {
     </div>
 
     <!-- Modals -->
-    <div v-if="showNewRuleModal" class="modal modal-open">
+    <div
+      v-if="showNewRuleModal"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-4xl">
         <h3 class="font-bold text-lg mb-4">Neue Regel</h3>
         <RuleForm
@@ -289,7 +304,10 @@ function formatStage(stage: string): string {
       ></div>
     </div>
 
-    <div v-if="showEditRuleModal && selectedRule" class="modal modal-open">
+    <div
+      v-if="showEditRuleModal && selectedRule"
+      class="modal modal-open"
+    >
       <div class="modal-box max-w-4xl">
         <h3 class="font-bold text-lg mb-4">Regel bearbeiten</h3>
         <RuleForm

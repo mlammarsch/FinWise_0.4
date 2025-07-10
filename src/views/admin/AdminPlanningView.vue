@@ -18,7 +18,7 @@ import {
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
-import { debugLog } from "@/utils/logger";
+import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import PagingComponent from "@/components/ui/PagingComponent.vue";
 import { PlanningService } from "@/services/PlanningService";
 import { Icon } from "@iconify/vue";
@@ -93,10 +93,41 @@ function deletePlanning(planning: PlanningTransaction) {
   }
 }
 
-function toggleActivation(planning: PlanningTransaction) {
-  PlanningService.updatePlanningTransaction(planning.id, {
-    isActive: !planning.isActive,
-  });
+/**
+ * Schaltet den aktiven Status einer Planungstransaktion um
+ */
+async function togglePlanningStatus(planning: PlanningTransaction) {
+  try {
+    const newStatus = !planning.isActive;
+    const success = await PlanningService.updatePlanningTransaction(
+      planning.id,
+      {
+        isActive: newStatus,
+      }
+    );
+
+    if (success) {
+      infoLog(
+        "AdminPlanningView",
+        `Planungstransaktion "${planning.name}" Status geändert zu: ${
+          newStatus ? "Aktiv" : "Inaktiv"
+        }`,
+        { planningId: planning.id, newStatus }
+      );
+    } else {
+      errorLog(
+        "AdminPlanningView",
+        `Fehler beim Ändern des Status von Planungstransaktion "${planning.name}"`,
+        { planningId: planning.id, targetStatus: newStatus }
+      );
+    }
+  } catch (error) {
+    errorLog(
+      "AdminPlanningView",
+      `Fehler beim Umschalten des Planungstransaktion-Status für "${planning.name}"`,
+      { planningId: planning.id, error }
+    );
+  }
 }
 
 // Button: Alle fälligen
@@ -215,14 +246,20 @@ function getTargetName(planning: PlanningTransaction): string {
           class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
           @click="executeAllDuePlannings"
         >
-          <Icon icon="mdi:play-circle" class="mr-2 text-base" />
+          <Icon
+            icon="mdi:play-circle"
+            class="mr-2 text-base"
+          />
           Alle fälligen ausführen
         </button>
         <button
           class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
           @click="createPlanning"
         >
-          <Icon icon="mdi:plus" class="mr-2 text-base" />
+          <Icon
+            icon="mdi:plus"
+            class="mr-2 text-base"
+          />
           Neue Planung
         </button>
       </div>
@@ -250,7 +287,10 @@ function getTargetName(planning: PlanningTransaction): string {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="planning in paginatedPlannings" :key="planning.id">
+            <tr
+              v-for="planning in paginatedPlannings"
+              :key="planning.id"
+            >
               <td>{{ planning.name }}</td>
               <td class="text-center">
                 <div
@@ -275,17 +315,26 @@ function getTargetName(planning: PlanningTransaction): string {
               <td>{{ formatRecurrencePattern(planning.recurrencePattern) }}</td>
               <td>{{ planning.startDate }}</td>
               <td class="text-right">
-                <CurrencyDisplay :amount="planning.amount" :show-zero="true" />
+                <CurrencyDisplay
+                  :amount="planning.amount"
+                  :show-zero="true"
+                />
               </td>
               <td>
                 <div class="flex space-x-1">
-                  <span
-                    class="badge"
+                  <div
+                    class="badge rounded-full badge-soft cursor-pointer hover:opacity-80 transition-opacity"
                     :class="planning.isActive ? 'badge-success' : 'badge-error'"
+                    @click="togglePlanningStatus(planning)"
+                    :title="`Klicken um Status zu ${
+                      planning.isActive ? 'Inaktiv' : 'Aktiv'
+                    } zu ändern`"
                   >
                     {{ planning.isActive ? "Aktiv" : "Inaktiv" }}
-                  </span>
-                  <span v-if="planning.autoExecute" class="badge badge-info"
+                  </div>
+                  <span
+                    v-if="planning.autoExecute"
+                    class="badge badge-info"
                     >Auto</span
                   >
                 </div>
@@ -294,36 +343,30 @@ function getTargetName(planning: PlanningTransaction): string {
                 <div class="flex justify-end space-x-1">
                   <button
                     class="btn btn-ghost btn-xs border-none"
-                    @click="toggleActivation(planning)"
-                    :title="planning.isActive ? 'Deaktivieren' : 'Aktivieren'"
-                  >
-                    <Icon
-                      :icon="
-                        planning.isActive
-                          ? 'mdi:toggle-switch'
-                          : 'mdi:toggle-switch-off'
-                      "
-                      class="text-base"
-                      :class="planning.isActive ? 'text-success' : 'text-error'"
-                    />
-                  </button>
-                  <button
-                    class="btn btn-ghost btn-xs border-none"
                     @click="editPlanning(planning)"
                   >
-                    <Icon icon="mdi:pencil" class="text-base" />
+                    <Icon
+                      icon="mdi:pencil"
+                      class="text-base"
+                    />
                   </button>
                   <button
                     class="btn btn-ghost btn-xs border-none text-error/75"
                     @click="deletePlanning(planning)"
                   >
-                    <Icon icon="mdi:trash-can" class="text-base" />
+                    <Icon
+                      icon="mdi:trash-can"
+                      class="text-base"
+                    />
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="paginatedPlannings.length === 0">
-              <td colspan="10" class="text-center py-4">
+              <td
+                colspan="10"
+                class="text-center py-4"
+              >
                 Keine geplanten Transaktionen vorhanden.
               </td>
             </tr>
@@ -340,7 +383,10 @@ function getTargetName(planning: PlanningTransaction): string {
     </div>
   </div>
 
-  <div v-if="showNewPlanningModal" class="modal modal-open">
+  <div
+    v-if="showNewPlanningModal"
+    class="modal modal-open"
+  >
     <div class="modal-box max-w-3xl">
       <h3 class="font-bold text-lg mb-4">Neue geplante Transaktion</h3>
       <PlanningTransactionForm
