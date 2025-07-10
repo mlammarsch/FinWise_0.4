@@ -238,31 +238,30 @@ const displayLogoUrl = computed(() => {
     @submit.prevent="saveAccount"
     class="space-y-4"
   >
-    <div class="form-control">
-      <label class="label"
-        ><span class="label-text">Name</span
-        ><span class="text-error">*</span></label
-      >
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">
+        Name<span class="text-error">*</span>
+      </legend>
       <input
         id="account-name"
         type="text"
         v-model="name"
-        class="input input-bordered"
+        class="input input-bordered w-full"
         required
         placeholder="Kontoname"
         autofocus
       />
-    </div>
+    </fieldset>
 
-    <div class="form-control">
-      <label class="label"><span class="label-text">Beschreibung</span></label>
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Beschreibung</legend>
       <input
         type="text"
         v-model="description"
-        class="input input-bordered"
+        class="input input-bordered w-full"
         placeholder="Kurze Beschreibung"
       />
-    </div>
+    </fieldset>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <fieldset class="fieldset">
@@ -300,49 +299,45 @@ const displayLogoUrl = computed(() => {
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="form-control">
-        <label class="label"><span class="label-text">IBAN</span></label>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">IBAN</legend>
         <input
           type="text"
           v-model="iban"
-          class="input input-bordered"
+          class="input input-bordered w-full"
           placeholder="DE12 3456 7890 1234 5678 90"
         />
-      </div>
-      <div class="form-control">
-        <label class="label"
-          ><span class="label-text"
-            >Offset (Nulllinie für Statistiken)</span
-          ></label
-        >
+      </fieldset>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          Offset (Nulllinie für Statistiken)
+        </legend>
         <CurrencyInput
           v-model="offset"
           placeholder="0,00"
         />
-      </div>
+      </fieldset>
     </div>
 
-    <div class="form-control">
-      <label class="label"><span class="label-text">Kreditlimit</span></label>
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Kreditlimit</legend>
       <CurrencyInput
         v-model="creditLimit"
         placeholder="0,00"
       />
-    </div>
+    </fieldset>
 
-    <div class="form-control">
-      <label class="label"><span class="label-text">Notizen</span></label>
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Notizen</legend>
       <textarea
         v-model="note"
-        class="textarea textarea-bordered h-24"
+        class="textarea textarea-bordered h-24 w-full"
         placeholder="Zusätzliche Informationen"
       ></textarea>
-    </div>
+    </fieldset>
 
-    <div class="form-control">
-      <label class="label"
-        ><span class="label-text">Konto Logo (JPG/PNG)</span></label
-      >
+    <fieldset class="fieldset">
+      <legend class="fieldset-legend">Konto Logo (JPG/PNG)</legend>
       <input
         type="file"
         accept="image/jpeg,image/png"
@@ -386,7 +381,7 @@ const displayLogoUrl = computed(() => {
           Bild entfernen
         </button>
       </div>
-    </div>
+    </fieldset>
 
     <div class="flex justify-end space-x-2 pt-4">
       <button
