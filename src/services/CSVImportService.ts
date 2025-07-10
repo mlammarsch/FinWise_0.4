@@ -13,6 +13,7 @@ import { useRecipientStore } from "@/stores/recipientStore";
 import { useTransactionStore } from "@/stores/transactionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { TransactionService } from "@/services/TransactionService";
+import { TransactionType } from "@/types";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import { parseCSV as parseCSVUtil, parseAmount, calculateStringSimilarity } from "@/utils/csvUtils";
 
@@ -657,8 +658,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
         // Ähnlicher Empfänger oder Notiz, falls verfügbar
         let similarRecipientOrNote = true;
-        if ((recipientName || notes) && tx.recipientId) {
-          const txRecipient = recipientStore.getRecipientById(tx.recipientId);
+        if ((recipientName || notes) && 'recipientId' in tx && tx.recipientId) {
+          const txRecipient = recipientStore.getRecipientById(tx.recipientId as string);
           if (txRecipient) {
             // Prüfen ob Empfängername ähnlich ist
             const recipientSimilarity = recipientName
@@ -867,7 +868,7 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         amount: amountValue,
         note: mappedColumns.value.notes ? row[mappedColumns.value.notes] : "",
         recipientId: row.recipientId || null,
-        categoryId: row.categoryId || null,
+        categoryId: row.categoryId || undefined,
         accountId: accountId,
         tagIds: row.tagIds || selectedTags.value || [],
         potentialMerge: row._potentialMerge,
@@ -957,11 +958,14 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
             const lowerName = recipientName.toLowerCase();
 
             if (createdRecipients.has(lowerName)) {
-              item.recipientId = createdRecipients.get(lowerName);
-              debugLog("CSVImportService", `Verwende bereits erstellten Empfänger: ${recipientName}`, JSON.stringify({ id: item.recipientId }));
+              const recipientId = createdRecipients.get(lowerName);
+              if (recipientId) {
+                item.recipientId = recipientId;
+                debugLog("CSVImportService", `Verwende bereits erstellten Empfänger: ${recipientName}`, JSON.stringify({ id: item.recipientId }));
+              }
             } else {
               // Neuen Empfänger erstellen
-              const newRecipient = recipientStore.addRecipient({ name: recipientName });
+              const newRecipient = await recipientStore.addRecipient({ name: recipientName });
               item.recipientId = newRecipient.id;
               createdRecipients.set(lowerName, newRecipient.id);
               infoLog("CSVImportService", `Neuer Empfänger erstellt: ${recipientName} (${newRecipient.id})`);
@@ -973,7 +977,7 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         }
 
         // Bestimme Transaktionstyp basierend auf Betrag
-        const txType = item.amount < 0 ? "EXPENSE" : "INCOME";
+        const txType: TransactionType = item.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
 
         // Transaktion erstellen
         const newTransaction = TransactionService.addTransaction({
@@ -984,7 +988,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           tagIds: item.tagIds,
           amount: item.amount,
           note: item.note,
-          recipientId: item.recipientId,
+          description: item.note, // Using note as description
+          recipientId: item.recipientId || undefined,
           type: txType,
           counterTransactionId: null,
           planningTransactionId: null,

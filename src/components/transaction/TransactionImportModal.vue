@@ -280,10 +280,26 @@ watch(
     }
   }
 );
+
+// Reagieren auf Änderungen der Mappings und Auto-Mapping erneut anwenden
+watch(
+  () => csvImportService.mappedColumns,
+  () => {
+    if (csvImportService.allParsedData.length > 0) {
+      csvImportService.applyAutoMappingToAllData();
+    }
+  },
+  { deep: true }
+);
 </script>
 
 <template>
-  <div v-if="isOpen" class="modal modal-open z-50" tabindex="-1" role="dialog">
+  <div
+    v-if="isOpen"
+    class="modal modal-open z-50"
+    tabindex="-1"
+    role="dialog"
+  >
     <div class="modal-box max-w-7xl max-h-[90vh]">
       <!-- Modal Kopfzeile mit Fortschrittsanzeige -->
       <div class="flex justify-between items-center mb-6">
@@ -316,7 +332,10 @@ watch(
       </div>
 
       <!-- SCHRITT 1: CSV-KONFIGURATION & DATENMAPPING -->
-      <div v-if="showStep1" class="space-y-6">
+      <div
+        v-if="showStep1"
+        class="space-y-6"
+      >
         <!-- Formular für Datei-Upload und Konfiguration -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <!-- Datei-Upload -->
@@ -709,7 +728,10 @@ watch(
       </div>
 
       <!-- SCHRITT 2: VORSCHAU MIT AUTO-MAPPING & BEARBEITBARKEIT -->
-      <div v-if="showStep2" class="space-y-6">
+      <div
+        v-if="showStep2"
+        class="space-y-6"
+      >
         <h4 class="font-bold text-lg mb-4">
           Transaktionsvorschau & Auto-Mapping
         </h4>
@@ -765,11 +787,11 @@ watch(
                     class="checkbox checkbox-sm"
                     :checked="
                       csvImportService.allParsedData.every(
-                        (row) => row._selected
+                        (row: any) => row._selected
                       )
                     "
                     @change="
-                      (e) => csvImportService.toggleAllRows(e.target.checked)
+                      (e) => csvImportService.toggleAllRows((e.target as HTMLInputElement).checked)
                     "
                   />
                 </th>
@@ -823,7 +845,7 @@ watch(
                       v-model="row.recipientId"
                       placeholder="Empfänger zuordnen..."
                       @update:modelValue="
-                        (recipientId) =>
+                        (recipientId: string) =>
                           csvImportService.applyRecipientToSimilarRows(
                             row,
                             recipientId
@@ -832,7 +854,12 @@ watch(
                       @create="createRecipient"
                     />
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-[150px]">
                   <div v-if="csvImportService.mappedColumns.category">
@@ -843,7 +870,7 @@ watch(
                       v-model="row.categoryId"
                       placeholder="Kategorie zuordnen..."
                       @update:modelValue="
-                        (categoryId) =>
+                        (categoryId: string) =>
                           csvImportService.applyCategoryToSimilarRows(
                             row,
                             categoryId
@@ -852,7 +879,12 @@ watch(
                       @create="createCategory"
                     />
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-auto">
                   <div
@@ -883,7 +915,12 @@ watch(
                       @blur="saveEditedNote"
                     ></textarea>
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-[100px]">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
@@ -892,7 +929,7 @@ watch(
                     :options="tagStore.tags"
                     placeholder="+"
                     @create="createTag"
-                    @update:modelValue="(tags) => updateRowTags(index, tags)"
+                    @update:modelValue="(tags: string[]) => updateRowTags(index, tags)"
                   />
                 </td>
                 <td class="text-right">
@@ -916,7 +953,10 @@ watch(
                   </div>
                   <!-- Fehler bei der Validierung -->
                   <div v-else>
-                    <Icon icon="mdi:alert-circle" class="text-error text-xl" />
+                    <Icon
+                      icon="mdi:alert-circle"
+                      class="text-error text-xl"
+                    />
                   </div>
                 </td>
               </tr>
@@ -928,7 +968,10 @@ watch(
       </div>
 
       <!-- SCHRITT 3: REVIEW & TAGGING -->
-      <div v-if="showStep3" class="space-y-6">
+      <div
+        v-if="showStep3"
+        class="space-y-6"
+      >
         <h4 class="font-bold text-lg mb-4">Review & Tagging</h4>
 
         <!-- Tag-Auswahl für alle Transaktionen entfernt -->
@@ -996,7 +1039,12 @@ watch(
                       row[csvImportService.mappedColumns.recipient]
                     }}</span>
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-[150px]">
                   <!-- Nicht mehr editierbar -->
@@ -1024,7 +1072,12 @@ watch(
                       row[csvImportService.mappedColumns.category]
                     }}</span>
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-auto">
                   <!-- Klickbare Notizen -->
@@ -1056,7 +1109,12 @@ watch(
                       @blur="saveEditedNote"
                     ></textarea>
                   </div>
-                  <div v-else class="text-base-content/50">-</div>
+                  <div
+                    v-else
+                    class="text-base-content/50"
+                  >
+                    -
+                  </div>
                 </td>
                 <td class="w-[100px]">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
@@ -1065,7 +1123,7 @@ watch(
                     :options="tagStore.tags"
                     placeholder="+"
                     @create="createTag"
-                    @update:modelValue="(tags) => updateRowTags(index, tags)"
+                    @update:modelValue="(tags: string[]) => updateRowTags(index, tags)"
                   />
                 </td>
                 <td class="w-[60px] text-center">
@@ -1089,7 +1147,10 @@ watch(
                   </div>
                   <!-- Fehler bei der Validierung -->
                   <div v-else>
-                    <Icon icon="mdi:alert-circle" class="text-error text-xl" />
+                    <Icon
+                      icon="mdi:alert-circle"
+                      class="text-error text-xl"
+                    />
                   </div>
                 </td>
               </tr>
@@ -1100,7 +1161,10 @@ watch(
         <!-- Paginierung entfernt -->
 
         <!-- Import-Status -->
-        <div v-if="csvImportService.importStatus !== 'idle'" class="mt-6">
+        <div
+          v-if="csvImportService.importStatus !== 'idle'"
+          class="mt-6"
+        >
           <div
             class="alert"
             :class="{
@@ -1120,7 +1184,10 @@ watch(
               v-else-if="csvImportService.importStatus === 'success'"
               class="flex items-center gap-2"
             >
-              <Icon icon="mdi:check-circle" class="text-xl" />
+              <Icon
+                icon="mdi:check-circle"
+                class="text-xl"
+              />
               <span
                 >{{
                   csvImportService.importedTransactions.length
@@ -1132,7 +1199,10 @@ watch(
               v-else-if="csvImportService.importStatus === 'error'"
               class="flex items-center gap-2"
             >
-              <Icon icon="mdi:alert-circle" class="text-xl" />
+              <Icon
+                icon="mdi:alert-circle"
+                class="text-xl"
+              />
               <span>{{ csvImportService.error }}</span>
             </div>
           </div>
@@ -1154,7 +1224,7 @@ watch(
               <CurrencyDisplay
                 :amount="
                   csvImportService.importedTransactions.reduce(
-                    (sum, tx) => sum + tx.amount,
+                    (sum: number, tx: any) => sum + tx.amount,
                     0
                   )
                 "
@@ -1164,7 +1234,7 @@ watch(
               <span class="font-semibold">Mit Empfänger:</span>
               {{
                 csvImportService.importedTransactions.filter(
-                  (tx) => tx.recipientId
+                  (tx: any) => tx.recipientId
                 ).length
               }}
             </div>
@@ -1172,7 +1242,7 @@ watch(
               <span class="font-semibold">Mit Kategorie:</span>
               {{
                 csvImportService.importedTransactions.filter(
-                  (tx) => tx.categoryId
+                  (tx: any) => tx.categoryId
                 ).length
               }}
             </div>

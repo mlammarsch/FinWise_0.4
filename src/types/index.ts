@@ -76,6 +76,7 @@ export interface Transaction {
   id: string
   accountId: string
   categoryId?: string
+  recipientId?: string
   date: string
   valueDate: string
   amount: number
