@@ -162,7 +162,17 @@ function closeModal() {
     class="modal modal-open"
     @keydown.esc="closeModal"
   >
-    <div class="modal-box max-w-lg">
+    <div class="modal-box max-w-lg relative">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
+        @click="closeModal"
+      >
+        <Icon
+          icon="mdi:close"
+          class="text-lg"
+        />
+      </button>
       <h3 class="font-bold text-lg mb-4">
         Konto abgleichen: {{ account.name }}
       </h3>

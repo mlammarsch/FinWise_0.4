@@ -4,6 +4,7 @@ import { AccountGroup } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import { ImageService } from "../../services/ImageService"; // Import ImageService
 import { useTenantStore } from "../../stores/tenantStore";
+import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
   group?: AccountGroup;
@@ -216,120 +217,129 @@ onMounted(() => {
 </script>
 
 <template>
-  <form
-    @submit.prevent="saveGroup"
-    class="space-y-4"
-  >
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Name der Kontogruppe</span>
-        <span class="text-error">*</span>
-      </label>
-      <input
-        type="text"
-        v-model="name"
-        class="input input-bordered"
-        required
-        placeholder="Name der Gruppe"
+  <div class="relative">
+    <!-- X-Icon zum Schließen -->
+    <button
+      type="button"
+      class="btn btn-ghost btn-sm absolute top-0 right-0 z-10"
+      @click="emit('cancel')"
+    >
+      <Icon
+        icon="mdi:close"
+        class="text-lg"
       />
-    </div>
+    </button>
 
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Sortierung</span>
-      </label>
-      <input
-        type="number"
-        v-model="sortOrder"
-        class="input input-bordered"
-        min="0"
-      />
-    </div>
-
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Logo (JPG oder PNG)</span>
-      </label>
-      <div class="flex items-center space-x-4">
-        <div
-          v-if="displayLogoUrl"
-          class="avatar"
-        >
-          <div class="w-24 rounded">
-            <img
-              :src="displayLogoUrl"
-              alt="Aktuelles Logo"
-            />
-          </div>
-        </div>
-        <div
-          v-else
-          class="avatar placeholder"
-        >
-          <div class="bg-neutral-focus text-neutral-content rounded w-24">
-            <span>Kein Logo</span>
-          </div>
-        </div>
-
+    <form
+      @submit.prevent="saveGroup"
+      class="space-y-4"
+    >
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          Name der Kontogruppe<span class="text-error">*</span>
+        </legend>
         <input
-          type="file"
-          accept="image/png, image/jpeg"
-          class="hidden"
-          ref="fileInput"
-          @change="handleImageUpload"
+          type="text"
+          v-model="name"
+          class="input input-bordered w-full"
+          required
+          placeholder="Name der Gruppe"
         />
+      </fieldset>
 
-        <div class="flex flex-col space-y-2">
-          <button
-            type="button"
-            class="btn btn-sm btn-outline"
-            @click="($refs.fileInput as HTMLInputElement)?.click()"
-            :disabled="isUploadingLogo"
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Sortierung</legend>
+        <input
+          type="number"
+          v-model="sortOrder"
+          class="input input-bordered w-full"
+          min="0"
+        />
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Logo (JPG oder PNG)</legend>
+        <div class="flex items-center space-x-4">
+          <div
+            v-if="displayLogoUrl"
+            class="avatar"
           >
-            <span
-              v-if="isUploadingLogo"
-              class="loading loading-spinner loading-xs mr-2"
-            ></span>
-            {{ displayLogoUrl ? "Logo ändern" : "Logo hochladen" }}
-          </button>
-          <button
-            v-if="displayLogoUrl && !isUploadingLogo"
-            type="button"
-            class="btn btn-sm btn-error btn-outline"
-            @click="removeImage"
-            :disabled="isUploadingLogo"
+            <div class="w-24 rounded">
+              <img
+                :src="displayLogoUrl"
+                alt="Aktuelles Logo"
+              />
+            </div>
+          </div>
+          <div
+            v-else
+            class="avatar placeholder"
           >
-            Logo löschen
-          </button>
+            <div class="bg-neutral-focus text-neutral-content rounded w-24">
+              <span>Kein Logo</span>
+            </div>
+          </div>
+
+          <input
+            type="file"
+            accept="image/png, image/jpeg"
+            class="hidden"
+            ref="fileInput"
+            @change="handleImageUpload"
+          />
+
+          <div class="flex flex-col space-y-2">
+            <button
+              type="button"
+              class="btn btn-sm btn-outline"
+              @click="($refs.fileInput as HTMLInputElement)?.click()"
+              :disabled="isUploadingLogo"
+            >
+              <span
+                v-if="isUploadingLogo"
+                class="loading loading-spinner loading-xs mr-2"
+              ></span>
+              {{ displayLogoUrl ? "Logo ändern" : "Logo hochladen" }}
+            </button>
+            <button
+              v-if="displayLogoUrl && !isUploadingLogo"
+              type="button"
+              class="btn btn-sm btn-error btn-outline"
+              @click="removeImage"
+              :disabled="isUploadingLogo"
+            >
+              Logo löschen
+            </button>
+          </div>
         </div>
-      </div>
-      <div
-        v-if="uploadMessage"
-        :class="[
-          'mt-2 p-2 rounded-md text-sm',
-          uploadMessage.type === 'success'
-            ? 'bg-success text-success-content'
-            : 'bg-error text-error-content',
-        ]"
-      >
-        {{ uploadMessage.text }}
-      </div>
-    </div>
+        <div
+          v-if="uploadMessage"
+          :class="[
+            'mt-2 p-2 rounded-md text-sm',
+            uploadMessage.type === 'success'
+              ? 'bg-success text-success-content'
+              : 'bg-error text-error-content',
+          ]"
+        >
+          {{ uploadMessage.text }}
+        </div>
+      </fieldset>
 
-    <div class="flex justify-end space-x-2 pt-4">
-      <button
-        type="button"
-        class="btn"
-        @click="emit('cancel')"
-      >
-        Abbrechen
-      </button>
-      <button
-        type="submit"
-        class="btn btn-primary"
-      >
-        Speichern
-      </button>
-    </div>
-  </form>
+      <div class="flex justify-end space-x-2 pt-4">
+        <button
+          type="button"
+          class="btn"
+          @click="emit('cancel')"
+        >
+          Abbrechen
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >
+          Speichern
+        </button>
+      </div>
+    </form>
+  </div>
 </template>

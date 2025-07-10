@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { Category } from "../../types";
 import { CategoryService } from "../../services/CategoryService";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
+import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
   category?: Category;
@@ -90,165 +91,173 @@ const parentCategories = computed(() => {
 </script>
 
 <template>
-  <form
-    @submit.prevent="saveCategory"
-    class="space-y-4"
-  >
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Name</span>
-        <span class="text-error">*</span>
-      </label>
-      <input
-        type="text"
-        v-model="name"
-        class="input input-bordered"
-        required
-        placeholder="Kategoriename"
-      />
-    </div>
-
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Beschreibung</span>
-      </label>
-      <input
-        type="text"
-        v-model="description"
-        class="input input-bordered"
-        placeholder="Kurze Beschreibung"
-      />
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text">Kategoriegruppe</span>
-          <span class="text-error">*</span>
-        </label>
-        <select
-          v-model="categoryGroupId"
-          class="select select-bordered w-full"
-          required
-        >
-          <option
-            v-for="group in categoryGroups"
-            :key="group.id"
-            :value="group.id"
-          >
-            {{ group.name }}
-          </option>
-        </select>
-      </div>
-
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text">Übergeordnete Kategorie</span>
-        </label>
-        <select
-          v-model="parentCategoryId"
-          class="select select-bordered w-full"
-        >
-          <option :value="undefined">Keine (Hauptkategorie)</option>
-          <option
-            v-for="category in parentCategories"
-            :key="category.id"
-            :value="category.id"
-          >
-            {{ category.name }}
-          </option>
-        </select>
-      </div>
-    </div>
-
-    <div class="form-control">
-      <label class="label cursor-pointer">
-        <span class="label-text">Als Sparziel verwenden</span>
-        <input
-          type="checkbox"
-          v-model="isSavingsGoal"
-          class="toggle toggle-primary"
-        />
-      </label>
-    </div>
-
-    <div
-      v-if="isSavingsGoal"
-      class="grid grid-cols-1 md:grid-cols-2 gap-4"
+  <div class="relative">
+    <!-- X-Icon zum Schließen -->
+    <button
+      type="button"
+      class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+      @click="emit('cancel')"
     >
+      <Icon
+        icon="mdi:close"
+        class="text-lg"
+      />
+    </button>
+
+    <form
+      @submit.prevent="saveCategory"
+      class="space-y-4"
+    >
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          Name<span class="text-error">*</span>
+        </legend>
+        <input
+          type="text"
+          v-model="name"
+          class="input input-bordered w-full"
+          required
+          placeholder="Kategoriename"
+        />
+      </fieldset>
+
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Beschreibung</legend>
+        <input
+          type="text"
+          v-model="description"
+          class="input input-bordered w-full"
+          placeholder="Kurze Beschreibung"
+        />
+      </fieldset>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Kategoriegruppe<span class="text-error">*</span>
+          </legend>
+          <select
+            v-model="categoryGroupId"
+            class="select select-bordered w-full"
+            required
+          >
+            <option
+              v-for="group in categoryGroups"
+              :key="group.id"
+              :value="group.id"
+            >
+              {{ group.name }}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Übergeordnete Kategorie</legend>
+          <select
+            v-model="parentCategoryId"
+            class="select select-bordered w-full"
+          >
+            <option :value="undefined">Keine (Hauptkategorie)</option>
+            <option
+              v-for="category in parentCategories"
+              :key="category.id"
+              :value="category.id"
+            >
+              {{ category.name }}
+            </option>
+          </select>
+        </fieldset>
+      </div>
+
       <div class="form-control">
-        <label class="label">
-          <span class="label-text">Zielbetrag</span>
-          <span class="text-error">*</span>
-        </label>
-        <div class="input-group">
+        <label class="label cursor-pointer">
+          <span class="label-text">Als Sparziel verwenden</span>
           <input
-            type="text"
-            :value="formatNumber(targetAmount)"
-            @input="
-              targetAmount = parseNumber(
-                ($event.target as HTMLInputElement).value
-              )
-            "
-            class="input input-bordered w-full"
-            :required="isSavingsGoal"
-            placeholder="0,00"
+            type="checkbox"
+            v-model="isSavingsGoal"
+            class="toggle toggle-primary"
+          />
+        </label>
+      </div>
+
+      <div
+        v-if="isSavingsGoal"
+        class="grid grid-cols-1 md:grid-cols-2 gap-4"
+      >
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Zielbetrag</span>
+            <span class="text-error">*</span>
+          </label>
+          <div class="input-group">
+            <input
+              type="text"
+              :value="formatNumber(targetAmount)"
+              @input="
+                targetAmount = parseNumber(
+                  ($event.target as HTMLInputElement).value
+                )
+              "
+              class="input input-bordered w-full"
+              :required="isSavingsGoal"
+              placeholder="0,00"
+            />
+          </div>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Zieldatum</span>
+          </label>
+          <input
+            type="date"
+            v-model="targetDate"
+            class="input input-bordered"
+            placeholder="Zieldatum"
           />
         </div>
       </div>
 
-      <div class="form-control">
+      <div
+        v-if="isEdit"
+        class="form-control"
+      >
         <label class="label">
-          <span class="label-text">Zieldatum</span>
+          <span class="label-text">Aktueller Saldo</span>
         </label>
-        <input
-          type="date"
-          v-model="targetDate"
-          class="input input-bordered"
-          placeholder="Zieldatum"
+        <CurrencyDisplay
+          :amount="balance"
+          :show-zero="true"
+          :as-integer="false"
         />
       </div>
-    </div>
 
-    <div
-      v-if="isEdit"
-      class="form-control"
-    >
-      <label class="label">
-        <span class="label-text">Aktueller Saldo</span>
-      </label>
-      <CurrencyDisplay
-        :amount="balance"
-        :show-zero="true"
-        :as-integer="false"
-      />
-    </div>
+      <div class="form-control">
+        <label class="label cursor-pointer">
+          <span class="label-text">Aktiv</span>
+          <input
+            type="checkbox"
+            v-model="isActive"
+            class="toggle toggle-primary"
+          />
+        </label>
+      </div>
 
-    <div class="form-control">
-      <label class="label cursor-pointer">
-        <span class="label-text">Aktiv</span>
-        <input
-          type="checkbox"
-          v-model="isActive"
-          class="toggle toggle-primary"
-        />
-      </label>
-    </div>
-
-    <div class="flex justify-end space-x-2 pt-4">
-      <button
-        type="button"
-        class="btn"
-        @click="$emit('cancel')"
-      >
-        Abbrechen
-      </button>
-      <button
-        type="submit"
-        class="btn btn-primary"
-      >
-        Speichern
-      </button>
-    </div>
-  </form>
+      <div class="flex justify-end space-x-2 pt-4">
+        <button
+          type="button"
+          class="btn"
+          @click="$emit('cancel')"
+        >
+          Abbrechen
+        </button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+        >
+          Speichern
+        </button>
+      </div>
+    </form>
+  </div>
 </template>

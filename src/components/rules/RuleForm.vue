@@ -36,6 +36,7 @@ import SelectAccount from "@/components/ui/SelectAccount.vue";
 import SelectRecipient from "@/components/ui/SelectRecipient.vue";
 import { debugLog } from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
+import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
   rule?: AutomationRule;
@@ -396,424 +397,439 @@ function closeTestResults() {
 </script>
 
 <template>
-  <form
-    @submit.prevent="saveRule"
-    class="space-y-4"
-  >
-    <!-- Grundlegende Regelinformationen -->
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Regelname</span>
-        <span class="text-error">*</span>
-      </label>
-      <input
-        type="text"
-        v-model="name"
-        class="input input-bordered"
-        required
-        placeholder="Name der Regel"
+  <div class="relative">
+    <!-- X-Icon zum Schließen -->
+    <button
+      type="button"
+      class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+      @click="emit('cancel')"
+    >
+      <Icon
+        icon="mdi:close"
+        class="text-lg"
       />
-    </div>
+    </button>
 
-    <div class="form-control">
-      <label class="label">
-        <span class="label-text">Beschreibung</span>
-      </label>
-      <textarea
-        v-model="description"
-        class="textarea textarea-bordered"
-        placeholder="Optionale Beschreibung der Regel"
-      ></textarea>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-      <!-- Ausführungsphase -->
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text">Ausführungsphase</span>
-          <Icon
-            icon="mdi:help-circle-outline"
-            class="text-base-content/50 cursor-help"
-            title="Bestimmt, wann die Regel ausgeführt wird. PRE: Vor anderen Regeln, DEFAULT: Normale Ausführung, POST: Nach allen anderen Regeln."
-          />
-        </label>
-        <select
-          v-model="stage"
-          class="select select-bordered w-full"
-        >
-          <option value="PRE">PRE (Vorab)</option>
-          <option value="DEFAULT">DEFAULT (Normal)</option>
-          <option value="POST">POST (Nachgelagert)</option>
-        </select>
-      </div>
-
-      <!-- Priorität -->
-      <div class="form-control">
-        <label class="label">
-          <span class="label-text">Priorität</span>
-          <Icon
-            icon="mdi:help-circle-outline"
-            class="text-base-content/50 cursor-help"
-            title="Kleinere Werte werden zuerst ausgeführt. Standard ist 100."
-          />
-        </label>
+    <form
+      @submit.prevent="saveRule"
+      class="space-y-4"
+    >
+      <!-- Grundlegende Regelinformationen -->
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">
+          Regelname<span class="text-error">*</span>
+        </legend>
         <input
-          type="number"
-          v-model="priority"
-          class="input input-bordered"
-          min="1"
-          max="999"
+          type="text"
+          v-model="name"
+          class="input input-bordered w-full"
+          required
+          placeholder="Name der Regel"
         />
-      </div>
+      </fieldset>
 
-      <!-- Aktiv/Inaktiv -->
-      <div class="form-control pt-8">
-        <label class="cursor-pointer label justify-start">
-          <input
-            type="checkbox"
-            v-model="isActive"
-            class="toggle mr-2"
-          />
-          <span class="label-text">Regel aktiv</span>
-        </label>
-      </div>
-    </div>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Beschreibung</legend>
+        <textarea
+          v-model="description"
+          class="textarea textarea-bordered w-full"
+          placeholder="Optionale Beschreibung der Regel"
+        ></textarea>
+      </fieldset>
 
-    <!-- Bedingungsteil -->
-    <div class="card bg-base-200 p-4">
-      <h3 class="text-lg font-semibold mb-4 flex items-center">
-        <Icon
-          icon="mdi:filter-outline"
-          class="mr-2"
-        />
-        Wenn alle dieser Bedingungen zutreffen:
-      </h3>
-
-      <div
-        v-for="(condition, index) in conditions"
-        :key="index"
-        class="mb-3"
-      >
-        <div class="flex items-center space-x-2">
-          <!-- Erste Dropdown: Quelle auswählen -->
-          <select
-            v-model="condition.source"
-            class="select select-bordered w-1/3"
-          >
-            <option
-              v-for="option in sourceOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-
-          <!-- Zweite Dropdown: Operator basierend auf Quellentyp -->
-          <select
-            v-model="condition.operator"
-            class="select select-bordered w-1/4"
-          >
-            <option
-              v-for="option in getOperatorOptions(condition.source)"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-
-          <!-- Dynamischer Wert-Input basierend auf der Quelle -->
-          <div class="w-1/3">
-            <!-- Konto-Auswahl -->
-            <SelectAccount
-              v-if="
-                condition.source === 'account' && condition.operator === 'is'
-              "
-              v-model="condition.value"
-              class="w-full"
-            />
-
-            <!-- Kategorie-Auswahl -->
-            <SelectCategory
-              v-else-if="
-                condition.source === 'category' && condition.operator === 'is'
-              "
-              v-model="condition.value"
-              class="w-full"
-            />
-
-            <!-- Empfänger-Auswahl -->
-            <SelectRecipient
-              v-else-if="
-                condition.source === 'recipient' && condition.operator === 'is'
-              "
-              v-model="condition.value"
-              class="w-full"
-            />
-
-            <!-- Zahleneingabe für Beträge -->
-            <input
-              v-else-if="condition.source === 'amount'"
-              type="number"
-              step="0.01"
-              v-model="condition.value"
-              class="input input-bordered w-full"
-              placeholder="Betrag (z.B. 42.99)"
-            />
-
-            <!-- Datumseingabe -->
-            <input
-              v-else-if="
-                condition.source === 'date' || condition.source === 'valueDate'
-              "
-              type="date"
-              v-model="condition.value"
-              class="input input-bordered w-full"
-            />
-
-            <!-- Standard-Texteingabe für andere Quellen -->
-            <input
-              v-else
-              type="text"
-              v-model="condition.value"
-              class="input input-bordered w-full"
-              placeholder="Wert eingeben"
-            />
-          </div>
-
-          <!-- Entfernen-Button -->
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            @click="removeCondition(index)"
-            :disabled="conditions.length <= 1"
-          >
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Ausführungsphase -->
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Ausführungsphase
             <Icon
-              icon="mdi:close"
-              class="text-error"
+              icon="mdi:help-circle-outline"
+              class="text-base-content/50 cursor-help ml-1"
+              title="Bestimmt, wann die Regel ausgeführt wird. PRE: Vor anderen Regeln, DEFAULT: Normale Ausführung, POST: Nach allen anderen Regeln."
             />
-          </button>
+          </legend>
+          <select
+            v-model="stage"
+            class="select select-bordered w-full"
+          >
+            <option value="PRE">PRE (Vorab)</option>
+            <option value="DEFAULT">DEFAULT (Normal)</option>
+            <option value="POST">POST (Nachgelagert)</option>
+          </select>
+        </fieldset>
+
+        <!-- Priorität -->
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Priorität
+            <Icon
+              icon="mdi:help-circle-outline"
+              class="text-base-content/50 cursor-help ml-1"
+              title="Kleinere Werte werden zuerst ausgeführt. Standard ist 100."
+            />
+          </legend>
+          <input
+            type="number"
+            v-model="priority"
+            class="input input-bordered w-full"
+            min="1"
+            max="999"
+          />
+        </fieldset>
+
+        <!-- Aktiv/Inaktiv -->
+        <div class="form-control pt-8">
+          <label class="cursor-pointer label justify-start">
+            <input
+              type="checkbox"
+              v-model="isActive"
+              class="toggle mr-2"
+            />
+            <span class="label-text">Regel aktiv</span>
+          </label>
         </div>
       </div>
 
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm mt-2"
-        @click="addCondition"
-      >
-        <Icon
-          icon="mdi:plus"
-          class="mr-1"
-        />
-        Weitere Bedingung hinzufügen
-      </button>
-    </div>
+      <!-- Bedingungsteil -->
+      <div class="card bg-base-200 p-4">
+        <h3 class="text-lg font-semibold mb-4 flex items-center">
+          <Icon
+            icon="mdi:filter-outline"
+            class="mr-2"
+          />
+          Wenn alle dieser Bedingungen zutreffen:
+        </h3>
 
-    <!-- Aktionsteil -->
-    <div class="card bg-base-200 p-4">
-      <h3 class="text-lg font-semibold mb-4 flex items-center">
-        <Icon
-          icon="mdi:lightning-bolt"
-          class="mr-2"
-        />
-        Dann führe diese Aktionen aus:
-      </h3>
-
-      <div
-        v-for="(action, index) in actions"
-        :key="index"
-        class="mb-3"
-      >
-        <div class="flex items-center space-x-2">
-          <select
-            v-model="action.type"
-            class="select select-bordered w-1/3"
-          >
-            <option
-              v-for="option in actionTypeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </option>
-          </select>
-
-          <div class="w-1/2">
-            <!-- Tag-Auswahl -->
-            <TagSearchableDropdown
-              v-if="action.type === RuleActionType.ADD_TAG"
-              v-model="action.value"
-              :options="tags"
-              class="w-full"
-            />
-
-            <!-- Kategorie-Auswahl -->
-            <SelectCategory
-              v-else-if="action.type === RuleActionType.SET_CATEGORY"
-              v-model="action.value"
-              class="w-full"
-            />
-
-            <!-- Konto-Auswahl -->
-            <SelectAccount
-              v-else-if="action.type === RuleActionType.SET_ACCOUNT"
-              v-model="action.value"
-              class="w-full"
-            />
-
-            <!-- Empfänger-Auswahl -->
-            <SelectRecipient
-              v-else-if="action.type === RuleActionType.SET_RECIPIENT"
-              v-model="action.value"
-              class="w-full"
-            />
-
-            <!-- Planungsauswahl -->
+        <div
+          v-for="(condition, index) in conditions"
+          :key="index"
+          class="mb-3"
+        >
+          <div class="flex items-center space-x-2">
+            <!-- Erste Dropdown: Quelle auswählen -->
             <select
-              v-else-if="action.type === RuleActionType.LINK_SCHEDULE"
-              v-model="action.value"
-              class="select select-bordered w-full"
+              v-model="condition.source"
+              class="select select-bordered w-1/3"
             >
               <option
-                value=""
-                disabled
+                v-for="option in sourceOptions"
+                :key="option.value"
+                :value="option.value"
               >
-                Planung auswählen
-              </option>
-              <option
-                v-for="planning in planningStore.planningTransactions"
-                :key="planning.id"
-                :value="planning.id"
-              >
-                {{ planning.name }}
+                {{ option.label }}
               </option>
             </select>
 
-            <!-- Texteingabe für andere Aktionen -->
-            <input
-              v-else
-              type="text"
-              v-model="action.value"
-              class="input input-bordered w-full"
-              placeholder="Wert eingeben"
-            />
-          </div>
+            <!-- Zweite Dropdown: Operator basierend auf Quellentyp -->
+            <select
+              v-model="condition.operator"
+              class="select select-bordered w-1/4"
+            >
+              <option
+                v-for="option in getOperatorOptions(condition.source)"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
 
-          <!-- Entfernen-Button -->
+            <!-- Dynamischer Wert-Input basierend auf der Quelle -->
+            <div class="w-1/3">
+              <!-- Konto-Auswahl -->
+              <SelectAccount
+                v-if="
+                  condition.source === 'account' && condition.operator === 'is'
+                "
+                v-model="condition.value"
+                class="w-full"
+              />
+
+              <!-- Kategorie-Auswahl -->
+              <SelectCategory
+                v-else-if="
+                  condition.source === 'category' && condition.operator === 'is'
+                "
+                v-model="condition.value"
+                class="w-full"
+              />
+
+              <!-- Empfänger-Auswahl -->
+              <SelectRecipient
+                v-else-if="
+                  condition.source === 'recipient' &&
+                  condition.operator === 'is'
+                "
+                v-model="condition.value"
+                class="w-full"
+              />
+
+              <!-- Zahleneingabe für Beträge -->
+              <input
+                v-else-if="condition.source === 'amount'"
+                type="number"
+                step="0.01"
+                v-model="condition.value"
+                class="input input-bordered w-full"
+                placeholder="Betrag (z.B. 42.99)"
+              />
+
+              <!-- Datumseingabe -->
+              <input
+                v-else-if="
+                  condition.source === 'date' ||
+                  condition.source === 'valueDate'
+                "
+                type="date"
+                v-model="condition.value"
+                class="input input-bordered w-full"
+              />
+
+              <!-- Standard-Texteingabe für andere Quellen -->
+              <input
+                v-else
+                type="text"
+                v-model="condition.value"
+                class="input input-bordered w-full"
+                placeholder="Wert eingeben"
+              />
+            </div>
+
+            <!-- Entfernen-Button -->
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="removeCondition(index)"
+              :disabled="conditions.length <= 1"
+            >
+              <Icon
+                icon="mdi:close"
+                class="text-error"
+              />
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm mt-2"
+          @click="addCondition"
+        >
+          <Icon
+            icon="mdi:plus"
+            class="mr-1"
+          />
+          Weitere Bedingung hinzufügen
+        </button>
+      </div>
+
+      <!-- Aktionsteil -->
+      <div class="card bg-base-200 p-4">
+        <h3 class="text-lg font-semibold mb-4 flex items-center">
+          <Icon
+            icon="mdi:lightning-bolt"
+            class="mr-2"
+          />
+          Dann führe diese Aktionen aus:
+        </h3>
+
+        <div
+          v-for="(action, index) in actions"
+          :key="index"
+          class="mb-3"
+        >
+          <div class="flex items-center space-x-2">
+            <select
+              v-model="action.type"
+              class="select select-bordered w-1/3"
+            >
+              <option
+                v-for="option in actionTypeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+
+            <div class="w-1/2">
+              <!-- Tag-Auswahl -->
+              <TagSearchableDropdown
+                v-if="action.type === RuleActionType.ADD_TAG"
+                v-model="action.value"
+                :options="tags"
+                class="w-full"
+              />
+
+              <!-- Kategorie-Auswahl -->
+              <SelectCategory
+                v-else-if="action.type === RuleActionType.SET_CATEGORY"
+                v-model="action.value"
+                class="w-full"
+              />
+
+              <!-- Konto-Auswahl -->
+              <SelectAccount
+                v-else-if="action.type === RuleActionType.SET_ACCOUNT"
+                v-model="action.value"
+                class="w-full"
+              />
+
+              <!-- Empfänger-Auswahl -->
+              <SelectRecipient
+                v-else-if="action.type === RuleActionType.SET_RECIPIENT"
+                v-model="action.value"
+                class="w-full"
+              />
+
+              <!-- Planungsauswahl -->
+              <select
+                v-else-if="action.type === RuleActionType.LINK_SCHEDULE"
+                v-model="action.value"
+                class="select select-bordered w-full"
+              >
+                <option
+                  value=""
+                  disabled
+                >
+                  Planung auswählen
+                </option>
+                <option
+                  v-for="planning in planningStore.planningTransactions"
+                  :key="planning.id"
+                  :value="planning.id"
+                >
+                  {{ planning.name }}
+                </option>
+              </select>
+
+              <!-- Texteingabe für andere Aktionen -->
+              <input
+                v-else
+                type="text"
+                v-model="action.value"
+                class="input input-bordered w-full"
+                placeholder="Wert eingeben"
+              />
+            </div>
+
+            <!-- Entfernen-Button -->
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              @click="removeAction(index)"
+              :disabled="actions.length <= 1"
+            >
+              <Icon
+                icon="mdi:close"
+                class="text-error"
+              />
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm mt-2"
+          @click="addAction"
+        >
+          <Icon
+            icon="mdi:plus"
+            class="mr-1"
+          />
+          Weitere Aktion hinzufügen
+        </button>
+      </div>
+
+      <!-- Test-Button und Aktionsbuttons -->
+      <div class="flex justify-between items-center pt-4">
+        <button
+          type="button"
+          class="btn btn-outline"
+          @click="applyRuleToExistingTransactions"
+        >
+          <Icon
+            icon="mdi:play"
+            class="mr-2"
+          />
+          Regel testen
+        </button>
+
+        <div class="space-x-2">
           <button
             type="button"
-            class="btn btn-ghost btn-sm"
-            @click="removeAction(index)"
-            :disabled="actions.length <= 1"
+            class="btn"
+            @click="$emit('cancel')"
           >
-            <Icon
-              icon="mdi:close"
-              class="text-error"
-            />
+            Abbrechen
+          </button>
+          <button
+            type="submit"
+            class="btn btn-primary"
+          >
+            Speichern
           </button>
         </div>
       </div>
+    </form>
 
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm mt-2"
-        @click="addAction"
-      >
-        <Icon
-          icon="mdi:plus"
-          class="mr-1"
-        />
-        Weitere Aktion hinzufügen
-      </button>
-    </div>
+    <!-- Modal für Testergebnisse -->
+    <div
+      v-if="testResults.show"
+      class="modal modal-open"
+    >
+      <div class="modal-box max-w-4xl">
+        <h3 class="text-lg font-bold mb-4">
+          Testergebnisse: {{ testResults.matchCount }} Transaktionen gefunden
+        </h3>
 
-    <!-- Test-Button und Aktionsbuttons -->
-    <div class="flex justify-between items-center pt-4">
-      <button
-        type="button"
-        class="btn btn-outline"
-        @click="applyRuleToExistingTransactions"
-      >
-        <Icon
-          icon="mdi:play"
-          class="mr-2"
-        />
-        Regel testen
-      </button>
+        <div class="overflow-x-auto">
+          <table class="table table-zebra w-full">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Konto</th>
+                <th>Empfänger</th>
+                <th>Kategorie</th>
+                <th>Betrag</th>
+                <th>Notiz</th>
+                <th>Abgegl.</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="tx in testResults.transactions"
+                :key="tx.id"
+              >
+                <td>{{ tx.date }}</td>
+                <td>
+                  {{
+                    accountStore.getAccountById(tx.accountId)?.name ||
+                    tx.accountId
+                  }}
+                </td>
+                <td>{{ tx.payee || "-" }}</td>
+                <td>
+                  {{
+                    categoryStore.getCategoryById(tx.categoryId)?.name || "-"
+                  }}
+                </td>
+                <td><CurrencyDisplay :amount="tx.amount" /></td>
+                <td>{{ tx.note || "-" }}</td>
+                <td>{{ tx.reconciled ? "Ja" : "Nein" }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
-      <div class="space-x-2">
-        <button
-          type="button"
-          class="btn"
-          @click="$emit('cancel')"
-        >
-          Abbrechen
-        </button>
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          Speichern
-        </button>
-      </div>
-    </div>
-  </form>
-
-  <!-- Modal für Testergebnisse -->
-  <div
-    v-if="testResults.show"
-    class="modal modal-open"
-  >
-    <div class="modal-box max-w-4xl">
-      <h3 class="text-lg font-bold mb-4">
-        Testergebnisse: {{ testResults.matchCount }} Transaktionen gefunden
-      </h3>
-
-      <div class="overflow-x-auto">
-        <table class="table table-zebra w-full">
-          <thead>
-            <tr>
-              <th>Datum</th>
-              <th>Konto</th>
-              <th>Empfänger</th>
-              <th>Kategorie</th>
-              <th>Betrag</th>
-              <th>Notiz</th>
-              <th>Abgegl.</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="tx in testResults.transactions"
-              :key="tx.id"
-            >
-              <td>{{ tx.date }}</td>
-              <td>
-                {{
-                  accountStore.getAccountById(tx.accountId)?.name ||
-                  tx.accountId
-                }}
-              </td>
-              <td>{{ tx.payee || "-" }}</td>
-              <td>
-                {{ categoryStore.getCategoryById(tx.categoryId)?.name || "-" }}
-              </td>
-              <td><CurrencyDisplay :amount="tx.amount" /></td>
-              <td>{{ tx.note || "-" }}</td>
-              <td>{{ tx.reconciled ? "Ja" : "Nein" }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="modal-action">
-        <button
-          class="btn"
-          @click="closeTestResults"
-        >
-          Schließen
-        </button>
+        <div class="modal-action">
+          <button
+            class="btn"
+            @click="closeTestResults"
+          >
+            Schließen
+          </button>
+        </div>
       </div>
     </div>
   </div>

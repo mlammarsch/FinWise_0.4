@@ -3,6 +3,7 @@
 import { ref, computed } from "vue";
 import { CategoryService } from "../../services/CategoryService";
 import CategoryForm from "../../components/budget/CategoryForm.vue";
+import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
 import { Category } from "../../types";
 import { Icon } from "@iconify/vue";
 
@@ -215,17 +216,15 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
                 </td>
                 <td>{{ getGroupName(category.categoryGroupId) }}</td>
                 <td>{{ getParentCategoryName(category.parentCategoryId) }}</td>
-                <td
-                  :class="
-                    category.available >= 0 ? 'text-success' : 'text-error'
-                  "
-                >
-                  {{
-                    new Intl.NumberFormat("de-DE", {
-                      style: "currency",
-                      currency: "EUR",
-                    }).format(category.available)
-                  }}
+                <td>
+                  <CurrencyDisplay
+                    :class="
+                      category.available >= 0 ? 'text-success' : 'text-error'
+                    "
+                    :amount="category.available"
+                    :show-zero="true"
+                    :asInteger="false"
+                  />
                 </td>
                 <td>
                   <div
@@ -282,7 +281,6 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
               <tr>
                 <th>Name</th>
                 <th>Typ</th>
-                <th>Sortierung</th>
                 <th>Anzahl Kategorien</th>
                 <th class="text-right">Aktionen</th>
               </tr>
@@ -303,7 +301,6 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
                     {{ group.isIncomeGroup ? "Einnahmen" : "Ausgaben" }}
                   </span>
                 </td>
-                <td>{{ group.sortOrder }}</td>
                 <td>
                   {{
                     categories?.filter((c) => c.categoryGroupId === group.id)
@@ -375,32 +372,40 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
       class="modal modal-open"
     >
       <div class="modal-box max-w-xl">
-        <h3 class="font-bold text-lg mb-4">
-          {{ editingGroupId ? "Gruppe bearbeiten" : "Neue Gruppe" }}
-        </h3>
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="font-bold text-lg">
+            {{ editingGroupId ? "Gruppe bearbeiten" : "Neue Gruppe" }}
+          </h3>
+          <button
+            type="button"
+            @click="showGroupModal = false"
+            class="btn btn-sm btn-circle btn-ghost"
+            title="Schließen"
+          >
+            <Icon
+              icon="mdi:close"
+              class="w-4 h-4"
+            />
+          </button>
+        </div>
         <form
           @submit.prevent="saveCategoryGroup"
           class="space-y-4"
         >
-          <div>
-            <label class="label">Name</label>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">
+              Name<span class="text-error">*</span>
+            </legend>
             <input
               v-model="groupName"
               type="text"
               class="input input-bordered w-full"
               required
+              placeholder="Name der Kategoriegruppe"
             />
-          </div>
-          <div>
-            <label class="label">Sortierung</label>
-            <input
-              v-model.number="groupSort"
-              type="number"
-              class="input input-bordered w-full"
-            />
-          </div>
-          <div>
-            <label class="label">Typ</label>
+          </fieldset>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Typ</legend>
             <select
               v-model="groupIsIncome"
               class="select select-bordered w-full"
@@ -408,7 +413,7 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
               <option :value="true">Einnahmen</option>
               <option :value="false">Ausgaben</option>
             </select>
-          </div>
+          </fieldset>
           <div class="modal-action">
             <button
               type="submit"

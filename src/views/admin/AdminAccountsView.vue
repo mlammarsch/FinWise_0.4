@@ -277,7 +277,7 @@ const updateMonthlyBalances = () => {
                 <td>{{ formatAccountType(account.accountType) }}</td>
                 <td class="text-right">
                   <CurrencyDisplay
-                    class="text-right text-base whitespace-nowrap"
+                    class="text-right whitespace-nowrap"
                     :amount="AccountService.getCurrentBalance(account.id)"
                     :show-zero="true"
                     :asInteger="false"
@@ -285,7 +285,7 @@ const updateMonthlyBalances = () => {
                 </td>
                 <td class="text-center">
                   <div
-                    class="badge"
+                    class="badge rounded-full badge-soft"
                     :class="account.isActive ? 'badge-success' : 'badge-error'"
                   >
                     {{ account.isActive ? "Aktiv" : "Inaktiv" }}
@@ -347,7 +347,7 @@ const updateMonthlyBalances = () => {
                 </td>
                 <td class="text-right">
                   <CurrencyDisplay
-                    class="text-right text-base whitespace-nowrap"
+                    class="text-right whitespace-nowrap"
                     :amount="getGroupBalance(group.id)"
                     :show-zero="true"
                     :asInteger="false"
