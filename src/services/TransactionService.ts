@@ -4,6 +4,7 @@
 import { useTransactionStore } from '@/stores/transactionStore';
 import { useAccountStore }     from '@/stores/accountStore';
 import { useCategoryStore }    from '@/stores/categoryStore';
+import { useRecipientStore }   from '@/stores/recipientStore';
 import { Transaction, TransactionType } from '@/types';
 // ExtendedTransaction muss importiert werden, wenn es als Typ verwendet wird
 import { type ExtendedTransaction } from '@/stores/transactionStore'; // Korrekter Importpfad und `type` Keyword
@@ -31,6 +32,24 @@ export const TransactionService = {
   },
 
 /* ------------------------------------------------------------------ */
+/* --------------------------- Helper Functions -------------------- */
+/* ------------------------------------------------------------------ */
+
+  /**
+   * Leitet payee-Wert aus recipientId ab oder verwendet den übergebenen payee-Wert
+   */
+  resolvePayeeFromRecipient(recipientId?: string, fallbackPayee?: string): string {
+    if (recipientId) {
+      const recipientStore = useRecipientStore();
+      const recipient = recipientStore.getRecipientById(recipientId);
+      if (recipient) {
+        return recipient.name;
+      }
+    }
+    return fallbackPayee || '';
+  },
+
+/* ------------------------------------------------------------------ */
 /* --------------------------- Write APIs --------------------------- */
 /* ------------------------------------------------------------------ */
 
@@ -47,6 +66,9 @@ export const TransactionService = {
     // Normalisieren & anlegen
     debugLog('[TransactionService]', 'addTransaction - txData input:', txData);
 
+    // Leite payee aus recipientId ab, falls vorhanden
+    const resolvedPayee = this.resolvePayeeFromRecipient(txData.recipientId, txData.payee);
+
     const transactionDataForStore: ExtendedTransaction = {
       // Übernehme alle Felder von txData (Omit<Transaction, 'id' | 'runningBalance'>)
       ...txData,
@@ -55,7 +77,7 @@ export const TransactionService = {
       date: toDateOnlyString(txData.date),
       valueDate: txData.valueDate ? toDateOnlyString(txData.valueDate) : toDateOnlyString(txData.date),
       runningBalance: 0, // Pflicht in ExtendedTransaction
-      payee: txData.payee || '', // txData.payee ist string | undefined, hier wird es string
+      payee: resolvedPayee, // Verwende den aus recipientId abgeleiteten payee
       description: txData.description || '', // description ist in Transaction Pflicht
       tagIds: txData.tagIds || [], // tagIds ist in Transaction Pflicht
       // Stelle sicher, dass optionale Felder, die in ExtendedTransaction string | null sind, korrekt behandelt werden
@@ -141,7 +163,8 @@ export const TransactionService = {
     date: string,
     valueDate: string | null = null,
     note = '',
-    planningTransactionId: string | null = null
+    planningTransactionId: string | null = null,
+    recipientId?: string
   ) {
     if (fromAccountId === toAccountId) throw new Error('Quell = Zielkonto');
     if (amount === 0) throw new Error('Betrag 0');
@@ -172,20 +195,21 @@ export const TransactionService = {
       accountId: '', // wird weiter unten gesetzt
       amount: 0,
       description: '', // Fehlende Eigenschaft hinzufügen
+      recipientId, // recipientId hinzufügen
     };
 
     const fromTx = await this.addTransaction({
       ...base,
       accountId: fromAccountId,
       amount: -abs,
-      payee: `Transfer zu ${toName}`,
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer zu ${toName}`,
       transferToAccountId: toAccountId,
     });
     const toTx = await this.addTransaction({
       ...base,
       accountId: toAccountId,
       amount: abs,
-      payee: `Transfer von ${fromName}`,
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer von ${fromName}`,
       transferToAccountId: fromAccountId,
     });
 
@@ -207,7 +231,8 @@ export const TransactionService = {
     toCategoryId: string,
     amount: number,
     date: string,
-    note: string = ''
+    note: string = '',
+    recipientId?: string
   ) {
     const categoryStore = useCategoryStore();
     const fromCategoryName = categoryStore.getCategoryById(fromCategoryId)?.name ?? '';
@@ -222,7 +247,7 @@ export const TransactionService = {
       categoryId: fromCategoryId,
       amount: -Math.abs(amount),
       tagIds: [],
-      payee: `Kategorientransfer zu ${toCategoryName}`,
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Kategorientransfer zu ${toCategoryName}`,
       note,
       counterTransactionId: null,
       planningTransactionId: null,
@@ -231,13 +256,14 @@ export const TransactionService = {
       toCategoryId: toCategoryId,
       reconciled: false,
       description: '', // Fehlende Eigenschaft hinzufügen
+      recipientId, // recipientId hinzufügen
     };
 
     const toTx = {
       ...fromTx,
       categoryId: toCategoryId,
       amount: Math.abs(amount),
-      payee: `Kategorientransfer von ${fromCategoryName}`,
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Kategorientransfer von ${fromCategoryName}`,
       toCategoryId: fromCategoryId,
     };
 
@@ -261,7 +287,8 @@ export const TransactionService = {
     toCategoryId: string,
     amount: number,
     date: string,
-    note: string = ''
+    note: string = '',
+    recipientId?: string
   ) {
     const categoryStore = useCategoryStore();
     const fromCategoryName = categoryStore.getCategoryById(fromCategoryId)?.name ?? '';
@@ -274,8 +301,9 @@ export const TransactionService = {
       toCategoryId: toCategoryId,
       date: normalizedDate,
       valueDate: normalizedDate,
-      payee: `Kategorientransfer zu ${toCategoryName}`,
-      note
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Kategorientransfer zu ${toCategoryName}`,
+      note,
+      recipientId
     };
 
     const updatedToTx: Partial<Transaction> = {
@@ -284,8 +312,9 @@ export const TransactionService = {
       toCategoryId: fromCategoryId,
       date: normalizedDate,
       valueDate: normalizedDate,
-      payee: `Kategorientransfer von ${fromCategoryName}`,
-      note
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Kategorientransfer von ${fromCategoryName}`,
+      note,
+      recipientId
     };
 
     this.updateTransaction(transactionId, updatedFromTx);
@@ -324,7 +353,8 @@ export const TransactionService = {
     accountId: string,
     amount: number,
     date: string,
-    note = ''
+    note = '',
+    recipientId?: string
   ) {
     if (amount === 0) return null;
     const catStore = useCategoryStore();
@@ -341,7 +371,7 @@ export const TransactionService = {
       categoryId: catId || undefined,
       amount,
       tagIds: [],
-      payee: 'Kontoabgleich',
+      payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : 'Kontoabgleich',
       note: note || (amount > 0 ? 'Korrektur Gutschrift' : 'Korrektur Belastung'),
       counterTransactionId: null,
       planningTransactionId: null,
@@ -349,6 +379,7 @@ export const TransactionService = {
       isCategoryTransfer: false,
       reconciled: true,
       description: '', // Fehlende Eigenschaft hinzufügen
+      recipientId, // recipientId hinzufügen
     });
 
     // Salden aktualisieren
@@ -367,6 +398,11 @@ updateTransaction(
 
     if (updates.date) updates.date = toDateOnlyString(updates.date);
     if (updates.valueDate) updates.valueDate = toDateOnlyString(updates.valueDate);
+
+    // Wenn recipientId in den Updates enthalten ist, leite payee ab
+    if (updates.recipientId !== undefined) {
+      updates.payee = this.resolvePayeeFromRecipient(updates.recipientId, updates.payee);
+    }
 
     const original = txStore.getTransactionById(id);
 

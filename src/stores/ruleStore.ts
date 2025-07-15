@@ -204,10 +204,10 @@ export const useRuleStore = defineStore('rule', () => {
       switch (c.type) {
         case RuleConditionType.ACCOUNT_IS:
           return tx.accountId === c.value;
-        case RuleConditionType.PAYEE_EQUALS:
-          return tx.payee === c.value;
-        case RuleConditionType.PAYEE_CONTAINS:
-          return tx.payee?.toLowerCase().includes(String(c.value).toLowerCase());
+        case RuleConditionType.RECIPIENT_EQUALS:
+          return tx.recipientId === c.value;
+        case RuleConditionType.RECIPIENT_CONTAINS:
+          return tx.recipientId?.toLowerCase().includes(String(c.value).toLowerCase());
         case RuleConditionType.AMOUNT_EQUALS:
           return tx.amount === Number(c.value);
         case RuleConditionType.AMOUNT_GREATER:

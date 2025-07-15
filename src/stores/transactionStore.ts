@@ -8,6 +8,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { Transaction, SyncOperationType, EntityTypeEnum } from '@/types';
 import { useAccountStore } from './accountStore';
+import { useRecipientStore } from './recipientStore';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { TenantDbService } from '@/services/TenantDbService';
 
@@ -32,6 +33,7 @@ export const useTransactionStore = defineStore('transaction', () => {
   /* ----------------------------------------------------- State */
   const transactions = ref<ExtendedTransaction[]>([]);
   const accountStore = useAccountStore();
+  const recipientStore = useRecipientStore();
 
   /* --------------------------------------------------- Getters */
   const getTransactionById = computed(() => (id: string) =>
@@ -58,9 +60,27 @@ export const useTransactionStore = defineStore('transaction', () => {
   }
 
   /* --------------------------------------------------- Actions */
+
+  /**
+   * Leitet payee-Wert aus recipientId ab oder verwendet den übergebenen payee-Wert
+   */
+  function resolvePayeeFromRecipient(recipientId?: string, fallbackPayee?: string): string {
+    if (recipientId) {
+      const recipient = recipientStore.getRecipientById(recipientId);
+      if (recipient) {
+        return recipient.name;
+      }
+    }
+    return fallbackPayee || '';
+  }
+
   async function addTransaction(tx: ExtendedTransaction, fromSync = false): Promise<ExtendedTransaction> {
+    // Stelle sicher, dass payee aus recipientId abgeleitet wird, falls recipientId vorhanden ist
+    const resolvedPayee = resolvePayeeFromRecipient(tx.recipientId, tx.payee);
+
     const transactionWithTimestamp: ExtendedTransaction = {
       ...tx,
+      payee: resolvedPayee,
       updated_at: tx.updated_at || new Date().toISOString(),
     };
 
@@ -106,8 +126,15 @@ export const useTransactionStore = defineStore('transaction', () => {
   }
 
   async function updateTransaction(id: string, updates: Partial<ExtendedTransaction>, fromSync = false): Promise<boolean> {
+    // Wenn recipientId in den Updates enthalten ist, leite payee ab
+    let resolvedPayee = updates.payee;
+    if (updates.recipientId !== undefined) {
+      resolvedPayee = resolvePayeeFromRecipient(updates.recipientId, updates.payee);
+    }
+
     const transactionUpdatesWithTimestamp: Partial<ExtendedTransaction> = {
       ...updates,
+      ...(resolvedPayee !== undefined && { payee: resolvedPayee }),
       updated_at: updates.updated_at || new Date().toISOString(),
     };
 

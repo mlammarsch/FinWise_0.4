@@ -117,6 +117,20 @@ export class FinwiseTenantSpecificDB extends Dexie {
     this.version(12).stores({
       logoCache: '&path',
     });
+    this.version(13).stores({
+      accounts: '&id, name, description, note, accountType, isActive, isOfflineBudget, accountGroupId, sortOrder, iban, balance, creditLimit, offset, image, updated_at',
+      accountGroups: '&id, name, sortOrder, image, updated_at',
+      categories: '&id, name, isActive, categoryGroupId, parentCategoryId, sortOrder, isIncomeCategory, isSavingsGoal, updated_at',
+      categoryGroups: '&id, name, sortOrder, isIncomeGroup, updated_at',
+      transactions: '&id, accountId, categoryId, date, recipientId, valueDate, amount, description, type, runningBalance, updated_at, [accountId+date], [categoryId+date]',
+      planningTransactions: '&id, name, accountId, categoryId, startDate, isActive, recurrencePattern, transactionType, updated_at',
+      recipients: '&id, name, defaultCategoryId, updated_at',
+      tags: '&id, name, parentTagId, color, updated_at',
+      rules: '&id, name, stage, priority, isActive, updated_at',
+      monthlyBalances: '&[year+month], year, month',
+      syncQueue: '&id, tenantId, entityType, entityId, operationType, timestamp, status, [tenantId+status], [tenantId+entityType], [tenantId+operationType]',
+      logoCache: '&path',
+    });
   }
 }
 
