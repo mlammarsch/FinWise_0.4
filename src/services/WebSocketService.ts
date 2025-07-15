@@ -325,10 +325,10 @@ export const WebSocketService = {
                   const transactionData = updateMessage.data as any | DeletePayload; // Using any for ExtendedTransaction compatibility
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await transactionStore.addTransaction(transactionData as any, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} created via WebSocket.`);
+                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} created via WebSocket with recipientId: ${(transactionData as any).recipientId || 'none'}.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await transactionStore.updateTransaction((transactionData as any).id, transactionData as any, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} updated via WebSocket with recipientId: ${(transactionData as any).recipientId || 'none'}.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for Transaction ${transactionData.id}`, {
                       transactionData,

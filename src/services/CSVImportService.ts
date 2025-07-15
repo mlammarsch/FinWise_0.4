@@ -549,21 +549,23 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
   /**
    * Findet passende Empfänger für einen Text und speichert die Übereinstimmungen
+   * Erweiterte Logik für korrekte recipientId-Zuordnung gemäß Task 4.1
    */
   function findMatchingRecipient(row: ImportRow, searchText: string) {
     if (!searchText) return;
 
-    // Direktsuche nach exaktem Namen
+    // Task 4.1: Einfacher Namensvergleich (case-insensitive) für recipientId-Zuordnung
     const directMatch = recipientStore.recipients.find(
-      (r) => r.name.toLowerCase() === searchText.toLowerCase()
+      (r) => r.name.toLowerCase() === searchText.toLowerCase().trim()
     );
 
     if (directMatch) {
       row.recipientId = directMatch.id;
+      debugLog('CSVImportService', `Direkter Empfänger-Match gefunden: "${searchText}" -> ${directMatch.name} (${directMatch.id})`);
       return;
     }
 
-    // RegEx-basierte Suche in allen Empfängern
+    // Erweiterte Fuzzy-Suche für bessere Matches
     const recipientMatches = recipientStore.recipients
       .map((recipient) => {
         const similarity = calculateStringSimilarity(recipient.name, searchText);
@@ -576,12 +578,16 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       .filter((match) => match.similarity > SIMILARITY_THRESHOLD)
       .sort((a, b) => b.similarity - a.similarity);
 
-    // Die besten Treffer speichern
+    // Die besten Treffer speichern für UI-Anzeige
     row._recipientMatches = recipientMatches;
 
     // Den besten Treffer automatisch zuweisen, wenn er über einem höheren Schwellwert liegt
     if (recipientMatches.length > 0 && recipientMatches[0].similarity > 0.8) {
       row.recipientId = recipientMatches[0].id;
+      debugLog('CSVImportService', `Fuzzy-Match Empfänger gefunden: "${searchText}" -> ${recipientMatches[0].name} (${recipientMatches[0].id}) mit Ähnlichkeit ${recipientMatches[0].similarity}`);
+    } else {
+      // Kein passender Empfänger gefunden - recipientId bleibt undefined, payee wird später gesetzt
+      debugLog('CSVImportService', `Kein passender Empfänger für "${searchText}" gefunden. recipientId bleibt undefined.`);
     }
   }
 
@@ -872,7 +878,9 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         accountId: accountId,
         tagIds: row.tagIds || selectedTags.value || [],
         potentialMerge: row._potentialMerge,
-        // Speichere den Original-Empfängernamen, falls vorhanden und kein recipientId gesetzt wurde
+        // Task 4.1: Setze payee-Feld wenn keine recipientId gefunden wurde
+        payee: !row.recipientId && mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : undefined,
+        // Speichere den Original-Empfängernamen für weitere Verarbeitung
         originalRecipientName: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : null
       };
 

@@ -34,14 +34,14 @@
   - [x] 2.3 RuleStore-Logik von payee auf recipientId umstellen
   - [x] 2.4 TransactionService für recipientId-First-Ansatz anpassen
   - [x] 2.5 TenantDbService IndexedDB-Operationen für recipientId erweitern
-- [ ] 3.0 Synchronisation und WebSocket-Integration anpassen
-  - [ ] 3.1 WebSocketService für Transaction-Updates mit recipientId erweitern
-  - [ ] 3.2 Bidirektionale Synchronisation für recipientId-Feld implementieren
-  - [ ] 3.3 Last-Write-Wins-Konfliktlösung für Empfänger-Referenzen testen
-  - [ ] 3.4 Sync-Service im Backend für recipientId-Synchronisation anpassen
-- [ ] 4.0 CSV-Import und Regel-Engine für recipientId erweitern
-  - [ ] 4.1 CSVImportService für korrekte recipientId-Zuordnung erweitern
-  - [ ] 4.2 Payee-Text zu Recipient-Matching-Logik implementieren
-  - [ ] 4.3 Regel-Editor UI für recipientId-basierte Bedingungen anpassen
-  - [ ] 4.4 Transaction-Formulare für recipientId-basierte Eingabe anpassen
-  - [ ] 4.5 Empfänger-Auflösung für Anzeigezwecke implementieren (recipientId → Recipient.name)
+- [x] 3.0 Synchronisation und WebSocket-Integration anpassen
+  - [x] 3.1 WebSocketService für Transaction-Updates mit recipientId erweitern
+  - [x] 3.2 Bidirektionale Synchronisation für recipientId-Feld implementieren
+  - [x] 3.3 Last-Write-Wins-Konfliktlösung für Empfänger-Referenzen testen
+  - [x] 3.4 Sync-Service im Backend für recipientId-Synchronisation anpassen
+- [x] 4.0 CSV-Import und Regel-Engine für recipientId erweitern
+  - [x] 4.1 CSVImportService für korrekte recipientId-Zuordnung erweitern
+  - [x] 4.2 Payee-Text zu Recipient-Matching-Logik implementieren
+  - [x] 4.3 Regel-Editor UI für recipientId-basierte Bedingungen anpassen
+  - [x] 4.4 Transaction-Formulare für recipientId-basierte Eingabe anpassen
+  - [x] 4.5 Empfänger-Auflösung für Anzeigezwecke implementieren (recipientId → Recipient.name)

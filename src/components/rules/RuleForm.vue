@@ -302,7 +302,8 @@ function checkConditions(rule: AutomationRule, tx: Transaction): boolean {
         txValue = tx.accountId;
         break;
       case "recipient":
-        txValue = tx.payee || "";
+        // Für recipient-Bedingungen verwenden wir die recipientId aus der Transaktion
+        txValue = tx.recipientId || "";
         break;
       case "amount":
         txValue = tx.amount;
@@ -323,12 +324,39 @@ function checkConditions(rule: AutomationRule, tx: Transaction): boolean {
         return false;
     }
 
-    // Spezialfall für Empfänger bei "ist" (ID zu Name Konvertierung)
-    if (source === "recipient" && operator === "is") {
-      const selectedRecipient = recipientStore.recipients.find(
-        (r) => r.id === value
-      );
-      return tx.payee === (selectedRecipient?.name || value);
+    // Spezialfall für Empfänger - alle Operationen arbeiten mit recipientId
+    if (source === "recipient") {
+      if (operator === "is") {
+        // Direkter ID-Vergleich
+        return tx.recipientId === value;
+      } else {
+        // Für contains, starts_with, ends_with: Name des Empfängers verwenden
+        const selectedRecipient = recipientStore.recipients.find(
+          (r) => r.id === value
+        );
+        const recipientName = selectedRecipient?.name || "";
+        const txRecipient = recipientStore.recipients.find(
+          (r) => r.id === tx.recipientId
+        );
+        const txRecipientName = txRecipient?.name || tx.payee || "";
+
+        switch (operator) {
+          case "contains":
+            return txRecipientName
+              .toLowerCase()
+              .includes(recipientName.toLowerCase());
+          case "starts_with":
+            return txRecipientName
+              .toLowerCase()
+              .startsWith(recipientName.toLowerCase());
+          case "ends_with":
+            return txRecipientName
+              .toLowerCase()
+              .endsWith(recipientName.toLowerCase());
+          default:
+            return false;
+        }
+      }
     }
 
     // Spezialfall für Kategorie bei "ist" (ID-Vergleich)
@@ -554,12 +582,9 @@ function closeTestResults() {
                 class="w-full"
               />
 
-              <!-- Empfänger-Auswahl -->
+              <!-- Empfänger-Auswahl für alle recipient-Operationen -->
               <SelectRecipient
-                v-else-if="
-                  condition.source === 'recipient' &&
-                  condition.operator === 'is'
-                "
+                v-else-if="condition.source === 'recipient'"
                 v-model="condition.value"
                 class="w-full"
               />
