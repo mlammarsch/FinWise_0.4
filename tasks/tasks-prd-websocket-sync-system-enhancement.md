@@ -30,17 +30,17 @@
   - [x] 3.2 Sicherstellen, dass nach einer erfolgreichen Wiederverbindung die Sync-Queue sofort verarbeitet wird.
   - [x] 3.3 Einen Heartbeat-Mechanismus implementieren, der die Verbindungsqualität prüft.
   - [x] 3.4 Den `webSocketStore` um detaillierte Verbindungsstatus (`reconnecting`, `healthy`, `unhealthy`) erweitern.
-- [ ] 4.0 Implementierung einer robusten Fehlerbehandlung (FR4)
-  - [ ] 4.1 Die `processSyncNack`-Methode in `WebSocketService` mit "exponential backoff" für Wiederholungsversuche erweitern.
-  - [ ] 4.2 Die Anzahl der Versuche pro Queue-Eintrag in `TenantDbService` speichern.
-  - [ ] 4.3 Einträge nach 5 erfolglosen Versuchen in eine "Dead-Letter-Queue" verschieben (Status `FAILED_PERMANENTLY`).
-  - [ ] 4.4 Sicherstellen, dass detaillierte Fehlerinformationen für das Debugging geloggt werden.
-- [ ] 5.0 Integration der Sync-Statusanzeige in die Benutzeroberfläche (FR5)
-  - [ ] 5.1 Erstellen der Vue-Komponente `src/components/ui/SyncStatusIndicator.vue`.
-  - [ ] 5.2 Die Komponente soll den Sync-Status (`SYNCED`, `SYNCING`, `OFFLINE`, `ERROR`) aus dem `webSocketStore` anzeigen.
-  - [ ] 5.3 Eine Progress-Bar anzeigen, wenn eine Batch-Verarbeitung läuft.
-  - [ ] 5.4 Benutzerfreundliche Fehlermeldungen und einen klaren Offline-Indikator implementieren.
-  - [ ] 5.5 Die Komponente in die Hauptnavigation der Anwendung integrieren.
+- [x] 4.0 Implementierung einer robusten Fehlerbehandlung (FR4)
+  - [x] 4.1 Die `processSyncNack`-Methode in `WebSocketService` mit "exponential backoff" für Wiederholungsversuche erweitern.
+  - [x] 4.2 Die Anzahl der Versuche pro Queue-Eintrag in `TenantDbService` speichern.
+  - [x] 4.3 Einträge nach 5 erfolglosen Versuchen in eine "Dead-Letter-Queue" verschieben (Status `FAILED_PERMANENTLY`).
+  - [x] 4.4 Sicherstellen, dass detaillierte Fehlerinformationen für das Debugging geloggt werden.
+- [x] 5.0 Integration der Sync-Statusanzeige in die Benutzeroberfläche (FR5)
+  - [x] 5.1 Erstellen der Vue-Komponente `src/components/ui/SyncStatusIndicator.vue`.
+  - [x] 5.2 Die Komponente soll den Sync-Status (`SYNCED`, `SYNCING`, `OFFLINE`, `ERROR`) aus dem `webSocketStore` anzeigen.
+  - [x] 5.3 Eine Progress-Bar anzeigen, wenn eine Batch-Verarbeitung läuft.
+  - [x] 5.4 Benutzerfreundliche Fehlermeldungen und einen klaren Offline-Indikator implementieren.
+  - [x] 5.5 Die Komponente in die Hauptnavigation der Anwendung integrieren.
 - [ ] 6.0 Durchführung von Performance-Optimierungen (FR6)
   - [ ] 6.1 In `TenantDbService` mehrere IndexedDB-Schreibvorgänge in einer einzigen Transaktion bündeln.
   - [ ] 6.2 Sicherstellen, dass alle `setInterval`-Instanzen korrekt bereinigt werden, um Memory-Leaks zu vermeiden.

@@ -5,6 +5,7 @@ import { useThemeStore } from "../stores/themeStore";
 import MainNavigation from "../components/ui/MainNavigation.vue";
 import ThemeToggle from "../components/ui/ThemeToggle.vue";
 import SyncButton from "../components/ui/SyncButton.vue";
+import SyncStatusIndicator from "../components/ui/SyncStatusIndicator.vue";
 import { Icon } from "@iconify/vue";
 import TenantSwitch from "@/components/ui/TenantSwitch.vue";
 
@@ -74,6 +75,7 @@ const toggleMobileMenu = () => {
 
         <div class="navbar-end p-3">
           <TenantSwitch v-if="showNavigation" />
+          <SyncStatusIndicator v-if="showNavigation" />
           <SyncButton />
           <ThemeToggle />
         </div>

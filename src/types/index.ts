@@ -405,6 +405,7 @@ export enum SyncStatus {
   PROCESSING = 'processing',
   SYNCED = 'synced',
   FAILED = 'failed',
+  FAILED_PERMANENTLY = 'failed_permanently',
 }
 
 export interface SyncQueueEntry {

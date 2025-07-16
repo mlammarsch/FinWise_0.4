@@ -23,7 +23,15 @@ export class TenantDbService {
       await this.db.accounts.put(plainAccount);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) hinzugefügt.`);
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Hinzufügen des Kontos "${account.name}"`, { account, error: err });
+      errorLog('TenantDbService', `Fehler beim Hinzufügen des Kontos "${account.name}"`, {
+        account: account,
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        accountId: account.id,
+        accountName: account.name,
+        timestamp: new Date().toISOString()
+      });
       throw err;
     }
   }
@@ -39,7 +47,15 @@ export class TenantDbService {
       await this.db.accounts.put(plainAccount);
       debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) aktualisiert.`);
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Aktualisieren des Kontos "${account.name}"`, { account, error: err });
+      errorLog('TenantDbService', `Fehler beim Aktualisieren des Kontos "${account.name}"`, {
+        account: account,
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        accountId: account.id,
+        accountName: account.name,
+        timestamp: new Date().toISOString()
+      });
       throw err;
     }
   }
@@ -53,7 +69,13 @@ export class TenantDbService {
       await this.db.accounts.delete(accountId);
       debugLog('TenantDbService', `Konto mit ID "${accountId}" gelöscht.`);
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Löschen des Kontos mit ID "${accountId}"`, { accountId, error: err });
+      errorLog('TenantDbService', `Fehler beim Löschen des Kontos mit ID "${accountId}"`, {
+        accountId: accountId,
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        timestamp: new Date().toISOString()
+      });
       throw err;
     }
   }
@@ -355,7 +377,8 @@ export class TenantDbService {
     entryId: string,
     newStatus: SyncStatus,
     error?: string | undefined,
-    transaction?: Transaction // Optionaler Parameter
+    transaction?: Transaction, // Optionaler Parameter
+    attempts?: number // Neuer optionaler Parameter für attempts
   ): Promise<boolean> {
     if (!this.db && !transaction) { // Wenn keine DB und keine Transaktion, dann geht nichts
       warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB oder Transaktion verfügbar.');
@@ -376,13 +399,23 @@ export class TenantDbService {
       updateData.error = undefined; // Fehler zurücksetzen bei erfolgreicher Synchronisation
     }
 
+    // Wenn attempts-Parameter übergeben wurde, diesen verwenden
+    if (attempts !== undefined) {
+      updateData.attempts = attempts;
+    }
+
     const operation = async (tx: Transaction): Promise<number> => {
       const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
 
-      if (newStatus === SyncStatus.PROCESSING) {
+      if (newStatus === SyncStatus.PROCESSING || newStatus === SyncStatus.FAILED) {
         // Wichtig: Lese den aktuellen Eintrag *innerhalb* der Transaktion, um Race Conditions zu vermeiden
         const currentEntry = await syncQueueTable.get(entryId);
-        updateData.attempts = (currentEntry?.attempts ?? 0) + 1;
+
+        // Wenn attempts explizit übergeben wurde, verwende diesen Wert
+        // Ansonsten inkrementiere den bestehenden Wert
+        if (attempts === undefined) {
+          updateData.attempts = (currentEntry?.attempts ?? 0) + 1;
+        }
         updateData.lastAttempt = Date.now();
       }
 
@@ -415,7 +448,16 @@ export class TenantDbService {
         return false;
       }
     } catch (dbError) {
-      errorLog('TenantDbService', `Dexie-Fehler beim Aktualisieren des SyncQueue-Eintrags ${entryId} auf Status ${newStatus}.`, { error: dbError });
+      errorLog('TenantDbService', `Dexie-Fehler beim Aktualisieren des SyncQueue-Eintrags ${entryId} auf Status ${newStatus}`, {
+        error: dbError instanceof Error ? dbError.message : String(dbError),
+        errorType: dbError instanceof Error ? dbError.constructor.name : typeof dbError,
+        stack: dbError instanceof Error ? dbError.stack : undefined,
+        entryId: entryId,
+        newStatus: newStatus,
+        errorMessage: error,
+        attempts: attempts,
+        timestamp: new Date().toISOString()
+      });
       return false;
     }
   }
@@ -457,7 +499,13 @@ export class TenantDbService {
         return false;
       }
     } catch (dbError) {
-      errorLog('TenantDbService', `Dexie-Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}.`, { error: dbError });
+      errorLog('TenantDbService', `Dexie-Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}`, {
+        error: dbError instanceof Error ? dbError.message : String(dbError),
+        errorType: dbError instanceof Error ? dbError.constructor.name : typeof dbError,
+        stack: dbError instanceof Error ? dbError.stack : undefined,
+        entryId: entryId,
+        timestamp: new Date().toISOString()
+      });
       return false;
     }
   }
@@ -554,7 +602,13 @@ export class TenantDbService {
       debugLog('TenantDbService', `${stuckEntries.length} hängende PROCESSING-Einträge zurückgesetzt.`);
       return stuckEntries.length;
     } catch (err) {
-      errorLog('TenantDbService', 'Fehler beim Zurücksetzen hängender PROCESSING-Einträge', { error: err });
+      errorLog('TenantDbService', 'Fehler beim Zurücksetzen hängender PROCESSING-Einträge', {
+        error: err instanceof Error ? err.message : String(err),
+        errorType: err instanceof Error ? err.constructor.name : typeof err,
+        stack: err instanceof Error ? err.stack : undefined,
+        cutoffTimeAgo: '30 seconds',
+        timestamp: new Date().toISOString()
+      });
       return 0;
     }
   }
@@ -892,22 +946,29 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existing = await this.db.recipients.get(id);
-      if (!existing) {
-        warnLog('TenantDbService', `Empfänger mit ID "${id}" für Update nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.recipients, this.db.syncQueue], async (tx) => {
+        const recipientsTable = tx.table<Recipient, string>('recipients');
+        const existing = await recipientsTable.get(id);
 
-      const updatedRecipient = {
-        ...existing,
-        ...updates,
-        id, // ID darf nicht überschrieben werden
-        updated_at: new Date().toISOString()
-      };
+        if (!existing) {
+          warnLog('TenantDbService', `Empfänger mit ID "${id}" für Update nicht gefunden.`);
+          return false;
+        }
 
-      await this.db.recipients.put(updatedRecipient);
-      debugLog('TenantDbService', `Empfänger "${updatedRecipient.name}" (ID: ${id}) aktualisiert.`);
-      return true;
+        const updatedRecipient = {
+          ...existing,
+          ...updates,
+          id, // ID darf nicht überschrieben werden
+          updated_at: new Date().toISOString()
+        };
+
+        // Beide Operationen in einer Transaktion
+        await recipientsTable.put(updatedRecipient);
+        await this.addToSyncQueueInTransaction(tx, 'recipients', 'update', updatedRecipient);
+
+        debugLog('TenantDbService', `Empfänger "${updatedRecipient.name}" (ID: ${id}) aktualisiert.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren des Empfängers mit ID "${id}"`, { id, updates, error: err });
       return false;
@@ -920,15 +981,22 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existing = await this.db.recipients.get(id);
-      if (!existing) {
-        warnLog('TenantDbService', `Empfänger mit ID "${id}" für Löschung nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.recipients, this.db.syncQueue], async (tx) => {
+        const recipientsTable = tx.table<Recipient, string>('recipients');
+        const existing = await recipientsTable.get(id);
 
-      await this.db.recipients.delete(id);
-      debugLog('TenantDbService', `Empfänger mit ID "${id}" gelöscht.`);
-      return true;
+        if (!existing) {
+          warnLog('TenantDbService', `Empfänger mit ID "${id}" für Löschung nicht gefunden.`);
+          return false;
+        }
+
+        // Beide Operationen in einer Transaktion
+        await recipientsTable.delete(id);
+        await this.addToSyncQueueInTransaction(tx, 'recipients', 'delete', { id });
+
+        debugLog('TenantDbService', `Empfänger mit ID "${id}" gelöscht.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen des Empfängers mit ID "${id}"`, { id, error: err });
       return false;
@@ -990,22 +1058,29 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingTag = await this.db.tags.get(id);
-      if (!existingTag) {
-        warnLog('TenantDbService', `Tag mit ID "${id}" für Update nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.tags, this.db.syncQueue], async (tx) => {
+        const tagsTable = tx.table<Tag, string>('tags');
+        const existingTag = await tagsTable.get(id);
 
-      const updatedTag = {
-        ...existingTag,
-        ...updates,
-        id, // ID darf nicht überschrieben werden
-        updated_at: new Date().toISOString()
-      };
+        if (!existingTag) {
+          warnLog('TenantDbService', `Tag mit ID "${id}" für Update nicht gefunden.`);
+          return false;
+        }
 
-      await this.db.tags.put(updatedTag);
-      debugLog('TenantDbService', `Tag "${updatedTag.name}" (ID: ${id}) aktualisiert.`);
-      return true;
+        const updatedTag = {
+          ...existingTag,
+          ...updates,
+          id, // ID darf nicht überschrieben werden
+          updated_at: new Date().toISOString()
+        };
+
+        // Beide Operationen in einer Transaktion
+        await tagsTable.put(updatedTag);
+        await this.addToSyncQueueInTransaction(tx, 'tags', 'update', updatedTag);
+
+        debugLog('TenantDbService', `Tag "${updatedTag.name}" (ID: ${id}) aktualisiert.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren des Tags mit ID "${id}"`, { id, updates, error: err });
       return false;
@@ -1018,15 +1093,22 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingTag = await this.db.tags.get(id);
-      if (!existingTag) {
-        warnLog('TenantDbService', `Tag mit ID "${id}" für Löschung nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.tags, this.db.syncQueue], async (tx) => {
+        const tagsTable = tx.table<Tag, string>('tags');
+        const existingTag = await tagsTable.get(id);
 
-      await this.db.tags.delete(id);
-      debugLog('TenantDbService', `Tag "${existingTag.name}" (ID: ${id}) gelöscht.`);
-      return true;
+        if (!existingTag) {
+          warnLog('TenantDbService', `Tag mit ID "${id}" für Löschung nicht gefunden.`);
+          return false;
+        }
+
+        // Beide Operationen in einer Transaktion
+        await tagsTable.delete(id);
+        await this.addToSyncQueueInTransaction(tx, 'tags', 'delete', { id });
+
+        debugLog('TenantDbService', `Tag "${existingTag.name}" (ID: ${id}) gelöscht.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen des Tags mit ID "${id}"`, { id, error: err });
       return false;
@@ -1123,25 +1205,32 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingRule = await this.db.rules.get(id);
-      if (!existingRule) {
-        warnLog('TenantDbService', `Regel mit ID "${id}" für Update nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.rules, this.db.syncQueue], async (tx) => {
+        const rulesTable = tx.table<AutomationRule, string>('rules');
+        const existingRule = await rulesTable.get(id);
 
-      // Konvertiere updates zu plain object
-      const plainUpdates = this.toPlainObject(updates);
+        if (!existingRule) {
+          warnLog('TenantDbService', `Regel mit ID "${id}" für Update nicht gefunden.`);
+          return false;
+        }
 
-      const updatedRule = {
-        ...existingRule,
-        ...plainUpdates,
-        id, // ID darf nicht überschrieben werden
-        updated_at: new Date().toISOString()
-      };
+        // Konvertiere updates zu plain object
+        const plainUpdates = this.toPlainObject(updates);
 
-      await this.db.rules.put(updatedRule);
-      debugLog('TenantDbService', `Regel "${updatedRule.name}" (ID: ${id}) aktualisiert.`);
-      return true;
+        const updatedRule = {
+          ...existingRule,
+          ...plainUpdates,
+          id, // ID darf nicht überschrieben werden
+          updated_at: new Date().toISOString()
+        };
+
+        // Beide Operationen in einer Transaktion
+        await rulesTable.put(updatedRule);
+        await this.addToSyncQueueInTransaction(tx, 'automationRules', 'update', updatedRule);
+
+        debugLog('TenantDbService', `Regel "${updatedRule.name}" (ID: ${id}) aktualisiert.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren der Regel mit ID "${id}"`, { id, updates, error: err });
       return false;
@@ -1154,15 +1243,22 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingRule = await this.db.rules.get(id);
-      if (!existingRule) {
-        warnLog('TenantDbService', `Regel mit ID "${id}" für Löschung nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.rules, this.db.syncQueue], async (tx) => {
+        const rulesTable = tx.table<AutomationRule, string>('rules');
+        const existingRule = await rulesTable.get(id);
 
-      await this.db.rules.delete(id);
-      debugLog('TenantDbService', `Regel "${existingRule.name}" (ID: ${id}) gelöscht.`);
-      return true;
+        if (!existingRule) {
+          warnLog('TenantDbService', `Regel mit ID "${id}" für Löschung nicht gefunden.`);
+          return false;
+        }
+
+        // Beide Operationen in einer Transaktion
+        await rulesTable.delete(id);
+        await this.addToSyncQueueInTransaction(tx, 'automationRules', 'delete', { id });
+
+        debugLog('TenantDbService', `Regel "${existingRule.name}" (ID: ${id}) gelöscht.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen der Regel mit ID "${id}"`, { id, error: err });
       return false;
@@ -1228,23 +1324,31 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingPlanningTransaction = await this.db.planningTransactions.get(id);
-      if (!existingPlanningTransaction) {
-        warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Update nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.planningTransactions, this.db.syncQueue], async (tx) => {
+        const planningTable = tx.table<PlanningTransaction, string>('planningTransactions');
+        const existingPlanningTransaction = await planningTable.get(id);
 
-      const updatedPlanningTransaction = {
-        ...existingPlanningTransaction,
-        ...updates,
-        id, // ID darf nicht überschrieben werden
-        updated_at: new Date().toISOString()
-      };
+        if (!existingPlanningTransaction) {
+          warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Update nicht gefunden.`);
+          return false;
+        }
 
-      const plainUpdatedPlanningTransaction = this.toPlainObject(updatedPlanningTransaction);
-      await this.db.planningTransactions.put(plainUpdatedPlanningTransaction);
-      debugLog('TenantDbService', `Planungstransaktion "${updatedPlanningTransaction.name}" (ID: ${id}) aktualisiert.`);
-      return true;
+        const updatedPlanningTransaction = {
+          ...existingPlanningTransaction,
+          ...updates,
+          id, // ID darf nicht überschrieben werden
+          updated_at: new Date().toISOString()
+        };
+
+        const plainUpdatedPlanningTransaction = this.toPlainObject(updatedPlanningTransaction);
+
+        // Beide Operationen in einer Transaktion
+        await planningTable.put(plainUpdatedPlanningTransaction);
+        await this.addToSyncQueueInTransaction(tx, 'planningTransactions', 'update', plainUpdatedPlanningTransaction);
+
+        debugLog('TenantDbService', `Planungstransaktion "${updatedPlanningTransaction.name}" (ID: ${id}) aktualisiert.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Aktualisieren der Planungstransaktion mit ID "${id}"`, { id, updates, error: err });
       return false;
@@ -1257,15 +1361,22 @@ export class TenantDbService {
       return false;
     }
     try {
-      const existingPlanningTransaction = await this.db.planningTransactions.get(id);
-      if (!existingPlanningTransaction) {
-        warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Löschung nicht gefunden.`);
-        return false;
-      }
+      return await this.db.transaction('rw', [this.db.planningTransactions, this.db.syncQueue], async (tx) => {
+        const planningTable = tx.table<PlanningTransaction, string>('planningTransactions');
+        const existingPlanningTransaction = await planningTable.get(id);
 
-      await this.db.planningTransactions.delete(id);
-      debugLog('TenantDbService', `Planungstransaktion "${existingPlanningTransaction.name}" (ID: ${id}) gelöscht.`);
-      return true;
+        if (!existingPlanningTransaction) {
+          warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Löschung nicht gefunden.`);
+          return false;
+        }
+
+        // Beide Operationen in einer Transaktion
+        await planningTable.delete(id);
+        await this.addToSyncQueueInTransaction(tx, 'planningTransactions', 'delete', { id });
+
+        debugLog('TenantDbService', `Planungstransaktion "${existingPlanningTransaction.name}" (ID: ${id}) gelöscht.`);
+        return true;
+      });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, { id, error: err });
       return false;

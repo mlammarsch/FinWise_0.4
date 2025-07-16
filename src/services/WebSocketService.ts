@@ -370,7 +370,17 @@ export const WebSocketService = {
                   warnLog('[WebSocketService]', `Unknown entity_type: ${updateMessage.entity_type}`);
               }
             } catch (e) {
-              errorLog('[WebSocketService]', 'Error processing DataUpdateNotificationMessage:', e, updateMessage);
+              errorLog('[WebSocketService]', 'Error processing DataUpdateNotificationMessage', {
+                error: e instanceof Error ? e.message : String(e),
+                errorType: e instanceof Error ? e.constructor.name : typeof e,
+                stack: e instanceof Error ? e.stack : undefined,
+                updateMessage: updateMessage,
+                entityType: updateMessage.entity_type,
+                operationType: updateMessage.operation_type,
+                entityId: updateMessage.data?.id || 'unknown',
+                tenantId: updateMessage.tenant_id,
+                timestamp: new Date().toISOString()
+              });
               // Hier könnte eine spezifischere Fehlerbehandlung erfolgen
             }
             // Loggen der geparsten Nachricht
@@ -576,7 +586,17 @@ export const WebSocketService = {
           }
 
         } catch (e) {
-          errorLog('[WebSocketService]', 'Error parsing message from server:', e, event.data);
+          errorLog('[WebSocketService]', 'Error parsing message from server', {
+            error: e instanceof Error ? e.message : String(e),
+            errorType: e instanceof Error ? e.constructor.name : typeof e,
+            stack: e instanceof Error ? e.stack : undefined,
+            rawEventData: event.data,
+            eventDataType: typeof event.data,
+            eventDataLength: typeof event.data === 'string' ? event.data.length : 'unknown',
+            socketState: socket?.readyState,
+            socketUrl: socket?.url,
+            timestamp: new Date().toISOString()
+          });
           // Prüfen, ob es sich um eine Textnachricht handelt (z.B. Fehlermeldung)
           if (typeof event.data === 'string' && !event.data.startsWith('{')) {
             warnLog('[WebSocketService]', 'Received non-JSON message from server:', event.data);
@@ -685,7 +705,17 @@ export const WebSocketService = {
         }
       };
     } catch (error) {
-      errorLog('[WebSocketService]', 'Failed to create WebSocket:', error);
+      errorLog('[WebSocketService]', 'Failed to create WebSocket', {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        wsUrl: wsUrl,
+        tenantId: tenantId,
+        connectionAttempt: reconnectAttempts + 1,
+        maxAttempts: MAX_RECONNECT_ATTEMPTS,
+        isReconnecting: isReconnecting,
+        timestamp: new Date().toISOString()
+      });
       webSocketStore.setError('Failed to create WebSocket connection.');
       webSocketStore.setConnectionStatus(WebSocketConnectionStatus.ERROR);
       // Der Backend-Status wird durch setConnectionStatus auf OFFLINE gesetzt.
@@ -1071,14 +1101,19 @@ export const WebSocketService = {
 
         return true;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
         errorLog('[WebSocketService]', 'Error sending message', {
-          sendTime: sendTime,
-          error: errorMessage,
+          error: error instanceof Error ? error.message : String(error),
           errorType: error instanceof Error ? error.constructor.name : typeof error,
+          stack: error instanceof Error ? error.stack : undefined,
+          sendTime: sendTime,
           messageType: (message as any)?.type || 'unknown',
           socketState: socket?.readyState || 'null',
-          message: message
+          socketUrl: socket?.url,
+          connectionStatus: webSocketStore.connectionStatus,
+          backendStatus: webSocketStore.backendStatus,
+          message: message,
+          messageSize: JSON.stringify(message).length,
+          timestamp: new Date().toISOString()
         });
         webSocketStore.setError('Error sending message.');
         return false;
@@ -1344,7 +1379,8 @@ export const WebSocketService = {
                 const updateDataPending: Partial<SyncQueueEntry> = {
                   status: SyncStatus.PENDING,
                   error: 'Failed to send to WebSocket',
-                  // lastAttempt und attempts bleiben vom PROCESSING-Versuch erhalten
+                  attempts: updateDataProcessing.attempts, // attempts vom PROCESSING-Versuch beibehalten
+                  // lastAttempt bleibt vom PROCESSING-Versuch erhalten
                 };
                 await syncQueueTable.update(entry.id, updateDataPending);
               } else {
@@ -1370,9 +1406,15 @@ export const WebSocketService = {
         errorLog('[WebSocketService]', 'Error during batch processing - stopping current sync attempt', {
           error: error instanceof Error ? error.message : String(error),
           errorType: error instanceof Error ? error.constructor.name : typeof error,
+          stack: error instanceof Error ? error.stack : undefined,
           totalBatches: batches.length,
           processedBatches: webSocketStore.processedBatches,
           remainingBatches: batches.length - webSocketStore.processedBatches,
+          currentTenantId: currentTenantId,
+          connectionStatus: webSocketStore.connectionStatus,
+          backendStatus: webSocketStore.backendStatus,
+          totalPendingEntries: allPendingEntries.length,
+          batchSize: BATCH_SIZE,
           timestamp: new Date().toISOString()
         });
         // Fehler beendet die weitere Ausführung der processSyncQueue-Methode für diesen Durchlauf
@@ -1380,7 +1422,16 @@ export const WebSocketService = {
         return;
       }
     } catch (error) {
-      errorLog('[WebSocketService]', 'Error processing sync queue with transaction:', error);
+      errorLog('[WebSocketService]', 'Error processing sync queue with transaction', {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        currentTenantId: currentTenantId,
+        connectionStatus: webSocketStore.connectionStatus,
+        backendStatus: webSocketStore.backendStatus,
+        isSyncProcessRunning: isSyncProcessRunning,
+        timestamp: new Date().toISOString()
+      });
       // Bei einem Fehler in der Transaktion selbst werden die Änderungen zurückgerollt.
       // isSyncProcessRunning wird im finally Block gesetzt.
     } finally {
@@ -1431,7 +1482,13 @@ export const WebSocketService = {
         infoLog('[WebSocketService]', `Sync-Queue initialisiert: ${pendingEntries.length} ausstehende, ${failedEntries.length} fehlgeschlagene Einträge.`);
       }
     } catch (error) {
-      errorLog('[WebSocketService]', 'Fehler bei der Sync-Queue-Initialisierung', { error });
+      errorLog('[WebSocketService]', 'Fehler bei der Sync-Queue-Initialisierung', {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        currentTenantId: currentTenantId,
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
@@ -1477,64 +1534,146 @@ export const WebSocketService = {
         warnLog('[WebSocketService]', `Konnte Sync-Queue-Eintrag ${ackMessage.id} nach ACK nicht entfernen (möglicherweise bereits entfernt).`);
       }
     } catch (error) {
-      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-ACK für Eintrag ${ackMessage.id}`, { error, ackMessage });
+      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-ACK für Eintrag ${ackMessage.id}`, {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        ackMessage: ackMessage,
+        entryId: ackMessage.id,
+        entityType: ackMessage.entityType,
+        entityId: ackMessage.entityId,
+        operationType: ackMessage.operationType,
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
   async processSyncNack(nackMessage: SyncNackMessage): Promise<void> {
+    const MAX_RETRIES = 5;
+
     try {
+      // 1. Hole den entsprechenden SyncQueueEntry vom TenantDbService
       const entry = await tenantDbService.getSyncQueueEntry(nackMessage.id);
       if (!entry) {
         warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für NACK-Verarbeitung nicht gefunden.`);
         return;
       }
 
+      // 2. Erhöhe die Anzahl der attempts für diesen Eintrag
       const currentAttempts = entry.attempts ?? 0;
-      const maxRetries = this.getMaxRetriesForReason(nackMessage.reason);
+      const newAttempts = currentAttempts + 1;
 
-      if (currentAttempts >= maxRetries) {
-        // Maximale Anzahl von Versuchen erreicht - aus Queue entfernen
-        const success = await tenantDbService.removeSyncQueueEntry(nackMessage.id);
-        if (success) {
-          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} nach ${currentAttempts} fehlgeschlagenen Versuchen aus Queue entfernt.`, {
-            reason: nackMessage.reason,
-            detail: nackMessage.detail,
-            maxRetries,
-            entityId: nackMessage.entityId,
-            entityType: nackMessage.entityType,
-            operationType: nackMessage.operationType
-          });
-        } else {
-          errorLog('[WebSocketService]', `Konnte dauerhaft fehlgeschlagenen Sync-Queue-Eintrag ${nackMessage.id} nicht aus Queue entfernen.`, {
-            reason: nackMessage.reason,
-            detail: nackMessage.detail
-          });
-        }
-      } else {
-        // Retry mit exponential backoff
-        const retryDelay = this.calculateRetryDelay(currentAttempts);
+      // 3. Berechne eine exponentiell ansteigende Verzögerung (500ms * 2 ^ attempts)
+      const baseDelay = 500; // 500ms Basis-Verzögerung
+      const exponentialDelay = baseDelay * Math.pow(2, currentAttempts);
+      const maxDelay = 30000; // Maximale Verzögerung von 30 Sekunden
+      const retryDelay = Math.min(exponentialDelay, maxDelay);
 
+      // 4. Logge den fehlgeschlagenen Versuch, die Anzahl der Versuche und die geplante Verzögerung
+      warnLog('[WebSocketService]', `NACK für Sync-Queue-Eintrag ${nackMessage.id} erhalten`, {
+        entityId: nackMessage.entityId,
+        entityType: nackMessage.entityType,
+        operationType: nackMessage.operationType,
+        reason: nackMessage.reason,
+        detail: nackMessage.detail,
+        currentAttempts: currentAttempts,
+        newAttempts: newAttempts,
+        maxRetries: MAX_RETRIES,
+        retryDelay: retryDelay,
+        exponentialDelayFormula: `${baseDelay}ms * 2^${currentAttempts} = ${exponentialDelay}ms (capped at ${maxDelay}ms)`
+      });
+
+      if (newAttempts >= MAX_RETRIES) {
+        // Maximale Anzahl von Versuchen erreicht - in Dead-Letter-Queue verschieben
         const success = await tenantDbService.updateSyncQueueEntryStatus(
           nackMessage.id,
-          SyncStatus.PENDING,
-          `Retry scheduled after NACK: ${nackMessage.reason} - ${nackMessage.detail || ''}`
+          SyncStatus.FAILED_PERMANENTLY,
+          `Dead-Letter-Queue: ${nackMessage.reason} - ${nackMessage.detail || ''}`,
+          undefined, // transaction
+          newAttempts // attempts
         );
 
         if (success) {
-          warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für Retry geplant in ${retryDelay}ms (Versuch ${currentAttempts + 1}/${maxRetries}).`, {
+          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} nach ${newAttempts} fehlgeschlagenen Versuchen in Dead-Letter-Queue verschoben.`, {
             reason: nackMessage.reason,
             detail: nackMessage.detail,
-            retryDelay
+            maxRetries: MAX_RETRIES,
+            entityId: nackMessage.entityId,
+            entityType: nackMessage.entityType,
+            operationType: nackMessage.operationType,
+            finalAttempts: newAttempts,
+            status: 'FAILED_PERMANENTLY'
           });
-
-          // Retry nach Delay planen
-          setTimeout(() => {
-            this.checkAndProcessSyncQueue();
-          }, retryDelay);
+        } else {
+          errorLog('[WebSocketService]', `Konnte Sync-Queue-Eintrag ${nackMessage.id} nicht in Dead-Letter-Queue verschieben.`, {
+            reason: nackMessage.reason,
+            detail: nackMessage.detail,
+            attempts: newAttempts
+          });
         }
+      } else {
+        // 5. Verwende setTimeout, um nach der berechneten Verzögerung den Status des Eintrags auf PENDING zu setzen
+        infoLog('[WebSocketService]', `Plane Retry für Sync-Queue-Eintrag ${nackMessage.id} in ${retryDelay}ms`, {
+          entityId: nackMessage.entityId,
+          entityType: nackMessage.entityType,
+          operationType: nackMessage.operationType,
+          attemptNumber: `${newAttempts}/${MAX_RETRIES}`,
+          retryDelay: retryDelay,
+          scheduledTime: new Date(Date.now() + retryDelay).toISOString()
+        });
+
+        // Setze den Status nach der berechneten Verzögerung auf PENDING zurück
+        setTimeout(async () => {
+          try {
+            const success = await tenantDbService.updateSyncQueueEntryStatus(
+              nackMessage.id,
+              SyncStatus.PENDING,
+              `Retry ${newAttempts}/${MAX_RETRIES} after NACK: ${nackMessage.reason} - ${nackMessage.detail || ''}`,
+              undefined, // transaction
+              newAttempts // attempts - explizit den neuen Wert übergeben
+            );
+
+            if (success) {
+              infoLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} Status auf PENDING zurückgesetzt für Retry ${newAttempts}/${MAX_RETRIES}`, {
+                entityId: nackMessage.entityId,
+                entityType: nackMessage.entityType,
+                operationType: nackMessage.operationType,
+                reason: nackMessage.reason,
+                retryExecutedAt: new Date().toISOString()
+              });
+
+              // Dadurch wird der Eintrag vom Auto-Sync-Monitor automatisch wieder aufgenommen
+              debugLog('[WebSocketService]', `Auto-Sync-Monitor wird Eintrag ${nackMessage.id} automatisch wieder aufnehmen`);
+            } else {
+              errorLog('[WebSocketService]', `Konnte Status für Sync-Queue-Eintrag ${nackMessage.id} nicht auf PENDING zurücksetzen`, {
+                entityId: nackMessage.entityId,
+                reason: nackMessage.reason,
+                attemptNumber: newAttempts
+              });
+            }
+          } catch (timeoutError) {
+            errorLog('[WebSocketService]', `Fehler beim Zurücksetzen des Status für Sync-Queue-Eintrag ${nackMessage.id} nach Timeout`, {
+              error: timeoutError,
+              entityId: nackMessage.entityId,
+              attemptNumber: newAttempts
+            });
+          }
+        }, retryDelay);
       }
     } catch (error) {
-      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-NACK für Eintrag ${nackMessage.id}`, { error, nackMessage });
+      errorLog('[WebSocketService]', `Fehler beim Verarbeiten der Sync-NACK für Eintrag ${nackMessage.id}`, {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        nackMessage: nackMessage,
+        entryId: nackMessage.id,
+        entityType: nackMessage.entityType,
+        entityId: nackMessage.entityId,
+        operationType: nackMessage.operationType,
+        reason: nackMessage.reason,
+        detail: nackMessage.detail,
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
@@ -1679,7 +1818,13 @@ export const WebSocketService = {
         debugLog('[WebSocketService]', 'Server data status requested', { tenantId });
       }
     } catch (error) {
-      errorLog('[WebSocketService]', 'Error requesting server data status', { error, tenantId });
+      errorLog('[WebSocketService]', 'Error requesting server data status', {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        tenantId: tenantId,
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
@@ -1705,7 +1850,15 @@ export const WebSocketService = {
       });
 
     } catch (error) {
-      errorLog('[WebSocketService]', 'Error handling data status response', { error, message });
+      errorLog('[WebSocketService]', 'Error handling data status response', {
+        error: error instanceof Error ? error.message : String(error),
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        stack: error instanceof Error ? error.stack : undefined,
+        message: message,
+        tenantId: message.tenant_id,
+        lastSyncTime: message.last_sync_time,
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
