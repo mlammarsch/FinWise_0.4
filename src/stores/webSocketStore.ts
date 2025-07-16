@@ -48,6 +48,15 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     return connectionHealthStatus.value === 'RECONNECTING';
   });
 
+  // Computed properties für Sync-Queue-Statistiken
+  const pendingCount = computed(() => {
+    return syncState.value.queueStatistics?.pendingCount ?? 0;
+  });
+
+  const processingCount = computed(() => {
+    return syncState.value.queueStatistics?.processingCount ?? 0;
+  });
+
   function resetBatchProgress() {
     totalBatches.value = 0;
     processedBatches.value = 0;
@@ -156,6 +165,8 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     processedBatches,
     batchProgress,
     isReconnecting,
+    pendingCount,
+    processingCount,
     setConnectionStatus,
     setBackendStatus,
     setError,

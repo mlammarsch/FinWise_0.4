@@ -41,7 +41,7 @@
   - [x] 5.3 Eine Progress-Bar anzeigen, wenn eine Batch-Verarbeitung läuft.
   - [x] 5.4 Benutzerfreundliche Fehlermeldungen und einen klaren Offline-Indikator implementieren.
   - [x] 5.5 Die Komponente in die Hauptnavigation der Anwendung integrieren.
-- [ ] 6.0 Durchführung von Performance-Optimierungen (FR6)
-  - [ ] 6.1 In `TenantDbService` mehrere IndexedDB-Schreibvorgänge in einer einzigen Transaktion bündeln.
-  - [ ] 6.2 Sicherstellen, dass alle `setInterval`-Instanzen korrekt bereinigt werden, um Memory-Leaks zu vermeiden.
-  - [ ] 6.3 Die Berechnung von Sync-Queue-Statistiken im `webSocketStore` mithilfe von `computed` properties optimieren.
+- [x] 6.0 Durchführung von Performance-Optimierungen (FR6)
+  - [x] 6.1 In `TenantDbService` mehrere IndexedDB-Schreibvorgänge in einer einzigen Transaktion bündeln.
+  - [x] 6.2 Sicherstellen, dass alle `setInterval`-Instanzen korrekt bereinigt werden, um Memory-Leaks zu vermeiden.
+  - [x] 6.3 Die Berechnung von Sync-Queue-Statistiken im `webSocketStore` mithilfe von `computed` properties optimieren.

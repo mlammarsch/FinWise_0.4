@@ -579,28 +579,32 @@ export class TenantDbService {
     try {
       const cutoffTime = Date.now() - 30000; // 30 Sekunden
 
-      // Finde alle PROCESSING-Einträge, die älter als 30 Sekunden sind
-      const stuckEntries = await this.db.syncQueue
-        .where('status')
-        .equals(SyncStatus.PROCESSING)
-        .filter(entry => (entry.lastAttempt ?? 0) < cutoffTime)
-        .toArray();
+      return await this.db.transaction('rw', this.db.syncQueue, async (tx) => {
+        const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
 
-      if (stuckEntries.length === 0) {
-        return 0;
-      }
+        // Finde alle PROCESSING-Einträge, die älter als 30 Sekunden sind
+        const stuckEntries = await syncQueueTable
+          .where('status')
+          .equals(SyncStatus.PROCESSING)
+          .filter(entry => (entry.lastAttempt ?? 0) < cutoffTime)
+          .toArray();
 
-      // Setze Status auf PENDING für alle gefilterten Einträge
-      const updatedEntries = stuckEntries.map(entry => ({
-        ...entry,
-        status: SyncStatus.PENDING
-      }));
+        if (stuckEntries.length === 0) {
+          return 0;
+        }
 
-      // Verwende bulkPut für effiziente Aktualisierung
-      await this.db.syncQueue.bulkPut(updatedEntries);
+        // Setze Status auf PENDING für alle gefilterten Einträge
+        const updatedEntries = stuckEntries.map(entry => ({
+          ...entry,
+          status: SyncStatus.PENDING
+        }));
 
-      debugLog('TenantDbService', `${stuckEntries.length} hängende PROCESSING-Einträge zurückgesetzt.`);
-      return stuckEntries.length;
+        // Verwende bulkPut für effiziente Aktualisierung innerhalb der Transaktion
+        await syncQueueTable.bulkPut(updatedEntries);
+
+        debugLog('TenantDbService', `${stuckEntries.length} hängende PROCESSING-Einträge zurückgesetzt.`);
+        return stuckEntries.length;
+      });
     } catch (err) {
       errorLog('TenantDbService', 'Fehler beim Zurücksetzen hängender PROCESSING-Einträge', {
         error: err instanceof Error ? err.message : String(err),
@@ -1589,6 +1593,40 @@ export class TenantDbService {
       debugLog('TenantDbService', `Sync-Queue-Eintrag für ${tableName} ${operation} hinzugefügt`, { entityId: entity.id });
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen zur Sync-Queue für ${tableName} ${operation}`, { entity, error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Hilfsmethode zum Hinzufügen von Sync-Queue-Einträgen innerhalb einer bestehenden Transaktion
+   */
+  private async addToSyncQueueInTransaction(
+    transaction: Transaction,
+    tableName: string,
+    operation: 'create' | 'update' | 'delete',
+    entity: any
+  ): Promise<void> {
+    try {
+      const tenantStore = useTenantStore();
+      const syncQueueTable = transaction.table<SyncQueueEntry, string>('syncQueue');
+
+      const syncEntry: SyncQueueEntry = {
+        id: uuidv4(),
+        tenantId: tenantStore.activeTenantId || '',
+        entityType: this.getEntityTypeFromTableName(tableName),
+        entityId: entity.id,
+        operationType: this.getSyncOperationType(operation),
+        payload: entity,
+        timestamp: Date.now(),
+        status: SyncStatus.PENDING,
+        attempts: 0
+      };
+
+      const plainSyncEntry = this.toPlainObject(syncEntry);
+      await syncQueueTable.add(plainSyncEntry);
+      debugLog('TenantDbService', `Sync-Queue-Eintrag für ${tableName} ${operation} in Transaktion hinzugefügt`, { entityId: entity.id });
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen zur Sync-Queue in Transaktion für ${tableName} ${operation}`, { entity, error: err });
       throw err;
     }
   }
