@@ -1,6 +1,6 @@
 // src/stores/webSocketStore.ts
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { infoLog, errorLog, debugLog } from '@/utils/logger';
 import { BackendStatus, type ServerWebSocketMessage, type SyncState, type QueueStatistics } from '@/types';
 
@@ -11,9 +11,12 @@ export enum WebSocketConnectionStatus { // Umbenannt zur Klarheit
   ERROR = 'error',
 }
 
+export type ConnectionHealthStatus = 'HEALTHY' | 'UNHEALTHY' | 'RECONNECTING';
+
 export const useWebSocketStore = defineStore('webSocket', () => {
   const connectionStatus = ref<WebSocketConnectionStatus>(WebSocketConnectionStatus.DISCONNECTED);
   const backendStatus = ref<BackendStatus>(BackendStatus.OFFLINE);
+  const connectionHealthStatus = ref<ConnectionHealthStatus>('RECONNECTING');
   const lastError = ref<string | null>(null);
   const lastMessage = ref<ServerWebSocketMessage | null>(null); // Typisiert mit ServerWebSocketMessage
 
@@ -27,6 +30,28 @@ export const useWebSocketStore = defineStore('webSocket', () => {
     syncAnimationEndTime: null,
     periodicSyncInterval: 60000
   });
+
+  // Batch-Fortschritts-Verfolgung
+  const totalBatches = ref<number>(0);
+  const processedBatches = ref<number>(0);
+
+  // Computed property für Batch-Fortschritt in Prozent
+  const batchProgress = computed(() => {
+    if (totalBatches.value === 0) {
+      return 0;
+    }
+    return (processedBatches.value / totalBatches.value) * 100;
+  });
+
+  // Computed property für Reconnection-Status
+  const isReconnecting = computed(() => {
+    return connectionHealthStatus.value === 'RECONNECTING';
+  });
+
+  function resetBatchProgress() {
+    totalBatches.value = 0;
+    processedBatches.value = 0;
+  }
 
   function setConnectionStatus(newStatus: WebSocketConnectionStatus) {
     infoLog('[WebSocketStore]', `Connection status changed to: ${newStatus}`);
@@ -61,6 +86,7 @@ export const useWebSocketStore = defineStore('webSocket', () => {
   function reset() {
     setConnectionStatus(WebSocketConnectionStatus.DISCONNECTED);
     setBackendStatus(BackendStatus.OFFLINE); // Explizit auch hier setzen
+    connectionHealthStatus.value = 'RECONNECTING';
     lastError.value = null;
     lastMessage.value = null;
     // Sync-State zurücksetzen
@@ -122,14 +148,20 @@ export const useWebSocketStore = defineStore('webSocket', () => {
   return {
     connectionStatus,
     backendStatus,
+    connectionHealthStatus,
     lastError,
     lastMessage,
     syncState,
+    totalBatches,
+    processedBatches,
+    batchProgress,
+    isReconnecting,
     setConnectionStatus,
     setBackendStatus,
     setError,
     setLastMessage,
     reset,
+    resetBatchProgress,
     setSyncInProgress,
     updateQueueStatistics,
     setAutoSyncEnabled,

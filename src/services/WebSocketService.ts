@@ -1,5 +1,5 @@
 import { useSessionStore } from '@/stores/sessionStore';
-import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
+import { useWebSocketStore, WebSocketConnectionStatus, type ConnectionHealthStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger';
 import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type Recipient, type Tag, type AutomationRule, type PlanningTransaction, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types';
 import { watch } from 'vue';
@@ -17,11 +17,14 @@ const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
 const LONG_TERM_RECONNECT_INTERVAL = 30000; // 30 Sekunden für langfristige Reconnects
 const BACKEND_HEALTH_CHECK_INTERVAL = 15000; // 15 Sekunden für Backend-Health-Checks
-const RECONNECT_INITIAL_INTERVAL = 1000; // ms
-const RECONNECT_MAX_INTERVAL = 30000; // ms
+const RECONNECT_INITIAL_DELAY = 1000; // ms - Initiale Verzögerung
+const RECONNECT_MAX_DELAY = 30000; // ms - Maximale Verzögerung
 
 let socket: WebSocket | null = null;
 let reconnectAttempts = 0;
+let reconnectDelay = RECONNECT_INITIAL_DELAY;
+let maxReconnectDelay = RECONNECT_MAX_DELAY;
+let reconnectTimeoutId: NodeJS.Timeout | null = null;
 let explicitClose = false;
 let isSyncProcessRunning = false; // Verhindert mehrfache Ausführung
 let longTermReconnectTimer: NodeJS.Timeout | null = null;
@@ -32,6 +35,12 @@ let autoSyncInterval: NodeJS.Timeout | null = null;
 let queueWatcher: (() => void) | null = null;
 let isAutoSyncEnabled = true;
 let pingIntervalId: NodeJS.Timeout | null = null;
+
+// Heartbeat-Mechanismus Variablen
+let heartbeatIntervalId: NodeJS.Timeout | null = null;
+let pongTimeoutId: NodeJS.Timeout | null = null;
+const HEARTBEAT_INTERVAL = 30000; // 30 Sekunden
+const PONG_TIMEOUT = 10000; // 10 Sekunden
 
 const tenantDbService = new TenantDbService();
 
@@ -111,28 +120,46 @@ export const WebSocketService = {
 
         // Status-Updates
         webSocketStore.setConnectionStatus(WebSocketConnectionStatus.CONNECTED);
+        webSocketStore.connectionHealthStatus = 'HEALTHY';
         webSocketStore.setError(null);
         const previousAttempts = reconnectAttempts;
+        const previousDelay = reconnectDelay;
+
+        // Reconnection-Zustand zurücksetzen bei erfolgreicher Verbindung
         reconnectAttempts = 0;
+        reconnectDelay = RECONNECT_INITIAL_DELAY;
         isReconnecting = false;
+
+        // Laufende Reconnection-Timer stoppen
+        if (reconnectTimeoutId) {
+          clearTimeout(reconnectTimeoutId);
+          reconnectTimeoutId = null;
+        }
 
         debugLog('[WebSocketService]', 'Connection state updated', {
           newConnectionStatus: WebSocketConnectionStatus.CONNECTED,
           errorCleared: true,
           reconnectAttemptsReset: `${previousAttempts} -> 0`,
-          isReconnectingReset: false
+          reconnectDelayReset: `${previousDelay}ms -> ${RECONNECT_INITIAL_DELAY}ms`,
+          isReconnectingReset: false,
+          reconnectTimeoutCleared: true
         });
 
         // Heartbeat-Mechanismus starten
-        this.startPingInterval();
+        this.startHeartbeat();
         infoLog('[WebSocketService]', 'Heartbeat mechanism started', {
-          pingInterval: '20 seconds',
-          pingIntervalActive: pingIntervalId !== null
+          heartbeatInterval: `${HEARTBEAT_INTERVAL / 1000} seconds`,
+          pongTimeout: `${PONG_TIMEOUT / 1000} seconds`,
+          heartbeatActive: heartbeatIntervalId !== null
         });
 
         // Sync-Queue-Verarbeitung starten
         this.checkAndProcessSyncQueue();
         debugLog('[WebSocketService]', 'Sync queue processing triggered after connection establishment');
+
+        // Nach erfolgreicher Wiederverbindung Sync-Queue sofort verarbeiten
+        this.processSyncQueue();
+        infoLog('[WebSocketService]', 'Sync queue processing triggered immediately after successful reconnection');
       };
 
       socket.onmessage = async (event) => { // async hinzugefügt
@@ -643,6 +670,7 @@ export const WebSocketService = {
 
         // Reconnection-Logik
         if (!explicitClose) {
+          webSocketStore.connectionHealthStatus = 'RECONNECTING';
           infoLog('[WebSocketService]', 'Connection closed unexpectedly - initiating reconnection', {
             willReconnect: true,
             currentReconnectAttempts: reconnectAttempts,
@@ -722,8 +750,23 @@ export const WebSocketService = {
       stopTime: stopTime,
       longTermTimerActive: longTermReconnectTimer !== null,
       healthCheckTimerActive: backendHealthCheckTimer !== null,
+      reconnectTimeoutActive: reconnectTimeoutId !== null,
       isCurrentlyReconnecting: isReconnecting
     });
+
+    // Stoppe exponential backoff reconnection timeout
+    if (reconnectTimeoutId) {
+      infoLog('[WebSocketService]', 'Clearing exponential backoff reconnection timeout', {
+        timerWasActive: true,
+        stopTime: stopTime
+      });
+      clearTimeout(reconnectTimeoutId);
+      reconnectTimeoutId = null;
+    } else {
+      debugLog('[WebSocketService]', 'No exponential backoff reconnection timeout to clear', {
+        timerWasActive: false
+      });
+    }
 
     if (longTermReconnectTimer) {
       infoLog('[WebSocketService]', 'Clearing long-term reconnection timer', {
@@ -756,6 +799,7 @@ export const WebSocketService = {
 
     debugLog('[WebSocketService]', 'Reconnection timers cleanup completed', {
       stopTime: stopTime,
+      reconnectTimeoutId: null,
       longTermReconnectTimer: null,
       backendHealthCheckTimer: null,
       isReconnecting: `${wasReconnecting} -> false`,
@@ -787,31 +831,32 @@ export const WebSocketService = {
     if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
       reconnectAttempts++;
 
-      // Exponential-Backoff-Strategie: Intervall bei jedem Versuch verdoppeln
-      const currentInterval = Math.min(
-        RECONNECT_INITIAL_INTERVAL * Math.pow(2, reconnectAttempts - 1),
-        RECONNECT_MAX_INTERVAL
+      // Exponential-Backoff-Strategie: Verzögerung bei jedem Versuch verdoppeln
+      reconnectDelay = Math.min(
+        RECONNECT_INITIAL_DELAY * Math.pow(2, reconnectAttempts - 1),
+        maxReconnectDelay
       );
 
       infoLog('[WebSocketService]', `Scheduling reconnection attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`, {
         attemptNumber: reconnectAttempts,
         totalAttempts: MAX_RECONNECT_ATTEMPTS,
-        delayMs: currentInterval,
-        delaySeconds: Math.round(currentInterval / 1000),
-        exponentialBackoffFormula: `${RECONNECT_INITIAL_INTERVAL} * 2^${reconnectAttempts - 1}`,
-        maxInterval: RECONNECT_MAX_INTERVAL,
-        scheduledTime: new Date(Date.now() + currentInterval).toISOString()
+        delayMs: reconnectDelay,
+        delaySeconds: Math.round(reconnectDelay / 1000),
+        exponentialBackoffFormula: `${RECONNECT_INITIAL_DELAY} * 2^${reconnectAttempts - 1}`,
+        maxDelay: maxReconnectDelay,
+        scheduledTime: new Date(Date.now() + reconnectDelay).toISOString()
       });
 
-      setTimeout(() => {
+      reconnectTimeoutId = setTimeout(() => {
         debugLog('[WebSocketService]', `Executing reconnection attempt ${reconnectAttempts}`, {
           executionTime: new Date().toISOString(),
           attemptNumber: reconnectAttempts,
-          wasScheduledFor: currentInterval + 'ms ago'
+          wasScheduledFor: reconnectDelay + 'ms ago'
         });
+        reconnectTimeoutId = null;
         isReconnecting = false;
         this.connect();
-      }, currentInterval);
+      }, reconnectDelay);
     } else {
       // Nach MAX_RECONNECT_ATTEMPTS wechseln zu langfristiger Reconnection-Strategie
       warnLog('[WebSocketService]', 'Maximum short-term reconnection attempts reached', {
@@ -1093,74 +1138,57 @@ export const WebSocketService = {
     return success;
   },
 
-  startPingInterval(): void {
-    const startTime = new Date().toISOString();
-    const pingIntervalMs = 20000; // 20 Sekunden
+  // Heartbeat-Mechanismus für Verbindungsüberwachung
+  startHeartbeat(): void {
+    this.stopHeartbeat();
 
-    infoLog('[WebSocketService]', 'Starting heartbeat ping interval', {
-      startTime: startTime,
-      intervalMs: pingIntervalMs,
-      intervalSeconds: pingIntervalMs / 1000,
-      previousIntervalActive: pingIntervalId !== null
-    });
+    heartbeatIntervalId = setInterval(() => {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        // Ping senden
+        const pingTimestamp = Date.now();
+        const pingMessage = {
+          type: 'ping',
+          timestamp: pingTimestamp
+        };
 
-    this.stopPingInterval(); // Stoppe vorhandenes Intervall falls vorhanden
-
-    pingIntervalId = setInterval(() => {
-      const pingAttemptTime = new Date().toISOString();
-
-      debugLog('[WebSocketService]', 'Heartbeat ping interval triggered', {
-        pingAttemptTime: pingAttemptTime,
-        socketState: socket?.readyState,
-        connectionStatus: useWebSocketStore().connectionStatus
-      });
-
-      const pingSuccess = this.sendPing();
-
-      if (pingSuccess) {
-        debugLog('[WebSocketService]', 'Heartbeat ping completed successfully', {
-          pingTime: pingAttemptTime,
-          success: true
+        socket.send(JSON.stringify(pingMessage));
+        debugLog('[WebSocketService]', 'Heartbeat ping sent to server', {
+          pingTimestamp: pingTimestamp,
+          pingTime: new Date(pingTimestamp).toISOString()
         });
-      } else {
-        warnLog('[WebSocketService]', 'Heartbeat ping failed', {
-          pingTime: pingAttemptTime,
-          success: false,
-          socketState: socket?.readyState,
-          reason: 'WebSocket not ready or send operation failed'
-        });
+
+        // Pong-Timeout starten
+        pongTimeoutId = setTimeout(() => {
+          const webSocketStore = useWebSocketStore();
+          webSocketStore.connectionHealthStatus = 'UNHEALTHY';
+          warnLog('[WebSocketService]', 'Pong timeout - closing connection for reconnection', {
+            timeout: `${PONG_TIMEOUT / 1000} seconds`,
+            connectionState: socket?.readyState
+          });
+          socket?.close();
+        }, PONG_TIMEOUT);
       }
-    }, pingIntervalMs);
+    }, HEARTBEAT_INTERVAL);
+  },
 
-    debugLog('[WebSocketService]', 'Ping interval timer created', {
-      timerId: pingIntervalId ? 'active' : 'failed',
-      intervalMs: pingIntervalMs
-    });
+  stopHeartbeat(): void {
+    if (heartbeatIntervalId) {
+      clearInterval(heartbeatIntervalId);
+      heartbeatIntervalId = null;
+    }
+    if (pongTimeoutId) {
+      clearTimeout(pongTimeoutId);
+      pongTimeoutId = null;
+    }
+  },
+
+  // Legacy-Methoden für Rückwärtskompatibilität (deprecated)
+  startPingInterval(): void {
+    this.startHeartbeat();
   },
 
   stopPingInterval(): void {
-    const stopTime = new Date().toISOString();
-
-    if (pingIntervalId) {
-      infoLog('[WebSocketService]', 'Stopping heartbeat ping interval', {
-        stopTime: stopTime,
-        intervalWasActive: true,
-        timerId: 'cleared'
-      });
-      clearInterval(pingIntervalId);
-      pingIntervalId = null;
-
-      debugLog('[WebSocketService]', 'Ping interval cleared successfully', {
-        pingIntervalId: null,
-        stopTime: stopTime
-      });
-    } else {
-      debugLog('[WebSocketService]', 'Ping interval stop requested but no active interval', {
-        stopTime: stopTime,
-        intervalWasActive: false,
-        pingIntervalId: null
-      });
-    }
+    this.stopHeartbeat();
   },
 
   requestConnectionStatus(): boolean {
@@ -1205,6 +1233,10 @@ export const WebSocketService = {
     infoLog('[WebSocketService]', 'Starting to process sync queue...');
 
     const webSocketStore = useWebSocketStore();
+
+    // Batch-Progress zurücksetzen
+    webSocketStore.resetBatchProgress();
+
     debugLog('[WebSocketService]', 'Sync queue processing started', {
       connectionStatus: webSocketStore.connectionStatus,
       backendStatus: webSocketStore.backendStatus,
@@ -1234,68 +1266,126 @@ export const WebSocketService = {
     }
 
     try {
-      // Dexie-Transaktion starten
-      await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
-        const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+      // 1. Ausstehende Einträge außerhalb der Transaktion abrufen
+      const allPendingEntries = await activeDB.syncQueue
+        .where({ tenantId: currentTenantId, status: SyncStatus.PENDING })
+        .sortBy('timestamp');
 
-        // 1. Ausstehende Einträge innerhalb der Transaktion abrufen
-        const pendingEntries = await syncQueueTable
-          .where({ tenantId: currentTenantId, status: SyncStatus.PENDING })
-          .sortBy('timestamp');
+      if (allPendingEntries.length === 0) {
+        infoLog('[WebSocketService]', 'No pending entries in sync queue.');
+        return;
+      }
 
-        if (pendingEntries.length === 0) {
-          infoLog('[WebSocketService]', 'No pending entries in sync queue (within transaction).');
-          return; // Beendet die Transaktions-Callback-Funktion
+      infoLog('[WebSocketService]', `Found ${allPendingEntries.length} pending entries to sync.`);
+
+      // 2. Einträge in Batches von maximal 15 aufteilen
+      const BATCH_SIZE = 15;
+      const batches: SyncQueueEntry[][] = [];
+
+      for (let i = 0; i < allPendingEntries.length; i += BATCH_SIZE) {
+        batches.push(allPendingEntries.slice(i, i + BATCH_SIZE));
+      }
+
+      infoLog('[WebSocketService]', `Processing ${batches.length} batches with max ${BATCH_SIZE} entries each.`, {
+        totalEntries: allPendingEntries.length,
+        totalBatches: batches.length
+      });
+
+      // Batch-Progress initialisieren
+      webSocketStore.totalBatches = batches.length;
+      webSocketStore.processedBatches = 0;
+
+      // 3. Verarbeite alle Batches sequenziell mit Pause zwischen den Batches
+      try {
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          // Prüfe ob WebSocket-Service noch online ist
+          const webSocketStore = useWebSocketStore();
+          if (webSocketStore.connectionStatus !== WebSocketConnectionStatus.CONNECTED ||
+              webSocketStore.backendStatus !== BackendStatus.ONLINE) {
+            infoLog('[WebSocketService]', `Stopping batch processing at batch ${batchIndex + 1}/${batches.length} - WebSocket offline.`);
+            break;
+          }
+
+          const currentBatch = batches[batchIndex];
+          infoLog('[WebSocketService]', `Processing batch ${batchIndex + 1}/${batches.length} with ${currentBatch.length} entries.`);
+
+          // Verarbeite aktuellen Batch in einer Transaktion
+          await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
+            const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+
+            for (const entry of currentBatch) {
+              // 4. Status auf PROCESSING setzen (innerhalb der Transaktion)
+              const updateDataProcessing: Partial<SyncQueueEntry> = {
+                status: SyncStatus.PROCESSING,
+                attempts: (entry.attempts ?? 0) + 1,
+                lastAttempt: Date.now(),
+              };
+              const updatedToProcessingCount = await syncQueueTable.update(entry.id, updateDataProcessing);
+
+              if (updatedToProcessingCount === 0) {
+                errorLog('[WebSocketService]', `Failed to update sync entry ${entry.id} to PROCESSING (not found in transaction?). Skipping.`);
+                continue; // Nächsten Eintrag in der Schleife bearbeiten
+              }
+              // Wichtig: Das 'entry'-Objekt, das gesendet wird, mit den neuen Werten aktualisieren
+              Object.assign(entry, updateDataProcessing);
+
+              // 5. Nachricht vorbereiten und senden
+              const messageToSend = {
+                type: 'process_sync_entry',
+                payload: entry, // Sendet den aktualisierten Eintrag
+              };
+
+              infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend (batch ${batchIndex + 1}/${batches.length}, entry ${currentBatch.indexOf(entry) + 1}/${currentBatch.length}).`);
+              const sent = this.sendMessage(messageToSend); // sendMessage ist außerhalb der DB-Transaktion
+
+              if (!sent) {
+                errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. Setting back to PENDING (within transaction).`);
+                // Bei direktem Sendefehler zurück auf PENDING (innerhalb der Transaktion)
+                const updateDataPending: Partial<SyncQueueEntry> = {
+                  status: SyncStatus.PENDING,
+                  error: 'Failed to send to WebSocket',
+                  // lastAttempt und attempts bleiben vom PROCESSING-Versuch erhalten
+                };
+                await syncQueueTable.update(entry.id, updateDataPending);
+              } else {
+                debugLog('[WebSocketService]', `Sync entry ${entry.id} sent to backend, status is PROCESSING (DB updated in transaction).`);
+              }
+            }
+          });
+
+          infoLog('[WebSocketService]', `Completed processing batch ${batchIndex + 1}/${batches.length}.`);
+
+          // Batch-Progress aktualisieren
+          webSocketStore.processedBatches = batchIndex + 1;
+
+          // 6. Pause von 1 Sekunde zwischen den Batches (außer beim letzten Batch)
+          if (batchIndex < batches.length - 1) {
+            infoLog('[WebSocketService]', `Waiting 1 second before processing next batch (${batchIndex + 2}/${batches.length})...`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
         }
 
-        infoLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries to sync (within transaction).`);
-
-        for (const entry of pendingEntries) {
-          // 2. Status auf PROCESSING setzen (innerhalb der Transaktion)
-          const updateDataProcessing: Partial<SyncQueueEntry> = {
-            status: SyncStatus.PROCESSING,
-            attempts: (entry.attempts ?? 0) + 1,
-            lastAttempt: Date.now(),
-          };
-          const updatedToProcessingCount = await syncQueueTable.update(entry.id, updateDataProcessing);
-
-          if (updatedToProcessingCount === 0) {
-            errorLog('[WebSocketService]', `Failed to update sync entry ${entry.id} to PROCESSING (not found in transaction?). Skipping.`);
-            continue; // Nächsten Eintrag in der Schleife bearbeiten
-          }
-          // Wichtig: Das 'entry'-Objekt, das gesendet wird, mit den neuen Werten aktualisieren
-          Object.assign(entry, updateDataProcessing);
-
-
-          // 3. Nachricht vorbereiten und senden
-          const messageToSend = {
-            type: 'process_sync_entry',
-            payload: entry, // Sendet den aktualisierten Eintrag
-          };
-
-          infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
-          const sent = this.sendMessage(messageToSend); // sendMessage ist außerhalb der DB-Transaktion
-
-          if (!sent) {
-            errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. Setting back to PENDING (within transaction).`);
-            // Bei direktem Sendefehler zurück auf PENDING (innerhalb der Transaktion)
-            const updateDataPending: Partial<SyncQueueEntry> = {
-              status: SyncStatus.PENDING,
-              error: 'Failed to send to WebSocket',
-              // lastAttempt und attempts bleiben vom PROCESSING-Versuch erhalten
-            };
-            await syncQueueTable.update(entry.id, updateDataPending);
-          } else {
-            debugLog('[WebSocketService]', `Sync entry ${entry.id} sent to backend, status is PROCESSING (DB updated in transaction).`);
-          }
-        }
-      }); // Ende der Dexie-Transaktion
-      debugLog('[WebSocketService]', 'Dexie transaction for sync queue processing completed.');
+        debugLog('[WebSocketService]', 'All batches processed successfully.');
+      } catch (error) {
+        errorLog('[WebSocketService]', 'Error during batch processing - stopping current sync attempt', {
+          error: error instanceof Error ? error.message : String(error),
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+          totalBatches: batches.length,
+          processedBatches: webSocketStore.processedBatches,
+          remainingBatches: batches.length - webSocketStore.processedBatches,
+          timestamp: new Date().toISOString()
+        });
+        // Fehler beendet die weitere Ausführung der processSyncQueue-Methode für diesen Durchlauf
+        // Der Auto-Sync-Monitor wird den fehlgeschlagenen Batch beim nächsten Durchlauf automatisch erneut versuchen
+        return;
+      }
     } catch (error) {
       errorLog('[WebSocketService]', 'Error processing sync queue with transaction:', error);
       // Bei einem Fehler in der Transaktion selbst werden die Änderungen zurückgerollt.
       // isSyncProcessRunning wird im finally Block gesetzt.
     } finally {
+      // Batch-Progress zurücksetzen
+      webSocketStore.resetBatchProgress();
       isSyncProcessRunning = false;
       infoLog('[WebSocketService]', 'Finished processing sync queue attempt.');
     }
@@ -1328,7 +1418,7 @@ export const WebSocketService = {
 
     try {
       // Hängende PROCESSING-Einträge zurücksetzen (älter als 30 Sekunden)
-      const resetCount = await tenantDbService.resetStuckProcessingEntries(currentTenantId, 30000);
+      const resetCount = await tenantDbService.resetStuckProcessingEntries();
       if (resetCount > 0) {
         infoLog('[WebSocketService]', `${resetCount} hängende PROCESSING-Einträge beim Start zurückgesetzt.`);
       }
