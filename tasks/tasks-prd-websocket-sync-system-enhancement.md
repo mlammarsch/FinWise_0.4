@@ -14,12 +14,12 @@
 
 ## Tasks
 
-- [ ] 1.0 Implementierung des kontinuierlichen Auto-Sync-Monitors (FR1)
-  - [ ] 1.1 Erstellen der Composable-Datei `src/composables/useSyncMonitor.ts`.
-  - [ ] 1.2 Implementieren einer `setInterval`-Logik, die alle 10 Sekunden ausgeführt wird, um die Sync-Queue zu prüfen.
-  - [ ] 1.3 Der Monitor darf nur laufen, wenn der `webSocketStore` einen Online-Status anzeigt.
-  - [ ] 1.4 Bei `pending` Einträgen in der Queue, die Funktion `WebSocketService.processSyncQueue()` aufrufen.
-  - [ ] 1.5 In `TenantDbService` eine Methode implementieren, die `PROCESSING`-Einträge, die älter als 30 Sekunden sind, auf `PENDING` zurücksetzt.
+- [x] 1.0 Implementierung des kontinuierlichen Auto-Sync-Monitors (FR1)
+  - [x] 1.1 Erstellen der Composable-Datei `src/composables/useSyncMonitor.ts`.
+  - [x] 1.2 Implementieren einer `setInterval`-Logik, die alle 10 Sekunden ausgeführt wird, um die Sync-Queue zu prüfen.
+  - [x] 1.3 Der Monitor darf nur laufen, wenn der `webSocketStore` einen Online-Status anzeigt.
+  - [x] 1.4 Bei `pending` Einträgen in der Queue, die Funktion `WebSocketService.processSyncQueue()` aufrufen.
+  - [x] 1.5 In `TenantDbService` eine Methode implementieren, die `PROCESSING`-Einträge, die älter als 30 Sekunden sind, auf `PENDING` zurücksetzt.
 - [ ] 2.0 Implementierung der Batch-Verarbeitung für große Datenmengen (FR2)
   - [ ] 2.1 `WebSocketService.processSyncQueue()` anpassen, um Einträge in Batches von maximal 15 zu verarbeiten.
   - [ ] 2.2 Eine Pause von 1 Sekunde zwischen dem Senden der einzelnen Batches implementieren.

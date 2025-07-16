@@ -516,32 +516,45 @@ export class TenantDbService {
     }
   }
 
-  async resetStuckProcessingEntries(tenantId: string, timeoutMs: number = 30000): Promise<number> {
+  public async resetStuckProcessingEntries(): Promise<number> {
     if (!this.db) {
       warnLog('TenantDbService', 'resetStuckProcessingEntries: Keine aktive Mandanten-DB verfügbar.');
       return 0;
     }
+
+    const tenantStore = useTenantStore();
+    if (!tenantStore.activeTenantId) {
+      warnLog('TenantDbService', 'resetStuckProcessingEntries: Kein aktiver Mandant verfügbar.');
+      return 0;
+    }
+
     try {
-      const cutoffTime = Date.now() - timeoutMs;
+      const cutoffTime = Date.now() - 30000; // 30 Sekunden
+
+      // Finde alle PROCESSING-Einträge, die älter als 30 Sekunden sind
       const stuckEntries = await this.db.syncQueue
-        .where({ tenantId: tenantId, status: SyncStatus.PROCESSING })
+        .where('status')
+        .equals(SyncStatus.PROCESSING)
         .filter(entry => (entry.lastAttempt ?? 0) < cutoffTime)
         .toArray();
 
-      let resetCount = 0;
-      for (const entry of stuckEntries) {
-        const success = await this.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Reset from stuck PROCESSING state');
-        if (success) {
-          resetCount++;
-        }
+      if (stuckEntries.length === 0) {
+        return 0;
       }
 
-      if (resetCount > 0) {
-        debugLog('TenantDbService', `${resetCount} hängende PROCESSING-Einträge für Mandant ${tenantId} zurückgesetzt.`);
-      }
-      return resetCount;
+      // Setze Status auf PENDING für alle gefilterten Einträge
+      const updatedEntries = stuckEntries.map(entry => ({
+        ...entry,
+        status: SyncStatus.PENDING
+      }));
+
+      // Verwende bulkPut für effiziente Aktualisierung
+      await this.db.syncQueue.bulkPut(updatedEntries);
+
+      debugLog('TenantDbService', `${stuckEntries.length} hängende PROCESSING-Einträge zurückgesetzt.`);
+      return stuckEntries.length;
     } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Zurücksetzen hängender PROCESSING-Einträge für Mandant ${tenantId}`, { error: err });
+      errorLog('TenantDbService', 'Fehler beim Zurücksetzen hängender PROCESSING-Einträge', { error: err });
       return 0;
     }
   }
