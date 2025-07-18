@@ -925,7 +925,7 @@ watch(
                 <td class="w-[100px]">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
                   <TagSearchableDropdown
-                    v-model="transactionTags[index]"
+                    :modelValue="transactionTags[index] || []"
                     :options="tagStore.tags"
                     placeholder="+"
                     @create="createTag"
@@ -1119,7 +1119,7 @@ watch(
                 <td class="w-[100px]">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
                   <TagSearchableDropdown
-                    v-model="transactionTags[index]"
+                    :modelValue="transactionTags[index] || []"
                     :options="tagStore.tags"
                     placeholder="+"
                     @create="createTag"

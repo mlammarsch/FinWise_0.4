@@ -198,7 +198,7 @@ export const useAccountStore = defineStore('account', () => {
     const accountGroupWithTimestamp: AccountGroup = {
       ...accountGroupData,
       sortOrder,
-      updated_at: (accountGroupData as any).updated_at || new Date().toISOString(),
+      updatedAt: (accountGroupData as any).updated_at || new Date().toISOString(),
     };
 
     if (fromSync) {

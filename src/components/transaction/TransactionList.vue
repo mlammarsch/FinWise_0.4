@@ -81,11 +81,44 @@ const displayTransactions = computed(() => {
   return filtered;
 });
 
+// Sortierte Transaktionen mit korrekter date, createdAt Sortierung für Running Balance
+const sortedDisplayTransactions = computed(() => {
+  const transactions = [...displayTransactions.value];
+
+  // Nur bei Datumssortierung die spezielle Sortierung anwenden
+  if (props.sortKey === "date") {
+    return transactions.sort((a, b) => {
+      // Primär nach date sortieren
+      const dateA = a.date;
+      const dateB = b.date;
+      const dateComparison =
+        props.sortOrder === "asc"
+          ? dateA.localeCompare(dateB)
+          : dateB.localeCompare(dateA);
+
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      // Sekundär nach updated_at sortieren für korrekte Running Balance-Reihenfolge
+      // In IndexedDB steht das Feld als updated_at (snake_case), nicht createdAt
+      const createdA = (a as any).updated_at || "1970-01-01T00:00:00.000Z";
+      const createdB = (b as any).updated_at || "1970-01-01T00:00:00.000Z";
+      return props.sortOrder === "asc"
+        ? createdA.localeCompare(createdB)
+        : createdB.localeCompare(createdA);
+    });
+  }
+
+  // Bei anderen Sortierungen die ursprüngliche Reihenfolge beibehalten
+  return transactions;
+});
+
 // --- Auswahl-Logik ---
 const selectedIds = ref<string[]>([]);
 const lastSelectedIndex = ref<number | null>(null);
 const currentPageIds = computed(() =>
-  displayTransactions.value.map((tx) => tx.id)
+  sortedDisplayTransactions.value.map((tx) => tx.id)
 );
 const allSelected = computed(() =>
   currentPageIds.value.every((id) => selectedIds.value.includes(id))
@@ -113,7 +146,7 @@ function handleCheckboxClick(
     const start = Math.min(lastSelectedIndex.value, index);
     const end = Math.max(lastSelectedIndex.value, index);
     for (let i = start; i <= end; i++) {
-      const id = displayTransactions.value[i].id;
+      const id = sortedDisplayTransactions.value[i].id;
       if (isChecked && !selectedIds.value.includes(id)) {
         selectedIds.value.push(id);
       } else if (!isChecked) {
@@ -133,7 +166,7 @@ function handleCheckboxClick(
 }
 
 function getSelectedTransactions(): Transaction[] {
-  return displayTransactions.value.filter((tx) =>
+  return sortedDisplayTransactions.value.filter((tx) =>
     selectedIds.value.includes(tx.id)
   );
 }
@@ -241,7 +274,7 @@ defineExpose({ getSelectedTransactions });
       </thead>
       <tbody>
         <tr
-          v-for="(tx, index) in displayTransactions"
+          v-for="(tx, index) in sortedDisplayTransactions"
           :key="tx.id"
         >
           <td>

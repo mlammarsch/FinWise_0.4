@@ -618,10 +618,10 @@ export const BalanceService = {
         return dateComparison;
       }
 
-      // Sekundär nach created_at sortieren für korrekte Reihenfolge am gleichen Tag
-      // created_at ist unveränderlich und verhindert Race Conditions
-      const createdA = a.created_at || '1970-01-01T00:00:00.000Z';
-      const createdB = b.created_at || '1970-01-01T00:00:00.000Z';
+      // Sekundär nach updated_at sortieren für korrekte Reihenfolge am gleichen Tag
+      // In IndexedDB steht das Feld als updated_at (snake_case), nicht createdAt
+      const createdA = (a as any).updated_at || '1970-01-01T00:00:00.000Z';
+      const createdB = (b as any).updated_at || '1970-01-01T00:00:00.000Z';
       return createdA.localeCompare(createdB);
     });
   },

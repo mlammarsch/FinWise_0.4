@@ -557,7 +557,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Task 4.1: Einfacher Namensvergleich (case-insensitive) für recipientId-Zuordnung
     const directMatch = recipientStore.recipients.find(
-      (r) => r.name && r.name.toLowerCase() === searchText.toLowerCase().trim()
+      (r) => r.name && r.name.toLowerCase() === (searchText || '').toLowerCase().trim()
     );
 
     if (directMatch) {
@@ -600,7 +600,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Direktsuche nach exaktem Namen
     const directMatch = categoryStore.categories.find(
-      (c) => c.name.toLowerCase() === searchText.toLowerCase()
+      (c) => c.name && c.name.toLowerCase() === (searchText || '').toLowerCase()
     );
 
     if (directMatch) {
@@ -925,7 +925,7 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
 
     // Fall 3: Automatische Anlage - Prüfe, ob der Name bereits existiert
     const existingRecipient = recipientStore.recipients.find(
-      r => r.name.toLowerCase() === row.originalRecipientName.toLowerCase()
+      r => r.name && r.name.toLowerCase() === (row.originalRecipientName || '').toLowerCase()
     );
 
     if (existingRecipient) {
@@ -968,7 +968,7 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           if (typeof recipientResult === 'string') {
             // Neuer Empfänger erstellen, falls noch nicht vorhanden
             const recipientName = recipientResult;
-            const lowerName = recipientName.toLowerCase();
+            const lowerName = (recipientName || '').toLowerCase();
 
             if (createdRecipients.has(lowerName)) {
               const recipientId = createdRecipients.get(lowerName);
@@ -1043,7 +1043,20 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
     } catch (err) {
       // Stelle sicher, dass die Trigger auch bei Fehlern wieder aktiviert werden
       (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
-      errorLog("CSVImportService", "Import Error", JSON.stringify(err));
+
+      // Verbessertes Error-Logging
+      const errorDetails = {
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined,
+        name: err instanceof Error ? err.name : undefined,
+        cause: err instanceof Error ? (err as any).cause : undefined,
+        importedCount: importedTransactions.value.length,
+        accountId,
+        errorType: typeof err,
+        errorConstructor: err?.constructor?.name
+      };
+
+      errorLog("CSVImportService", "Import Error", errorDetails);
       importStatus.value = "error";
       error.value = `Fehler beim Import: ${
         err instanceof Error ? err.message : "Unbekannter Fehler"
