@@ -302,9 +302,19 @@ export interface DeletePayload {
   id: string;
 }
 
-// NotificationDataPayload ist eine Union der möglichen Datenstrukturen.
-// Wir verwenden die bestehenden Interfaces Account, AccountGroup, Category, CategoryGroup und Recipient.
-export type NotificationDataPayload = Account | AccountGroup | Category | CategoryGroup | Recipient | DeletePayload;
+// NotificationDataPayload entspricht der tatsächlichen Backend-Struktur
+export interface NotificationDataPayload {
+  accounts?: Account[] | null;
+  account_groups?: AccountGroup[] | null;
+  categories?: Category[] | null;
+  category_groups?: CategoryGroup[] | null;
+  recipients?: Recipient[] | null;
+  tags?: Tag[] | null;
+  automation_rules?: AutomationRule[] | null;
+  planning_transactions?: PlanningTransaction[] | null;
+  transactions?: Transaction[] | null;
+  single_entity?: Account | AccountGroup | Category | CategoryGroup | Recipient | Tag | AutomationRule | PlanningTransaction | Transaction | DeletePayload;
+}
 
 export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
   type: 'data_update'; // type wurde im Backend als event_type bezeichnet, hier konsistent mit anderen Messages 'type'

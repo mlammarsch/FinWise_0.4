@@ -55,7 +55,7 @@ const getParentTagName = (parentId: string | null): string => {
 
 const createTag = () => {
   selectedTag.value = {
-    id: "",
+    id: "", // Leere ID - wird vom TagStore erkannt und durch UUID ersetzt
     name: "",
     parentTagId: null,
     color: "primary",
@@ -181,7 +181,10 @@ const cancelColorPicker = () => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="tag in paginatedTags" :key="tag.id">
+              <tr
+                v-for="tag in paginatedTags"
+                :key="tag.id"
+              >
                 <td>{{ tag.name }}</td>
                 <td class="text-center hidden md:table-cell">
                   <BadgeSoft
@@ -210,13 +213,19 @@ const cancelColorPicker = () => {
                       class="btn btn-ghost btn-sm text-secondary"
                       @click="editTag(tag)"
                     >
-                      <Icon icon="mdi:pencil" class="text-base" />
+                      <Icon
+                        icon="mdi:pencil"
+                        class="text-base"
+                      />
                     </button>
                     <button
                       class="btn btn-ghost btn-sm text-error"
                       @click="deleteTag(tag)"
                     >
-                      <Icon icon="mdi:trash-can" class="text-base" />
+                      <Icon
+                        icon="mdi:trash-can"
+                        class="text-base"
+                      />
                     </button>
                   </div>
                 </td>
@@ -274,15 +283,27 @@ const cancelColorPicker = () => {
           class="select select-bordered"
         >
           <option :value="null">Keines</option>
-          <option v-for="tag in tagStore.tags" :key="tag.id" :value="tag.id">
+          <option
+            v-for="tag in tagStore.tags"
+            :key="tag.id"
+            :value="tag.id"
+          >
             {{ tag.name }}
           </option>
         </select>
       </div>
 
       <div class="flex justify-end space-x-2">
-        <button class="btn btn-outline" @click="closeModal">Abbrechen</button>
-        <button class="btn btn-primary" @click="saveTag">
+        <button
+          class="btn btn-outline"
+          @click="closeModal"
+        >
+          Abbrechen
+        </button>
+        <button
+          class="btn btn-primary"
+          @click="saveTag"
+        >
           {{ isEditMode ? "Speichern" : "Erstellen" }}
         </button>
       </div>
@@ -323,7 +344,10 @@ const cancelColorPicker = () => {
         placeholder="Ersatz auswählen..."
       />
       <div class="flex justify-end space-x-2 mt-4">
-        <button class="btn btn-outline" @click="showReplaceTagModal = false">
+        <button
+          class="btn btn-outline"
+          @click="showReplaceTagModal = false"
+        >
           Abbrechen
         </button>
         <button

@@ -50,22 +50,23 @@ export const useTagStore = defineStore('tag', () => {
     return (ids: string[]) => tags.value.filter(tag => ids.includes(tag.id));
   });
 
-  async function addTag(tagData: Omit<Tag, 'id' | 'updated_at'> | Tag, fromSync = false): Promise<Tag> {
+  async function addTag(tagData: Omit<Tag, 'id' | 'updatedAt'> | Tag, fromSync = false): Promise<Tag> {
 
     const color = 'color' in tagData && tagData.color ? tagData.color : getRandomStateColor();
     const tagWithTimestamp: Tag = {
       ...tagData,
-      id: 'id' in tagData ? tagData.id : uuidv4(),
+      // Generiere neue UUID wenn ID fehlt oder leer/falsy ist
+      id: ('id' in tagData && tagData.id && tagData.id.trim()) ? tagData.id : uuidv4(),
       color,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (tagData as any).updated_at || new Date().toISOString(),
+      updatedAt: (tagData as any).updatedAt || (tagData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localTag = await tenantDbService.getTagById(tagWithTimestamp.id);
-      if (localTag && localTag.updated_at && tagWithTimestamp.updated_at &&
-          new Date(localTag.updated_at) >= new Date(tagWithTimestamp.updated_at)) {
+      if (localTag && localTag.updatedAt && tagWithTimestamp.updatedAt &&
+          new Date(localTag.updatedAt) >= new Date(tagWithTimestamp.updatedAt)) {
         infoLog('tagStore', `addTag (fromSync): Lokaler Tag ${localTag.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localTag; // Gib den lokalen, "gewinnenden" Tag zurück
       }
@@ -81,7 +82,7 @@ export const useTagStore = defineStore('tag', () => {
       tags.value.push(tagWithTimestamp);
     } else {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt, falls die DB-Operation nicht sofort reflektiert wird
-      if (!fromSync || (tagWithTimestamp.updated_at && (!tags.value[existingTagIndex].updated_at || new Date(tagWithTimestamp.updated_at) > new Date(tags.value[existingTagIndex].updated_at!)))) {
+      if (!fromSync || (tagWithTimestamp.updatedAt && (!tags.value[existingTagIndex].updatedAt || new Date(tagWithTimestamp.updatedAt) > new Date(tags.value[existingTagIndex].updatedAt!)))) {
         tags.value[existingTagIndex] = tagWithTimestamp;
       } else if (fromSync) {
         // Wenn fromSync und das Store-Tag neuer ist, behalte das Store-Tag (sollte durch obige DB-Prüfung nicht passieren)
@@ -98,11 +99,19 @@ export const useTagStore = defineStore('tag', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+        const backendPayload = {
+          ...tenantDbService.toPlainObject(tagWithTimestamp),
+          updated_at: tagWithTimestamp.updatedAt
+        };
+        // Entferne das Frontend-Feld
+        delete (backendPayload as any).updatedAt;
+
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.TAG,
           entityId: tagWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tenantDbService.toPlainObject(tagWithTimestamp),
+          payload: backendPayload,
         });
         infoLog('tagStore', `Tag "${tagWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -116,7 +125,7 @@ export const useTagStore = defineStore('tag', () => {
 
     const tagUpdatesWithTimestamp: Tag = {
       ...tagUpdatesData,
-      updated_at: tagUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: tagUpdatesData.updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
@@ -129,8 +138,8 @@ export const useTagStore = defineStore('tag', () => {
         return true; // Frühzeitiger Ausstieg, da addTag die weitere Logik übernimmt
       }
 
-      if (localTag.updated_at && tagUpdatesWithTimestamp.updated_at &&
-          new Date(localTag.updated_at) >= new Date(tagUpdatesWithTimestamp.updated_at)) {
+      if (localTag.updatedAt && tagUpdatesWithTimestamp.updatedAt &&
+          new Date(localTag.updatedAt) >= new Date(tagUpdatesWithTimestamp.updatedAt)) {
         infoLog('tagStore', `updateTag (fromSync): Lokaler Tag ${localTag.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
       }
@@ -144,7 +153,7 @@ export const useTagStore = defineStore('tag', () => {
     const idx = tags.value.findIndex(t => t.id === tagUpdatesWithTimestamp.id);
     if (idx !== -1) {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt
-      if (!fromSync || (tagUpdatesWithTimestamp.updated_at && (!tags.value[idx].updated_at || new Date(tagUpdatesWithTimestamp.updated_at) > new Date(tags.value[idx].updated_at!)))) {
+      if (!fromSync || (tagUpdatesWithTimestamp.updatedAt && (!tags.value[idx].updatedAt || new Date(tagUpdatesWithTimestamp.updatedAt) > new Date(tags.value[idx].updatedAt!)))) {
         tags.value[idx] = { ...tags.value[idx], ...tagUpdatesWithTimestamp };
 
         // ColorHistory-Management (nur bei lokalen Änderungen oder wenn Farbe geändert wurde)
@@ -159,11 +168,19 @@ export const useTagStore = defineStore('tag', () => {
       // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
       if (!fromSync) {
         try {
+          // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+          const backendPayload = {
+            ...tenantDbService.toPlainObject(tagUpdatesWithTimestamp),
+            updated_at: tagUpdatesWithTimestamp.updatedAt
+          };
+          // Entferne das Frontend-Feld
+          delete (backendPayload as any).updatedAt;
+
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.TAG,
             entityId: tagUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: tenantDbService.toPlainObject(tagUpdatesWithTimestamp),
+            payload: backendPayload,
           });
           infoLog('tagStore', `Tag "${tagUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
