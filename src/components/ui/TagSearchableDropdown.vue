@@ -48,6 +48,7 @@ function getTagOption(tagId: string): TagOption | undefined {
 // Suchfeld und Dropdown-Status
 const searchTerm = ref("");
 const isOpen = ref(false);
+const highlightedIndex = ref(-1); // -1 = Suchfeld fokussiert, 0+ = Option Index
 
 // Gefilterte Optionen basierend auf dem Suchbegriff,
 // es werden bereits ausgewählte Tags nicht angezeigt und alphabetisch sortiert.
@@ -69,6 +70,11 @@ const canCreate = computed(() => {
   return !props.options.some((opt) => opt.name.toLowerCase() === term);
 });
 
+// Gesamtanzahl der navigierbaren Optionen (gefilterte Tags + "neu anlegen" Option)
+const totalOptions = computed(() => {
+  return filteredOptions.value.length + (canCreate.value ? 1 : 0);
+});
+
 // Fügt einen Tag in die Auswahl ein
 function addTag(tagId: string) {
   if (props.disabled) return;
@@ -77,6 +83,7 @@ function addTag(tagId: string) {
   }
   searchTerm.value = "";
   isOpen.value = false;
+  highlightedIndex.value = -1;
 }
 
 // Entfernt einen Tag aus der Auswahl
@@ -91,12 +98,61 @@ function createOption() {
   emit("create", { name: val });
   searchTerm.value = "";
   isOpen.value = false;
+  highlightedIndex.value = -1;
 }
 
-// Löst beim Drücken der Enter-Taste den Create-Flow aus
-function onEnter() {
-  if (canCreate.value) {
-    createOption();
+// Behandelt Tastatureingaben im Suchfeld
+function handleKeydown(event: KeyboardEvent) {
+  if (!isOpen.value) return;
+
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      if (highlightedIndex.value < totalOptions.value - 1) {
+        highlightedIndex.value++;
+      }
+      break;
+
+    case "ArrowUp":
+      event.preventDefault();
+      if (highlightedIndex.value > -1) {
+        highlightedIndex.value--;
+      }
+      if (highlightedIndex.value === -1) {
+        // Fokus zurück ins Suchfeld
+        nextTick(() => {
+          const input = document.getElementById(
+            "tag-search-input"
+          ) as HTMLInputElement | null;
+          if (input) input.focus();
+        });
+      }
+      break;
+
+    case "Enter":
+      event.preventDefault();
+      if (highlightedIndex.value === -1) {
+        // Im Suchfeld - neuen Tag erstellen falls möglich
+        if (canCreate.value) {
+          createOption();
+        }
+      } else if (highlightedIndex.value < filteredOptions.value.length) {
+        // Tag aus der Liste auswählen
+        const selectedOption = filteredOptions.value[highlightedIndex.value];
+        if (selectedOption) {
+          addTag(selectedOption.id);
+        }
+      } else if (canCreate.value) {
+        // "Neu anlegen" Option ausgewählt
+        createOption();
+      }
+      break;
+
+    case "Escape":
+      event.preventDefault();
+      isOpen.value = false;
+      highlightedIndex.value = -1;
+      break;
   }
 }
 
@@ -104,6 +160,7 @@ function onEnter() {
 function toggleDropdown() {
   if (props.disabled) return;
   isOpen.value = !isOpen.value;
+  highlightedIndex.value = -1;
   if (isOpen.value) {
     nextTick(() => {
       const input = document.getElementById(
@@ -119,6 +176,7 @@ function handleClickOutside(event: MouseEvent) {
   const target = event.target as HTMLElement;
   if (!target.closest(".tag-search-dropdown-container")) {
     isOpen.value = false;
+    highlightedIndex.value = -1;
   }
 }
 
@@ -128,6 +186,14 @@ watch(isOpen, (val) => {
     window.addEventListener("click", handleClickOutside);
   } else {
     window.removeEventListener("click", handleClickOutside);
+    highlightedIndex.value = -1;
+  }
+});
+
+// Setzt highlightedIndex zurück, wenn sich die gefilterten Optionen ändern
+watch(filteredOptions, () => {
+  if (highlightedIndex.value >= totalOptions.value) {
+    highlightedIndex.value = totalOptions.value - 1;
   }
 });
 </script>
@@ -195,15 +261,20 @@ watch(isOpen, (val) => {
         v-model="searchTerm"
         placeholder="Suchen oder neu anlegen..."
         @click.stop
-        @keydown.enter="onEnter"
+        @keydown="handleKeydown"
       />
       <!-- Gefilterte Optionen -->
       <ul class="max-h-60 overflow-y-auto">
         <li
-          v-for="option in filteredOptions"
+          v-for="(option, index) in filteredOptions"
           :key="option.id"
-          class="p-1 px-2 hover:bg-base-200 rounded-lg cursor-pointer flex items-center gap-2"
+          class="p-1 px-2 rounded-lg cursor-pointer flex items-center gap-2"
+          :class="{
+            'bg-primary text-primary-content': highlightedIndex === index,
+            'hover:bg-base-200': highlightedIndex !== index,
+          }"
           @click.stop="addTag(option.id)"
+          @mouseenter="highlightedIndex = index"
         >
           <BadgeSoft
             :label="option.name"
@@ -214,8 +285,15 @@ watch(isOpen, (val) => {
       <!-- Neue Option erstellen -->
       <div
         v-if="canCreate"
-        class="py-1 px-2 hover:bg-base-300 bg-base-200 rounded-lg cursor-pointer flex items-center justify-left"
+        class="py-1 px-2 rounded-lg cursor-pointer flex items-center justify-left"
+        :class="{
+          'bg-primary text-primary-content':
+            highlightedIndex === filteredOptions.length,
+          'hover:bg-base-300 bg-base-200':
+            highlightedIndex !== filteredOptions.length,
+        }"
         @click.stop="createOption"
+        @mouseenter="highlightedIndex = filteredOptions.length"
       >
         <Icon
           icon="mdi:plus"
