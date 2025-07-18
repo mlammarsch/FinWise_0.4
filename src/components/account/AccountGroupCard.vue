@@ -495,12 +495,84 @@ const handleDragEnd = async (item: any, event: any) => {
   }
 };
 
-// Watch für Änderungen der Konten-Anzahl (für Layout-Update)
-watch(accountCount, async () => {
+// Explizite Layout-Aktualisierung (für externe Aufrufe)
+const refreshLayout = async () => {
   if (muuriGrid.value) {
+    debugLog(
+      "AccountGroupCard",
+      `Explizite Layout-Aktualisierung für Gruppe ${props.group.name}`,
+      { groupId: props.group.id }
+    );
     await nextTick();
+
+    // Prüfe auf neue Items, die noch nicht zu Muuri hinzugefügt wurden
+    const newElements = gridContainer.value?.querySelectorAll(
+      ".account-item:not(.muuri-item)"
+    );
+    if (newElements && newElements.length > 0) {
+      debugLog(
+        "AccountGroupCard",
+        `Füge ${newElements.length} neue Items zu Muuri hinzu`,
+        { groupId: props.group.id }
+      );
+      muuriGrid.value.add(newElements, { layout: false });
+    }
+
     muuriGrid.value.refreshItems();
     muuriGrid.value.layout();
+
+    // Signalisiere Layout-Update an Parent
+    emit("request-layout-update");
+  }
+};
+
+// Expose refreshLayout für Parent-Component
+defineExpose({
+  refreshLayout,
+});
+
+// Watch für Änderungen der Konten-Anzahl (für automatisches Layout-Update)
+watch(accountCount, async (newCount, oldCount) => {
+  if (muuriGrid.value && newCount !== oldCount) {
+    debugLog(
+      "AccountGroupCard",
+      `Automatisches Layout-Update für Gruppe ${props.group.name}`,
+      { groupId: props.group.id, oldCount, newCount }
+    );
+
+    await nextTick(); // Warten bis DOM aktualisiert ist
+
+    if (newCount > oldCount) {
+      // Neue Items hinzugefügt - Muuri muss neue Items erkennen
+      debugLog(
+        "AccountGroupCard",
+        `Neue Konten hinzugefügt - füge Items zu Muuri hinzu`,
+        { groupId: props.group.id, newItems: newCount - oldCount }
+      );
+
+      // Neue Items zu Muuri hinzufügen
+      const newItems = muuriGrid.value.add(
+        gridContainer.value?.querySelectorAll(
+          ".account-item:not(.muuri-item)"
+        ) || [],
+        { layout: false } // Layout manuell triggern
+      );
+
+      debugLog(
+        "AccountGroupCard",
+        `${newItems.length} neue Items zu Muuri hinzugefügt`,
+        { groupId: props.group.id, newItemsCount: newItems.length }
+      );
+    } else {
+      // Items entfernt - refreshItems reicht
+      muuriGrid.value.refreshItems();
+    }
+
+    // Layout neu berechnen
+    muuriGrid.value.layout();
+
+    // Signalisiere Layout-Update an Parent
+    emit("request-layout-update");
   }
 });
 </script>

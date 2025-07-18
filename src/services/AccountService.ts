@@ -28,11 +28,27 @@ export const AccountService = {
   async addAccount(accountData: Omit<Account, 'id' | 'uuid' | 'balance'>): Promise<Account | null> {
     const accountStore = useAccountStore();
     const newId = uuidv4(); // Generate a single UUID
+
+    // Bestimme die höchste sortOrder in der Zielgruppe
+    let maxSortOrder = -1;
+    if (accountData.accountGroupId) {
+      const accountsInGroup = accountStore.accounts.filter(
+        acc => acc.accountGroupId === accountData.accountGroupId
+      );
+      maxSortOrder = accountsInGroup.reduce((max, acc) =>
+        Math.max(max, acc.sortOrder || 0), -1
+      );
+    }
+
     const newAccount: Account = {
       ...accountData,
       id: newId, // Use the generated UUID for id
       balance: 0, // Set initial balance to 0
+      sortOrder: maxSortOrder + 1, // Setze höchste sortOrder +1
     };
+
+    debugLog('[AccountService]', 'addAccount', `Neues Konto "${newAccount.name}" mit sortOrder ${newAccount.sortOrder} in Gruppe ${newAccount.accountGroupId}`);
+
     // Annahme: addAccount im Store gibt das erstellte Konto oder null zurück
     return await accountStore.addAccount(newAccount);
   },

@@ -30,8 +30,22 @@ export const useAccountStore = defineStore('account', () => {
 
   async function addAccount(accountData: Omit<Account, 'updated_at'> | Account, fromSync = false): Promise<Account> {
 
+    // Bestimme sortOrder falls nicht gesetzt (Fallback-Mechanismus)
+    let sortOrder = (accountData as Account).sortOrder;
+    if (sortOrder === undefined && accountData.accountGroupId) {
+      const accountsInGroup = accounts.value.filter(
+        acc => acc.accountGroupId === accountData.accountGroupId
+      );
+      const maxSortOrder = accountsInGroup.reduce((max, acc) =>
+        Math.max(max, acc.sortOrder || 0), -1
+      );
+      sortOrder = maxSortOrder + 1;
+      debugLog('accountStore', `addAccount: Automatische sortOrder ${sortOrder} für Konto "${accountData.name}" in Gruppe ${accountData.accountGroupId}`);
+    }
+
     const accountWithTimestamp: Account = {
       ...accountData,
+      sortOrder: sortOrder || 0,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       updated_at: (accountData as any).updated_at || new Date().toISOString(),
     };
