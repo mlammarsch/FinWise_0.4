@@ -11,6 +11,60 @@
 
 @plugin "daisyui";
 
+/* Custom badge-soft styles for better compatibility */
+.badge-soft {
+  border: 1px solid transparent;
+  background-color: transparent;
+}
+
+.badge-soft.badge-primary {
+  background-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.badge-soft.badge-secondary {
+  background-color: color-mix(in srgb, var(--color-secondary) 15%, transparent);
+  color: var(--color-secondary);
+  border-color: color-mix(in srgb, var(--color-secondary) 25%, transparent);
+}
+
+.badge-soft.badge-accent {
+  background-color: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  color: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 25%, transparent);
+}
+
+.badge-soft.badge-info {
+  background-color: color-mix(in srgb, var(--color-info) 15%, transparent);
+  color: var(--color-info);
+  border-color: color-mix(in srgb, var(--color-info) 25%, transparent);
+}
+
+.badge-soft.badge-success {
+  background-color: color-mix(in srgb, var(--color-success) 15%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 25%, transparent);
+}
+
+.badge-soft.badge-warning {
+  background-color: color-mix(in srgb, var(--color-warning) 15%, transparent);
+  color: var(--color-warning);
+  border-color: color-mix(in srgb, var(--color-warning) 25%, transparent);
+}
+
+.badge-soft.badge-error {
+  background-color: color-mix(in srgb, var(--color-error) 15%, transparent);
+  color: var(--color-error);
+  border-color: color-mix(in srgb, var(--color-error) 25%, transparent);
+}
+
+.badge-soft.badge-neutral {
+  background-color: color-mix(in srgb, var(--color-neutral) 15%, transparent);
+  color: var(--color-neutral);
+  border-color: color-mix(in srgb, var(--color-neutral) 25%, transparent);
+}
+
 @theme {
   --font-roboto: "Roboto", sans-serif;
 }

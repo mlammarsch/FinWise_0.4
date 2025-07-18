@@ -16,6 +16,7 @@
 import { ref, computed, watch, nextTick } from "vue";
 import { Icon } from "@iconify/vue";
 import { v4 as uuidv4 } from "uuid";
+import BadgeSoft from "./BadgeSoft.vue";
 
 interface TagOption {
   id: string;
@@ -138,35 +139,35 @@ watch(isOpen, (val) => {
     style="position: relative"
   >
     <!-- Label -->
-    <label v-if="label" class="label">
+    <label
+      v-if="label"
+      class="label"
+    >
       <span class="label-text">{{ label }}</span>
     </label>
 
-    <!-- Ausgewählte Tags als Badges -->
+    <!-- Ausgewählte Tags als BadgeSoft -->
     <div class="flex flex-wrap items-center gap-1 mb-0 border rounded-lg p-2">
-      <span
+      <div
         v-for="tagId in selectedTags"
         :key="tagId"
-        class="badge badge-sm rounded-full flex items-center gap-1"
-        :class="{
-          'badge-secondary': !getTagOption(tagId)?.color,
-          'text-white': getTagOption(tagId)?.color,
-        }"
-        :style="
-          getTagOption(tagId)?.color
-            ? { backgroundColor: getTagOption(tagId).color }
-            : {}
-        "
+        class="flex items-center gap-1"
       >
-        <span>{{ getTagOption(tagId)?.name || tagId }}</span>
+        <BadgeSoft
+          :label="getTagOption(tagId)?.name || tagId"
+          :color-intensity="getTagOption(tagId)?.color || 'neutral'"
+        />
         <button
           type="button"
-          class="btn btn-ghost btn-xs text-neutral p-0"
+          class="btn btn-ghost btn-xs text-neutral p-0 ml-1"
           @click.prevent="removeTag(tagId)"
         >
-          <Icon icon="mdi:close" class="text-sm" />
+          <Icon
+            icon="mdi:close"
+            class="text-sm"
+          />
         </button>
-      </span>
+      </div>
       <!-- Button zum Hinzufügen neuer Tags -->
       <div
         class="cursor-pointer text-base-content/50 flex items-center"
@@ -174,7 +175,10 @@ watch(isOpen, (val) => {
         @click.stop="toggleDropdown"
       >
         <span>{{ placeholder || "" }}</span>
-        <Icon icon="mdi:plus-circle" class="text-lg" />
+        <Icon
+          icon="mdi:plus-circle"
+          class="text-lg"
+        />
       </div>
     </div>
 
@@ -198,10 +202,13 @@ watch(isOpen, (val) => {
         <li
           v-for="option in filteredOptions"
           :key="option.id"
-          class="p-1 px-2 hover:bg-base-200 rounded-lg cursor-pointer"
+          class="p-1 px-2 hover:bg-base-200 rounded-lg cursor-pointer flex items-center gap-2"
           @click.stop="addTag(option.id)"
         >
-          {{ option.name }}
+          <BadgeSoft
+            :label="option.name"
+            :color-intensity="option.color || 'neutral'"
+          />
         </li>
       </ul>
       <!-- Neue Option erstellen -->
@@ -210,7 +217,10 @@ watch(isOpen, (val) => {
         class="py-1 px-2 hover:bg-base-300 bg-base-200 rounded-lg cursor-pointer flex items-center justify-left"
         @click.stop="createOption"
       >
-        <Icon icon="mdi:plus" class="text-md mr-1" />
+        <Icon
+          icon="mdi:plus"
+          class="text-md mr-1"
+        />
         <div>"{{ searchTerm }}" neu anlegen</div>
       </div>
     </div>

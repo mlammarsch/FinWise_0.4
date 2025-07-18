@@ -28,7 +28,15 @@ const selectColor = (color: string) => {
         v-for="color in colors"
         :key="color"
         class="badge badge-soft badge-lg text-white text-sm font-medium rounded-full cursor-pointer w-24 justify-center"
-        :class="`badge-${color}`"
+        :class="{
+          'badge-primary': color === 'primary',
+          'badge-secondary': color === 'secondary',
+          'badge-accent': color === 'accent',
+          'badge-info': color === 'info',
+          'badge-success': color === 'success',
+          'badge-warning': color === 'warning',
+          'badge-error': color === 'error',
+        }"
         @click="selectColor(color)"
       >
         {{ color }}
@@ -36,7 +44,10 @@ const selectColor = (color: string) => {
     </div>
 
     <div class="text-right">
-      <button class="btn btn-sm btn-ghost" @click="emit('cancel')">
+      <button
+        class="btn btn-sm btn-ghost"
+        @click="emit('cancel')"
+      >
         Abbrechen
       </button>
     </div>
