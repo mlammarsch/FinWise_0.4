@@ -556,7 +556,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Task 4.1: Einfacher Namensvergleich (case-insensitive) für recipientId-Zuordnung
     const directMatch = recipientStore.recipients.find(
-      (r) => r.name.toLowerCase() === searchText.toLowerCase().trim()
+      (r) => r.name && r.name.toLowerCase() === searchText.toLowerCase().trim()
     );
 
     if (directMatch) {
