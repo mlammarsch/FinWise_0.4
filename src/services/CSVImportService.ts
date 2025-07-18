@@ -13,6 +13,7 @@ import { useRecipientStore } from "@/stores/recipientStore";
 import { useTransactionStore } from "@/stores/transactionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { TransactionService } from "@/services/TransactionService";
+import { BalanceService } from "@/services/BalanceService";
 import { TransactionType } from "@/types";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import { parseCSV as parseCSVUtil, parseAmount, calculateStringSimilarity } from "@/utils/csvUtils";
@@ -943,6 +944,10 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
     error.value = "";
     importedTransactions.value = [];
 
+    // Deaktiviere automatische Running Balance Trigger während des Imports für bessere Performance
+    const originalSkipRunningBalanceRecalc = (TransactionService as any)._skipRunningBalanceRecalc;
+    (TransactionService as any)._skipRunningBalanceRecalc = true;
+
     try {
       const preparedData = prepareDataForImport(accountId);
 
@@ -1017,6 +1022,18 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         });
       }
 
+      // Reaktiviere automatische Running Balance Trigger
+      (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
+
+      // Triggere eine einmalige vollständige Running Balance Neuberechnung für alle Accounts
+      // da wir nicht wissen, welche Transaktionen die frühesten waren
+      debugLog(
+        "CSVImportService",
+        "Triggere vollständige Running Balance Neuberechnung nach CSV-Import",
+        { importedCount: importedTransactions.value.length }
+      );
+      BalanceService.recalculateAllRunningBalances();
+
       infoLog(
         "CSVImportService",
         `${importedTransactions.value.length} Transaktionen erfolgreich importiert.`
@@ -1024,6 +1041,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
       importStatus.value = "success";
       return importedTransactions.value.length;
     } catch (err) {
+      // Stelle sicher, dass die Trigger auch bei Fehlern wieder aktiviert werden
+      (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
       errorLog("CSVImportService", "Import Error", JSON.stringify(err));
       importStatus.value = "error";
       error.value = `Fehler beim Import: ${

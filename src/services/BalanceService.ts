@@ -581,5 +581,179 @@ export const BalanceService = {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     return finalGroups;
+  },
+
+  /**
+   * Erweiterte Sortierlogik für Transaktionen
+   * Sortiert nach valueDate, dann nach created_at für korrekte Reihenfolge innerhalb eines Tages
+   * WICHTIG: created_at statt updated_at verwenden, um Race Conditions zu vermeiden
+   */
+  sortTransactionsForRunningBalance(transactions: any[]): any[] {
+    return [...transactions].sort((a, b) => {
+      // Primär nach valueDate sortieren
+      const dateA = toDateOnlyString(a.valueDate || a.date);
+      const dateB = toDateOnlyString(b.valueDate || b.date);
+      const dateComparison = dateA.localeCompare(dateB);
+
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      // Sekundär nach created_at sortieren für korrekte Reihenfolge am gleichen Tag
+      // created_at ist unveränderlich und verhindert Race Conditions
+      const createdA = a.created_at || '1970-01-01T00:00:00.000Z';
+      const createdB = b.created_at || '1970-01-01T00:00:00.000Z';
+      return createdA.localeCompare(createdB);
+    });
+  },
+
+  /**
+   * Berechnet running balances für alle Transaktionen eines Kontos neu
+   * WICHTIG: Berechnet IMMER alle Transaktionen des Kontos neu, da eine neue Transaktion
+   * mit älterem valueDate alle nachfolgenden runningBalance-Werte beeinflusst
+   *
+   * @param accountId - ID des Kontos
+   * @param fromDate - Startdatum für Neuberechnung (optional, default = älteste Transaktion)
+   * @returns Promise<void>
+   */
+  async recalculateRunningBalancesForAccount(accountId: string, fromDate?: Date): Promise<void> {
+    debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Start', { accountId, fromDate });
+
+    const txStore = useTransactionStore();
+    const accountStore = useAccountStore();
+
+    // Alle Transaktionen des Kontos holen (außer CATEGORYTRANSFER)
+    const accountTransactions = txStore.transactions.filter(tx =>
+      tx.accountId === accountId && tx.type !== TransactionType.CATEGORYTRANSFER
+    );
+
+    if (accountTransactions.length === 0) {
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Keine Transaktionen gefunden', { accountId });
+      return;
+    }
+
+    // Transaktionen mit erweiterter Sortierlogik sortieren
+    const sortedTransactions = this.sortTransactionsForRunningBalance(accountTransactions);
+
+    // Startdatum bestimmen
+    let startDate = fromDate;
+    if (!startDate && sortedTransactions.length > 0) {
+      const firstTxDate = toDateOnlyString(sortedTransactions[0].valueDate || sortedTransactions[0].date);
+      startDate = new Date(firstTxDate);
+    }
+
+    if (!startDate) {
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Kein Startdatum bestimmbar', { accountId });
+      return;
+    }
+
+    // Startsaldo berechnen
+    // WICHTIG: Wenn wir ab der ältesten Transaktion rechnen, ist der Startsaldo 0
+    // Nur wenn fromDate explizit gesetzt ist, berechnen wir den Saldo am Tag davor
+    let runningBalance = 0;
+    if (fromDate) {
+      // Explizites fromDate - Saldo am Tag davor berechnen
+      const dayBefore = new Date(fromDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      runningBalance = this.getTodayBalance('account', accountId, dayBefore);
+    }
+    // Rundung auf 2 Dezimalstellen für Startsaldo
+    runningBalance = Math.round(runningBalance * 100) / 100;
+
+    debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Startsaldo berechnet', {
+      accountId,
+      startDate: toDateOnlyString(startDate),
+      startBalance: runningBalance
+    });
+
+    // Running balances für alle Transaktionen ab Startdatum berechnen
+    const transactionsToUpdate: { id: string; runningBalance: number }[] = [];
+
+    for (const tx of sortedTransactions) {
+      const txDate = toDateOnlyString(tx.valueDate || tx.date);
+
+      // Nur Transaktionen ab Startdatum berücksichtigen
+      if (txDate >= toDateOnlyString(startDate)) {
+        runningBalance += tx.amount;
+        // Rundung auf 2 Dezimalstellen
+        runningBalance = Math.round(runningBalance * 100) / 100;
+
+        transactionsToUpdate.push({
+          id: tx.id,
+          runningBalance: runningBalance
+        });
+
+        debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Transaktion verarbeitet', {
+          txId: tx.id,
+          date: txDate,
+          amount: tx.amount,
+          newRunningBalance: runningBalance
+        });
+      }
+    }
+
+    // Batch-Update der running balances im Store
+    await this.batchUpdateRunningBalances(transactionsToUpdate);
+
+    debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Abgeschlossen', {
+      accountId,
+      updatedTransactions: transactionsToUpdate.length
+    });
+  },
+
+  /**
+   * Berechnet running balances für alle Konten neu
+   * Wird nach CSV-Imports aufgerufen
+   */
+  async recalculateAllRunningBalances(): Promise<void> {
+    debugLog('BalanceService', 'recalculateAllRunningBalances - Start');
+
+    const accountStore = useAccountStore();
+    const activeAccounts = accountStore.accounts.filter(acc => acc.isActive);
+
+    // Sequenziell alle Konten abarbeiten
+    for (const account of activeAccounts) {
+      await this.recalculateRunningBalancesForAccount(account.id);
+    }
+
+    debugLog('BalanceService', 'recalculateAllRunningBalances - Abgeschlossen', {
+      processedAccounts: activeAccounts.length
+    });
+  },
+
+  /**
+   * Batch-Update für running balances im TransactionStore
+   */
+  async batchUpdateRunningBalances(updates: { id: string; runningBalance: number }[]): Promise<void> {
+    const txStore = useTransactionStore();
+
+    for (const update of updates) {
+      await txStore.updateTransaction(update.id, {
+        runningBalance: update.runningBalance
+      }, false); // fromSync = false, da lokale Berechnung
+    }
+
+    debugLog('BalanceService', 'batchUpdateRunningBalances - Abgeschlossen', {
+      updatedCount: updates.length
+    });
+  },
+
+  /**
+   * Trigger für automatische Running Balance Neuberechnung nach Transaktionsänderungen
+   * Wird von TransactionService nach CRUD-Operationen aufgerufen
+   */
+  async triggerRunningBalanceRecalculation(accountId: string, changedTransactionDate?: string): Promise<void> {
+    debugLog('BalanceService', 'triggerRunningBalanceRecalculation', { accountId, changedTransactionDate });
+
+    // Asynchrone Neuberechnung - IMMER ab der ältesten Transaktion des Kontos
+    // da eine neue Transaktion mit älterem valueDate alle nachfolgenden Transaktionen beeinflusst
+    setTimeout(async () => {
+      try {
+        // Keine fromDate übergeben - immer ab der ältesten Transaktion rechnen
+        await this.recalculateRunningBalancesForAccount(accountId);
+      } catch (error) {
+        debugLog('BalanceService', 'Fehler bei triggerRunningBalanceRecalculation', error);
+      }
+    }, 0);
   }
 };

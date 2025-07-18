@@ -15,6 +15,9 @@ import { useRuleStore } from '@/stores/ruleStore';
 import { BalanceService } from './BalanceService';
 
 export const TransactionService = {
+  // Flag zur Deaktivierung der automatischen Running Balance Neuberechnung (z.B. während CSV-Import)
+  _skipRunningBalanceRecalc: false,
+
 /* ------------------------------------------------------------------ */
 /* --------------------------- Read APIs ---------------------------- */
 /* ------------------------------------------------------------------ */
@@ -151,6 +154,12 @@ export const TransactionService = {
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern (außer wenn deaktiviert, z.B. während CSV-Import)
+    if (added.accountId && !this._skipRunningBalanceRecalc) {
+      BalanceService.triggerRunningBalanceRecalculation(added.accountId, added.valueDate || added.date);
+    }
+
     return added;
   },
 
@@ -221,6 +230,13 @@ export const TransactionService = {
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung für beide Konten triggern (außer wenn deaktiviert, z.B. während CSV-Import)
+    if (!this._skipRunningBalanceRecalc) {
+      BalanceService.triggerRunningBalanceRecalculation(fromAccountId, vdt);
+      BalanceService.triggerRunningBalanceRecalculation(toAccountId, vdt);
+    }
+
     return { fromTransaction: fromTx, toTransaction: toTx };
   },
 
@@ -277,6 +293,9 @@ export const TransactionService = {
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern (Category Transfers haben keine accountId, daher nicht nötig)
+
     return { fromTransaction: newFromTx, toTransaction: newToTx };
   },
 
@@ -324,6 +343,9 @@ export const TransactionService = {
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern (Category Transfers haben keine accountId, daher nicht nötig)
+
     return true;
   },
 
@@ -384,6 +406,12 @@ export const TransactionService = {
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern
+    if (tx && tx.accountId && !this._skipRunningBalanceRecalc) {
+      BalanceService.triggerRunningBalanceRecalculation(tx.accountId, tx.valueDate || tx.date);
+    }
+
     return tx;
   },
 
@@ -472,6 +500,13 @@ updateTransaction(
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern
+    const updatedTx = txStore.getTransactionById(id);
+    if (updatedTx && updatedTx.accountId && !this._skipRunningBalanceRecalc) {
+      BalanceService.triggerRunningBalanceRecalculation(updatedTx.accountId, updatedTx.valueDate || updatedTx.date);
+    }
+
     return true;
   },
 
@@ -511,6 +546,12 @@ updateTransaction(
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
+
+    // Running Balance Neuberechnung triggern
+    if (tx.accountId && !this._skipRunningBalanceRecalc) {
+      BalanceService.triggerRunningBalanceRecalculation(tx.accountId, tx.valueDate || tx.date);
+    }
+
     return true;
   },
 
