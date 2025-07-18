@@ -39,7 +39,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
     localStorage.setItem("transactionsView_selectedTagId", selectedTagId.value);
     localStorage.setItem("transactionsView_selectedCategoryId", selectedCategoryId.value);
     localStorage.setItem("transactionsView_viewMode", currentViewMode.value);
-    debugLog("[transactionFilterStore] saveFilters", {
+    debugLog("[transactionFilterStore]", "saveFilters", {
       tagId: selectedTagId.value,
       categoryId: selectedCategoryId.value,
       viewMode: currentViewMode.value
@@ -59,7 +59,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
       currentViewMode.value = savedView;
     }
 
-    debugLog("[transactionFilterStore] loadFilters", {
+    debugLog("[transactionFilterStore]", "loadFilters", {
       loadedTagId: selectedTagId.value,
       loadedCategoryId: selectedCategoryId.value,
       loadedViewMode: currentViewMode.value
@@ -76,7 +76,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
     }
     selectedCategoryId.value = "";
     searchQuery.value = "";
-    debugLog("[transactionFilterStore] clearFilters");
+    debugLog("[transactionFilterStore]", "clearFilters");
   }
 
   // Filtere nach Kontotransaktionen
@@ -251,6 +251,14 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
         case "date":
           aVal = a.date;
           bVal = b.date;
+          // Bei gleichem Datum nach created_at sortieren für bessere runningBalance-Struktur
+          if (aVal === bVal) {
+            const createdA = a.createdAt || '1970-01-01T00:00:00.000Z';
+            const createdB = b.createdAt || '1970-01-01T00:00:00.000Z';
+            return sortOrder.value === "asc"
+              ? createdA.localeCompare(createdB)
+              : createdB.localeCompare(createdA);
+          }
           break;
         case "valueDate":
           aVal = a.valueDate || a.date;
@@ -333,7 +341,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
   function updateDateRange(start: string, end: string) {
     dateRange.value = { start, end };
-    debugLog("[transactionFilterStore] updateDateRange", { start, end });
+    debugLog("[transactionFilterStore]", "updateDateRange", { start, end });
   }
 
   function setSortKey(key: string) {
@@ -343,7 +351,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
       sortKey.value = key;
       sortOrder.value = "asc";
     }
-    debugLog("[transactionFilterStore] setSortKey", { key, order: sortOrder.value });
+    debugLog("[transactionFilterStore]", "setSortKey", { key, order: sortOrder.value });
   }
 
   return {

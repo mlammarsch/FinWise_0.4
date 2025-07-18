@@ -154,7 +154,10 @@ defineExpose({ getSelectedTransactions });
               @change="handleHeaderCheckboxChange"
             />
           </th>
-          <th @click="emit('sort-change', 'date')" class="cursor-pointer">
+          <th
+            @click="emit('sort-change', 'date')"
+            class="cursor-pointer"
+          >
             <div class="flex items-center">
               Datum
               <Icon
@@ -191,7 +194,10 @@ defineExpose({ getSelectedTransactions });
               />
             </div>
           </th>
-          <th @click="emit('sort-change', 'categoryId')" class="cursor-pointer">
+          <th
+            @click="emit('sort-change', 'categoryId')"
+            class="cursor-pointer"
+          >
             <div class="flex items-center">
               Kategorie
               <Icon
@@ -216,13 +222,28 @@ defineExpose({ getSelectedTransactions });
             </div>
           </th>
           <th class="text-center cursor-pointer">
-            <Icon icon="mdi:note-text-outline" class="text-lg" />
+            <Icon
+              icon="mdi:note-text-outline"
+              class="text-lg"
+            />
+          </th>
+          <th class="text-right cursor-pointer">
+            <div class="flex items-center justify-end">
+              Saldo
+              <Icon
+                icon="mdi:scale-balance"
+                class="ml-1 text-sm opacity-50"
+              />
+            </div>
           </th>
           <th class="text-right">Aktionen</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="(tx, index) in displayTransactions" :key="tx.id">
+        <tr
+          v-for="(tx, index) in displayTransactions"
+          :key="tx.id"
+        >
           <td>
             <input
               type="checkbox"
@@ -273,10 +294,24 @@ defineExpose({ getSelectedTransactions });
           </td>
           <td class="text-right flex justify-end items-center mt-1">
             <template v-if="tx.note && tx.note.trim()">
-              <div class="tooltip" :data-tip="tx.note">
-                <Icon icon="mdi:speaker-notes" class="text-lg opacity-50" />
+              <div
+                class="tooltip"
+                :data-tip="tx.note"
+              >
+                <Icon
+                  icon="mdi:speaker-notes"
+                  class="text-lg opacity-50"
+                />
               </div>
             </template>
+          </td>
+          <td class="text-right">
+            <CurrencyDisplay
+              :amount="tx.runningBalance || 0"
+              :show-zero="true"
+              :asInteger="false"
+              class="text-sm"
+            />
           </td>
           <td class="text-right">
             <div class="flex justify-end space-x-1">
@@ -284,13 +319,19 @@ defineExpose({ getSelectedTransactions });
                 class="btn btn-ghost btn-xs border-none"
                 @click="emit('edit', tx)"
               >
-                <Icon icon="mdi:pencil" class="text-base/75" />
+                <Icon
+                  icon="mdi:pencil"
+                  class="text-base/75"
+                />
               </button>
               <button
                 class="btn btn-ghost btn-xs border-none text-error/75"
                 @click="emit('delete', tx)"
               >
-                <Icon icon="mdi:trash-can" class="text-base" />
+                <Icon
+                  icon="mdi:trash-can"
+                  class="text-base"
+                />
               </button>
             </div>
           </td>

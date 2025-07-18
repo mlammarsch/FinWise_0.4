@@ -16,7 +16,7 @@ export interface Account {
   creditLimit?: number
   offset: number
   logo_path: string | null
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 export interface AccountGroup {
@@ -24,7 +24,7 @@ export interface AccountGroup {
   name: string
   sortOrder: number
   logo_path: string | null
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 // Kategorie-Modelle
@@ -42,7 +42,7 @@ export interface Category {
   categoryGroupId?: string
   parentCategoryId?: string
   isSavingsGoal?: boolean
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 export interface CategoryGroup {
@@ -50,7 +50,7 @@ export interface CategoryGroup {
   name: string
   sortOrder: number
   isIncomeGroup: boolean
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 // Tag- und Empfänger-Modelle
@@ -60,7 +60,7 @@ export interface Tag {
   parentTagId?: string | null
   color?: string
   icon?: string
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 export interface Recipient {
@@ -68,7 +68,7 @@ export interface Recipient {
   name: string
   defaultCategoryId?: string | null
   note?: string
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 // Transaktionen
@@ -93,6 +93,8 @@ export interface Transaction {
   reconciled?: boolean
   toCategoryId?: string
   payee?: string
+  createdAt?: string // ISO 8601 Format - für korrekte Sortierung bei gleichem Datum
+  updatedAt?: string // ISO 8601 Format
 }
 
 // Planungstransaktionen
@@ -124,7 +126,7 @@ export interface PlanningTransaction {
   isActive: boolean;
   forecastOnly: boolean;
   autoExecute?: boolean;
-  updated_at?: string; // ISO 8601 Format
+  updatedAt?: string; // ISO 8601 Format
 }
 
 // Regeln / Automatisierungen
@@ -168,7 +170,7 @@ export interface AutomationRule {
   actions: RuleAction[]
   priority: number
   isActive: boolean
-  updated_at?: string // ISO 8601 Format
+  updatedAt?: string // ISO 8601 Format
 }
 
 // Zusatzmodelle

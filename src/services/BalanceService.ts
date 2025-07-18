@@ -551,9 +551,9 @@ export const BalanceService = {
     const offset = account.offset || 0;
     const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
 
-    // 1. Transaktionen für das Konto filtern und nach Datum sortieren
+    // 1. Transaktionen für das Konto filtern und chronologisch sortieren
     const filteredTransactions = transactions
-      .filter(tx => tx.accountId === account.id)
+      .filter(tx => tx.accountId === account.id && tx.type !== TransactionType.CATEGORYTRANSFER)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // 2. Nach Datum gruppieren
@@ -566,21 +566,40 @@ export const BalanceService = {
       return acc;
     }, {} as Record<string, { date: string; transactions: Transaction[] }>);
 
-    // 3. Saldo je Gruppe berechnen und Gruppen sortieren
-    const finalGroups = Object.values(groups)
-      .map(group => {
-        // Korrekte Berechnung des laufenden Saldos für das Datum
-        const date = new Date(group.date);
-        const rawBalance = this.getTodayBalance('account', account.id, date);
-        const applyOffset = date.getTime() >= firstOfMonth ? offset : 0;
-        return {
-          ...group,
-          runningBalance: rawBalance - applyOffset
-        };
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // 3. Chronologisch sortierte Gruppen erstellen
+    const sortedGroups = Object.values(groups)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    return finalGroups;
+    // 4. Running Balance chronologisch berechnen
+    let runningBalance = 0;
+
+    // Startsaldo berechnen (alle Transaktionen vor der ersten Gruppe)
+    if (sortedGroups.length > 0) {
+      const firstDate = new Date(sortedGroups[0].date);
+      const dayBefore = new Date(firstDate);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+      runningBalance = this.getTodayBalance('account', account.id, dayBefore);
+    }
+
+    // 5. Für jede Gruppe den Running Balance berechnen
+    const groupsWithBalance = sortedGroups.map(group => {
+      // Transaktionen dieser Gruppe zum Running Balance addieren
+      const dayAmount = group.transactions.reduce((sum, tx) => sum + tx.amount, 0);
+      runningBalance += dayAmount;
+
+      // Offset anwenden falls nötig
+      const date = new Date(group.date);
+      const applyOffset = date.getTime() >= firstOfMonth ? offset : 0;
+      const displayBalance = runningBalance - applyOffset;
+
+      return {
+        ...group,
+        runningBalance: displayBalance
+      };
+    });
+
+    // 6. Für Anzeige nach Datum absteigend sortieren (neueste zuerst)
+    return groupsWithBalance.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
   /**

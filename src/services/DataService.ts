@@ -121,8 +121,8 @@ export class DataService {
     try {
       const accountStore = useAccountStore(); // Sicherstellen, dass der Store hier verfügbar ist
       const validLogoPaths = new Set<string>();
-      accountStore.accounts.forEach(acc => { if (acc.logoPath) validLogoPaths.add(acc.logoPath); });
-      accountStore.accountGroups.forEach(group => { if (group.logoPath) validLogoPaths.add(group.logoPath); });
+      accountStore.accounts.forEach(acc => { if (acc.logo_path) validLogoPaths.add(acc.logo_path); });
+      accountStore.accountGroups.forEach(group => { if (group.logo_path) validLogoPaths.add(group.logo_path); });
 
       const cachedLogoKeys = await tenantDbInstance.getAllCachedLogoKeys();
       if (cachedLogoKeys) { // Prüfen, ob die Methode erfolgreich war (nicht leeres Array bedeutet nicht unbedingt Erfolg)

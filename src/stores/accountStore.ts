@@ -404,7 +404,8 @@ export const useAccountStore = defineStore('account', () => {
   async function reset(): Promise<void> {
     accounts.value = [];
     accountGroups.value = [];
-    infoLog('accountStore', 'Account-Store zurückgesetzt.');
+    await loadAccounts(); // Daten nach dem Zurücksetzen neu laden
+    infoLog('accountStore', 'Account-Store zurückgesetzt und neu geladen.');
   }
 
 

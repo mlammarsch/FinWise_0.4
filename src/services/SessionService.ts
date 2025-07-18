@@ -105,8 +105,11 @@ export const SessionService = {
       debugLog('SessionService', 'Settings für Benutzer initialisiert');
 
       // Logo-Cache laden wenn Mandant bereits ausgewählt ist
+      // WICHTIG: Warten bis accountStore.reset() abgeschlossen ist
       const sessionStore = useSessionStore();
       if (sessionStore.currentTenantId) {
+        // Warte kurz, damit DataService.reloadTenantData() die Stores laden kann
+        await new Promise(resolve => setTimeout(resolve, 100));
         await this.preloadLogosForTenant();
       }
     } catch (error) {
@@ -126,17 +129,17 @@ export const SessionService = {
       const accountStore = useAccountStore();
       const logoPaths = new Set<string>();
 
-      // Sammle alle logoPath-Pfade von Accounts
+      // Sammle alle logo_path-Pfade von Accounts
       for (const account of accountStore.accounts) {
-        if (account.logoPath) {
-          logoPaths.add(account.logoPath);
+        if (account.logo_path) {
+          logoPaths.add(account.logo_path);
         }
       }
 
-      // Sammle alle logoPath-Pfade von AccountGroups
+      // Sammle alle logo_path-Pfade von AccountGroups
       for (const accountGroup of accountStore.accountGroups) {
-        if (accountGroup.logoPath) {
-          logoPaths.add(accountGroup.logoPath);
+        if (accountGroup.logo_path) {
+          logoPaths.add(accountGroup.logo_path);
         }
       }
 
