@@ -279,32 +279,68 @@ function hideCategoryDetail() {
 function getAccountForecastData(accountId: string) {
   const forecasts = [];
   const startDate = dayjs(dateRange.value.start).startOf("month");
+  let previousMonthProjectedBalance: number | null = null;
 
   // 6 Monate ab dem aktuellen Monat generieren
   for (let i = 0; i < 6; i++) {
     const currentDate = startDate.add(i, "month");
     const monthStart = currentDate.format("YYYY-MM-DD");
     const monthEnd = currentDate.endOf("month").format("YYYY-MM-DD");
+    // Startsaldo und Endsaldo berechnen
+    let startBalance: number;
+    let projectedBalance: number;
 
-    // Echte Salden aus BalanceService verwenden
-    const startBalance = BalanceService.getTodayBalance(
-      "account",
-      accountId,
-      new Date(monthStart)
-    );
-    const projectedBalance = BalanceService.getProjectedBalance(
-      "account",
-      accountId,
-      new Date(monthEnd)
-    );
-    const monthlyChange = projectedBalance - startBalance;
+    if (i === 0) {
+      // Erster Monat: Startsaldo ist der projizierte Saldo des Vormonats
+      const prevMonth = currentDate.subtract(1, "month");
+      const prevMonthEnd = prevMonth.endOf("month");
 
-    // Geplante Transaktionen für diesen Monat aus monthlyBalanceStore
+      startBalance =
+        monthlyBalanceStore.getProjectedAccountBalanceForDate(
+          accountId,
+          new Date(prevMonthEnd.format("YYYY-MM-DD"))
+        ) ??
+        BalanceService.getProjectedBalance(
+          "account",
+          accountId,
+          new Date(prevMonthEnd.format("YYYY-MM-DD"))
+        );
+
+      // Endsaldo ist der projizierte Saldo am Monatsende des aktuellen Monats
+      projectedBalance =
+        monthlyBalanceStore.getProjectedAccountBalanceForDate(
+          accountId,
+          new Date(monthEnd)
+        ) ??
+        BalanceService.getProjectedBalance(
+          "account",
+          accountId,
+          new Date(monthEnd)
+        );
+    } else {
+      // Nachfolgende Monate: Startsaldo ist der projizierte Endsaldo des Vormonats
+      startBalance = previousMonthProjectedBalance ?? 0;
+
+      // Endsaldo ist der projizierte Saldo am Monatsende
+      projectedBalance =
+        monthlyBalanceStore.getProjectedAccountBalanceForDate(
+          accountId,
+          new Date(monthEnd)
+        ) ??
+        BalanceService.getProjectedBalance(
+          "account",
+          accountId,
+          new Date(monthEnd)
+        );
+    }
+    // Geplante Transaktionen für diesen Monat sammeln
     const monthTransactions: Array<{
       date: string;
       description: string;
       amount: number;
     }> = [];
+
+    let plannedTransactionsSum = 0;
 
     planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
       if (!plan.isActive || plan.accountId !== accountId) return;
@@ -326,14 +362,34 @@ function getAccountForecastData(accountId: string) {
           description: plan.name,
           amount: amount,
         });
+
+        plannedTransactionsSum += amount;
       });
     });
+
+    // Monatliche Änderung (nur Planbuchungen)
+    const monthlyChangePlanned = plannedTransactionsSum;
+
+    // Monatliche Änderung (inkl. existierende Transaktionen) = Endsaldo - Startsaldo
+    const monthlyChangeTotal = projectedBalance - startBalance;
+
+    // Debug-Log für Problemanalyse
+    if (i === 0) {
+      debugLog(
+        "PlanningView",
+        `Aktueller Monat ${monthStart}: Start=${startBalance}€, Ende=${projectedBalance}€, Änderung=${monthlyChangeTotal}€, Planungen=${monthlyChangePlanned}€`
+      );
+    }
+
+    // Für den nächsten Monat merken
+    previousMonthProjectedBalance = projectedBalance;
 
     forecasts.push({
       month: currentDate.format("MMMM YYYY"),
       balance: startBalance,
       projectedBalance: projectedBalance,
-      monthlyChange: monthlyChange,
+      monthlyChangePlanned: monthlyChangePlanned,
+      monthlyChangeTotal: monthlyChangeTotal,
       transactions: monthTransactions.sort((a, b) =>
         a.date.localeCompare(b.date)
       ),
@@ -360,33 +416,28 @@ function getCategoryForecastData(categoryId: string) {
     const monthStart = currentDate.format("YYYY-MM-DD");
     const monthEnd = currentDate.endOf("month").format("YYYY-MM-DD");
 
-    // Echte Kategoriesalden aus BalanceService verwenden
-    const currentBalance = BalanceService.getTodayBalance(
-      "category",
+    // Kategorie-Informationen aus monthlyBalanceStore und categoryStore
+    const category = categoryStore.getCategoryById(categoryId);
+    const currentBalance = monthlyBalanceStore.getCategoryBalanceForDate(
       categoryId,
       new Date(monthStart)
     );
-    const projectedBalance = BalanceService.getProjectedBalance(
-      "category",
-      categoryId,
-      new Date(monthEnd)
-    );
-
-    // Kategorie-Informationen aus monthlyBalanceStore
-    const monthlyBalance = monthlyBalanceStore.getCategoryBalanceForDate(
-      categoryId,
-      monthStart
-    );
-    const projectedMonthlyBalance =
+    const projectedBalance =
       monthlyBalanceStore.getProjectedCategoryBalanceForDate(
         categoryId,
-        monthEnd
+        new Date(monthEnd)
       );
 
-    const budgeted = monthlyBalance?.budgeted || 0;
-    const activity = monthlyBalance?.activity || 0;
+    // Verwende die Werte aus dem Store, falls verfügbar
+    const budgeted = category?.budgeted || 0;
+    const activity = currentBalance || 0;
     const projectedActivity =
-      projectedMonthlyBalance?.activity || projectedBalance;
+      projectedBalance ||
+      BalanceService.getProjectedBalance(
+        "category",
+        categoryId,
+        new Date(monthEnd)
+      );
     const available = budgeted - projectedActivity;
 
     // Geplante Transaktionen für diese Kategorie in diesem Monat
@@ -804,9 +855,17 @@ onMounted(() => {
                   />
                 </div>
                 <div class="flex justify-between">
-                  <span>Monatliche Änderung:</span>
+                  <span>Änderung (Planbuchungen):</span>
                   <CurrencyDisplay
-                    :amount="forecast.monthlyChange"
+                    :amount="forecast.monthlyChangePlanned"
+                    :as-integer="true"
+                    :show-zero="true"
+                  />
+                </div>
+                <div class="flex justify-between">
+                  <span>Änderung (inkl. exist. Transaktionen):</span>
+                  <CurrencyDisplay
+                    :amount="forecast.monthlyChangeTotal"
                     :as-integer="true"
                     :show-zero="true"
                   />
@@ -814,7 +873,7 @@ onMounted(() => {
                 <div
                   class="flex justify-between font-bold border-t border-base-300 pt-1"
                 >
-                  <span>Endsaldo:</span>
+                  <span>Prognostizierter Endsaldo:</span>
                   <CurrencyDisplay
                     :amount="forecast.projectedBalance"
                     :as-integer="true"
@@ -862,11 +921,11 @@ onMounted(() => {
           <div
             v-for="category in categoryStore.activeCategories"
             :key="category.id"
-            class="badge badge-lg cursor-pointer"
+            class="badge badge-lg cursor-pointer transition-all duration-200"
             :class="
               selectedCategoryForDetail === category.id
-                ? 'badge-accent'
-                : 'badge-outline'
+                ? 'badge-accent text-accent-content'
+                : 'badge-outline hover:badge-secondary'
             "
             @click="
               selectedCategoryForDetail === category.id
@@ -874,6 +933,11 @@ onMounted(() => {
                 : showCategoryDetail(category.id)
             "
           >
+            <Icon
+              v-if="category.icon"
+              :icon="category.icon"
+              class="mr-1 text-sm"
+            />
             {{ category.name }}
           </div>
         </div>
