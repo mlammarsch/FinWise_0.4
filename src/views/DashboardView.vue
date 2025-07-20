@@ -5,7 +5,7 @@ import { useTransactionStore } from "../stores/transactionStore";
 import { useAccountStore } from "../stores/accountStore";
 import { useStatisticsStore } from "../stores/statisticsStore";
 import { formatCurrency, formatDate } from "../utils/formatters";
-import FinancialTrendChart from "../components/ui/FinancialTrendChart.vue";
+import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
 import dayjs from "dayjs";
 
 const router = useRouter();

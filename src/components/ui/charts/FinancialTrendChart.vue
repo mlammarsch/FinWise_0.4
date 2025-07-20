@@ -2,9 +2,10 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTransactionStore } from "@/stores/transactionStore";
 import { useAccountStore } from "@/stores/accountStore";
+import { useThemeStore } from "@/stores/themeStore";
 import { BalanceService } from "@/services/BalanceService";
-import type { Transaction, Account } from "../../types/index";
-import { TransactionType } from "../../types/index";
+import type { Transaction, Account } from "../../../types/index";
+import { TransactionType } from "../../../types/index";
 import dayjs from "dayjs";
 import "dayjs/locale/de";
 
@@ -38,24 +39,44 @@ const getCSSVariableValue = (variableName: string): string => {
   return value;
 };
 
+// Funktion zum Abrufen der Schriftfamilie aus style.css
+const getFontFamily = (): string => {
+  const htmlElement = document.documentElement;
+  const computedStyle = getComputedStyle(htmlElement);
+  const fontFamily = computedStyle.fontFamily;
+
+  // Fallback auf die in style.css definierte Schriftfamilie
+  return (
+    fontFamily || "Inter, 'Source Sans Pro', Roboto, system-ui, sans-serif"
+  );
+};
+
 // Dynamische Farben basierend auf dem aktuellen Theme mit korrekten DaisyUI v5 Variablennamen
 const getThemeColors = () => {
+  // Verwende themeStore für konsistente Theme-Erkennung
+  const isDarkMode = themeStore.isDarkMode;
+
   return {
     success: getCSSVariableValue("--color-success"),
     error: getCSSVariableValue("--color-error"),
     warning: getCSSVariableValue("--color-warning"),
     baseContent: getCSSVariableValue("--color-base-content"),
+    textColor: getCSSVariableValue("--color-base-content"),
     primary: getCSSVariableValue("--color-primary"),
     secondary: getCSSVariableValue("--color-secondary"),
     accent: getCSSVariableValue("--color-accent"),
     base100: getCSSVariableValue("--color-base-100"),
     base200: getCSSVariableValue("--color-base-200"),
     base300: getCSSVariableValue("--color-base-300"),
+    neutral: getCSSVariableValue("--color-neutral"),
+    info: getCSSVariableValue("--color-info"),
+    fontFamily: getFontFamily(),
   };
 };
 
 const transactionStore = useTransactionStore();
 const accountStore = useAccountStore();
+const themeStore = useThemeStore();
 
 // Formatierungsfunktion für kompakte Darstellung (3k€ statt 3.000,00€)
 const formatCurrency = (value: number): string => {
@@ -77,6 +98,14 @@ const formatCurrency = (value: number): string => {
 
 const chartContainer = ref<HTMLElement>();
 let chart: ApexCharts | null = null;
+
+// Responsive Verhalten für die Legende
+const isSmallScreen = ref(false);
+
+// Screen-Size-Watcher
+const updateScreenSize = () => {
+  isSmallScreen.value = window.innerWidth < 640; // Tailwind sm breakpoint
+};
 
 // Deutsche Monatsnamen (3-stellig)
 const getGermanMonthName = (date: dayjs.Dayjs): string => {
@@ -194,11 +223,13 @@ const chartOptions = computed(() => {
       },
     ],
     chart: {
-      height: 350,
+      height: "100%",
+      width: "100%",
       type: "line",
       stacked: false,
       background: "transparent",
-      foreColor: themeColors.baseContent, // Globale Textfarbe für alle Chart-Elemente
+      foreColor: themeColors.textColor, // Globale Textfarbe für alle Chart-Elemente mit besserem Kontrast
+      fontFamily: themeColors.fontFamily, // Globale Schriftfamilie aus style.css
       toolbar: {
         show: false,
       },
@@ -214,13 +245,13 @@ const chartOptions = computed(() => {
       themeColors.warning, // warning (orange) für Kontostand-Linie
     ],
     stroke: {
-      width: [0, 0, 4], // Dünnere Linie für Kontostand
+      width: [0, 0, 3], // Dünnere Linie für Kontostand
       curve: "smooth",
     },
     plotOptions: {
       bar: {
         columnWidth: "100%", // Breitere Balken
-        borderRadius: 3,
+        borderRadius: 2,
       },
     },
     fill: {
@@ -238,9 +269,9 @@ const chartOptions = computed(() => {
       type: "category",
       labels: {
         style: {
-          colors: Array(data.labels.length).fill(themeColors.baseContent), // Array für alle Labels
+          colors: Array(data.labels.length).fill(themeColors.textColor), // Array für alle Labels mit besserem Kontrast
           fontSize: "12px",
-          fontFamily: "inherit",
+          fontFamily: themeColors.fontFamily,
         },
       },
       axisBorder: {
@@ -258,7 +289,7 @@ const chartOptions = computed(() => {
         style: {
           color: themeColors.baseContent, // Dynamische Titel-Farbe
           fontSize: "12px",
-          fontFamily: "inherit",
+          fontFamily: themeColors.fontFamily,
         },
       },
     },
@@ -269,14 +300,14 @@ const chartOptions = computed(() => {
           style: {
             color: themeColors.baseContent,
             fontSize: "12px",
-            fontFamily: "inherit",
+            fontFamily: themeColors.fontFamily,
           },
         },
         labels: {
           style: {
-            colors: Array(10).fill(themeColors.baseContent), // Array für alle Y-Achsen-Labels
+            colors: Array(10).fill(themeColors.textColor), // Array für alle Y-Achsen-Labels mit besserem Kontrast
             fontSize: "11px",
-            fontFamily: "inherit",
+            fontFamily: themeColors.fontFamily,
           },
           formatter: function (val: number) {
             return formatCurrency(val);
@@ -301,14 +332,14 @@ const chartOptions = computed(() => {
           style: {
             color: themeColors.baseContent,
             fontSize: "12px",
-            fontFamily: "inherit",
+            fontFamily: themeColors.fontFamily,
           },
         },
         labels: {
           style: {
-            colors: Array(10).fill(themeColors.baseContent), // Array für alle Y-Achsen-Labels
+            colors: Array(10).fill(themeColors.textColor), // Array für alle Y-Achsen-Labels mit besserem Kontrast
             fontSize: "11px",
-            fontFamily: "inherit",
+            fontFamily: themeColors.fontFamily,
           },
           formatter: function (val: number) {
             return formatCurrency(val);
@@ -330,10 +361,7 @@ const chartOptions = computed(() => {
     tooltip: {
       shared: true,
       intersect: false,
-      theme:
-        document.documentElement.getAttribute("data-theme") === "dark"
-          ? "dark"
-          : "light", // Dynamisches Theme
+      theme: themeStore.isDarkMode ? "dark" : "light", // Verwende themeStore für konsistente Theme-Erkennung
       style: {
         fontSize: "12px",
       },
@@ -349,16 +377,46 @@ const chartOptions = computed(() => {
     },
     legend: {
       show: true,
-      position: "top",
+      customLegendItems: [],
+      clusterGroupedSeries: false,
+      clusterGroupedSeriesOrientation: "horizontal",
+      position: isSmallScreen.value ? "top" : "top",
       horizontalAlign: "center",
-      fontSize: "12px",
+      floating: false,
+      fontSize: isSmallScreen.value ? "8px" : "10px",
+      fontFamily: themeColors.fontFamily,
+      fontWeight: 400,
+      itemMargin: {
+        horizontal: isSmallScreen.value ? 12 : 20, // Weniger Abstand auf kleinen Bildschirmen
+        vertical: isSmallScreen.value ? 5 : 1,
+      },
+      offsetY: isSmallScreen.value ? 5 : 0,
+      offsetX: 0,
       labels: {
-        colors: [themeColors.baseContent],
+        colors: themeColors.baseContent,
+        useSeriesColors: false,
       },
       markers: {
-        width: 12,
-        height: 12,
+        width: isSmallScreen.value ? 10 : 12,
+        height: isSmallScreen.value ? 10 : 12,
         radius: 2,
+        offsetX: -1,
+        offsetY: 0,
+        strokeWidth: 0,
+        strokeColor: "transparent",
+        fillColors: undefined, // Verwendet automatisch die Series-Farben
+        customHTML: undefined,
+        onClick: undefined,
+      },
+      onItemClick: {
+        toggleDataSeries: true,
+      },
+      onItemHover: {
+        highlightDataSeries: true,
+      },
+      formatter: function (seriesName: string, opts: any) {
+        // Stelle sicher, dass alle Items horizontal angezeigt werden
+        return seriesName;
       },
     },
     grid: {
@@ -373,6 +431,12 @@ const chartOptions = computed(() => {
         lines: {
           show: true,
         },
+      },
+      padding: {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
       },
     },
     dataLabels: {
@@ -402,6 +466,17 @@ watch(
     updateChart();
   },
   { deep: true }
+);
+
+// Watcher für Theme-Änderungen über themeStore
+watch(
+  () => themeStore.isDarkMode,
+  () => {
+    // Kurze Verzögerung, damit CSS-Variablen aktualisiert werden
+    setTimeout(() => {
+      updateChart();
+    }, 50);
+  }
 );
 
 // Theme-Änderungen überwachen - verbesserte Implementierung
@@ -443,8 +518,20 @@ const setupThemeObserver = () => {
 };
 
 onMounted(() => {
+  // Initiale Screen-Size-Erkennung
+  updateScreenSize();
+
+  // Event-Listener für Fenstergrößenänderungen
+  window.addEventListener("resize", updateScreenSize);
+
   createChart();
   setupThemeObserver();
+});
+
+// Watcher für Screen-Size-Änderungen
+watch(isSmallScreen, () => {
+  // Chart mit neuen responsive Einstellungen aktualisieren
+  updateChart();
 });
 
 // Cleanup beim Unmount
@@ -457,45 +544,19 @@ onUnmounted(() => {
     themeObserver.disconnect();
     themeObserver = null;
   }
+  // Resize-Event-Listener entfernen
+  window.removeEventListener("resize", updateScreenSize);
 });
 </script>
 
 <template>
-  <div class="card bg-base-100 shadow-md">
-    <div class="card-body">
+  <div class="card bg-base-100 shadow-md h-80">
+    <div class="card-body flex flex-col">
       <h3 class="card-title text-lg mb-4">Finanztrend (6 Monate)</h3>
       <div
         ref="chartContainer"
-        class="w-full"
+        class="w-full flex-1 min-h-0"
       ></div>
     </div>
   </div>
 </template>
-
-<style scoped>
-/* ApexCharts spezifische Styles für bessere Theme-Integration */
-:deep(.apexcharts-tooltip) {
-  background: hsl(var(--b1)) !important;
-  border: 1px solid hsl(var(--bc) / 0.2) !important;
-  color: hsl(var(--bc)) !important;
-}
-
-:deep(.apexcharts-tooltip-title) {
-  background: hsl(var(--b2)) !important;
-  border-bottom: 1px solid hsl(var(--bc) / 0.2) !important;
-  color: hsl(var(--bc)) !important;
-}
-
-:deep(.apexcharts-legend-text) {
-  color: hsl(var(--bc)) !important;
-}
-
-:deep(.apexcharts-xaxis-label),
-:deep(.apexcharts-yaxis-label) {
-  fill: hsl(var(--bc)) !important;
-}
-
-:deep(.apexcharts-gridline) {
-  stroke: hsl(var(--bc) / 0.1) !important;
-}
-</style>
