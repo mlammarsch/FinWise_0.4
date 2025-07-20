@@ -5,8 +5,6 @@ import { useCategoryStore } from "@/stores/categoryStore";
 import { usePlanningStore } from "@/stores/planningStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { BalanceService } from "@/services/BalanceService";
-import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
-import { formatDate } from "@/utils/formatters";
 import { debugLog } from "@/utils/logger";
 import { Icon } from "@iconify/vue";
 import dayjs from "dayjs";
@@ -21,6 +19,15 @@ const props = defineProps<{
   startDate: string;
   type: "accounts" | "categories";
   filteredAccountId?: string;
+  selectedAccountForDetail?: string;
+  selectedCategoryForDetail?: string;
+}>();
+
+const emit = defineEmits<{
+  (e: "show-account-detail", accountId: string): void;
+  (e: "show-category-detail", categoryId: string): void;
+  (e: "hide-account-detail"): void;
+  (e: "hide-category-detail"): void;
 }>();
 
 // Stores
@@ -36,9 +43,6 @@ let chart: ApexCharts | null = null;
 
 // Responsive Verhalten
 const isSmallScreen = ref(false);
-
-// Aktives Element für detaillierte Ansicht (nur für Accounts)
-const activeAccountId = ref<string | null>(null);
 
 // Anzeigemodus für Kategorien: 'expenses' oder 'income'
 const displayMode = ref<"expenses" | "income">("expenses");
@@ -576,7 +580,8 @@ function generateForecastData() {
             return (
               txDate >= monthStart &&
               txDate <= lastDay &&
-              tx.transaction?.categoryId === category.id
+              tx.transaction &&
+              tx.transaction.categoryId === category.id
             );
           })
           .map((tx: any) => ({
@@ -634,14 +639,6 @@ const updateChart = async () => {
     }
   }
 };
-
-// Zeige detaillierte Ansicht für ein Account
-function showAccountDetails(accountId: string) {
-  if (props.type === "accounts") {
-    activeAccountId.value =
-      activeAccountId.value === accountId ? null : accountId;
-  }
-}
 
 // Wechselt zwischen Ausgaben- und Einnahmenansicht (nur für Categories)
 function toggleDisplayMode(mode: "expenses" | "income"): void {
@@ -768,153 +765,34 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- Header mit Tab-Umschaltung für Categories -->
-    <div class="flex justify-between items-center">
-      <h3 class="text-xl font-bold">
-        {{ type === "accounts" ? "Kontenprognose" : "Kategorienprognose" }}
-      </h3>
+  <!-- Keine Daten Hinweis -->
+  <div
+    v-if="activeForecastData.length === 0"
+    class="text-center py-10"
+  >
+    <Icon
+      icon="mdi:alert-circle-outline"
+      class="text-4xl text-warning mb-2"
+    />
+    <p v-if="type === 'accounts'">
+      Keine Kontodaten verfügbar oder alle Konten gefiltert.
+    </p>
+    <p v-else>
+      Keine
+      {{ displayMode === "expenses" ? "Ausgaben" : "Einnahmen" }}kategorien
+      verfügbar.
+    </p>
+  </div>
 
-      <!-- Umschalter zwischen Ausgaben und Einnahmen (nur für Categories) -->
-      <div
-        v-if="type === 'categories'"
-        class="tabs tabs-boxed"
-      >
-        <a
-          class="tab"
-          :class="{ 'tab-active': displayMode === 'expenses' }"
-          @click="toggleDisplayMode('expenses')"
-        >
-          <Icon
-            icon="mdi:cash-minus"
-            class="mr-2"
-          />
-          Ausgaben
-        </a>
-        <a
-          class="tab"
-          :class="{ 'tab-active': displayMode === 'income' }"
-          @click="toggleDisplayMode('income')"
-        >
-          <Icon
-            icon="mdi:cash-plus"
-            class="mr-2"
-          />
-          Einnahmen
-        </a>
-      </div>
-    </div>
-
-    <!-- Account-Übersicht und Legende (nur für Accounts) -->
+  <!-- ApexCharts Prognose-Visualisierung -->
+  <div
+    v-else
+    class="w-full h-80"
+  >
     <div
-      v-if="type === 'accounts'"
-      class="flex flex-wrap gap-4"
-    >
-      <div
-        v-for="item in forecastData"
-        :key="item.id"
-        class="badge badge-lg cursor-pointer"
-        :class="activeAccountId === item.id ? 'badge-accent' : 'badge-outline'"
-        @click="showAccountDetails(item.id)"
-      >
-        {{ item.name }}
-      </div>
-    </div>
-
-    <!-- Keine Daten Hinweis -->
-    <div
-      v-if="activeForecastData.length === 0"
-      class="text-center py-10"
-    >
-      <Icon
-        icon="mdi:alert-circle-outline"
-        class="text-4xl text-warning mb-2"
-      />
-      <p v-if="type === 'accounts'">
-        Keine Kontodaten verfügbar oder alle Konten gefiltert.
-      </p>
-      <p v-else>
-        Keine
-        {{ displayMode === "expenses" ? "Ausgaben" : "Einnahmen" }}kategorien
-        verfügbar.
-      </p>
-    </div>
-
-    <!-- ApexCharts Prognose-Visualisierung -->
-    <div
-      v-else
-      class="card bg-base-100 shadow-md h-80"
-    >
-      <div class="card-body flex flex-col">
-        <div
-          ref="chartContainer"
-          class="w-full flex-1 min-h-0"
-        ></div>
-      </div>
-    </div>
-
-    <!-- Detaillierte Daten für ausgewähltes Account (nur für Accounts) -->
-    <div
-      v-if="type === 'accounts' && activeAccountId"
-      class="mt-8"
-    >
-      <h4 class="text-lg font-semibold mb-4">
-        Detaillierte Prognose für
-        {{ forecastData.find((a) => a.id === activeAccountId)?.name }}
-      </h4>
-      <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <div
-          v-for="(forecast, i) in forecastData.find(
-            (a) => a.id === activeAccountId
-          )?.monthlyForecasts"
-          :key="i"
-          class="card bg-base-200 shadow-sm"
-        >
-          <div class="card-body p-4">
-            <h5 class="card-title text-base">{{ forecast.month }}</h5>
-            <div class="text-sm mb-2">
-              <div class="flex justify-between">
-                <span>Aktueller Saldo:</span>
-                <CurrencyDisplay
-                  :amount="forecast.balance"
-                  :as-integer="true"
-                />
-              </div>
-              <div class="flex justify-between font-bold">
-                <span>Prognostizierter Saldo:</span>
-                <CurrencyDisplay
-                  :amount="forecast.projectedBalance"
-                  :as-integer="true"
-                />
-              </div>
-            </div>
-            <div
-              v-if="forecast.transactions.length > 0"
-              class="text-xs space-y-1 border-t border-base-300 pt-2"
-            >
-              <div class="font-semibold">Geplante Transaktionen:</div>
-              <div
-                v-for="(tx, j) in forecast.transactions"
-                :key="j"
-                class="flex justify-between"
-              >
-                <span>{{ formatDate(tx.date) }} - {{ tx.description }}</span>
-                <CurrencyDisplay
-                  :amount="tx.amount"
-                  :show-zero="true"
-                />
-              </div>
-            </div>
-            <div
-              v-else
-              class="text-xs text-base-content/70 border-t border-base-300 pt-2"
-            >
-              Keine geplanten Transaktionen in diesem Monat.
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+      ref="chartContainer"
+      class="w-full h-full"
+    ></div>
   </div>
 </template>
 

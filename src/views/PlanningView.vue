@@ -12,9 +12,11 @@ import { usePlanningStore } from "@/stores/planningStore";
 import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import { useRecipientStore } from "@/stores/recipientStore";
+import { useMonthlyBalanceStore } from "@/stores/monthlyBalanceStore";
 
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
 import ForecastChart from "@/components/ui/charts/ForecastChart.vue";
+import DetailedForecastChart from "@/components/ui/charts/DetailedForecastChart.vue";
 
 import { PlanningTransaction, TransactionType } from "@/types";
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
@@ -30,6 +32,7 @@ const planningStore = usePlanningStore();
 const accountStore = useAccountStore();
 const categoryStore = useCategoryStore();
 const recipientStore = useRecipientStore();
+const monthlyBalanceStore = useMonthlyBalanceStore();
 
 // UI‑Status
 const showNewPlanningModal = ref(false);
@@ -38,6 +41,10 @@ const selectedPlanning = ref<PlanningTransaction | null>(null);
 const searchQuery = ref("");
 const selectedAccountId = ref("");
 const activeTab = ref<"upcoming" | "accounts" | "categories">("upcoming");
+
+// Detailansicht für Charts
+const selectedAccountForDetail = ref("");
+const selectedCategoryForDetail = ref("");
 
 // Pagination / Zeitraum
 const currentPage = ref(1);
@@ -247,6 +254,184 @@ function clearFilters() {
   selectedAccountId.value = "";
   searchQuery.value = "";
   currentPage.value = 1;
+}
+
+// Chart-Detail-Funktionen
+function showAccountDetail(accountId: string) {
+  selectedAccountForDetail.value = accountId;
+  debugLog("[PlanningView] Show account detail", { accountId });
+}
+
+function showCategoryDetail(categoryId: string) {
+  selectedCategoryForDetail.value = categoryId;
+  debugLog("[PlanningView] Show category detail", { categoryId });
+}
+
+function hideAccountDetail() {
+  selectedAccountForDetail.value = "";
+}
+
+function hideCategoryDetail() {
+  selectedCategoryForDetail.value = "";
+}
+
+// Forecast-Daten für detaillierte Anzeige (6 Monate ab aktuellem Monat)
+function getAccountForecastData(accountId: string) {
+  const forecasts = [];
+  const startDate = dayjs(dateRange.value.start).startOf("month");
+
+  // 6 Monate ab dem aktuellen Monat generieren
+  for (let i = 0; i < 6; i++) {
+    const currentDate = startDate.add(i, "month");
+    const monthStart = currentDate.format("YYYY-MM-DD");
+    const monthEnd = currentDate.endOf("month").format("YYYY-MM-DD");
+
+    // Echte Salden aus BalanceService verwenden
+    const startBalance = BalanceService.getTodayBalance(
+      "account",
+      accountId,
+      new Date(monthStart)
+    );
+    const projectedBalance = BalanceService.getProjectedBalance(
+      "account",
+      accountId,
+      new Date(monthEnd)
+    );
+    const monthlyChange = projectedBalance - startBalance;
+
+    // Geplante Transaktionen für diesen Monat aus monthlyBalanceStore
+    const monthTransactions: Array<{
+      date: string;
+      description: string;
+      amount: number;
+    }> = [];
+
+    planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
+      if (!plan.isActive || plan.accountId !== accountId) return;
+
+      const occurrences = PlanningService.calculateNextOccurrences(
+        plan,
+        monthStart,
+        monthEnd
+      );
+
+      occurrences.forEach((dateStr: string) => {
+        const amount =
+          plan.transactionType === TransactionType.INCOME
+            ? Math.abs(plan.amount)
+            : -Math.abs(plan.amount);
+
+        monthTransactions.push({
+          date: dateStr,
+          description: plan.name,
+          amount: amount,
+        });
+      });
+    });
+
+    forecasts.push({
+      month: currentDate.format("MMMM YYYY"),
+      balance: startBalance,
+      projectedBalance: projectedBalance,
+      monthlyChange: monthlyChange,
+      transactions: monthTransactions.sort((a, b) =>
+        a.date.localeCompare(b.date)
+      ),
+    });
+  }
+
+  return forecasts;
+}
+
+function getCategoryForecastData(categoryId: string) {
+  const forecasts: Array<{
+    month: string;
+    budgeted: number;
+    activity: number;
+    projectedActivity: number;
+    available: number;
+    transactions: Array<{ date: string; description: string; amount: number }>;
+  }> = [];
+  const startDate = dayjs(dateRange.value.start).startOf("month");
+
+  // 6 Monate ab dem aktuellen Monat generieren
+  for (let i = 0; i < 6; i++) {
+    const currentDate = startDate.add(i, "month");
+    const monthStart = currentDate.format("YYYY-MM-DD");
+    const monthEnd = currentDate.endOf("month").format("YYYY-MM-DD");
+
+    // Echte Kategoriesalden aus BalanceService verwenden
+    const currentBalance = BalanceService.getTodayBalance(
+      "category",
+      categoryId,
+      new Date(monthStart)
+    );
+    const projectedBalance = BalanceService.getProjectedBalance(
+      "category",
+      categoryId,
+      new Date(monthEnd)
+    );
+
+    // Kategorie-Informationen aus monthlyBalanceStore
+    const monthlyBalance = monthlyBalanceStore.getCategoryBalanceForDate(
+      categoryId,
+      monthStart
+    );
+    const projectedMonthlyBalance =
+      monthlyBalanceStore.getProjectedCategoryBalanceForDate(
+        categoryId,
+        monthEnd
+      );
+
+    const budgeted = monthlyBalance?.budgeted || 0;
+    const activity = monthlyBalance?.activity || 0;
+    const projectedActivity =
+      projectedMonthlyBalance?.activity || projectedBalance;
+    const available = budgeted - projectedActivity;
+
+    // Geplante Transaktionen für diese Kategorie in diesem Monat
+    const monthTransactions: Array<{
+      date: string;
+      description: string;
+      amount: number;
+    }> = [];
+
+    planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
+      if (!plan.isActive || plan.categoryId !== categoryId) return;
+
+      const occurrences = PlanningService.calculateNextOccurrences(
+        plan,
+        monthStart,
+        monthEnd
+      );
+
+      occurrences.forEach((dateStr: string) => {
+        const amount =
+          plan.transactionType === TransactionType.INCOME
+            ? Math.abs(plan.amount)
+            : -Math.abs(plan.amount);
+
+        monthTransactions.push({
+          date: dateStr,
+          description: plan.name,
+          amount: amount,
+        });
+      });
+    });
+
+    forecasts.push({
+      month: currentDate.format("MMMM YYYY"),
+      budgeted: budgeted,
+      activity: activity,
+      projectedActivity: projectedActivity,
+      available: available,
+      transactions: monthTransactions.sort((a, b) =>
+        a.date.localeCompare(b.date)
+      ),
+    });
+  }
+
+  return forecasts;
 }
 
 // Service‑Aufrufe
@@ -550,24 +735,244 @@ onMounted(() => {
     <!-- Account forecast -->
     <div
       v-if="activeTab === 'accounts'"
-      class="card bg-base-100 shadow-md border border-base-300 p-4"
+      class="space-y-4"
     >
-      <ForecastChart
-        :start-date="dateRange.start"
-        :filtered-account-id="selectedAccountId"
-        type="accounts"
-      />
+      <!-- Account Badges -->
+      <div class="card bg-base-100 shadow-md border border-base-300 p-4">
+        <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div
+            v-for="account in accountStore.activeAccounts"
+            :key="account.id"
+            class="badge badge-lg cursor-pointer"
+            :class="
+              selectedAccountForDetail === account.id
+                ? 'badge-accent'
+                : 'badge-outline'
+            "
+            @click="
+              selectedAccountForDetail === account.id
+                ? hideAccountDetail()
+                : showAccountDetail(account.id)
+            "
+          >
+            {{ account.name }}
+          </div>
+        </div>
+
+        <!-- Chart - DetailedForecastChart wenn Konto ausgewählt, sonst ForecastChart -->
+        <DetailedForecastChart
+          v-if="selectedAccountForDetail"
+          :selected-id="selectedAccountForDetail"
+          :start-date="dateRange.start"
+          type="accounts"
+        />
+        <ForecastChart
+          v-else
+          :start-date="dateRange.start"
+          :filtered-account-id="selectedAccountId"
+          :selected-account-for-detail="selectedAccountForDetail"
+          type="accounts"
+        />
+      </div>
+
+      <!-- Detaillierte Prognose für ausgewähltes Account -->
+      <div
+        v-if="selectedAccountForDetail"
+        class="card bg-base-100 shadow-md border border-base-300 p-4"
+      >
+        <h4 class="text-lg font-semibold mb-4">
+          Detaillierte Prognose für
+          {{ accountStore.getAccountById(selectedAccountForDetail)?.name }}
+        </h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="(forecast, i) in getAccountForecastData(
+              selectedAccountForDetail
+            )"
+            :key="i"
+            class="card bg-base-200 shadow-sm"
+          >
+            <div class="card-body p-4">
+              <h5 class="card-title text-base">{{ forecast.month }}</h5>
+              <div class="text-sm mb-2">
+                <div class="flex justify-between">
+                  <span>Startsaldo:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.balance"
+                    :as-integer="true"
+                  />
+                </div>
+                <div class="flex justify-between">
+                  <span>Monatliche Änderung:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.monthlyChange"
+                    :as-integer="true"
+                    :show-zero="true"
+                  />
+                </div>
+                <div
+                  class="flex justify-between font-bold border-t border-base-300 pt-1"
+                >
+                  <span>Endsaldo:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.projectedBalance"
+                    :as-integer="true"
+                  />
+                </div>
+              </div>
+              <div
+                v-if="forecast.transactions.length > 0"
+                class="text-xs space-y-1 border-t border-base-300 pt-2"
+              >
+                <div class="font-semibold">Geplante Transaktionen:</div>
+                <div
+                  v-for="(tx, j) in forecast.transactions"
+                  :key="j"
+                  class="flex justify-between"
+                >
+                  <span>{{ formatDate(tx.date) }} - {{ tx.description }}</span>
+                  <CurrencyDisplay
+                    :amount="tx.amount"
+                    :show-zero="true"
+                  />
+                </div>
+              </div>
+              <div
+                v-else
+                class="text-xs text-base-content/70 border-t border-base-300 pt-2"
+              >
+                Keine geplanten Transaktionen in diesem Monat.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Category forecast -->
     <div
       v-if="activeTab === 'categories'"
-      class="card bg-base-100 shadow-md border border-base-300 p-4"
+      class="space-y-4"
     >
-      <ForecastChart
-        :start-date="dateRange.start"
-        type="categories"
-      />
+      <!-- Category Badges -->
+      <div class="card bg-base-100 shadow-md border border-base-300 p-4">
+        <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
+        <div class="flex flex-wrap gap-4 mb-4">
+          <div
+            v-for="category in categoryStore.activeCategories"
+            :key="category.id"
+            class="badge badge-lg cursor-pointer"
+            :class="
+              selectedCategoryForDetail === category.id
+                ? 'badge-accent'
+                : 'badge-outline'
+            "
+            @click="
+              selectedCategoryForDetail === category.id
+                ? hideCategoryDetail()
+                : showCategoryDetail(category.id)
+            "
+          >
+            {{ category.name }}
+          </div>
+        </div>
+
+        <!-- Chart - DetailedForecastChart wenn Kategorie ausgewählt, sonst ForecastChart -->
+        <DetailedForecastChart
+          v-if="selectedCategoryForDetail"
+          :selected-id="selectedCategoryForDetail"
+          :start-date="dateRange.start"
+          type="categories"
+        />
+        <ForecastChart
+          v-else
+          :start-date="dateRange.start"
+          :selected-category-for-detail="selectedCategoryForDetail"
+          type="categories"
+          @show-category-detail="showCategoryDetail"
+          @hide-category-detail="hideCategoryDetail"
+        />
+      </div>
+
+      <!-- Detaillierte Prognose für ausgewählte Kategorie -->
+      <div
+        v-if="selectedCategoryForDetail"
+        class="card bg-base-100 shadow-md border border-base-300 p-4"
+      >
+        <h4 class="text-lg font-semibold mb-4">
+          Detaillierte Prognose für
+          {{ categoryStore.getCategoryById(selectedCategoryForDetail)?.name }}
+        </h4>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            v-for="(forecast, i) in getCategoryForecastData(
+              selectedCategoryForDetail
+            ).slice(0, 6)"
+            :key="i"
+            class="card bg-base-200 shadow-sm"
+          >
+            <div class="card-body p-4">
+              <h5 class="card-title text-base">{{ forecast.month }}</h5>
+              <div class="text-sm mb-2">
+                <div class="flex justify-between">
+                  <span>Budgetiert:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.budgeted"
+                    :as-integer="true"
+                  />
+                </div>
+                <div class="flex justify-between">
+                  <span>Bisherige Aktivität:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.activity"
+                    :as-integer="true"
+                  />
+                </div>
+                <div class="flex justify-between">
+                  <span>Prognostizierte Aktivität:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.projectedActivity"
+                    :as-integer="true"
+                  />
+                </div>
+                <div
+                  class="flex justify-between font-bold border-t border-base-300 pt-1"
+                >
+                  <span>Verfügbar:</span>
+                  <CurrencyDisplay
+                    :amount="forecast.available"
+                    :as-integer="true"
+                  />
+                </div>
+              </div>
+              <div
+                v-if="forecast.transactions.length > 0"
+                class="text-xs space-y-1 border-t border-base-300 pt-2"
+              >
+                <div class="font-semibold">Geplante Transaktionen:</div>
+                <div
+                  v-for="(tx, j) in forecast.transactions"
+                  :key="j"
+                  class="flex justify-between"
+                >
+                  <span>{{ formatDate(tx.date) }} - {{ tx.description }}</span>
+                  <CurrencyDisplay
+                    :amount="tx.amount"
+                    :show-zero="true"
+                  />
+                </div>
+              </div>
+              <div
+                v-else
+                class="text-xs text-base-content/70 border-t border-base-300 pt-2"
+              >
+                Keine geplanten Transaktionen in diesem Monat.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Modals -->
