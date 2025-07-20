@@ -632,4 +632,92 @@ updateTransaction(
 
     return { income, expense, balance };
   },
+
+  /**
+   * Berechnet monatliche Trends für Ein- und Ausgaben über mehrere Monate
+   * Nutzt die robuste getIncomeExpenseSummary Methode für konsistente Berechnungen
+   */
+  getMonthlyTrend(months: number = 6): Array<{
+    month: string;
+    monthKey: string;
+    income: number;
+    expense: number;
+    balance: number;
+    trend: 'up' | 'down' | 'neutral';
+  }> {
+    const result = [];
+    const currentDate = new Date();
+
+    for (let i = months - 1; i >= 0; i--) {
+      // Berechne Start- und Enddatum für den Monat
+      const monthDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const startOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+      const endOfMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+
+      const startDateStr = startOfMonth.toISOString().split('T')[0];
+      const endDateStr = endOfMonth.toISOString().split('T')[0];
+
+      // Nutze die bestehende getIncomeExpenseSummary Methode
+      const summary = this.getIncomeExpenseSummary(startDateStr, endDateStr);
+
+      // Formatiere Monatsnamen
+      const monthName = monthDate.toLocaleDateString('de-DE', {
+        month: 'long',
+        year: 'numeric'
+      });
+
+      const monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+
+      result.push({
+        month: monthName,
+        monthKey,
+        income: summary.income,
+        expense: summary.expense,
+        balance: summary.balance,
+        trend: 'neutral' as 'up' | 'down' | 'neutral' // Wird später berechnet
+      });
+    }
+
+    // Berechne Trends basierend auf der Bilanz des Vormonats
+    // Verwende einen gleitenden Durchschnitt für robustere Trend-Erkennung
+    for (let i = 0; i < result.length; i++) {
+      if (i === 0) {
+        // Für den ersten Monat: Vergleiche mit 0 oder setze neutral
+        const currentBalance = result[i].balance;
+        if (currentBalance > 50) { // Schwellwert für "deutlich positiv"
+          result[i].trend = 'up';
+        } else if (currentBalance < -50) { // Schwellwert für "deutlich negativ"
+          result[i].trend = 'down';
+        } else {
+          result[i].trend = 'neutral';
+        }
+      } else {
+        // Für alle anderen Monate: Vergleiche mit Vormonat
+        const currentBalance = result[i].balance;
+        const previousBalance = result[i - 1].balance;
+        const difference = currentBalance - previousBalance;
+
+        // Verwende einen Schwellwert um kleine Schwankungen zu ignorieren
+        const threshold = 10; // 10€ Schwellwert
+
+        if (difference > threshold) {
+          result[i].trend = 'up';
+        } else if (difference < -threshold) {
+          result[i].trend = 'down';
+        } else {
+          result[i].trend = 'neutral';
+        }
+      }
+    }
+
+    debugLog('[TransactionService]', 'getMonthlyTrend', {
+      months,
+      resultCount: result.length,
+      totalIncome: result.reduce((sum, month) => sum + month.income, 0),
+      totalExpense: result.reduce((sum, month) => sum + month.expense, 0),
+      result
+    });
+
+    return result;
+  },
 };

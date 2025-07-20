@@ -3,8 +3,11 @@ import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useTransactionStore } from "../stores/transactionStore";
 import { useAccountStore } from "../stores/accountStore";
+import { useCategoryStore } from "../stores/categoryStore";
+import { useRecipientStore } from "../stores/recipientStore";
 import { useStatisticsStore } from "../stores/statisticsStore";
 import { TransactionService } from "../services/TransactionService";
+import { TransactionType } from "../types";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
 import dayjs from "dayjs";
@@ -12,11 +15,16 @@ import dayjs from "dayjs";
 const router = useRouter();
 const transactionStore = useTransactionStore();
 const accountStore = useAccountStore();
+const categoryStore = useCategoryStore();
+const recipientStore = useRecipientStore();
 const statisticsStore = useStatisticsStore();
 
 const currentDate = dayjs();
 const startDate = ref(currentDate.subtract(30, "day").format("YYYY-MM-DD"));
 const endDate = ref(currentDate.format("YYYY-MM-DD"));
+
+// Anzahl der anzuzeigenden Transaktionen
+const transactionLimit = ref(5);
 
 const accounts = computed(() => accountStore.activeAccounts);
 const totalBalance = computed(() =>
@@ -25,9 +33,20 @@ const totalBalance = computed(() =>
     0
   )
 );
-const recentTransactions = computed(() =>
-  transactionStore.getRecentTransactions(5)
-);
+
+// Gefilterte Transaktionen: nur INCOME und EXPENSE
+const recentTransactions = computed(() => {
+  const allTransactions = transactionStore.transactions
+    .filter(
+      (tx) =>
+        tx.type === TransactionType.INCOME ||
+        tx.type === TransactionType.EXPENSE
+    )
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, transactionLimit.value);
+
+  return allTransactions;
+});
 // Berechnung der Einnahmen und Ausgaben über TransactionService
 const incomeSummary = computed(() => {
   return TransactionService.getIncomeExpenseSummary(
@@ -38,7 +57,9 @@ const incomeSummary = computed(() => {
 const topExpenses = computed(() =>
   statisticsStore.getCategoryExpenses(startDate.value, endDate.value, 5)
 );
-const monthlyTrend = computed(() => statisticsStore.getMonthlyTrend(3));
+const monthlyTrend = computed(() =>
+  TransactionService.getMonthlyTrend(3).reverse()
+);
 const savingsGoals = computed(() => statisticsStore.getSavingsGoalProgress());
 
 const navigateToTransactions = () => router.push("/transactions");
@@ -46,6 +67,11 @@ const navigateToAccounts = () => router.push("/accounts");
 const navigateToBudgets = () => router.push("/budgets");
 const navigateToStatistics = () => router.push("/statistics");
 const navigateToPlanning = () => router.push("/planning");
+
+// Funktionen für Transaktionslimit-Buttons
+const setTransactionLimit = (limit: number) => {
+  transactionLimit.value = limit;
+};
 
 onMounted(() => {
   // additional initialization if needed
@@ -79,7 +105,7 @@ onMounted(() => {
       <div class="card bg-base-100 shadow-md">
         <div class="card-body">
           <h3 class="card-title text-lg">Letzte 30 Tage</h3>
-          <div class="grid grid-cols-2 gap-2 mt-2">
+          <div class="grid grid-cols-3 gap-2 mt-2">
             <div>
               <p class="text-sm">Einnahmen</p>
               <p class="text-lg font-semibold text-success">
@@ -90,6 +116,18 @@ onMounted(() => {
               <p class="text-sm">Ausgaben</p>
               <p class="text-lg font-semibold text-error">
                 {{ formatCurrency(incomeSummary.expense) }}
+              </p>
+            </div>
+            <div>
+              <p class="text-sm">Bilanz</p>
+              <p
+                :class="
+                  incomeSummary.balance >= 0
+                    ? 'text-lg font-semibold text-success'
+                    : 'text-lg font-semibold text-error'
+                "
+              >
+                {{ formatCurrency(incomeSummary.balance) }}
               </p>
             </div>
           </div>
@@ -145,6 +183,39 @@ onMounted(() => {
           <div class="card-body">
             <div class="flex justify-between items-center mb-4">
               <h3 class="card-title text-lg">Letzte Transaktionen</h3>
+              <!-- Buttons für Transaktionslimit -->
+              <div class="flex gap-2 mb-4">
+                <button
+                  :class="
+                    transactionLimit === 5
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setTransactionLimit(5)"
+                >
+                  5
+                </button>
+                <button
+                  :class="
+                    transactionLimit === 10
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setTransactionLimit(10)"
+                >
+                  10
+                </button>
+                <button
+                  :class="
+                    transactionLimit === 25
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setTransactionLimit(25)"
+                >
+                  25
+                </button>
+              </div>
               <button
                 class="btn btn-sm btn-ghost"
                 @click="navigateToTransactions"
@@ -156,41 +227,56 @@ onMounted(() => {
                 ></span>
               </button>
             </div>
+
             <div class="overflow-x-auto">
-              <table class="table table-zebra w-full">
+              <table class="table table-zebra w-full table-compact">
                 <thead>
                   <tr>
                     <th>Datum</th>
+                    <th>Konto</th>
+                    <th>Empfänger</th>
                     <th>Beschreibung</th>
                     <th>Kategorie</th>
                     <th class="text-right">Betrag</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="text-sm">
                   <tr
                     v-for="tx in recentTransactions"
                     :key="tx.id"
+                    class="leading-tight"
                   >
-                    <td>{{ formatDate(tx.date) }}</td>
-                    <td>{{ tx.payee }}</td>
-                    <td>
-                      <span v-if="tx.categoryId">
-                        {{
-                          accountStore.getAccountById(tx.accountId)?.name ||
-                          "Unbekannt"
-                        }}
-                      </span>
-                      <span
-                        v-else
-                        class="text-opacity-60"
-                        >Keine Kategorie</span
-                      >
+                    <td class="py-2">{{ formatDate(tx.date) }}</td>
+                    <td class="py-2">
+                      {{
+                        tx.accountId
+                          ? accountStore.getAccountById(tx.accountId)?.name ||
+                            ""
+                          : ""
+                      }}
+                    </td>
+                    <td class="py-2">
+                      {{
+                        tx.recipientId
+                          ? recipientStore.getRecipientById(tx.recipientId)
+                              ?.name || ""
+                          : ""
+                      }}
+                    </td>
+                    <td class="py-2">{{ tx.description || tx.payee || "" }}</td>
+                    <td class="py-2">
+                      {{
+                        tx.categoryId
+                          ? categoryStore.getCategoryById(tx.categoryId)
+                              ?.name || ""
+                          : ""
+                      }}
                     </td>
                     <td
                       :class="
                         tx.amount >= 0
-                          ? 'text-success text-right'
-                          : 'text-error text-right'
+                          ? 'text-success text-right py-2'
+                          : 'text-error text-right py-2'
                       "
                     >
                       {{ formatCurrency(tx.amount) }}
@@ -198,7 +284,7 @@ onMounted(() => {
                   </tr>
                   <tr v-if="recentTransactions.length === 0">
                     <td
-                      colspan="4"
+                      colspan="6"
                       class="text-center py-4"
                     >
                       Keine Transaktionen vorhanden
@@ -213,40 +299,64 @@ onMounted(() => {
           <div class="card-body">
             <h3 class="card-title text-lg mb-4">Monatlicher Trend</h3>
             <div class="overflow-x-auto">
-              <table class="table table-zebra w-full">
+              <table class="table table-zebra w-full table-compact">
                 <thead>
                   <tr>
                     <th>Monat</th>
                     <th class="text-right">Einnahmen</th>
                     <th class="text-right">Ausgaben</th>
                     <th class="text-right">Bilanz</th>
+                    <th class="text-center">Trend</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="text-sm">
                   <tr
                     v-for="(month, index) in monthlyTrend"
-                    :key="index"
+                    :key="month.monthKey"
+                    class="leading-tight"
                   >
-                    <td>{{ month.month }}</td>
-                    <td class="text-success text-right">
+                    <td class="font-medium py-2">{{ month.month }}</td>
+                    <td class="text-success text-right font-semibold py-2">
                       {{ formatCurrency(month.income) }}
                     </td>
-                    <td class="text-error text-right">
+                    <td class="text-error text-right font-semibold py-2">
                       {{ formatCurrency(month.expense) }}
                     </td>
                     <td
                       :class="
-                        month.income - month.expense >= 0
-                          ? 'text-success text-right'
-                          : 'text-error text-right'
+                        month.balance >= 0
+                          ? 'text-success text-right font-bold py-2'
+                          : 'text-error text-right font-bold py-2'
                       "
                     >
-                      {{ formatCurrency(month.income - month.expense) }}
+                      {{ formatCurrency(month.balance) }}
+                    </td>
+                    <td class="text-center py-2">
+                      <div class="flex items-center justify-center">
+                        <span
+                          v-if="month.trend === 'up'"
+                          class="text-success text-xl font-bold"
+                          title="Verbesserung gegenüber Vormonat"
+                          >↗</span
+                        >
+                        <span
+                          v-else-if="month.trend === 'down'"
+                          class="text-error text-xl font-bold"
+                          title="Verschlechterung gegenüber Vormonat"
+                          >↘</span
+                        >
+                        <span
+                          v-else
+                          class="text-base-content text-opacity-50 text-xl font-bold"
+                          title="Keine Änderung gegenüber Vormonat"
+                          >→</span
+                        >
+                      </div>
                     </td>
                   </tr>
                   <tr v-if="monthlyTrend.length === 0">
                     <td
-                      colspan="4"
+                      colspan="5"
                       class="text-center py-4"
                     >
                       Keine Daten vorhanden
