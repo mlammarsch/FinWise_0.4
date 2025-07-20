@@ -566,4 +566,70 @@ updateTransaction(
     BalanceService.calculateMonthlyBalances();
     return { success, deletedCount: deleted };
   },
+
+  /**
+   * Berechnet Einnahmen und Ausgaben für einen bestimmten Zeitraum über alle Konten
+   * Berücksichtigt ausschließlich INCOME und EXPENSE Transaktionen
+   */
+  getIncomeExpenseSummary(startDate: string, endDate: string): { income: number; expense: number; balance: number } {
+    const txStore = useTransactionStore();
+    const transactions = txStore.transactions;
+
+    // Datumsgrenzen normalisieren
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    let income = 0;
+    let expense = 0;
+
+    transactions.forEach(tx => {
+      const txDate = new Date(tx.date);
+
+      // Prüfe ob Transaktion im Zeitraum liegt
+      if (txDate < start || txDate > end) {
+        return;
+      }
+
+      // Berücksichtige nur INCOME und EXPENSE Transaktionen
+      switch (tx.type) {
+        case TransactionType.INCOME:
+          // Einnahmen sind immer positiv
+          if (tx.amount > 0) {
+            income += tx.amount;
+          }
+          break;
+
+        case TransactionType.EXPENSE:
+          // Ausgaben sind immer negativ, daher Absolutwert nehmen
+          if (tx.amount < 0) {
+            expense += Math.abs(tx.amount);
+          }
+          break;
+
+        // Alle anderen Transaktionstypen werden ignoriert:
+        // - ACCOUNTTRANSFER: Interne Verschiebungen zwischen Konten
+        // - CATEGORYTRANSFER: Interne Verschiebungen zwischen Kategorien
+        // - RECONCILE: Kontoabstimmungen
+        default:
+          // Ignoriere alle anderen Transaktionstypen
+          break;
+      }
+    });
+
+    const balance = income - expense;
+
+    debugLog('[TransactionService]', 'getIncomeExpenseSummary', {
+      startDate,
+      endDate,
+      transactionCount: transactions.length,
+      filteredTransactions: transactions.filter(tx =>
+        tx.type === TransactionType.INCOME || tx.type === TransactionType.EXPENSE
+      ).length,
+      income,
+      expense,
+      balance
+    });
+
+    return { income, expense, balance };
+  },
 };

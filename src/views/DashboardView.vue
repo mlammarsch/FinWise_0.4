@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useTransactionStore } from "../stores/transactionStore";
 import { useAccountStore } from "../stores/accountStore";
 import { useStatisticsStore } from "../stores/statisticsStore";
+import { TransactionService } from "../services/TransactionService";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
 import dayjs from "dayjs";
@@ -27,9 +28,13 @@ const totalBalance = computed(() =>
 const recentTransactions = computed(() =>
   transactionStore.getRecentTransactions(5)
 );
-const incomeSummary = computed(() =>
-  statisticsStore.getIncomeExpenseSummary(startDate.value, endDate.value)
-);
+// Berechnung der Einnahmen und Ausgaben über TransactionService
+const incomeSummary = computed(() => {
+  return TransactionService.getIncomeExpenseSummary(
+    startDate.value,
+    endDate.value
+  );
+});
 const topExpenses = computed(() =>
   statisticsStore.getCategoryExpenses(startDate.value, endDate.value, 5)
 );
@@ -91,7 +96,7 @@ onMounted(() => {
           <div class="card-actions justify-end mt-2">
             <button
               class="btn btn-sm btn-ghost"
-              @click="navigateToStatistics"
+              @click="navigateToTransactions"
             >
               Details
               <span
