@@ -6,7 +6,7 @@ const BASE_URL = 'http://localhost:8000/api/v1/user';
 
 export interface UserSettingsPayload {
   log_level: string;
-  enabled_log_categories: string[];
+  log_categories: string[];
   history_retention_days: number;
   updated_at?: string;
 }
@@ -15,7 +15,7 @@ export interface UserSettingsResponse {
   id: string;
   user_id: string;
   log_level: string;
-  enabled_log_categories: string[];
+  log_categories: string[];
   history_retention_days: number;
   created_at: string;
   updated_at: string;
@@ -115,12 +115,18 @@ export class SettingsApiService {
    */
   static async isBackendAvailable(): Promise<boolean> {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 Sekunden Timeout
+
       const response = await fetch('http://localhost:8000/ping', {
         method: 'GET',
-        timeout: 5000 // 5 Sekunden Timeout
-      } as RequestInit);
+        signal: controller.signal
+      });
 
-      return response.ok;
+      clearTimeout(timeoutId);
+      const isAvailable = response.ok;
+      debugLog(MODULE_NAME, `Backend-Verfügbarkeit: ${isAvailable ? 'verfügbar' : 'nicht verfügbar'}`, { status: response.status });
+      return isAvailable;
     } catch (error) {
       debugLog(MODULE_NAME, 'Backend nicht erreichbar', error);
       return false;

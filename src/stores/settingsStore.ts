@@ -55,7 +55,7 @@ export const useSettingsStore = defineStore('settings', {
 
           // Backend-Settings überschreiben lokale Settings
           this.logLevel = StringToLogLevel[backendSettings.log_level] ?? LogLevel.INFO;
-          this.enabledLogCategories = new Set(backendSettings.enabled_log_categories);
+          this.enabledLogCategories = new Set(backendSettings.log_categories);
           this.historyRetentionDays = backendSettings.history_retention_days;
 
           this.updateLogConfig();
@@ -115,21 +115,35 @@ export const useSettingsStore = defineStore('settings', {
       // 2. Falls API verfügbar: Direkt senden
       // Stelle sicher, dass der aktuellste sessionStore und currentUser verwendet wird
       const currentSessionStoreForSave = useSessionStore();
-      if (await this.isBackendAvailable() && currentSessionStoreForSave.currentUser?.id) {
+      const backendAvailable = await this.isBackendAvailable();
+      const currentUser = currentSessionStoreForSave.currentUser;
+
+      debugLog('settingsStore', 'Backend-Verfügbarkeit und User-Status prüfen', {
+        backendAvailable,
+        hasCurrentUser: !!currentUser,
+        currentUserId: currentUser?.id || 'nicht verfügbar'
+      });
+
+      if (backendAvailable && currentUser?.id) {
         try {
           const payload: UserSettingsPayload = {
             log_level: LogLevelToString[this.logLevel],
-            enabled_log_categories: [...this.enabledLogCategories],
+            log_categories: [...this.enabledLogCategories],
             history_retention_days: this.historyRetentionDays,
             updated_at: new Date().toISOString()
           };
 
-          await SettingsApiService.updateUserSettings(currentSessionStoreForSave.currentUser.id, payload);
+          debugLog('settingsStore', 'Sende Settings an Backend', { userId: currentUser.id, payload });
+          await SettingsApiService.updateUserSettings(currentUser.id, payload);
           infoLog('settingsStore', 'Settings erfolgreich an Backend gesendet');
         } catch (error) {
-          debugLog('settingsStore', 'Fehler beim Senden an Backend - lokale Settings bleiben gespeichert', error);
+          errorLog('settingsStore', 'Fehler beim Senden an Backend - lokale Settings bleiben gespeichert', error);
           // Fehler ignorieren - lokal ist gespeichert
         }
+      } else {
+        debugLog('settingsStore', 'Backend-Sync übersprungen', {
+          reason: !backendAvailable ? 'Backend nicht verfügbar' : 'Kein aktueller User'
+        });
       }
     },
 
