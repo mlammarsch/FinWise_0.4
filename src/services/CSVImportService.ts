@@ -14,8 +14,9 @@ import { useTransactionStore } from "@/stores/transactionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { TransactionService } from "@/services/TransactionService";
 import { BalanceService } from "@/services/BalanceService";
-import { TransactionType } from "@/types";
-import { debugLog, infoLog, errorLog } from "@/utils/logger";
+import { TransactionType, EntityTypeEnum, SyncOperationType } from "@/types";
+import { debugLog, infoLog, errorLog, warnLog } from "@/utils/logger";
+import { TenantDbService } from "@/services/TenantDbService";
 import { parseCSV as parseCSVUtil, parseAmount, calculateStringSimilarity } from "@/utils/csvUtils";
 
 // Ähnlichkeitsschwellenwert für Fuzzy-Matching
@@ -66,6 +67,9 @@ export const useCSVImportService = defineStore('csvImportService', () => {
   const accountStore = useAccountStore();
   const transactionStore = useTransactionStore();
   const tagStore = useTagStore();
+
+  // Services
+  const tenantDbService = new TenantDbService();
 
   // CSV Konfiguration
   const csvFile = ref<File | null>(null);
@@ -944,9 +948,13 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
     error.value = "";
     importedTransactions.value = [];
 
-    // Deaktiviere automatische Running Balance Trigger während des Imports für bessere Performance
+    // CSV-Import-spezifische Performance-Optimierungen aktivieren
     const originalSkipRunningBalanceRecalc = (TransactionService as any)._skipRunningBalanceRecalc;
     (TransactionService as any)._skipRunningBalanceRecalc = true;
+
+    // Bulk-Import-Modus für weitere Optimierungen
+    const originalBulkImportMode = (globalThis as any).__FINWISE_BULK_IMPORT_MODE__;
+    (globalThis as any).__FINWISE_BULK_IMPORT_MODE__ = true;
 
     try {
       const preparedData = prepareDataForImport(accountId);
@@ -959,6 +967,10 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
       // Map für bereits erstellte Empfänger, um Duplikate zu vermeiden
       const createdRecipients = new Map<string, string>();  // recipientName -> recipientId
 
+      // BATCH-VERARBEITUNG: Erst alle Empfänger erstellen, dann alle Transaktionen auf einmal
+      const transactionsToImport = [];
+
+      // Phase 1: Empfänger-Verarbeitung (sequenziell, da neue Empfänger erstellt werden können)
       for (const item of preparedData) {
         // Empfängerzuordnung auflösen
         const recipientResult = resolveRecipient(item);
@@ -992,8 +1004,9 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         // Bestimme Transaktionstyp basierend auf Betrag
         const txType: TransactionType = item.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
 
-        // Transaktion erstellen
-        const newTransaction = TransactionService.addTransaction({
+        // Transaktion für Batch-Import vorbereiten (manuell erstellen)
+        const transactionData = {
+          id: crypto.randomUUID(),
           date: item.date,
           valueDate: item.valueDate,
           accountId: item.accountId,
@@ -1007,11 +1020,21 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           counterTransactionId: null,
           planningTransactionId: null,
           isReconciliation: false,
-        });
+          runningBalance: 0, // Wird später berechnet
+          reconciled: false,
+          isCategoryTransfer: false,
+          transferToAccountId: null,
+          toCategoryId: undefined,
+          payee: item.payee || '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
 
-        // Erfolgreich importierte Transaktion speichern
+        transactionsToImport.push(transactionData);
+
+        // Für UI-Anzeige vorbereiten
         importedTransactions.value.push({
-          ...newTransaction,
+          ...transactionData,
           recipientName: item.recipientId
             ? recipientStore.getRecipientById(item.recipientId)?.name
             : "",
@@ -1022,17 +1045,87 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         });
       }
 
-      // Reaktiviere automatische Running Balance Trigger
-      (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
+      // Phase 2: BATCH-IMPORT aller Transaktionen
+      if (transactionsToImport.length > 0) {
+        try {
+          // Batch-Import über TenantDbService für bessere Performance
+          await tenantDbService.addTransactionsBatch(transactionsToImport);
 
-      // Triggere eine einmalige vollständige Running Balance Neuberechnung für alle Accounts
-      // da wir nicht wissen, welche Transaktionen die frühesten waren
-      debugLog(
-        "CSVImportService",
-        "Triggere vollständige Running Balance Neuberechnung nach CSV-Import",
-        { importedCount: importedTransactions.value.length }
-      );
-      BalanceService.recalculateAllRunningBalances();
+          // Bulk-Sync-Queue-Eintrag erstellen statt einzelne Einträge
+          await tenantDbService.addBulkSyncQueueEntry(
+            EntityTypeEnum.TRANSACTION,
+            SyncOperationType.CREATE,
+            transactionsToImport
+          );
+
+          infoLog('CSVImportService', `Batch-Import erfolgreich: ${transactionsToImport.length} Transaktionen importiert`, {
+            accountId,
+            batchSize: transactionsToImport.length
+          });
+
+        } catch (batchError) {
+          errorLog('CSVImportService', `Fehler beim Batch-Import der Transaktionen`, {
+            batchSize: transactionsToImport.length,
+            accountId,
+            error: batchError
+          });
+
+          // Fallback: Versuche einzelne Transaktionen zu importieren
+          warnLog('CSVImportService', 'Fallback auf einzelne Transaktions-Imports');
+
+          // Lösche die bereits vorbereiteten UI-Daten
+          importedTransactions.value = [];
+
+          for (const transactionData of transactionsToImport) {
+            try {
+              // Erstelle die Transaktion über den TransactionService (einzeln)
+              const newTransaction = TransactionService.addTransaction(transactionData);
+
+              // Erfolgreich importierte Transaktion für UI speichern
+              importedTransactions.value.push({
+                ...newTransaction,
+                recipientName: transactionData.recipientId
+                  ? recipientStore.getRecipientById(transactionData.recipientId)?.name
+                  : "",
+                categoryName: transactionData.categoryId
+                  ? categoryStore.getCategoryById(transactionData.categoryId)?.name
+                  : "",
+                accountName: accountStore.getAccountById(transactionData.accountId)?.name || "",
+              });
+
+            } catch (individualError) {
+              errorLog('CSVImportService', `Fehler beim Importieren der einzelnen Transaktion`, {
+                transaction: transactionData,
+                error: individualError
+              });
+            }
+          }
+        }
+      }
+
+      // CSV-Import-spezifische Optimierungen zurücksetzen
+      (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
+      (globalThis as any).__FINWISE_BULK_IMPORT_MODE__ = originalBulkImportMode;
+
+      // Berechne Running Balance für alle betroffenen Konten einmal am Ende (Performance-Optimierung)
+      infoLog('CSVImportService', 'Starte Running Balance Neuberechnung für betroffene Konten...');
+      const affectedAccountIds = [...new Set(
+        importedTransactions.value.map((tx: any) => tx.accountId).filter(Boolean)
+      )];
+
+      for (const accountId of affectedAccountIds) {
+        try {
+          await BalanceService.recalculateRunningBalancesForAccount(accountId);
+          debugLog('CSVImportService', `Running Balance für Konto ${accountId} neu berechnet`);
+        } catch (error) {
+          warnLog('CSVImportService', `Fehler bei Running Balance Berechnung für Konto ${accountId}`, error);
+        }
+      }
+
+      debugLog('CSVImportService', 'Running Balance Neuberechnung abgeschlossen', {
+        affectedAccounts: affectedAccountIds.length,
+        accountIds: affectedAccountIds
+      });
 
       infoLog(
         "CSVImportService",
@@ -1041,8 +1134,9 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
       importStatus.value = "success";
       return importedTransactions.value.length;
     } catch (err) {
-      // Stelle sicher, dass die Trigger auch bei Fehlern wieder aktiviert werden
+      // Stelle sicher, dass die CSV-Import-Optimierungen auch bei Fehlern zurückgesetzt werden
       (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
+      (globalThis as any).__FINWISE_BULK_IMPORT_MODE__ = originalBulkImportMode;
 
       // Verbessertes Error-Logging
       const errorDetails = {

@@ -4,7 +4,7 @@ import type { Account, AccountGroup, Category, CategoryGroup, Recipient, Tag, Au
 import type { MonthlyBalance } from '@/stores/monthlyBalanceStore';
 import type { ExtendedTransaction } from '@/stores/transactionStore';
 import { SyncStatus, EntityTypeEnum, SyncOperationType } from '@/types';
-import { errorLog, warnLog, debugLog } from '@/utils/logger';
+import { errorLog, warnLog, debugLog, infoLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 
 export class TenantDbService {
@@ -824,6 +824,88 @@ export class TenantDbService {
     }
   }
 
+  // ============================================================================
+  // BATCH OPERATIONS FOR CSV IMPORT PERFORMANCE
+  // ============================================================================
+
+  /**
+   * Batch-Import für Transaktionen - deutlich performanter als einzelne Operationen
+   */
+  async addTransactionsBatch(transactions: ExtendedTransaction[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTransactionsBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (transactions.length === 0) {
+      debugLog('TenantDbService', 'addTransactionsBatch: Keine Transaktionen zum Hinzufügen.');
+      return;
+    }
+
+    try {
+      // Konvertiere alle Transaktionen zu plain objects
+      const plainTransactions = transactions.map(tx => this.toPlainObject(tx));
+
+      // Direkte bulkPut-Operation ohne explizite Transaktion (Dexie verwaltet das intern)
+      await this.db.transactions.bulkPut(plainTransactions);
+
+      infoLog('TenantDbService', `${transactions.length} Transaktionen erfolgreich als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${transactions.length} Transaktionen`, { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Bulk-Sync-Queue-Eintrag für CSV-Import - erstellt einen einzigen Sync-Eintrag für alle Transaktionen
+   */
+  async addBulkSyncQueueEntry(
+    entityType: EntityTypeEnum,
+    operationType: SyncOperationType,
+    entities: any[]
+  ): Promise<SyncQueueEntry | null> {
+    const tenantStore = useTenantStore();
+    if (!this.db || !tenantStore.activeTenantId) {
+      warnLog('TenantDbService', 'addBulkSyncQueueEntry: Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+    }
+
+    const bulkEntry: SyncQueueEntry = {
+      id: uuidv4(),
+      tenantId: tenantStore.activeTenantId,
+      entityType: entityType,
+      entityId: `bulk_${entityType.toLowerCase()}_${Date.now()}`, // Eindeutige Bulk-ID
+      operationType: operationType,
+      payload: {
+        id: `bulk_${entityType.toLowerCase()}_${Date.now()}`,
+        // Erweiterte Eigenschaften für Bulk-Operation (als any gecastet)
+        ...({
+          bulkOperation: true,
+          entities: entities.map(entity => this.toPlainObject(entity)),
+          count: entities.length
+        } as any)
+      },
+      timestamp: Date.now(),
+      status: SyncStatus.PENDING,
+      attempts: 0,
+    };
+
+    try {
+      await this.db.syncQueue.add(bulkEntry);
+      infoLog('TenantDbService', `Bulk-Sync-Queue-Eintrag für ${entities.length} ${entityType} Entitäten hinzugefügt.`, {
+        bulkId: bulkEntry.entityId,
+        count: entities.length
+      });
+      return bulkEntry;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Hinzufügen des Bulk-Sync-Queue-Eintrags für ${entities.length} ${entityType} Entitäten`, {
+        entry: bulkEntry,
+        error: err
+      });
+      throw err;
+    }
+  }
+
   async createRecipient(recipient: Recipient): Promise<Recipient> {
     if (!this.db) {
       warnLog('TenantDbService', 'createRecipient: Keine aktive Mandanten-DB verfügbar.');
@@ -839,6 +921,32 @@ export class TenantDbService {
       return recipientWithTimestamp;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Erstellen des Empfängers "${recipient.name}"`, { recipient, error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Erstellt mehrere Empfänger in einem Batch-Vorgang (Performance-Optimierung für CSV-Import)
+   */
+  async addRecipientsBatch(recipients: Recipient[]): Promise<Recipient[]> {
+    if (!this.db) {
+      throw new Error('Datenbank nicht initialisiert');
+    }
+
+    try {
+      const recipientsWithTimestamp = recipients.map(recipient => ({
+        ...recipient,
+        updated_at: new Date().toISOString()
+      }));
+
+      await this.db.transaction('rw', this.db.recipients, async () => {
+        await this.db!.recipients.bulkPut(recipientsWithTimestamp);
+      });
+
+      infoLog('TenantDbService', `${recipients.length} Empfänger in Batch-Vorgang erstellt.`);
+      return recipientsWithTimestamp;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Erstellen von ${recipients.length} Empfängern`, { recipients, error: err });
       throw err;
     }
   }
