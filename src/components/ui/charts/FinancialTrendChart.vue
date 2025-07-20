@@ -98,6 +98,7 @@ const formatCurrency = (value: number): string => {
 
 const chartContainer = ref<HTMLElement>();
 let chart: ApexCharts | null = null;
+let resizeObserver: ResizeObserver | null = null;
 
 // Responsive Verhalten für die Legende
 const isSmallScreen = ref(false);
@@ -105,6 +106,44 @@ const isSmallScreen = ref(false);
 // Screen-Size-Watcher
 const updateScreenSize = () => {
   isSmallScreen.value = window.innerWidth < 640; // Tailwind sm breakpoint
+};
+
+// Chart-Resize-Handler
+const resizeChart = () => {
+  if (chart && chartContainer.value) {
+    // Aktuelle Container-Dimensionen ermitteln
+    const containerRect = chartContainer.value.getBoundingClientRect();
+    const containerHeight = chartContainer.value.offsetHeight;
+    const containerWidth = chartContainer.value.offsetWidth;
+
+    // Chart mit aktueller Container-Größe neu rendern
+    chart.updateOptions(
+      {
+        chart: {
+          width: containerWidth,
+          height: containerHeight,
+        },
+      },
+      false,
+      true
+    );
+  }
+};
+
+// ResizeObserver für Container-Größenänderungen
+const setupResizeObserver = () => {
+  if (chartContainer.value && "ResizeObserver" in window) {
+    resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        // Debounce resize calls
+        setTimeout(() => {
+          resizeChart();
+        }, 100);
+      }
+    });
+
+    resizeObserver.observe(chartContainer.value);
+  }
 };
 
 // Deutsche Monatsnamen (3-stellig)
@@ -223,13 +262,13 @@ const chartOptions = computed(() => {
       },
     ],
     chart: {
-      height: "100%",
-      width: "100%",
       type: "line",
       stacked: false,
       background: "transparent",
       foreColor: themeColors.textColor, // Globale Textfarbe für alle Chart-Elemente mit besserem Kontrast
       fontFamily: themeColors.fontFamily, // Globale Schriftfamilie aus style.css
+      height: "100%", // Wichtig: Chart soll 100% der Container-Höhe nutzen
+      width: "100%", // Wichtig: Chart soll 100% der Container-Breite nutzen
       toolbar: {
         show: false,
       },
@@ -239,6 +278,67 @@ const chartOptions = computed(() => {
         speed: 800,
       },
     },
+    responsive: [
+      {
+        breakpoint: 768,
+        options: {
+          legend: {
+            position: "top",
+            fontSize: "10px",
+            itemMargin: {
+              horizontal: 15,
+              vertical: 5,
+            },
+          },
+          plotOptions: {
+            bar: {
+              columnWidth: "90%",
+            },
+          },
+        },
+      },
+      {
+        breakpoint: 480,
+        options: {
+          legend: {
+            position: "top",
+            fontSize: "8px",
+            itemMargin: {
+              horizontal: 10,
+              vertical: 3,
+            },
+          },
+          plotOptions: {
+            bar: {
+              columnWidth: "80%",
+            },
+          },
+          xaxis: {
+            labels: {
+              style: {
+                fontSize: "10px",
+              },
+            },
+          },
+          yaxis: [
+            {
+              labels: {
+                style: {
+                  fontSize: "9px",
+                },
+              },
+            },
+            {
+              labels: {
+                style: {
+                  fontSize: "9px",
+                },
+              },
+            },
+          ],
+        },
+      },
+    ],
     colors: [
       themeColors.success, // success (grün) für Einnahmen
       themeColors.error, // error (rot) für Ausgaben
@@ -448,7 +548,21 @@ const chartOptions = computed(() => {
 // Chart erstellen und aktualisieren
 const createChart = () => {
   if (chartContainer.value && !chart) {
-    chart = new ApexCharts(chartContainer.value, chartOptions.value);
+    // Sicherstellen, dass Container-Dimensionen verfügbar sind
+    const containerHeight = chartContainer.value.offsetHeight || 300; // Fallback-Höhe
+    const containerWidth = chartContainer.value.offsetWidth || 400; // Fallback-Breite
+
+    // Chart-Optionen mit aktueller Container-Größe erstellen
+    const options = {
+      ...chartOptions.value,
+      chart: {
+        ...chartOptions.value.chart,
+        height: containerHeight,
+        width: containerWidth,
+      },
+    };
+
+    chart = new ApexCharts(chartContainer.value, options);
     chart.render();
   }
 };
@@ -526,6 +640,7 @@ onMounted(() => {
 
   createChart();
   setupThemeObserver();
+  setupResizeObserver();
 });
 
 // Watcher für Screen-Size-Änderungen
@@ -544,19 +659,18 @@ onUnmounted(() => {
     themeObserver.disconnect();
     themeObserver = null;
   }
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
   // Resize-Event-Listener entfernen
   window.removeEventListener("resize", updateScreenSize);
 });
 </script>
 
 <template>
-  <div class="card bg-base-100 shadow-md h-80">
-    <div class="card-body flex flex-col">
-      <h3 class="card-title text-lg mb-4">Finanztrend (6 Monate)</h3>
-      <div
-        ref="chartContainer"
-        class="w-full flex-1 min-h-0"
-      ></div>
-    </div>
-  </div>
+  <div
+    ref="chartContainer"
+    class="w-full h-full min-h-0"
+  ></div>
 </template>

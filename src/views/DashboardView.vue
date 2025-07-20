@@ -281,7 +281,19 @@ onMounted(() => {
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       <div class="card bg-base-100 shadow-md">
         <div class="card-body">
-          <h3 class="card-title text-lg">Kontostand</h3>
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="card-title text-lg">Kontostand</h3>
+            <button
+              class="btn btn-sm btn-ghost"
+              @click="navigateToAccounts"
+            >
+              Details
+              <span
+                class="iconify ml-1"
+                data-icon="mdi:chevron-right"
+              ></span>
+            </button>
+          </div>
 
           <!-- Gesamtsaldo -->
           <div class="mb-4">
@@ -332,11 +344,15 @@ onMounted(() => {
               </div>
             </div>
           </div>
-
-          <div class="card-actions justify-end mt-2">
+        </div>
+      </div>
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="card-title text-lg">Letzte 30 Tage</h3>
             <button
               class="btn btn-sm btn-ghost"
-              @click="navigateToAccounts"
+              @click="navigateToTransactions"
             >
               Details
               <span
@@ -345,11 +361,6 @@ onMounted(() => {
               ></span>
             </button>
           </div>
-        </div>
-      </div>
-      <div class="card bg-base-100 shadow-md">
-        <div class="card-body">
-          <h3 class="card-title text-lg">Letzte 30 Tage</h3>
           <div class="grid grid-cols-3 gap-2 mt-2">
             <div>
               <p class="text-sm">Einnahmen</p>
@@ -379,10 +390,16 @@ onMounted(() => {
               </p>
             </div>
           </div>
-          <div class="card-actions justify-end mt-2">
+        </div>
+      </div>
+      <!-- Financial Trend Chart - jetzt oben rechts im Dashboard -->
+      <div class="card bg-base-100 shadow-md">
+        <div class="card-body">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="card-title text-lg">Finanztrend (6 Monate)</h3>
             <button
               class="btn btn-sm btn-ghost"
-              @click="navigateToTransactions"
+              @click="navigateToStatistics"
             >
               Details
               <span
@@ -391,186 +408,8 @@ onMounted(() => {
               ></span>
             </button>
           </div>
-        </div>
-      </div>
-      <div class="card bg-base-100 shadow-md">
-        <div class="card-body">
-          <div class="flex justify-between items-center mb-4">
-            <div>
-              <h3 class="card-title text-lg">Geplante Zahlungen</h3>
-              <p class="text-sm">Nächste 14 Tage</p>
-            </div>
-            <!-- Buttons für Planungslimit -->
-            <div class="flex gap-2 items-center">
-              <div class="flex gap-2">
-                <button
-                  :class="
-                    planningLimit === 3
-                      ? 'btn btn-xs btn-primary'
-                      : 'btn btn-xs btn-outline'
-                  "
-                  @click="setPlanningLimit(3)"
-                >
-                  3
-                </button>
-                <button
-                  :class="
-                    planningLimit === 8
-                      ? 'btn btn-xs btn-primary'
-                      : 'btn btn-xs btn-outline'
-                  "
-                  @click="setPlanningLimit(8)"
-                >
-                  8
-                </button>
-                <button
-                  :class="
-                    planningLimit === 16
-                      ? 'btn btn-xs btn-primary'
-                      : 'btn btn-xs btn-outline'
-                  "
-                  @click="setPlanningLimit(16)"
-                >
-                  16
-                </button>
-              </div>
-              <button
-                class="btn btn-sm btn-ghost"
-                @click="navigateToPlanning"
-              >
-                Alle anzeigen
-                <span
-                  class="iconify ml-1"
-                  data-icon="mdi:chevron-right"
-                ></span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Liste der geplanten Transaktionen -->
-          <div
-            v-if="upcomingPlanningTransactions.length > 0"
-            class="space-y-1 mt-3"
-          >
-            <div
-              v-for="item in upcomingPlanningTransactions.slice(
-                0,
-                planningLimit
-              )"
-              :key="`${item.planningTransaction.id}-${item.executionDate}`"
-              class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 cursor-pointer transition-colors"
-              @click="navigateToPlanningEdit(item.planningTransaction.id)"
-            >
-              <!-- Linke Seite: Icon, Name und Datum -->
-              <div class="flex items-center space-x-1 flex-1 min-w-0">
-                <div class="flex-shrink-0">
-                  <span
-                    class="iconify text-lg"
-                    :class="
-                      getTransactionTypeClass(
-                        item.planningTransaction.transactionType
-                      )
-                    "
-                    :data-icon="
-                      getTransactionTypeIcon(
-                        item.planningTransaction.transactionType
-                      )
-                    "
-                  ></span>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <div class="text-xs font-medium truncate">
-                    {{ item.planningTransaction.name }}
-                  </div>
-                  <div class="text-xs opacity-60">
-                    {{ item.formattedDate }} •
-                    {{ getSourceName(item.planningTransaction) }} →
-                    {{ getTargetName(item.planningTransaction) }}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Rechte Seite: Betrag und Aktionsbuttons -->
-              <div class="flex items-center space-x-2 flex-shrink-0">
-                <div class="text-right">
-                  <div
-                    class="text-sm font-semibold"
-                    :class="
-                      getTransactionTypeClass(
-                        item.planningTransaction.transactionType
-                      )
-                    "
-                  >
-                    <CurrencyDisplay
-                      :amount="item.planningTransaction.amount"
-                      :asInteger="true"
-                    />
-                  </div>
-                </div>
-
-                <!-- Aktionsbuttons -->
-                <div class="flex space-x-1">
-                  <div
-                    class="tooltip tooltip-top max-w-xs"
-                    data-tip="Planungstransaktion ausführen und echte Transaktion erstellen"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
-                      @click.stop="
-                        executePlanning(
-                          item.planningTransaction.id,
-                          item.executionDate
-                        )
-                      "
-                    >
-                      <Icon
-                        icon="mdi:play"
-                        class="text-base text-success"
-                      />
-                    </button>
-                  </div>
-                  <div
-                    class="tooltip tooltip-top max-w-xs"
-                    data-tip="Planungstransaktion überspringen (als erledigt markieren ohne Transaktion zu erstellen)"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
-                      @click.stop="
-                        skipPlanning(
-                          item.planningTransaction.id,
-                          item.executionDate
-                        )
-                      "
-                    >
-                      <Icon
-                        icon="mdi:skip-next"
-                        class="text-base text-warning"
-                      />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Anzeige wenn mehr Einträge vorhanden als das Limit -->
-            <div
-              v-if="upcomingPlanningTransactions.length > planningLimit"
-              class="text-center pt-2"
-            >
-              <p class="text-xs opacity-60">
-                ... und
-                {{ upcomingPlanningTransactions.length - planningLimit }}
-                weitere
-              </p>
-            </div>
-          </div>
-
-          <!-- Fallback wenn keine geplanten Transaktionen -->
-          <div
-            v-else
-            class="text-center py-4"
-          >
-            <p class="text-sm italic opacity-60">Keine anstehenden Zahlungen</p>
+          <div class="h-64 w-full">
+            <FinancialTrendChart />
           </div>
         </div>
       </div>
@@ -714,26 +553,26 @@ onMounted(() => {
                     :key="month.monthKey"
                     class="leading-tight"
                   >
-                    <td class="font-medium py-2">{{ month.month }}</td>
+                    <td class="font-medium py-0">{{ month.month }}</td>
                     <td class="text-right font-semibold py-2">
                       <CurrencyDisplay
                         :amount="month.income"
                         :asInteger="true"
                       />
                     </td>
-                    <td class="text-right font-semibold py-2">
+                    <td class="text-right font-semibold py-1">
                       <CurrencyDisplay
                         :amount="month.expense"
                         :asInteger="true"
                       />
                     </td>
-                    <td class="text-right font-bold py-2">
+                    <td class="text-right font-bold py-1">
                       <CurrencyDisplay
                         :amount="month.balance"
                         :asInteger="true"
                       />
                     </td>
-                    <td class="text-center py-2">
+                    <td class="text-center py-1">
                       <div class="flex items-center justify-center">
                         <span
                           v-if="month.trend === 'up'"
@@ -783,8 +622,189 @@ onMounted(() => {
         </div>
       </div>
       <div class="space-y-6">
-        <!-- Financial Trend Chart - rechts oben im Dashboard -->
-        <FinancialTrendChart />
+        <div class="card bg-base-100 shadow-md">
+          <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h3 class="card-title text-lg">Geplante Zahlungen</h3>
+                <p class="text-sm">Nächste 14 Tage</p>
+              </div>
+              <!-- Buttons für Planungslimit -->
+              <div class="flex gap-2 items-center">
+                <div class="flex gap-2">
+                  <button
+                    :class="
+                      planningLimit === 3
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setPlanningLimit(3)"
+                  >
+                    3
+                  </button>
+                  <button
+                    :class="
+                      planningLimit === 8
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setPlanningLimit(8)"
+                  >
+                    8
+                  </button>
+                  <button
+                    :class="
+                      planningLimit === 16
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setPlanningLimit(16)"
+                  >
+                    16
+                  </button>
+                </div>
+                <button
+                  class="btn btn-sm btn-ghost"
+                  @click="navigateToPlanning"
+                >
+                  Alle anzeigen
+                  <span
+                    class="iconify ml-1"
+                    data-icon="mdi:chevron-right"
+                  ></span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Liste der geplanten Transaktionen -->
+            <div
+              v-if="upcomingPlanningTransactions.length > 0"
+              class="space-y-1 mt-3"
+            >
+              <div
+                v-for="item in upcomingPlanningTransactions.slice(
+                  0,
+                  planningLimit
+                )"
+                :key="`${item.planningTransaction.id}-${item.executionDate}`"
+                class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 cursor-pointer transition-colors"
+                @click="navigateToPlanningEdit(item.planningTransaction.id)"
+              >
+                <!-- Linke Seite: Icon, Name und Datum -->
+                <div class="flex items-center space-x-1 flex-1 min-w-0">
+                  <div class="flex-shrink-0">
+                    <span
+                      class="iconify text-lg"
+                      :class="
+                        getTransactionTypeClass(
+                          item.planningTransaction.transactionType
+                        )
+                      "
+                      :data-icon="
+                        getTransactionTypeIcon(
+                          item.planningTransaction.transactionType
+                        )
+                      "
+                    ></span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-xs font-medium truncate">
+                      {{ item.planningTransaction.name }}
+                    </div>
+                    <div class="text-xs opacity-60">
+                      {{ item.formattedDate }} •
+                      {{ getSourceName(item.planningTransaction) }} →
+                      {{ getTargetName(item.planningTransaction) }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Rechte Seite: Betrag und Aktionsbuttons -->
+                <div class="flex items-center space-x-2 flex-shrink-0">
+                  <div class="text-right">
+                    <div
+                      class="text-sm font-semibold"
+                      :class="
+                        getTransactionTypeClass(
+                          item.planningTransaction.transactionType
+                        )
+                      "
+                    >
+                      <CurrencyDisplay
+                        :amount="item.planningTransaction.amount"
+                        :asInteger="true"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Aktionsbuttons -->
+                  <div class="flex space-x-1">
+                    <div
+                      class="tooltip tooltip-top max-w-xs"
+                      data-tip="Planungstransaktion ausführen und echte Transaktion erstellen"
+                    >
+                      <button
+                        class="btn btn-ghost btn-xs border-none"
+                        @click.stop="
+                          executePlanning(
+                            item.planningTransaction.id,
+                            item.executionDate
+                          )
+                        "
+                      >
+                        <Icon
+                          icon="mdi:play"
+                          class="text-base text-success"
+                        />
+                      </button>
+                    </div>
+                    <div
+                      class="tooltip tooltip-top max-w-xs"
+                      data-tip="Planungstransaktion überspringen (als erledigt markieren ohne Transaktion zu erstellen)"
+                    >
+                      <button
+                        class="btn btn-ghost btn-xs border-none"
+                        @click.stop="
+                          skipPlanning(
+                            item.planningTransaction.id,
+                            item.executionDate
+                          )
+                        "
+                      >
+                        <Icon
+                          icon="mdi:skip-next"
+                          class="text-base text-warning"
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Anzeige wenn mehr Einträge vorhanden als das Limit -->
+              <div
+                v-if="upcomingPlanningTransactions.length > planningLimit"
+                class="text-center pt-2"
+              >
+                <p class="text-xs opacity-60">
+                  ... und
+                  {{ upcomingPlanningTransactions.length - planningLimit }}
+                  weitere
+                </p>
+              </div>
+            </div>
+
+            <!-- Fallback wenn keine geplanten Transaktionen -->
+            <div
+              v-else
+              class="text-center py-4"
+            >
+              <p class="text-sm italic opacity-60">
+                Keine anstehenden Zahlungen
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div class="card bg-base-100 shadow-md">
           <div class="card-body">
