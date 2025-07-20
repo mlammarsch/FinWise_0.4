@@ -238,15 +238,28 @@ const chartOptions = computed(() => {
       type: "category",
       labels: {
         style: {
-          colors: [themeColors.baseContent],
+          colors: Array(data.labels.length).fill(themeColors.baseContent), // Array für alle Labels
           fontSize: "12px",
+          fontFamily: "inherit",
         },
       },
       axisBorder: {
-        show: false,
+        show: true,
+        color: themeColors.base300, // Dynamische Achsenrand-Farbe
+        height: 1,
       },
       axisTicks: {
-        show: false,
+        show: true,
+        color: themeColors.base300, // Dynamische Achsen-Tick-Farbe
+        height: 6,
+      },
+      title: {
+        text: "Monate",
+        style: {
+          color: themeColors.baseContent, // Dynamische Titel-Farbe
+          fontSize: "12px",
+          fontFamily: "inherit",
+        },
       },
     },
     yaxis: [
@@ -256,16 +269,26 @@ const chartOptions = computed(() => {
           style: {
             color: themeColors.baseContent,
             fontSize: "12px",
+            fontFamily: "inherit",
           },
         },
         labels: {
           style: {
-            colors: [themeColors.baseContent],
+            colors: Array(10).fill(themeColors.baseContent), // Array für alle Y-Achsen-Labels
             fontSize: "11px",
+            fontFamily: "inherit",
           },
           formatter: function (val: number) {
             return formatCurrency(val);
           },
+        },
+        axisBorder: {
+          show: true,
+          color: themeColors.base300, // Dynamische Achsenrand-Farbe
+        },
+        axisTicks: {
+          show: true,
+          color: themeColors.base300, // Dynamische Achsen-Tick-Farbe
         },
         seriesName: "Kontostand",
         min: data.minBalance,
@@ -278,16 +301,26 @@ const chartOptions = computed(() => {
           style: {
             color: themeColors.baseContent,
             fontSize: "12px",
+            fontFamily: "inherit",
           },
         },
         labels: {
           style: {
-            colors: [themeColors.baseContent],
+            colors: Array(10).fill(themeColors.baseContent), // Array für alle Y-Achsen-Labels
             fontSize: "11px",
+            fontFamily: "inherit",
           },
           formatter: function (val: number) {
             return formatCurrency(val);
           },
+        },
+        axisBorder: {
+          show: true,
+          color: themeColors.base300, // Dynamische Achsenrand-Farbe
+        },
+        axisTicks: {
+          show: true,
+          color: themeColors.base300, // Dynamische Achsen-Tick-Farbe
         },
         seriesName: ["Einnahmen", "Ausgaben"],
         min: 0, // Immer bei 0 beginnen
