@@ -13,6 +13,7 @@ import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import { useRecipientStore } from "@/stores/recipientStore";
 import { useMonthlyBalanceStore } from "@/stores/monthlyBalanceStore";
+import { useTransactionStore } from "@/stores/transactionStore";
 
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
 import ForecastChart from "@/components/ui/charts/ForecastChart.vue";
@@ -27,6 +28,7 @@ import { formatDate } from "@/utils/formatters";
 import { debugLog } from "@/utils/logger";
 import { PlanningService } from "@/services/PlanningService";
 import { BalanceService } from "@/services/BalanceService";
+import { BudgetService } from "@/services/BudgetService";
 
 const planningStore = usePlanningStore();
 const accountStore = useAccountStore();
@@ -399,91 +401,101 @@ function getAccountForecastData(accountId: string) {
   return forecasts;
 }
 
-function getCategoryForecastData(categoryId: string) {
-  const forecasts: Array<{
-    month: string;
-    budgeted: number;
-    activity: number;
-    projectedActivity: number;
-    available: number;
-    transactions: Array<{ date: string; description: string; amount: number }>;
-  }> = [];
-  const startDate = dayjs(dateRange.value.start).startOf("month");
-
-  // 6 Monate ab dem aktuellen Monat generieren
-  for (let i = 0; i < 6; i++) {
-    const currentDate = startDate.add(i, "month");
-    const monthStart = currentDate.format("YYYY-MM-DD");
-    const monthEnd = currentDate.endOf("month").format("YYYY-MM-DD");
-
-    // Kategorie-Informationen aus monthlyBalanceStore und categoryStore
-    const category = categoryStore.getCategoryById(categoryId);
-    const currentBalance = monthlyBalanceStore.getCategoryBalanceForDate(
-      categoryId,
-      new Date(monthStart)
-    );
-    const projectedBalance =
-      monthlyBalanceStore.getProjectedCategoryBalanceForDate(
-        categoryId,
-        new Date(monthEnd)
-      );
-
-    // Verwende die Werte aus dem Store, falls verfügbar
-    const budgeted = category?.budgeted || 0;
-    const activity = currentBalance || 0;
-    const projectedActivity =
-      projectedBalance ||
-      BalanceService.getProjectedBalance(
-        "category",
-        categoryId,
-        new Date(monthEnd)
-      );
-    const available = budgeted - projectedActivity;
-
-    // Geplante Transaktionen für diese Kategorie in diesem Monat
-    const monthTransactions: Array<{
-      date: string;
-      description: string;
-      amount: number;
+// Computed für Category Forecast Data um auf Store-Änderungen zu reagieren
+const categoryForecastData = computed(() => {
+  return (categoryId: string) => {
+    const forecasts: Array<{
+      month: string;
+      budgeted: number;
+      activity: number;
+      available: number;
+      isOverspent: boolean;
+      transactions: Array<{
+        date: string;
+        description: string;
+        amount: number;
+      }>;
     }> = [];
+    const startDate = dayjs(dateRange.value.start).startOf("month");
 
-    planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
-      if (!plan.isActive || plan.categoryId !== categoryId) return;
+    // 6 Monate ab dem aktuellen Monat generieren
+    for (let i = 0; i < 6; i++) {
+      const currentDate = startDate.add(i, "month");
+      const monthStart = new Date(currentDate.format("YYYY-MM-DD"));
+      const monthEnd = new Date(
+        currentDate.endOf("month").format("YYYY-MM-DD")
+      );
 
-      const occurrences = PlanningService.calculateNextOccurrences(
-        plan,
+      // Geplante Transaktionen für diese Kategorie in diesem Monat sammeln
+      const monthTransactions: Array<{
+        date: string;
+        description: string;
+        amount: number;
+      }> = [];
+
+      planningStore.planningTransactions.forEach(
+        (plan: PlanningTransaction) => {
+          if (!plan.isActive || plan.categoryId !== categoryId) return;
+
+          const occurrences = PlanningService.calculateNextOccurrences(
+            plan,
+            currentDate.format("YYYY-MM-DD"),
+            currentDate.endOf("month").format("YYYY-MM-DD")
+          );
+
+          occurrences.forEach((dateStr: string) => {
+            const amount =
+              plan.transactionType === TransactionType.INCOME
+                ? Math.abs(plan.amount)
+                : -Math.abs(plan.amount);
+
+            monthTransactions.push({
+              date: dateStr,
+              description: plan.name,
+              amount: amount,
+            });
+          });
+        }
+      );
+
+      // Verwende BudgetService für konsistente Daten wie in BudgetMonthCard.vue
+      const budgetData = BudgetService.getAggregatedMonthlyBudgetData(
+        categoryId,
         monthStart,
         monthEnd
       );
 
-      occurrences.forEach((dateStr: string) => {
-        const amount =
-          plan.transactionType === TransactionType.INCOME
-            ? Math.abs(plan.amount)
-            : -Math.abs(plan.amount);
+      // Werte direkt aus BudgetService übernehmen (wie in BudgetMonthCard.vue)
+      const budgeted = budgetData.budgeted;
+      const activity = budgetData.spent;
+      const forecastAmount = budgetData.forecast;
+      const available = budgetData.saldo;
 
-        monthTransactions.push({
-          date: dateStr,
-          description: plan.name,
-          amount: amount,
-        });
+      // Überzogen-Status basierend auf verfügbarem Saldo
+      const isOverspent = available < 0;
+
+      debugLog(
+        "PlanningView",
+        `Kategorie ${categoryId} ${currentDate.format(
+          "MMMM YYYY"
+        )}: Budgetiert=${budgeted}€, Aktivität=${activity}€, Prognose=${forecastAmount}€, Verfügbar=${available}€, Überzogen=${isOverspent}`
+      );
+
+      forecasts.push({
+        month: currentDate.format("MMMM YYYY"),
+        budgeted: budgeted,
+        activity: activity,
+        available: available,
+        isOverspent: isOverspent,
+        transactions: monthTransactions.sort((a, b) =>
+          a.date.localeCompare(b.date)
+        ),
       });
-    });
+    }
 
-    forecasts.push({
-      month: currentDate.format("MMMM YYYY"),
-      budgeted: budgeted,
-      activity: activity,
-      projectedActivity: projectedActivity,
-      available: available,
-      transactions: monthTransactions.sort((a, b) =>
-        a.date.localeCompare(b.date)
-      ),
-    });
-  }
-
-  return forecasts;
-}
+    return forecasts;
+  };
+});
 
 // Service‑Aufrufe
 function executeAutomaticTransactions() {
@@ -970,7 +982,7 @@ onMounted(() => {
         </h4>
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div
-            v-for="(forecast, i) in getCategoryForecastData(
+            v-for="(forecast, i) in categoryForecastData(
               selectedCategoryForDetail
             ).slice(0, 6)"
             :key="i"
@@ -994,19 +1006,30 @@ onMounted(() => {
                   />
                 </div>
                 <div class="flex justify-between">
-                  <span>Prognostizierte Aktivität:</span>
+                  <span>Anstehende Planbuchungen:</span>
                   <CurrencyDisplay
-                    :amount="forecast.projectedActivity"
+                    :amount="
+                      forecast.transactions.reduce(
+                        (sum, tx) => sum + tx.amount,
+                        0
+                      )
+                    "
                     :as-integer="true"
                   />
                 </div>
                 <div
                   class="flex justify-between font-bold border-t border-base-300 pt-1"
+                  :class="forecast.isOverspent ? 'text-error' : ''"
                 >
-                  <span>Verfügbar:</span>
+                  <span>{{
+                    forecast.isOverspent
+                      ? "Budget überschritten:"
+                      : "Verfügbar:"
+                  }}</span>
                   <CurrencyDisplay
                     :amount="forecast.available"
                     :as-integer="true"
+                    :class="forecast.isOverspent ? 'text-error' : ''"
                   />
                 </div>
               </div>

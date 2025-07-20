@@ -48,6 +48,12 @@ export const useCategoryStore = defineStore('category', () => {
     return grouped;
   });
 
+  const activeCategories = computed(() =>
+    categories.value
+      .filter(c => c.isActive && !c.isHidden)
+      .sort((a, b) => a.sortOrder - b.sortOrder),
+  );
+
   /* ----------------------------------------------- Actions */
   function findCategoryById(id: string) {
     return categories.value.find(c => c.id === id);
@@ -492,6 +498,7 @@ export const useCategoryStore = defineStore('category', () => {
     rootCategories,
     savingsGoals,
     categoriesByGroup,
+    activeCategories,
     addCategory,
     updateCategory,
     deleteCategory,
