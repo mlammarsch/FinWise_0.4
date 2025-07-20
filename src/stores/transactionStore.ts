@@ -21,6 +21,8 @@ export interface ExtendedTransaction extends Transaction {
   runningBalance: number;
   transferToAccountId?: string | null;
   updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 function toDateOnlyString(i: string): string {
@@ -78,10 +80,13 @@ export const useTransactionStore = defineStore('transaction', () => {
     // Stelle sicher, dass payee aus recipientId abgeleitet wird, falls recipientId vorhanden ist
     const resolvedPayee = resolvePayeeFromRecipient(tx.recipientId, tx.payee);
 
+    const now = new Date().toISOString();
     const transactionWithTimestamp: ExtendedTransaction = {
       ...tx,
       payee: resolvedPayee,
-      updated_at: tx.updated_at || new Date().toISOString(),
+      updated_at: tx.updated_at || now,
+      createdAt: tx.createdAt || now,
+      updatedAt: tx.updatedAt || tx.updated_at || now,
     };
 
     if (fromSync) {
@@ -132,10 +137,12 @@ export const useTransactionStore = defineStore('transaction', () => {
       resolvedPayee = resolvePayeeFromRecipient(updates.recipientId, updates.payee);
     }
 
+    const now = new Date().toISOString();
     const transactionUpdatesWithTimestamp: Partial<ExtendedTransaction> = {
       ...updates,
       ...(resolvedPayee !== undefined && { payee: resolvedPayee }),
-      updated_at: updates.updated_at || new Date().toISOString(),
+      updated_at: updates.updated_at || now,
+      updatedAt: updates.updatedAt || updates.updated_at || now,
     };
 
     if (fromSync) {
