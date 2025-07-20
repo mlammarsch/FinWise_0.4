@@ -6,10 +6,15 @@ import { useAccountStore } from "../stores/accountStore";
 import { useCategoryStore } from "../stores/categoryStore";
 import { useRecipientStore } from "../stores/recipientStore";
 import { useStatisticsStore } from "../stores/statisticsStore";
+import { usePlanningStore } from "../stores/planningStore";
 import { TransactionService } from "../services/TransactionService";
-import { TransactionType } from "../types";
+import { BalanceService } from "../services/BalanceService";
+import { PlanningService } from "../services/PlanningService";
+import { TransactionType, PlanningTransaction } from "../types";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
+import CurrencyDisplay from "../components/ui/CurrencyDisplay.vue";
+import { Icon } from "@iconify/vue";
 import dayjs from "dayjs";
 
 const router = useRouter();
@@ -18,6 +23,7 @@ const accountStore = useAccountStore();
 const categoryStore = useCategoryStore();
 const recipientStore = useRecipientStore();
 const statisticsStore = useStatisticsStore();
+const planningStore = usePlanningStore();
 
 const currentDate = dayjs();
 const startDate = ref(currentDate.subtract(30, "day").format("YYYY-MM-DD"));
@@ -26,13 +32,49 @@ const endDate = ref(currentDate.format("YYYY-MM-DD"));
 // Anzahl der anzuzeigenden Transaktionen
 const transactionLimit = ref(5);
 
+// Anzahl der anzuzeigenden geplanten Transaktionen
+const planningLimit = ref(3);
+
 const accounts = computed(() => accountStore.activeAccounts);
-const totalBalance = computed(() =>
-  accountStore.accounts.reduce(
-    (sum, account) => sum + (account.balance || 0),
-    0
-  )
-);
+
+// Verwende BalanceService für konsistente Saldoberechnungen
+const totalBalance = computed(() => BalanceService.getTotalBalance());
+
+// Kontogruppen mit Salden für Collapse-Komponenten
+const accountGroupsWithBalances = computed(() => {
+  return accountStore.accountGroups
+    .filter((group) => {
+      // Nur Gruppen mit aktiven Konten anzeigen
+      const groupAccounts = accountStore.accounts.filter(
+        (account) =>
+          account.accountGroupId === group.id &&
+          account.isActive &&
+          !account.isOfflineBudget
+      );
+      return groupAccounts.length > 0;
+    })
+    .map((group) => {
+      const groupBalance = BalanceService.getAccountGroupBalance(group.id);
+      const groupAccounts = accountStore.accounts
+        .filter(
+          (account) =>
+            account.accountGroupId === group.id &&
+            account.isActive &&
+            !account.isOfflineBudget
+        )
+        .map((account) => ({
+          ...account,
+          balance: BalanceService.getTodayBalance("account", account.id),
+        }));
+
+      return {
+        ...group,
+        balance: groupBalance,
+        accounts: groupAccounts,
+      };
+    })
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+});
 
 // Gefilterte Transaktionen: nur INCOME und EXPENSE
 const recentTransactions = computed(() => {
@@ -62,15 +104,170 @@ const monthlyTrend = computed(() =>
 );
 const savingsGoals = computed(() => statisticsStore.getSavingsGoalProgress());
 
+// Kommende geplante Transaktionen für die nächsten 14 Tage
+const upcomingPlanningTransactions = computed(() => {
+  const today = dayjs();
+  const endDate = today.add(14, "days");
+
+  const upcomingTransactions: Array<{
+    planningTransaction: PlanningTransaction;
+    executionDate: string;
+    formattedDate: string;
+  }> = [];
+
+  planningStore.planningTransactions
+    .filter(
+      (pt) =>
+        pt.isActive && !pt.forecastOnly && !pt.counterPlanningTransactionId
+    )
+    .forEach((planningTransaction) => {
+      try {
+        const occurrences = PlanningService.calculateNextOccurrences(
+          planningTransaction,
+          today.format("YYYY-MM-DD"),
+          endDate.format("YYYY-MM-DD")
+        );
+
+        occurrences.forEach((executionDate) => {
+          upcomingTransactions.push({
+            planningTransaction,
+            executionDate: executionDate,
+            formattedDate: dayjs(executionDate).format("DD.MM.YYYY"),
+          });
+        });
+      } catch (error) {
+        console.warn(
+          "Fehler beim Berechnen der Occurrences für Planning Transaction:",
+          planningTransaction.id,
+          error
+        );
+      }
+    });
+
+  // Sortiere nach Ausführungsdatum
+  return upcomingTransactions.sort(
+    (a, b) =>
+      dayjs(a.executionDate).valueOf() - dayjs(b.executionDate).valueOf()
+  );
+});
+
 const navigateToTransactions = () => router.push("/transactions");
 const navigateToAccounts = () => router.push("/accounts");
 const navigateToBudgets = () => router.push("/budgets");
 const navigateToStatistics = () => router.push("/statistics");
 const navigateToPlanning = () => router.push("/planning");
 
+// Navigation zur PlanningView mit Bearbeitungsmodus für spezifische Transaktion
+const navigateToPlanningEdit = (planningTransactionId: string) => {
+  router.push({
+    path: "/planning",
+    query: { edit: planningTransactionId },
+  });
+};
+
+// Aktionsfunktionen für geplante Transaktionen
+const executePlanning = async (
+  planningTransactionId: string,
+  executionDate: string
+) => {
+  try {
+    await PlanningService.executePlanningTransaction(
+      planningTransactionId,
+      executionDate
+    );
+    // Erfolg-Feedback könnte hier hinzugefügt werden
+  } catch (error) {
+    console.error("Fehler beim Ausführen der geplanten Transaktion:", error);
+    // Fehler-Feedback könnte hier hinzugefügt werden
+  }
+};
+
+const skipPlanning = async (
+  planningTransactionId: string,
+  executionDate: string
+) => {
+  try {
+    await PlanningService.skipPlanningTransaction(
+      planningTransactionId,
+      executionDate
+    );
+    // Erfolg-Feedback könnte hier hinzugefügt werden
+  } catch (error) {
+    console.error("Fehler beim Überspringen der geplanten Transaktion:", error);
+    // Fehler-Feedback könnte hier hinzugefügt werden
+  }
+};
+
+// Hilfsfunktionen für Transaktionstyp-Anzeige (aus PlanningView übernommen)
+const getTransactionTypeIcon = (type: TransactionType | undefined): string => {
+  if (!type) return "mdi:help-circle-outline";
+
+  switch (type) {
+    case TransactionType.ACCOUNTTRANSFER:
+      return "mdi:bank-transfer";
+    case TransactionType.CATEGORYTRANSFER:
+      return "mdi:briefcase-transfer-outline";
+    case TransactionType.EXPENSE:
+      return "mdi:bank-transfer-out";
+    case TransactionType.INCOME:
+      return "mdi:bank-transfer-in";
+    default:
+      return "mdi:help-circle-outline";
+  }
+};
+
+const getTransactionTypeClass = (type: TransactionType | undefined): string => {
+  if (!type) return "";
+
+  switch (type) {
+    case TransactionType.ACCOUNTTRANSFER:
+    case TransactionType.CATEGORYTRANSFER:
+      return "text-warning";
+    case TransactionType.EXPENSE:
+      return "text-error";
+    case TransactionType.INCOME:
+      return "text-success";
+    default:
+      return "";
+  }
+};
+
+const getSourceName = (planning: PlanningTransaction): string => {
+  if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
+  } else {
+    return accountStore.getAccountById(planning.accountId)?.name || "-";
+  }
+};
+
+const getTargetName = (planning: PlanningTransaction): string => {
+  if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
+    return (
+      categoryStore.getCategoryById(planning.transferToCategoryId || "")
+        ?.name || "-"
+    );
+  } else if (planning.transactionType === TransactionType.ACCOUNTTRANSFER) {
+    return (
+      accountStore.getAccountById(planning.transferToAccountId || "")?.name ||
+      "-"
+    );
+  } else {
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
+  }
+};
+
 // Funktionen für Transaktionslimit-Buttons
 const setTransactionLimit = (limit: number) => {
   transactionLimit.value = limit;
+};
+
+// Funktionen für Planungslimit-Buttons
+const setPlanningLimit = (limit: number) => {
+  planningLimit.value = limit;
 };
 
 onMounted(() => {
@@ -85,9 +282,57 @@ onMounted(() => {
       <div class="card bg-base-100 shadow-md">
         <div class="card-body">
           <h3 class="card-title text-lg">Kontostand</h3>
-          <p class="text-2xl font-bold">
-            {{ formatCurrency(totalBalance) }}
-          </p>
+
+          <!-- Gesamtsaldo -->
+          <div class="mb-4">
+            <p class="text-2xl font-bold">
+              <CurrencyDisplay
+                :amount="totalBalance"
+                :asInteger="true"
+              />
+            </p>
+            <p class="text-sm opacity-60">Gesamtsaldo aller Konten</p>
+          </div>
+
+          <!-- Kontogruppen als Collapse-Komponenten -->
+          <div class="space-y-2 mb-4">
+            <div
+              v-for="group in accountGroupsWithBalances"
+              :key="group.id"
+              tabindex="0"
+              class="collapse collapse-arrow bg-base-200 border-base-300 border"
+            >
+              <div class="collapse-title text-sm font-medium py-2 px-3">
+                <div class="flex justify-between items-center">
+                  <span>{{ group.name }}</span>
+                  <span class="font-semibold">
+                    <CurrencyDisplay
+                      :amount="group.balance"
+                      :asInteger="true"
+                    />
+                  </span>
+                </div>
+              </div>
+              <div class="collapse-content px-3 pb-2">
+                <div class="space-y-1">
+                  <div
+                    v-for="account in group.accounts"
+                    :key="account.id"
+                    class="flex justify-between items-center py-1 px-2 rounded bg-base-100"
+                  >
+                    <span class="text-xs">{{ account.name }}</span>
+                    <span class="text-xs font-medium">
+                      <CurrencyDisplay
+                        :amount="account.balance"
+                        :asInteger="true"
+                      />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="card-actions justify-end mt-2">
             <button
               class="btn btn-sm btn-ghost"
@@ -108,26 +353,29 @@ onMounted(() => {
           <div class="grid grid-cols-3 gap-2 mt-2">
             <div>
               <p class="text-sm">Einnahmen</p>
-              <p class="text-lg font-semibold text-success">
-                {{ formatCurrency(incomeSummary.income) }}
+              <p class="text-lg font-semibold">
+                <CurrencyDisplay
+                  :amount="incomeSummary.income"
+                  :asInteger="true"
+                />
               </p>
             </div>
             <div>
               <p class="text-sm">Ausgaben</p>
-              <p class="text-lg font-semibold text-error">
-                {{ formatCurrency(incomeSummary.expense) }}
+              <p class="text-lg font-semibold">
+                <CurrencyDisplay
+                  :amount="incomeSummary.expense"
+                  :asInteger="true"
+                />
               </p>
             </div>
             <div>
               <p class="text-sm">Bilanz</p>
-              <p
-                :class="
-                  incomeSummary.balance >= 0
-                    ? 'text-lg font-semibold text-success'
-                    : 'text-lg font-semibold text-error'
-                "
-              >
-                {{ formatCurrency(incomeSummary.balance) }}
+              <p class="text-lg font-semibold">
+                <CurrencyDisplay
+                  :amount="incomeSummary.balance"
+                  :asInteger="true"
+                />
               </p>
             </div>
           </div>
@@ -147,31 +395,182 @@ onMounted(() => {
       </div>
       <div class="card bg-base-100 shadow-md">
         <div class="card-body">
-          <h3 class="card-title text-lg">Geplante Zahlungen</h3>
-          <p class="text-sm">Nächste 7 Tage</p>
-          <p
-            v-if="false"
-            class="text-lg font-semibold"
+          <div class="flex justify-between items-center mb-4">
+            <div>
+              <h3 class="card-title text-lg">Geplante Zahlungen</h3>
+              <p class="text-sm">Nächste 14 Tage</p>
+            </div>
+            <!-- Buttons für Planungslimit -->
+            <div class="flex gap-2 items-center">
+              <div class="flex gap-2">
+                <button
+                  :class="
+                    planningLimit === 3
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setPlanningLimit(3)"
+                >
+                  3
+                </button>
+                <button
+                  :class="
+                    planningLimit === 8
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setPlanningLimit(8)"
+                >
+                  8
+                </button>
+                <button
+                  :class="
+                    planningLimit === 16
+                      ? 'btn btn-xs btn-primary'
+                      : 'btn btn-xs btn-outline'
+                  "
+                  @click="setPlanningLimit(16)"
+                >
+                  16
+                </button>
+              </div>
+              <button
+                class="btn btn-sm btn-ghost"
+                @click="navigateToPlanning"
+              >
+                Alle anzeigen
+                <span
+                  class="iconify ml-1"
+                  data-icon="mdi:chevron-right"
+                ></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Liste der geplanten Transaktionen -->
+          <div
+            v-if="upcomingPlanningTransactions.length > 0"
+            class="space-y-1 mt-3"
           >
-            {{ formatCurrency(0) }}
-          </p>
-          <p
-            v-else
-            class="text-sm italic"
-          >
-            Keine anstehenden Zahlungen
-          </p>
-          <div class="card-actions justify-end mt-2">
-            <button
-              class="btn btn-sm btn-ghost"
-              @click="navigateToPlanning"
+            <div
+              v-for="item in upcomingPlanningTransactions.slice(
+                0,
+                planningLimit
+              )"
+              :key="`${item.planningTransaction.id}-${item.executionDate}`"
+              class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 cursor-pointer transition-colors"
+              @click="navigateToPlanningEdit(item.planningTransaction.id)"
             >
-              Details
-              <span
-                class="iconify ml-1"
-                data-icon="mdi:chevron-right"
-              ></span>
-            </button>
+              <!-- Linke Seite: Icon, Name und Datum -->
+              <div class="flex items-center space-x-1 flex-1 min-w-0">
+                <div class="flex-shrink-0">
+                  <span
+                    class="iconify text-lg"
+                    :class="
+                      getTransactionTypeClass(
+                        item.planningTransaction.transactionType
+                      )
+                    "
+                    :data-icon="
+                      getTransactionTypeIcon(
+                        item.planningTransaction.transactionType
+                      )
+                    "
+                  ></span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-xs font-medium truncate">
+                    {{ item.planningTransaction.name }}
+                  </div>
+                  <div class="text-xs opacity-60">
+                    {{ item.formattedDate }} •
+                    {{ getSourceName(item.planningTransaction) }} →
+                    {{ getTargetName(item.planningTransaction) }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Rechte Seite: Betrag und Aktionsbuttons -->
+              <div class="flex items-center space-x-2 flex-shrink-0">
+                <div class="text-right">
+                  <div
+                    class="text-sm font-semibold"
+                    :class="
+                      getTransactionTypeClass(
+                        item.planningTransaction.transactionType
+                      )
+                    "
+                  >
+                    <CurrencyDisplay
+                      :amount="item.planningTransaction.amount"
+                      :asInteger="true"
+                    />
+                  </div>
+                </div>
+
+                <!-- Aktionsbuttons -->
+                <div class="flex space-x-1">
+                  <div
+                    class="tooltip tooltip-top max-w-xs"
+                    data-tip="Planungstransaktion ausführen und echte Transaktion erstellen"
+                  >
+                    <button
+                      class="btn btn-ghost btn-xs border-none"
+                      @click.stop="
+                        executePlanning(
+                          item.planningTransaction.id,
+                          item.executionDate
+                        )
+                      "
+                    >
+                      <Icon
+                        icon="mdi:play"
+                        class="text-base text-success"
+                      />
+                    </button>
+                  </div>
+                  <div
+                    class="tooltip tooltip-top max-w-xs"
+                    data-tip="Planungstransaktion überspringen (als erledigt markieren ohne Transaktion zu erstellen)"
+                  >
+                    <button
+                      class="btn btn-ghost btn-xs border-none"
+                      @click.stop="
+                        skipPlanning(
+                          item.planningTransaction.id,
+                          item.executionDate
+                        )
+                      "
+                    >
+                      <Icon
+                        icon="mdi:skip-next"
+                        class="text-base text-warning"
+                      />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Anzeige wenn mehr Einträge vorhanden als das Limit -->
+            <div
+              v-if="upcomingPlanningTransactions.length > planningLimit"
+              class="text-center pt-2"
+            >
+              <p class="text-xs opacity-60">
+                ... und
+                {{ upcomingPlanningTransactions.length - planningLimit }}
+                weitere
+              </p>
+            </div>
+          </div>
+
+          <!-- Fallback wenn keine geplanten Transaktionen -->
+          <div
+            v-else
+            class="text-center py-4"
+          >
+            <p class="text-sm italic opacity-60">Keine anstehenden Zahlungen</p>
           </div>
         </div>
       </div>
@@ -316,20 +715,23 @@ onMounted(() => {
                     class="leading-tight"
                   >
                     <td class="font-medium py-2">{{ month.month }}</td>
-                    <td class="text-success text-right font-semibold py-2">
-                      {{ formatCurrency(month.income) }}
+                    <td class="text-right font-semibold py-2">
+                      <CurrencyDisplay
+                        :amount="month.income"
+                        :asInteger="true"
+                      />
                     </td>
-                    <td class="text-error text-right font-semibold py-2">
-                      {{ formatCurrency(month.expense) }}
+                    <td class="text-right font-semibold py-2">
+                      <CurrencyDisplay
+                        :amount="month.expense"
+                        :asInteger="true"
+                      />
                     </td>
-                    <td
-                      :class="
-                        month.balance >= 0
-                          ? 'text-success text-right font-bold py-2'
-                          : 'text-error text-right font-bold py-2'
-                      "
-                    >
-                      {{ formatCurrency(month.balance) }}
+                    <td class="text-right font-bold py-2">
+                      <CurrencyDisplay
+                        :amount="month.balance"
+                        :asInteger="true"
+                      />
                     </td>
                     <td class="text-center py-2">
                       <div class="flex items-center justify-center">
@@ -395,9 +797,12 @@ onMounted(() => {
               >
                 <div class="flex justify-between items-center mb-1">
                   <span>{{ expense.name }}</span>
-                  <span class="text-error">{{
-                    formatCurrency(expense.amount)
-                  }}</span>
+                  <span>
+                    <CurrencyDisplay
+                      :amount="expense.amount"
+                      :asInteger="true"
+                    />
+                  </span>
                 </div>
                 <progress
                   class="progress progress-error w-full"
@@ -445,8 +850,18 @@ onMounted(() => {
                   max="100"
                 ></progress>
                 <div class="flex justify-between text-xs mt-1">
-                  <span>{{ formatCurrency(goal.currentAmount) }}</span>
-                  <span>{{ formatCurrency(goal.targetAmount) }}</span>
+                  <span>
+                    <CurrencyDisplay
+                      :amount="goal.currentAmount"
+                      :asInteger="true"
+                    />
+                  </span>
+                  <span>
+                    <CurrencyDisplay
+                      :amount="goal.targetAmount"
+                      :asInteger="true"
+                    />
+                  </span>
                 </div>
               </div>
             </div>

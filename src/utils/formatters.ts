@@ -11,6 +11,18 @@ export function formatCurrency(amount: number): string {
 }
 
 /**
+ * Formatiert einen Betrag als Währung ohne Kommastellen
+ */
+export function formatCurrencyWhole(amount: number): string {
+  return new Intl.NumberFormat('de-DE', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(amount)
+}
+
+/**
  * Formatiert ein Datum im deutschen Format
  */
 export function formatDate(dateString: string): string {

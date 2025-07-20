@@ -7,6 +7,7 @@
 import { ref, computed, onMounted } from "vue";
 import dayjs from "dayjs";
 import { Icon } from "@iconify/vue";
+import { useRoute, useRouter } from "vue-router";
 
 import { usePlanningStore } from "@/stores/planningStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -29,6 +30,9 @@ import { debugLog } from "@/utils/logger";
 import { PlanningService } from "@/services/PlanningService";
 import { BalanceService } from "@/services/BalanceService";
 import { BudgetService } from "@/services/BudgetService";
+
+const route = useRoute();
+const router = useRouter();
 
 const planningStore = usePlanningStore();
 const accountStore = useAccountStore();
@@ -514,6 +518,23 @@ onMounted(() => {
 
   // Prognosebuchungen für zukünftige Zeiträume aktualisieren
   PlanningService.refreshForecastsForFuturePeriod();
+
+  // Prüfe Query-Parameter für automatisches Öffnen des Bearbeitungsmodus
+  const editId = route.query.edit as string;
+  if (editId) {
+    const planningToEdit = planningStore.getPlanningTransactionById(editId);
+    if (planningToEdit) {
+      debugLog("[PlanningView] Auto-opening edit mode for planning", editId);
+      editPlanning(planningToEdit);
+      // Query-Parameter nach dem Öffnen entfernen
+      router.replace({ query: {} });
+    } else {
+      debugLog(
+        "[PlanningView] Planning transaction not found for edit",
+        editId
+      );
+    }
+  }
 
   const today = dayjs().format("YYYY-MM-DD");
   let autoCount = 0;

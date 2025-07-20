@@ -265,3 +265,27 @@
   @apply relative;
   background: linear-gradient(-18deg, var(--color-secondary) 5%, var(--color-base-100) 68%, var(--color-primary) 95%);
 }
+
+/* Custom tooltip styling for better readability */
+.tooltip {
+  --tooltip-color: var(--color-base-300);
+  --tooltip-text-color: var(--color-base-content);
+}
+
+.tooltip:before {
+  background-color: var(--tooltip-color) !important;
+  color: var(--tooltip-text-color) !important;
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  text-align: left !important;
+  line-height: 1.4 !important;
+  padding: 0.5rem !important;
+  border-radius: 0.375rem !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+  z-index: 9999 !important;
+}
+
+.tooltip.max-w-xs:before {
+  max-width: 20rem !important;
+  width: max-content !important;
+}
