@@ -102,6 +102,18 @@
   --color-warning-content: #140e00;
   --color-error: #ff0000;
   --color-error-content: #100202;
+
+  /* Extended Chart Colors */
+  --color-chart-purple: #8b5cf6;
+  --color-chart-purple-content: #0f0a1a;
+  --color-chart-pink: #ec4899;
+  --color-chart-pink-content: #1a0612;
+  --color-chart-orange: #f97316;
+  --color-chart-orange-content: #1a0a04;
+  --color-chart-teal: #14b8a6;
+  --color-chart-teal-content: #041a18;
+  --color-chart-indigo: #6366f1;
+  --color-chart-indigo-content: #0a0b1a;
 }
 
 /* Light Theme */
@@ -131,6 +143,18 @@
   --color-warning-content: #140e00;
   --color-error: #cf5151;
   --color-error-content: #100202;
+
+  /* Extended Chart Colors */
+  --color-chart-purple: #8b5cf6;
+  --color-chart-purple-content: #0f0a1a;
+  --color-chart-pink: #ec4899;
+  --color-chart-pink-content: #1a0612;
+  --color-chart-orange: #f97316;
+  --color-chart-orange-content: #1a0a04;
+  --color-chart-teal: #14b8a6;
+  --color-chart-teal-content: #041a18;
+  --color-chart-indigo: #6366f1;
+  --color-chart-indigo-content: #0a0b1a;
 }
 
 

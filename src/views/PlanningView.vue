@@ -6,6 +6,7 @@
  */
 import { ref, computed, onMounted } from "vue";
 import dayjs from "dayjs";
+import { Icon } from "@iconify/vue";
 
 import { usePlanningStore } from "@/stores/planningStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -13,8 +14,7 @@ import { useCategoryStore } from "@/stores/categoryStore";
 import { useRecipientStore } from "@/stores/recipientStore";
 
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
-import AccountForecastChart from "@/components/planning/AccountForecastChart.vue";
-import CategoryForecastChart from "@/components/planning/CategoryForecastChart.vue";
+import ForecastChart from "@/components/ui/charts/ForecastChart.vue";
 
 import { PlanningTransaction, TransactionType } from "@/types";
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
@@ -70,14 +70,14 @@ const upcomingTransactionsInRange = computed(() => {
   const end = dateRange.value.end;
   const list: Array<{ date: string; transaction: PlanningTransaction }> = [];
 
-  planningStore.planningTransactions.forEach((plan) => {
+  planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
     if (!plan.isActive) return;
     const occurrences = PlanningService.calculateNextOccurrences(
       plan,
       start,
       end
     );
-    occurrences.forEach((dateStr) => {
+    occurrences.forEach((dateStr: string) => {
       list.push({ date: dateStr, transaction: plan });
     });
   });
@@ -270,7 +270,7 @@ onMounted(() => {
   const today = dayjs().format("YYYY-MM-DD");
   let autoCount = 0;
 
-  planningStore.planningTransactions.forEach((plan) => {
+  planningStore.planningTransactions.forEach((plan: PlanningTransaction) => {
     if (!plan.isActive || !plan.autoExecute) return;
     const occ = PlanningService.calculateNextOccurrences(plan, today, today);
     if (occ.length) autoCount++;
@@ -362,7 +362,7 @@ onMounted(() => {
           btn-right="Neue Planung"
           btn-right-icon="mdi:plus"
           @btn-right-click="createPlanning"
-          @search="(q) => (searchQuery = q)"
+          @search="(q: string) => (searchQuery = q)"
         />
       </div>
     </div>
@@ -552,9 +552,10 @@ onMounted(() => {
       v-if="activeTab === 'accounts'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <AccountForecastChart
+      <ForecastChart
         :start-date="dateRange.start"
         :filtered-account-id="selectedAccountId"
+        type="accounts"
       />
     </div>
 
@@ -563,7 +564,10 @@ onMounted(() => {
       v-if="activeTab === 'categories'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <CategoryForecastChart :start-date="dateRange.start" />
+      <ForecastChart
+        :start-date="dateRange.start"
+        type="categories"
+      />
     </div>
 
     <!-- Modals -->
