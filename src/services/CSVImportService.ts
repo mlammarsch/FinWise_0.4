@@ -1052,11 +1052,15 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           await tenantDbService.addTransactionsBatch(transactionsToImport);
 
           // Bulk-Sync-Queue-Eintrag erstellen statt einzelne Einträge
-          await tenantDbService.addBulkSyncQueueEntry(
-            EntityTypeEnum.TRANSACTION,
-            SyncOperationType.CREATE,
-            transactionsToImport
-          );
+          // Erstelle für jede Transaktion einen einzelnen Sync-Eintrag
+          for (const tx of transactionsToImport) {
+            await tenantDbService.addSyncQueueEntry({
+              entityType: EntityTypeEnum.TRANSACTION,
+              entityId: tx.id,
+              operationType: SyncOperationType.CREATE,
+              payload: tx,
+            });
+          }
 
           infoLog('CSVImportService', `Batch-Import erfolgreich: ${transactionsToImport.length} Transaktionen importiert`, {
             accountId,

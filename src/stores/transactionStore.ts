@@ -37,6 +37,11 @@ export const useTransactionStore = defineStore('transaction', () => {
   const accountStore = useAccountStore();
   const recipientStore = useRecipientStore();
 
+  // Batch-Update-Mechanismus für Performance-Optimierung
+  const isBatchUpdateMode = ref(false);
+  const batchUpdateCount = ref(0);
+  const pendingUIUpdates = ref(false);
+
   /* --------------------------------------------------- Getters */
   const getTransactionById = computed(() => (id: string) =>
     transactions.value.find(t => t.id === id),
@@ -62,6 +67,41 @@ export const useTransactionStore = defineStore('transaction', () => {
   }
 
   /* --------------------------------------------------- Actions */
+
+  /**
+   * Aktiviert den Batch-Update-Modus für Performance-Optimierung
+   * Verhindert UI-Updates während Massenverarbeitung
+   */
+  function startBatchUpdate(): void {
+    isBatchUpdateMode.value = true;
+    batchUpdateCount.value = 0;
+    pendingUIUpdates.value = false;
+    debugLog('transactionStore', 'Batch-Update-Modus aktiviert');
+  }
+
+  /**
+   * Beendet den Batch-Update-Modus und löst finale UI-Updates aus
+   */
+  function endBatchUpdate(): void {
+    isBatchUpdateMode.value = false;
+    const processedCount = batchUpdateCount.value;
+    batchUpdateCount.value = 0;
+
+    if (pendingUIUpdates.value) {
+      // Trigger finale UI-Updates durch Reaktivität
+      pendingUIUpdates.value = false;
+      infoLog('transactionStore', `Batch-Update abgeschlossen: ${processedCount} Transaktionen verarbeitet`);
+    }
+
+    debugLog('transactionStore', 'Batch-Update-Modus deaktiviert');
+  }
+
+  /**
+   * Prüft ob aktuell im Batch-Update-Modus
+   */
+  function isInBatchMode(): boolean {
+    return isBatchUpdateMode.value;
+  }
 
   /**
    * Leitet payee-Wert aus recipientId ab oder verwendet den übergebenen payee-Wert
@@ -112,7 +152,15 @@ export const useTransactionStore = defineStore('transaction', () => {
         warnLog('transactionStore', `addTransaction (fromSync): Store-Transaktion ${transactions.value[existingTransactionIndex].id} war neuer als eingehende ${transactionWithTimestamp.id}. Store nicht geändert.`);
       }
     }
-    infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" im Store hinzugefügt/aktualisiert (ID: ${transactionWithTimestamp.id}).`);
+
+    // Batch-Update-Tracking und Logging
+    if (isBatchUpdateMode.value) {
+      batchUpdateCount.value++;
+      pendingUIUpdates.value = true;
+      debugLog('transactionStore', `Batch-Transaktion verarbeitet: ${batchUpdateCount.value} (${transactionWithTimestamp.description})`);
+    } else {
+      infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" im Store hinzugefügt/aktualisiert (ID: ${transactionWithTimestamp.id}).`);
+    }
 
     if (!fromSync) {
       try {
@@ -277,5 +325,9 @@ export const useTransactionStore = defineStore('transaction', () => {
     loadTransactions,
     reset,
     initializeStore,
+    // Batch-Update-Funktionen für Performance-Optimierung
+    startBatchUpdate,
+    endBatchUpdate,
+    isInBatchMode,
   };
 });

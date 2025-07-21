@@ -375,7 +375,7 @@ onMounted(() => {
               <p class="text-sm">Ausgaben</p>
               <p class="text-lg font-semibold">
                 <CurrencyDisplay
-                  :amount="incomeSummary.expense"
+                  :amount="incomeSummary.expense * -1"
                   :asInteger="true"
                 />
               </p>

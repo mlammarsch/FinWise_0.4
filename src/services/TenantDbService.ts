@@ -315,8 +315,12 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
     }
 
+    // Konvertiere das Payload zu einem plain object, um Klon-Fehler zu vermeiden
+    const plainPayload = this.toPlainObject(entryData.payload);
+
     const newEntry: SyncQueueEntry = {
       ...entryData,
+      payload: plainPayload, // Verwende das bereinigte Payload
       id: uuidv4(),
       tenantId: tenantStore.activeTenantId,
       timestamp: Date.now(),
@@ -325,6 +329,7 @@ export class TenantDbService {
     };
 
     try {
+      // Das gesamte newEntry-Objekt muss nicht mehr bereinigt werden, da das Payload bereits bereinigt ist
       await this.db.syncQueue.add(newEntry);
       debugLog('TenantDbService', `SyncQueue-Eintrag für Entity ${newEntry.entityType} (ID: ${newEntry.entityId}, Op: ${newEntry.operationType}) hinzugefügt.`, newEntry);
       return newEntry;
@@ -856,55 +861,6 @@ export class TenantDbService {
     }
   }
 
-  /**
-   * Bulk-Sync-Queue-Eintrag für CSV-Import - erstellt einen einzigen Sync-Eintrag für alle Transaktionen
-   */
-  async addBulkSyncQueueEntry(
-    entityType: EntityTypeEnum,
-    operationType: SyncOperationType,
-    entities: any[]
-  ): Promise<SyncQueueEntry | null> {
-    const tenantStore = useTenantStore();
-    if (!this.db || !tenantStore.activeTenantId) {
-      warnLog('TenantDbService', 'addBulkSyncQueueEntry: Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
-      throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
-    }
-
-    const bulkEntry: SyncQueueEntry = {
-      id: uuidv4(),
-      tenantId: tenantStore.activeTenantId,
-      entityType: entityType,
-      entityId: `bulk_${entityType.toLowerCase()}_${Date.now()}`, // Eindeutige Bulk-ID
-      operationType: operationType,
-      payload: {
-        id: `bulk_${entityType.toLowerCase()}_${Date.now()}`,
-        // Erweiterte Eigenschaften für Bulk-Operation (als any gecastet)
-        ...({
-          bulkOperation: true,
-          entities: entities.map(entity => this.toPlainObject(entity)),
-          count: entities.length
-        } as any)
-      },
-      timestamp: Date.now(),
-      status: SyncStatus.PENDING,
-      attempts: 0,
-    };
-
-    try {
-      await this.db.syncQueue.add(bulkEntry);
-      infoLog('TenantDbService', `Bulk-Sync-Queue-Eintrag für ${entities.length} ${entityType} Entitäten hinzugefügt.`, {
-        bulkId: bulkEntry.entityId,
-        count: entities.length
-      });
-      return bulkEntry;
-    } catch (err) {
-      errorLog('TenantDbService', `Fehler beim Hinzufügen des Bulk-Sync-Queue-Eintrags für ${entities.length} ${entityType} Entitäten`, {
-        entry: bulkEntry,
-        error: err
-      });
-      throw err;
-    }
-  }
 
   async createRecipient(recipient: Recipient): Promise<Recipient> {
     if (!this.db) {
