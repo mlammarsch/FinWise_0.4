@@ -764,12 +764,13 @@ export const BalanceService = {
   async triggerRunningBalanceRecalculation(accountId: string, changedTransactionDate?: string): Promise<void> {
     debugLog('BalanceService', 'triggerRunningBalanceRecalculation', { accountId, changedTransactionDate });
 
-    // Asynchrone Neuberechnung - IMMER ab der ältesten Transaktion des Kontos
-    // da eine neue Transaktion mit älterem valueDate alle nachfolgenden Transaktionen beeinflusst
+    // Asynchrone Neuberechnung - nur ab dem Datum der geänderten Transaktion
+    // da nur Transaktionen ab diesem Datum betroffen sind
     setTimeout(async () => {
       try {
-        // Keine fromDate übergeben - immer ab der ältesten Transaktion rechnen
-        await this.recalculateRunningBalancesForAccount(accountId);
+        // fromDate aus changedTransactionDate ableiten, falls vorhanden
+        const fromDate = changedTransactionDate ? new Date(changedTransactionDate) : undefined;
+        await this.recalculateRunningBalancesForAccount(accountId, fromDate);
       } catch (error) {
         debugLog('BalanceService', 'Fehler bei triggerRunningBalanceRecalculation', error);
       }

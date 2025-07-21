@@ -1113,10 +1113,29 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         importedTransactions.value.map((tx: any) => tx.accountId).filter(Boolean)
       )];
 
+      // Ermittle das älteste Datum aller importierten Transaktionen für optimierte Neuberechnung
+      let oldestImportDate: Date | undefined = undefined;
+      if (importedTransactions.value.length > 0) {
+        const dates = importedTransactions.value
+          .map((tx: any) => new Date(tx.date))
+          .filter(date => !isNaN(date.getTime()));
+
+        if (dates.length > 0) {
+          oldestImportDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          debugLog('CSVImportService', `Ältestes Importdatum ermittelt: ${oldestImportDate.toISOString().split('T')[0]}`, {
+            totalTransactions: importedTransactions.value.length,
+            validDates: dates.length
+          });
+        }
+      }
+
       for (const accountId of affectedAccountIds) {
         try {
-          await BalanceService.recalculateRunningBalancesForAccount(accountId);
-          debugLog('CSVImportService', `Running Balance für Konto ${accountId} neu berechnet`);
+          // Verwende das älteste Importdatum für optimierte Neuberechnung
+          await BalanceService.recalculateRunningBalancesForAccount(accountId, oldestImportDate);
+          debugLog('CSVImportService', `Running Balance für Konto ${accountId} neu berechnet`, {
+            fromDate: oldestImportDate?.toISOString().split('T')[0] || 'alle Transaktionen'
+          });
         } catch (error) {
           warnLog('CSVImportService', `Fehler bei Running Balance Berechnung für Konto ${accountId}`, error);
         }
