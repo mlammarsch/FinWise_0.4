@@ -130,16 +130,30 @@ export const useTransactionStore = defineStore('transaction', () => {
     };
 
     if (fromSync) {
-      const localTransaction = await tenantDbService.getTransactionById(transactionWithTimestamp.id);
-      if (localTransaction && localTransaction.updated_at && transactionWithTimestamp.updated_at &&
-          new Date(localTransaction.updated_at) >= new Date(transactionWithTimestamp.updated_at)) {
-        infoLog('transactionStore', `addTransaction (fromSync): Lokale Transaktion ${localTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
-        return localTransaction;
+      // Nutze die optimierte TenantDbService-Methode mit skipIfOlder=true
+      const wasUpdated = await tenantDbService.addTransaction(transactionWithTimestamp, true);
+
+      if (!wasUpdated) {
+        // Lokale Transaktion war neuer oder gleich - keine DB-Operation erfolgt
+        if (isBatchUpdateMode.value) {
+          debugLog('transactionStore', `Batch: Skipped transaction ${transactionWithTimestamp.id} (local is newer or equal)`);
+        } else {
+          infoLog('transactionStore', `addTransaction (fromSync): Lokale Transaktion ${transactionWithTimestamp.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+        }
+        // Lade lokale Transaktion für Rückgabe
+        const localTransaction = await tenantDbService.getTransactionById(transactionWithTimestamp.id);
+        return localTransaction || transactionWithTimestamp;
       }
-      await tenantDbService.addTransaction(transactionWithTimestamp);
-      infoLog('transactionStore', `addTransaction (fromSync): Eingehende Transaktion ${transactionWithTimestamp.id} angewendet.`);
+
+      // Transaktion wurde tatsächlich aktualisiert
+      if (isBatchUpdateMode.value) {
+        debugLog('transactionStore', `Batch: Applied transaction ${transactionWithTimestamp.id} to IndexedDB`);
+      } else {
+        infoLog('transactionStore', `addTransaction (fromSync): Eingehende Transaktion ${transactionWithTimestamp.id} angewendet.`);
+      }
     } else {
-      await tenantDbService.addTransaction(transactionWithTimestamp);
+      // Normale Benutzer-Aktion - immer schreiben
+      await tenantDbService.addTransaction(transactionWithTimestamp, false);
     }
 
     const existingTransactionIndex = transactions.value.findIndex(t => t.id === transactionWithTimestamp.id);

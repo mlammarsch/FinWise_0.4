@@ -9,10 +9,11 @@ import { Transaction, TransactionType } from '@/types';
 // ExtendedTransaction muss importiert werden, wenn es als Typ verwendet wird
 import { type ExtendedTransaction } from '@/stores/transactionStore'; // Korrekter Importpfad und `type` Keyword
 import { v4 as uuidv4 } from 'uuid';
-import { debugLog } from '@/utils/logger';
+import { debugLog, infoLog, errorLog } from '@/utils/logger';
 import { toDateOnlyString } from '@/utils/formatters';
 import { useRuleStore } from '@/stores/ruleStore';
 import { BalanceService } from './BalanceService';
+import { TenantDbService } from './TenantDbService';
 
 export const TransactionService = {
   // Flag zur Deaktivierung der automatischen Running Balance Neuberechnung (z.B. während CSV-Import)
@@ -776,4 +777,54 @@ updateTransaction(
 
     return result;
   },
+
+  /**
+   * Intelligente Verarbeitung von Transaktionen beim Initial Data Load
+   * Business Logic: Verarbeitet nur neue oder geänderte Transaktionen basierend auf LWW-Prinzip
+   * Optimiert mit Bulk-Operationen für maximale Performance
+   */
+  async processTransactionsIntelligently(
+    incomingTransactions: any[]
+  ): Promise<{ processed: number; skipped: number; updated: number }> {
+    if (!incomingTransactions || incomingTransactions.length === 0) {
+      debugLog('[TransactionService]', 'processTransactionsIntelligently: Keine Transaktionen zu verarbeiten');
+      return { processed: 0, skipped: 0, updated: 0 };
+    }
+
+    const transactionStore = useTransactionStore();
+    const tenantDbService = new TenantDbService();
+
+    try {
+      // Aktiviere Batch-Modus für bessere Performance
+      this.startBatchMode();
+      transactionStore.startBatchUpdate();
+
+      // Verwende die neue intelligente Bulk-Operation für maximale Performance
+      const result = await tenantDbService.addTransactionsBatchIntelligent(incomingTransactions);
+
+      // Lade den Store neu, aber nur wenn tatsächlich Änderungen vorgenommen wurden
+      if (result.updated > 0) {
+        await transactionStore.loadTransactions();
+      }
+
+      infoLog('[TransactionService]', `Intelligente Bulk-Transaktionsverarbeitung abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen von ${incomingTransactions.length} Transaktionen`);
+
+      return {
+        processed: result.updated, // Neue Transaktionen sind in "updated" enthalten
+        skipped: result.skipped,
+        updated: result.updated
+      };
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'Fehler bei intelligenter Bulk-Transaktionsverarbeitung', {
+        error: error instanceof Error ? error.message : String(error),
+        transactionCount: incomingTransactions.length
+      });
+      throw error;
+    } finally {
+      // Deaktiviere Batch-Modi
+      this.endBatchMode();
+      transactionStore.endBatchUpdate();
+    }
+  }
 };

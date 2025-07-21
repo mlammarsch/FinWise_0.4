@@ -751,17 +751,28 @@ export class TenantDbService {
     }
   }
 
-  async addTransaction(transaction: ExtendedTransaction): Promise<void> {
+  async addTransaction(transaction: ExtendedTransaction, skipIfOlder: boolean = false): Promise<boolean> {
     if (!this.db) {
       warnLog('TenantDbService', 'addTransaction: Keine aktive Mandanten-DB verfügbar.');
       throw new Error('Keine aktive Mandanten-DB verfügbar.');
     }
     try {
+      // Wenn skipIfOlder aktiviert ist, prüfe ob lokale Transaktion neuer ist
+      if (skipIfOlder && transaction.updated_at) {
+        const existingTransaction = await this.db.transactions.get(transaction.id);
+        if (existingTransaction && existingTransaction.updated_at &&
+            new Date(existingTransaction.updated_at) >= new Date(transaction.updated_at)) {
+          // Lokale Transaktion ist neuer oder gleich - keine DB-Operation nötig
+          return false;
+        }
+      }
+
       // Konvertiere transaction zu plain object
       const plainTransaction = this.toPlainObject(transaction);
 
       await this.db.transactions.put(plainTransaction);
-      debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) hinzugefügt.`);
+      debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) hinzugefügt/aktualisiert.`);
+      return true;
     } catch (err) {
       errorLog('TenantDbService', `Fehler beim Hinzufügen der Transaktion "${transaction.description}"`, { transaction, error: err });
       throw err;
@@ -861,6 +872,67 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Intelligente Bulk-Operation für Transaktionen - nur neue/geänderte werden geschrieben
+   * Optimiert für Initial Data Load Performance
+   */
+  async addTransactionsBatchIntelligent(transactions: ExtendedTransaction[]): Promise<{ updated: number, skipped: number }> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTransactionsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (transactions.length === 0) {
+      debugLog('TenantDbService', 'addTransactionsBatchIntelligent: Keine Transaktionen zum Verarbeiten.');
+      return { updated: 0, skipped: 0 };
+    }
+
+    try {
+      let updated = 0;
+      let skipped = 0;
+      const transactionsToUpdate: ExtendedTransaction[] = [];
+
+      // Hole alle existierenden Transaktionen in einem Batch
+      const existingIds = transactions.map(tx => tx.id);
+      const existingTransactions = await this.db.transactions.where('id').anyOf(existingIds).toArray();
+      const existingMap = new Map(existingTransactions.map(tx => [tx.id, tx]));
+
+      // Prüfe jede Transaktion auf Änderungen
+      for (const transaction of transactions) {
+        const existing = existingMap.get(transaction.id);
+
+        if (!existing) {
+          // Neue Transaktion - hinzufügen
+          transactionsToUpdate.push(transaction);
+          updated++;
+        } else if (transaction.updated_at && existing.updated_at) {
+          // Prüfe LWW-Regel
+          if (new Date(transaction.updated_at) > new Date(existing.updated_at)) {
+            transactionsToUpdate.push(transaction);
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+          transactionsToUpdate.push(transaction);
+          updated++;
+        }
+      }
+
+      // Bulk-Update nur für tatsächlich zu aktualisierende Transaktionen
+      if (transactionsToUpdate.length > 0) {
+        const plainTransactions = transactionsToUpdate.map(tx => this.toPlainObject(tx));
+        await this.db.transactions.bulkPut(plainTransactions);
+      }
+
+      infoLog('TenantDbService', `Intelligente Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${transactions.length} Transaktionen.`);
+      return { updated, skipped };
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler bei intelligenter Batch-Operation für ${transactions.length} Transaktionen`, { error: err });
+      throw err;
+    }
+  }
 
   async createRecipient(recipient: Recipient): Promise<Recipient> {
     if (!this.db) {

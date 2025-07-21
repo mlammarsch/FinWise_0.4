@@ -491,22 +491,21 @@ export const WebSocketService = {
 
             if (transactions && transactions.length > 0) {
               const transactionStore = useTransactionStore();
-              infoLog('[WebSocketService]', `Processing ${transactions.length} initial transactions in batch mode.`);
+              infoLog('[WebSocketService]', `Processing ${transactions.length} initial transactions with intelligent sync.`);
 
               // Aktiviere Batch-Modus im TransactionService für Performance-Optimierung
               const { TransactionService } = await import('../services/TransactionService');
               TransactionService.startBatchMode();
 
               try {
-                for (const transaction of transactions) {
-                  debugLog('[WebSocketService]', 'Attempting to add transaction from initial load (batch mode):', transaction);
-                  await transactionStore.addTransaction(transaction as any, true); // fromSync = true, using any for ExtendedTransaction compatibility
-                }
-                infoLog('[WebSocketService]', `${transactions.length} transactions processed in batch mode - reactive calculations deferred.`);
+                // Intelligente Sync-Logik: Nur geänderte/neue Transaktionen verarbeiten
+                const syncResult = await this.processTransactionsIntelligently(transactions, transactionStore);
+
+                infoLog('[WebSocketService]', `Intelligent sync completed: ${syncResult.processed} processed, ${syncResult.skipped} skipped, ${syncResult.updated} updated from ${transactions.length} total transactions.`);
               } finally {
                 // Beende Batch-Modus und löse finale UI-Updates aus
                 TransactionService.endBatchMode();
-                infoLog('[WebSocketService]', `Batch processing completed for ${transactions.length} transactions - reactive calculations triggered once.`);
+                infoLog('[WebSocketService]', `Batch processing completed - reactive calculations triggered once.`);
               }
             } else {
               infoLog('[WebSocketService]', 'No initial transactions received or transactions array is empty.');
@@ -1680,6 +1679,19 @@ export const WebSocketService = {
       });
       return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
     }
+  },
+
+  /**
+   * Intelligente Verarbeitung von Transaktionen beim Initial Data Load
+   * Delegiert an TransactionService für korrekte Architektur-Trennung
+   */
+  async processTransactionsIntelligently(
+    incomingTransactions: any[],
+    transactionStore: any
+  ): Promise<{ processed: number; skipped: number; updated: number }> {
+    // Business Logic ist jetzt im TransactionService
+    const { TransactionService } = await import('./TransactionService');
+    return await TransactionService.processTransactionsIntelligently(incomingTransactions);
   }
 };
 
