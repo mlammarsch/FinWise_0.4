@@ -16,6 +16,7 @@ export interface MonthlyBalance {
   categoryBalances: Record<string, number>;
   projectedAccountBalances: Record<string, number>;
   projectedCategoryBalances: Record<string, number>;
+  lastCalculated?: string; // ISO-Timestamp der letzten Berechnung
 }
 
 export interface BalanceInfo {

@@ -18,6 +18,35 @@ export const TransactionService = {
   // Flag zur Deaktivierung der automatischen Running Balance Neuberechnung (z.B. während CSV-Import)
   _skipRunningBalanceRecalc: false,
 
+  // Batch-Mode für Performance-Optimierung bei Initial Data Load
+  _isBatchMode: false,
+  _batchModeCache: new Map<string, any>(),
+
+  /**
+   * Aktiviert Batch-Mode für Performance-Optimierung
+   */
+  startBatchMode(): void {
+    this._isBatchMode = true;
+    this._batchModeCache.clear();
+    debugLog('[TransactionService]', 'Batch-Mode aktiviert');
+  },
+
+  /**
+   * Deaktiviert Batch-Mode und leert Cache
+   */
+  endBatchMode(): void {
+    this._isBatchMode = false;
+    this._batchModeCache.clear();
+    debugLog('[TransactionService]', 'Batch-Mode deaktiviert');
+  },
+
+  /**
+   * Prüft ob aktuell im Batch-Mode
+   */
+  isInBatchMode(): boolean {
+    return this._isBatchMode;
+  },
+
 /* ------------------------------------------------------------------ */
 /* --------------------------- Read APIs ---------------------------- */
 /* ------------------------------------------------------------------ */
@@ -572,6 +601,13 @@ updateTransaction(
    * Berücksichtigt ausschließlich INCOME und EXPENSE Transaktionen
    */
   getIncomeExpenseSummary(startDate: string, endDate: string): { income: number; expense: number; balance: number } {
+    // Batch-Mode-Caching: Verhindert redundante Berechnungen während Initial Data Load
+    const cacheKey = `incomeExpenseSummary_${startDate}_${endDate}`;
+    if (this._isBatchMode && this._batchModeCache.has(cacheKey)) {
+      debugLog('[TransactionService]', 'getIncomeExpenseSummary (CACHED)', { startDate, endDate });
+      return this._batchModeCache.get(cacheKey);
+    }
+
     const txStore = useTransactionStore();
     const transactions = txStore.transactions;
 
@@ -617,6 +653,12 @@ updateTransaction(
     });
 
     const balance = income - expense;
+    const result = { income, expense, balance };
+
+    // Cache-Ergebnis im Batch-Mode
+    if (this._isBatchMode) {
+      this._batchModeCache.set(cacheKey, result);
+    }
 
     debugLog('[TransactionService]', 'getIncomeExpenseSummary', {
       startDate,
@@ -627,10 +669,11 @@ updateTransaction(
       ).length,
       income,
       expense,
-      balance
+      balance,
+      cached: this._isBatchMode ? 'CACHED' : 'CALCULATED'
     });
 
-    return { income, expense, balance };
+    return result;
   },
 
   /**
@@ -645,6 +688,13 @@ updateTransaction(
     balance: number;
     trend: 'up' | 'down' | 'neutral';
   }> {
+    // Batch-Mode-Caching: Verhindert redundante Berechnungen während Initial Data Load
+    const cacheKey = `monthlyTrend_${months}`;
+    if (this._isBatchMode && this._batchModeCache.has(cacheKey)) {
+      debugLog('[TransactionService]', 'getMonthlyTrend (CACHED)', { months });
+      return this._batchModeCache.get(cacheKey);
+    }
+
     const result = [];
     const currentDate = new Date();
 
@@ -710,11 +760,17 @@ updateTransaction(
       }
     }
 
+    // Cache-Ergebnis im Batch-Mode
+    if (this._isBatchMode) {
+      this._batchModeCache.set(cacheKey, result);
+    }
+
     debugLog('[TransactionService]', 'getMonthlyTrend', {
       months,
       resultCount: result.length,
       totalIncome: result.reduce((sum, month) => sum + month.income, 0),
       totalExpense: result.reduce((sum, month) => sum + month.expense, 0),
+      cached: this._isBatchMode ? 'CACHED' : 'CALCULATED',
       result
     });
 

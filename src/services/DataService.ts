@@ -112,8 +112,8 @@ export class DataService {
     useSearchStore().clearSearch(); // Diese sind nicht datenladend, bleiben synchron
     useTransactionFilterStore().clearFilters(); // Diese sind nicht datenladend, bleiben synchron
 
-    // Nach dem Reset alle Monatsbilanzen neu berechnen
-    await BalanceService.calculateMonthlyBalances();
+    // Intelligente Neuberechnung nur bei tatsächlichen Datenänderungen
+    await BalanceService.calculateMonthlyBalancesIfNeeded();
 
     // Logo-Cache-Aktualisierung wird jetzt vom SessionService.preloadLogosForTenant() übernommen
     // Bereinigung verwaister Logos

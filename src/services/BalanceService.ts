@@ -33,6 +33,44 @@ export interface MonthlyBalanceResult {
  */
 export const BalanceService = {
   /**
+   * Prüft, ob eine Neuberechnung der Monatsbilanzen erforderlich ist.
+   * Wird beim Login verwendet, um unnötige Berechnungen zu vermeiden.
+   */
+  async calculateMonthlyBalancesIfNeeded(): Promise<void> {
+    debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - Checking if recalculation needed');
+
+    const mbStore = useMonthlyBalanceStore();
+    const transactionStore = useTransactionStore();
+
+    // Prüfe, ob bereits Monatsbilanzen existieren
+    const existingBalances = mbStore.getAllMonthlyBalances();
+
+    if (existingBalances.length === 0) {
+      debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - No existing balances, calculating all');
+      await this.calculateMonthlyBalances();
+      return;
+    }
+
+    // Prüfe, ob neue Transaktionen seit der letzten Berechnung hinzugekommen sind
+    const latestBalance = existingBalances
+      .sort((a, b) => b.year - a.year || b.month - a.month)[0];
+
+    if (latestBalance && latestBalance.lastCalculated) {
+      const hasNewTransactions = transactionStore.transactions.some(tx =>
+        new Date(tx.updated_at || tx.createdAt || '1970-01-01') > new Date(latestBalance.lastCalculated!)
+      );
+
+      if (!hasNewTransactions) {
+        debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - No new transactions, skipping calculation');
+        return;
+      }
+    }
+
+    debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - New data detected, recalculating');
+    await this.calculateMonthlyBalances();
+  },
+
+  /**
    * Berechnet alle Monatsbilanzen und speichert sie im Store.
    * Diese Methode sollte aufgerufen werden, wenn sich Transaktionen oder Planungen ändern.
    */
@@ -75,10 +113,16 @@ export const BalanceService = {
       }
 
       // 3. Berechne alle Monatsbilanzen
+      const calculationTimestamp = new Date().toISOString();
       for (const key of Array.from(months).sort()) {
         const [year, month] = key.split('-').map(Number);
         const balanceData = this.calculateBalanceForMonth(year, month);
-        await mbStore.setMonthlyBalance(year, month, balanceData);
+        // Füge Timestamp hinzu
+        const balanceDataWithTimestamp = {
+          ...balanceData,
+          lastCalculated: calculationTimestamp
+        };
+        await mbStore.setMonthlyBalance(year, month, balanceDataWithTimestamp);
       }
 
       debugLog('BalanceService', `calculateMonthlyBalances - Calculated balances for ${months.size} months`);

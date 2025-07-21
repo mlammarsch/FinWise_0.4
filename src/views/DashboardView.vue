@@ -89,9 +89,9 @@ const recentTransactions = computed(() => {
 
   return allTransactions;
 });
-// Berechnung der Einnahmen und Ausgaben über TransactionService
+// Berechnung der Einnahmen und Ausgaben über statisticsStore (korrekte Architektur)
 const incomeSummary = computed(() => {
-  return TransactionService.getIncomeExpenseSummary(
+  return statisticsStore.getIncomeExpenseSummary(
     startDate.value,
     endDate.value
   );
@@ -100,7 +100,7 @@ const topExpenses = computed(() =>
   statisticsStore.getCategoryExpenses(startDate.value, endDate.value, 5)
 );
 const monthlyTrend = computed(() =>
-  TransactionService.getMonthlyTrend(3).reverse()
+  statisticsStore.getMonthlyTrend(3).reverse()
 );
 const savingsGoals = computed(() => statisticsStore.getSavingsGoalProgress());
 

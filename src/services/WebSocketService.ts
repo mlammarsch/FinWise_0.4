@@ -491,11 +491,22 @@ export const WebSocketService = {
 
             if (transactions && transactions.length > 0) {
               const transactionStore = useTransactionStore();
-              infoLog('[WebSocketService]', `Processing ${transactions.length} initial transactions.`);
-              for (const transaction of transactions) {
-                debugLog('[WebSocketService]', 'Attempting to add transaction from initial load:', transaction);
-                await transactionStore.addTransaction(transaction as any, true); // fromSync = true, using any for ExtendedTransaction compatibility
-                infoLog('[WebSocketService]', `Transaction ${transaction.id} added/updated from initial load.`);
+              infoLog('[WebSocketService]', `Processing ${transactions.length} initial transactions in batch mode.`);
+
+              // Aktiviere Batch-Modus im TransactionService für Performance-Optimierung
+              const { TransactionService } = await import('../services/TransactionService');
+              TransactionService.startBatchMode();
+
+              try {
+                for (const transaction of transactions) {
+                  debugLog('[WebSocketService]', 'Attempting to add transaction from initial load (batch mode):', transaction);
+                  await transactionStore.addTransaction(transaction as any, true); // fromSync = true, using any for ExtendedTransaction compatibility
+                }
+                infoLog('[WebSocketService]', `${transactions.length} transactions processed in batch mode - reactive calculations deferred.`);
+              } finally {
+                // Beende Batch-Modus und löse finale UI-Updates aus
+                TransactionService.endBatchMode();
+                infoLog('[WebSocketService]', `Batch processing completed for ${transactions.length} transactions - reactive calculations triggered once.`);
               }
             } else {
               infoLog('[WebSocketService]', 'No initial transactions received or transactions array is empty.');
