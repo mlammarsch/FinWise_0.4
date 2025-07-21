@@ -1605,6 +1605,48 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Batch-Erstellung von Sync-Queue-Einträgen für bessere Performance bei CSV-Import
+   * Wird nach der Running Balance Neuberechnung aufgerufen
+   */
+  async addTransactionsBatchToSyncQueue(transactions: ExtendedTransaction[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTransactionsBatchToSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (transactions.length === 0) {
+      debugLog('TenantDbService', 'addTransactionsBatchToSyncQueue: Keine Transaktionen für Sync-Queue.');
+      return;
+    }
+
+    try {
+      const tenantStore = useTenantStore();
+      const tenantId = tenantStore.activeTenantId || '';
+
+      // Erstelle Sync-Queue-Einträge für alle Transaktionen
+      const syncEntries: SyncQueueEntry[] = transactions.map(tx => ({
+        id: uuidv4(),
+        tenantId: tenantId,
+        entityType: EntityTypeEnum.TRANSACTION,
+        entityId: tx.id,
+        operationType: SyncOperationType.CREATE,
+        payload: this.toPlainObject(tx), // Verwende die aktualisierte Transaktion mit korrekter Running Balance
+        timestamp: Date.now(),
+        status: SyncStatus.PENDING,
+        attempts: 0
+      }));
+
+      // Batch-Insert aller Sync-Queue-Einträge
+      await this.db.syncQueue.bulkAdd(syncEntries);
+
+      infoLog('TenantDbService', `${syncEntries.length} Sync-Queue-Einträge für Transaktionen als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${transactions.length} Sync-Queue-Einträgen`, { error: err });
+      throw err;
+    }
+  }
+
   private getEntityTypeFromTableName(tableName: string): EntityTypeEnum {
     const mapping: Record<string, EntityTypeEnum> = {
       'accounts': EntityTypeEnum.ACCOUNT,

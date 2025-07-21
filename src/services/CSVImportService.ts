@@ -1051,16 +1051,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           // Batch-Import über TenantDbService für bessere Performance
           await tenantDbService.addTransactionsBatch(transactionsToImport);
 
-          // Bulk-Sync-Queue-Eintrag erstellen statt einzelne Einträge
-          // Erstelle für jede Transaktion einen einzelnen Sync-Eintrag
-          for (const tx of transactionsToImport) {
-            await tenantDbService.addSyncQueueEntry({
-              entityType: EntityTypeEnum.TRANSACTION,
-              entityId: tx.id,
-              operationType: SyncOperationType.CREATE,
-              payload: tx,
-            });
-          }
+          // Sync-Queue-Einträge werden NACH der Running Balance Neuberechnung erstellt
+          // (siehe addTransactionsBatchToSyncQueue nach der Neuberechnung)
 
           infoLog('CSVImportService', `Batch-Import erfolgreich: ${transactionsToImport.length} Transaktionen importiert`, {
             accountId,
@@ -1149,6 +1141,39 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         affectedAccounts: affectedAccountIds.length,
         accountIds: affectedAccountIds
       });
+
+      // Phase 3: SYNC-QUEUE-ERSTELLUNG nach Running Balance Neuberechnung
+      // Jetzt haben alle Transaktionen die korrekten Running Balance Werte
+      if (transactionsToImport.length > 0) {
+        try {
+          infoLog('CSVImportService', 'Erstelle Sync-Queue-Einträge für Backend-Synchronisation...');
+
+          // Lade die aktualisierten Transaktionen mit korrekten Running Balance Werten
+          const updatedTransactions = [];
+          for (const tx of transactionsToImport) {
+            const updatedTx = await tenantDbService.getTransactionById(tx.id);
+            if (updatedTx) {
+              updatedTransactions.push(updatedTx);
+            } else {
+              warnLog('CSVImportService', `Transaktion ${tx.id} nicht in DB gefunden für Sync-Queue`);
+              // Fallback: verwende die ursprüngliche Transaktion
+              updatedTransactions.push(tx);
+            }
+          }
+
+          // Batch-Erstellung der Sync-Queue-Einträge mit aktualisierten Daten
+          await tenantDbService.addTransactionsBatchToSyncQueue(updatedTransactions);
+
+          infoLog('CSVImportService', `${updatedTransactions.length} Sync-Queue-Einträge erfolgreich erstellt`);
+        } catch (syncError) {
+          errorLog('CSVImportService', 'Fehler beim Erstellen der Sync-Queue-Einträge', {
+            error: syncError,
+            transactionCount: transactionsToImport.length
+          });
+          // Sync-Fehler sind nicht kritisch für den Import-Erfolg
+          warnLog('CSVImportService', 'Import erfolgreich, aber Sync-Queue-Erstellung fehlgeschlagen');
+        }
+      }
 
       infoLog(
         "CSVImportService",
