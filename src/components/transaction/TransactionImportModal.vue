@@ -419,7 +419,7 @@ watch(
 
         <!-- Parsing-Status -->
         <div
-          class="alert"
+          class="alert alert-soft"
           :class="{
             'alert-success': csvImportService.csvParseStatus === 'success',
             'alert-error': csvImportService.csvParseStatus === 'error',
@@ -1166,7 +1166,7 @@ watch(
           class="mt-6"
         >
           <div
-            class="alert"
+            class="alert alert-soft"
             :class="{
               'alert-info': csvImportService.importStatus === 'importing',
               'alert-success': csvImportService.importStatus === 'success',

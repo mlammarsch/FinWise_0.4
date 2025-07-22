@@ -434,7 +434,7 @@ const submitForm = () => {
     <!-- Fehlermeldungen -->
     <div
       v-if="submitAttempted && validationErrors.length > 0"
-      class="alert alert-error p-2"
+      class="alert alert-error alert-soft p-2"
     >
       <ul class="list-disc list-inside">
         <li

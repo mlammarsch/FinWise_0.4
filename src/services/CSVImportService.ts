@@ -1099,9 +1099,14 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         }
       }
 
+      // Phase 2.5: TRANSACTIONSTORE LADEN vor Running Balance Berechnung
       // CSV-Import-spezifische Optimierungen zurücksetzen
       (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
       (globalThis as any).__FINWISE_BULK_IMPORT_MODE__ = originalBulkImportMode;
+
+      // KRITISCH: TransactionStore muss ZUERST geladen werden, damit BalanceService die neuen Transaktionen sieht
+      infoLog('CSVImportService', 'Lade TransactionStore vor Running Balance Berechnung...');
+      await transactionStore.loadTransactions();
 
       // Berechne Running Balance für alle betroffenen Konten einmal am Ende (Performance-Optimierung)
       infoLog('CSVImportService', 'Starte Running Balance Neuberechnung für betroffene Konten...');
@@ -1125,6 +1130,7 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         }
       }
 
+      // Sequenzielle Neuberechnung für alle betroffenen Konten
       for (const accountId of affectedAccountIds) {
         try {
           // Verwende das älteste Importdatum für optimierte Neuberechnung
@@ -1137,12 +1143,24 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         }
       }
 
-      debugLog('CSVImportService', 'Running Balance Neuberechnung abgeschlossen', {
+      infoLog('CSVImportService', 'Running Balance Neuberechnung abgeschlossen', {
         affectedAccounts: affectedAccountIds.length,
         accountIds: affectedAccountIds
       });
 
-      // Phase 3: SYNC-QUEUE-ERSTELLUNG nach Running Balance Neuberechnung
+      // Phase 3: WARTEN AUF VOLLSTÄNDIGE EMPFÄNGER/KATEGORIEN-SYNCHRONISATION
+      infoLog('CSVImportService', 'Warte auf vollständige Synchronisation aller neuen Empfänger...');
+
+      // Kurze Wartezeit, damit alle Empfänger-Erstellungen abgeschlossen sind
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Alle Stores neu laden, um sicherzustellen, dass neue Empfänger/Kategorien verfügbar sind
+      await recipientStore.loadRecipients();
+      await categoryStore.loadCategories();
+
+      infoLog('CSVImportService', 'Empfänger- und Kategorien-Synchronisation abgeschlossen');
+
+      // Phase 4: SYNC-QUEUE-ERSTELLUNG nach Running Balance Neuberechnung
       // Jetzt haben alle Transaktionen die korrekten Running Balance Werte
       if (transactionsToImport.length > 0) {
         try {
@@ -1173,6 +1191,25 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           // Sync-Fehler sind nicht kritisch für den Import-Erfolg
           warnLog('CSVImportService', 'Import erfolgreich, aber Sync-Queue-Erstellung fehlgeschlagen');
         }
+      }
+
+      // Phase 5: FINALER UI-REFRESH - Nur noch Monatsbilanzen aktualisieren
+      infoLog('CSVImportService', 'Führe finalen UI-Refresh durch...');
+
+      try {
+        // TransactionStore wurde bereits in Phase 2.5 geladen - nicht nochmal laden
+        // Nur noch Monatsbilanzen neu berechnen (kann asynchron erfolgen)
+        infoLog('CSVImportService', 'Starte asynchrone Monatsbilanzen-Neuberechnung...');
+        BalanceService.calculateMonthlyBalances().catch(error => {
+          warnLog('CSVImportService', 'Fehler bei asynchroner Monatsbilanzen-Berechnung', error);
+        });
+
+        infoLog('CSVImportService', 'Finaler UI-Refresh erfolgreich abgeschlossen');
+      } catch (refreshError) {
+        warnLog('CSVImportService', 'Fehler beim finalen UI-Refresh - Transaktionen wurden trotzdem erfolgreich importiert', {
+          error: refreshError,
+          importedCount: importedTransactions.value.length
+        });
       }
 
       infoLog(
