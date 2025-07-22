@@ -537,6 +537,7 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         <div class="divider px-5 m-0" />
         <div class="card-body py-0 px-1">
           <CategoryTransactionList
+            ref="categoryTransactionListRef"
             :transactions="paginatedCategoryTransactions"
             :sort-key="sortKey"
             :sort-order="sortOrder"
