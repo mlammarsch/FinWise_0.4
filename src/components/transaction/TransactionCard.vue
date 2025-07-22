@@ -80,7 +80,10 @@ const toggleReconciled = () => {
     <div class="flex items-stretch px-2 p-2 space-x-2">
       <!-- Checkbox für Batchverarbeitung -->
       <div class="flex flex-col justify-center p-2">
-        <input type="checkbox" class="checkbox checkbox-sm" />
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm"
+        />
       </div>
 
       <!-- Hauptbereich -->
@@ -88,7 +91,10 @@ const toggleReconciled = () => {
         <!-- Empfänger + Betrag -->
         <div class="flex justify-between items-start">
           <div class="flex items-center">
-            <Icon icon="mdi:account" class="pr-1 text-lg opacity-50" />
+            <Icon
+              icon="mdi:account"
+              class="pr-1 text-lg opacity-50"
+            />
             <div class="text-base">{{ recipientName }}</div>
           </div>
 
@@ -120,11 +126,14 @@ const toggleReconciled = () => {
         <!-- Notiz -->
         <div
           v-if="transaction.note"
-          class="whitespace-pre-wrap flex items-start w-5/6 bg-base-200 rounded-md p-1"
+          class="whitespace-pre-wrap flex items-start w-5/6 rounded-md p-1"
         >
           <div class="flex items-center">
             <div>
-              <Icon icon="mdi:speaker-notes" class="text-sm ml-1 opacity-50" />
+              <Icon
+                icon="mdi:speaker-notes"
+                class="text-sm ml-0 opacity-50"
+              />
             </div>
             <div class="text-sm text-gray-500 ml-2">
               {{ transaction.note }}
@@ -136,23 +145,38 @@ const toggleReconciled = () => {
         <div class="text-xs neutral-content flex items-center flex-wrap">
           <!-- Gruppe 1 -->
           <div class="flex items-center">
-            <Icon icon="mdi:calendar-import" class="pr-1 text-lg opacity-50" />
+            <Icon
+              icon="mdi:calendar-import"
+              class="pr-1 text-lg opacity-50"
+            />
             <div class="text-sm">{{ formatDate(transaction.date) }}</div>
           </div>
 
-          <Icon icon="mdi:square-medium" class="text-base opacity-40 mx-1" />
+          <Icon
+            icon="mdi:square-medium"
+            class="text-base opacity-40 mx-1"
+          />
 
           <!-- Gruppe 2 -->
           <div class="flex items-center">
-            <Icon icon="mdi:calendar-check" class="pr-1 text-lg opacity-50" />
+            <Icon
+              icon="mdi:calendar-check"
+              class="pr-1 text-lg opacity-50"
+            />
             <div class="text-sm">{{ formatDate(transaction.valueDate) }}</div>
           </div>
 
-          <Icon icon="mdi:square-medium" class="text-base opacity-40 mx-1" />
+          <Icon
+            icon="mdi:square-medium"
+            class="text-base opacity-40 mx-1"
+          />
 
           <!-- Gruppe 3 -->
           <div class="flex items-center">
-            <Icon icon="mdi:category" class="pr-1 text-lg opacity-50" />
+            <Icon
+              icon="mdi:category"
+              class="pr-1 text-lg opacity-50"
+            />
             <div class="text-sm">{{ categoryName }}</div>
           </div>
         </div>

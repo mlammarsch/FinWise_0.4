@@ -13,7 +13,8 @@
  * - updateDisplayedMonths(number)
  */
 
-import { computed } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
+import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
   displayedMonths: number;
@@ -60,21 +61,67 @@ function onMonthClick(offset: number) {
   emits("updateStartOffset", offset);
 }
 
-function onDisplayedMonthsChange(event: Event) {
-  const val = parseInt((event.target as HTMLSelectElement).value, 10);
-  emits("updateDisplayedMonths", val);
+function onDisplayedMonthsChange(monthCount: number) {
+  emits("updateDisplayedMonths", monthCount);
 }
+
+// Icons für verschiedene Monatsanzahlen
+const monthIcons = computed(() => [
+  { count: 1, icon: "mdi:calendar-blank", tooltip: "1 Monat" },
+  { count: 2, icon: "mdi:calendar-blank", tooltip: "2 Monate" },
+  { count: 3, icon: "mdi:calendar-blank", tooltip: "3 Monate" },
+  { count: 4, icon: "mdi:calendar-blank", tooltip: "4 Monate" },
+  { count: 5, icon: "mdi:calendar-blank", tooltip: "5 Monate" },
+  { count: 6, icon: "mdi:calendar-blank", tooltip: "6 Monate" },
+]);
+
+// Responsive Bildschirmbreite tracking
+const windowWidth = ref(
+  typeof window !== "undefined" ? window.innerWidth : 1200
+);
+
+const updateWindowWidth = () => {
+  windowWidth.value = window.innerWidth;
+};
+
+onMounted(() => {
+  if (typeof window !== "undefined") {
+    window.addEventListener("resize", updateWindowWidth);
+    updateWindowWidth();
+  }
+});
+
+onUnmounted(() => {
+  if (typeof window !== "undefined") {
+    window.removeEventListener("resize", updateWindowWidth);
+  }
+});
+
+// Responsive Anzahl der sichtbaren Icons basierend auf Bildschirmbreite
+const visibleIconCount = computed(() => {
+  // Responsive Breakpoints für Icon-Anzahl
+  if (windowWidth.value < 640) return 3; // sm: 3 Icons
+  if (windowWidth.value < 768) return 4; // md: 4 Icons
+  if (windowWidth.value < 1024) return 5; // lg: 5 Icons
+  return 6; // xl und größer: alle 6 Icons
+});
 </script>
 
 <template>
-  <div class="flex items-end">
-    <div class="flex flex-col gap-1">
+  <div class="flex items-center justify-between w-full max-w-4xl">
+    <!-- Links: Leer für Balance -->
+    <div class="flex-shrink-0 w-16">
+      <!-- Platzhalter für zukünftige Elemente -->
+    </div>
+
+    <!-- Mitte: Kalenderansicht -->
+    <div class="flex flex-col gap-1 flex-grow mx-4">
       <!-- Jahresbeschriftungen -->
-      <div class="flex gap-1">
+      <div class="flex gap-1 justify-center">
         <div
           v-for="(m, idx) in months"
           :key="'year-' + m.offset"
-          class="w-10 text-left text-xs"
+          class="w-10 text-center text-xs"
         >
           <span
             v-if="
@@ -88,7 +135,7 @@ function onDisplayedMonthsChange(event: Event) {
       </div>
 
       <!-- Monatsbuttons -->
-      <div class="flex gap-0">
+      <div class="flex gap-0 justify-center">
         <button
           v-for="m in months"
           :key="m.offset"
@@ -105,18 +152,24 @@ function onDisplayedMonthsChange(event: Event) {
       </div>
     </div>
 
-    <!-- Monatsspaltensatz Auswahl -->
-    <div class="mt-2 flex items-center gap-2">
-      <span class="text-sm">Anz. Monate:</span>
-      <select
-        class="select select-bordered select-xs w-20"
-        :value="props.displayedMonths"
-        @change="onDisplayedMonthsChange"
+    <!-- Rechts: Monatsspaltensatz Auswahl mit Icons (rechtsbündig) -->
+    <div class="flex items-center flex-shrink-0 justify-end">
+      <button
+        v-for="iconData in monthIcons.slice(0, visibleIconCount)"
+        :key="iconData.count"
+        class="btn btn-xs p-1 transition-all duration-200"
+        :class="{
+          'btn-ghost': iconData.count <= props.displayedMonths,
+          'btn-ghost opacity-40': iconData.count > props.displayedMonths,
+        }"
+        :title="iconData.tooltip"
+        @click="onDisplayedMonthsChange(iconData.count)"
       >
-        <option v-for="n in [1, 2, 3, 4, 5, 6]" :key="n" :value="n">
-          {{ n }}
-        </option>
-      </select>
+        <Icon
+          :icon="iconData.icon"
+          class="w-5 h-5"
+        />
+      </button>
     </div>
   </div>
 </template>

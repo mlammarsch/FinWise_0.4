@@ -112,19 +112,26 @@ const availableByMonth = computed(() => {
     <!-- Header -->
     <div class="flex-shrink-0">
       <div class="p-4 flex flex-col">
-        <div
-          :class="'grid grid-cols-' + totalColumns"
-          class="mb-4 items-center"
-        >
-          <h1 class="text-2xl font-bold col-span-1">Budgetübersicht</h1>
-          <div class="col-span-1 flex items-end"></div>
-          <div class="col-span-[calc(var(--cols)-2)] flex justify-center">
+        <!-- Feste Header-Row mit drei Bereichen -->
+        <div class="mb-4 flex items-center justify-between w-full">
+          <!-- Links: Überschrift -->
+          <div class="flex-shrink-0">
+            <h1 class="text-2xl font-bold">Budgetübersicht</h1>
+          </div>
+
+          <!-- Mitte: Kalenderansicht -->
+          <div class="flex-grow flex justify-center">
             <PagingYearComponent
               :displayedMonths="numMonths"
               :currentStartMonthOffset="monthOffset"
               @updateStartOffset="onUpdateStartOffset"
               @updateDisplayedMonths="onUpdateDisplayedMonths"
             />
+          </div>
+
+          <!-- Rechts: Platzhalter für zukünftige Elemente -->
+          <div class="flex-shrink-0">
+            <!-- Hier können später weitere Elemente hinzugefügt werden -->
           </div>
         </div>
       </div>
@@ -183,7 +190,10 @@ const availableByMonth = computed(() => {
           :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
           class="flex flex-col"
         >
-          <BudgetMonthCard :month="month" :categories="categories" />
+          <BudgetMonthCard
+            :month="month"
+            :categories="categories"
+          />
         </div>
       </div>
     </div>
