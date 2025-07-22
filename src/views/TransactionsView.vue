@@ -17,6 +17,13 @@ import PagingComponent from "../components/ui/PagingComponent.vue";
 import MonthSelector from "../components/ui/MonthSelector.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import SearchableSelectLite from "../components/ui/SearchableSelectLite.vue";
+import BulkActionDropdown from "../components/ui/BulkActionDropdown.vue";
+import BulkAssignAccountModal from "../components/ui/BulkAssignAccountModal.vue";
+import BulkChangeRecipientModal from "../components/ui/BulkChangeRecipientModal.vue";
+import BulkAssignCategoryModal from "../components/ui/BulkAssignCategoryModal.vue";
+import BulkAssignTagsModal from "../components/ui/BulkAssignTagsModal.vue";
+import BulkChangeDateModal from "../components/ui/BulkChangeDateModal.vue";
+import BulkDeleteModal from "../components/ui/BulkDeleteModal.vue";
 import { Transaction, TransactionType } from "../types";
 import { formatCurrency } from "../utils/formatters";
 import { debugLog } from "@/utils/logger";
@@ -40,6 +47,27 @@ const showTransactionDetailModal = ref(false);
 const transactionListRef = ref<InstanceType<typeof TransactionList> | null>(
   null
 );
+const categoryTransactionListRef = ref<InstanceType<
+  typeof CategoryTransactionList
+> | null>(null);
+
+// Bulk Actions ----------------------------------------------------------------
+const showBulkAssignAccountModal = ref(false);
+const showBulkChangeRecipientModal = ref(false);
+const showBulkAssignCategoryModal = ref(false);
+const showBulkAssignTagsModal = ref(false);
+const showBulkChangeDateModal = ref(false);
+const showBulkDeleteModal = ref(false);
+
+const selectedTransactionCount = computed(() => {
+  if (currentViewMode.value === "account") {
+    return transactionListRef.value?.getSelectedTransactions()?.length || 0;
+  } else {
+    return (
+      categoryTransactionListRef.value?.getSelectedTransactions()?.length || 0
+    );
+  }
+});
 
 // Ansicht / Filter --------------------------------------------------------
 const currentViewMode = computed({
@@ -198,6 +226,68 @@ function toggleTransactionReconciled(transactionId: string) {
   reconciliationStore.toggleTransactionReconciled(transactionId);
 }
 
+// Bulk Action Event Handlers -------------------------------------------------
+function handleBulkAssignAccount() {
+  showBulkAssignAccountModal.value = true;
+}
+
+function handleBulkChangeRecipient() {
+  showBulkChangeRecipientModal.value = true;
+}
+
+function handleBulkAssignCategory() {
+  showBulkAssignCategoryModal.value = true;
+}
+
+function handleBulkAssignTags() {
+  showBulkAssignTagsModal.value = true;
+}
+
+function handleBulkChangeDate() {
+  showBulkChangeDateModal.value = true;
+}
+
+function handleBulkDelete() {
+  showBulkDeleteModal.value = true;
+}
+
+// Bulk Action Confirmation Handlers ------------------------------------------
+function onBulkAssignAccountConfirm(accountId: string) {
+  console.log("Bulk assign account:", accountId);
+  // TODO: Implement bulk account assignment
+  showBulkAssignAccountModal.value = false;
+}
+
+function onBulkChangeRecipientConfirm(recipientId: string | null) {
+  console.log("Bulk change recipient:", recipientId);
+  // TODO: Implement bulk recipient change
+  showBulkChangeRecipientModal.value = false;
+}
+
+function onBulkAssignCategoryConfirm(categoryId: string | null) {
+  console.log("Bulk assign category:", categoryId);
+  // TODO: Implement bulk category assignment
+  showBulkAssignCategoryModal.value = false;
+}
+
+function onBulkAssignTagsConfirm(tagIds: string[] | null) {
+  console.log("Bulk assign tags:", tagIds);
+  // TODO: Implement bulk tag assignment
+  showBulkAssignTagsModal.value = false;
+}
+
+function onBulkChangeDateConfirm(newDate: string) {
+  console.log("Bulk change date:", newDate);
+  // TODO: Implement bulk date change
+  showBulkChangeDateModal.value = false;
+}
+
+function onBulkDeleteConfirm() {
+  console.log("Bulk delete confirmed");
+  // TODO: Implement bulk delete
+  showBulkDeleteModal.value = false;
+}
+
 // Filter‑Persistenz
 onMounted(() => transactionFilterStore.loadFilters());
 watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
@@ -221,7 +311,10 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         :class="{ 'tab-active': currentViewMode === 'account' }"
         @click="currentViewMode = 'account'"
       >
-        <Icon icon="mdi:bank" class="mr-2" />
+        <Icon
+          icon="mdi:bank"
+          class="mr-2"
+        />
         Kontobuchungen
       </a>
       <a
@@ -229,7 +322,10 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         :class="{ 'tab-active': currentViewMode === 'category' }"
         @click="currentViewMode = 'category'"
       >
-        <Icon icon="mdi:folder-multiple" class="mr-2" />
+        <Icon
+          icon="mdi:folder-multiple"
+          class="mr-2"
+        />
         Kategoriebuchungen
       </a>
     </div>
@@ -238,105 +334,126 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     <div v-if="currentViewMode === 'account'">
       <div class="card bg-base-100 shadow-md border border-base-300 p-4">
         <div
-          class="card-title flex flex-wrap items-end justify-start gap-3 mx-2 pt-2 relative z-10"
+          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
         >
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Monatswahl
-            </legend>
-            <MonthSelector
-              @update-daterange="handleDateRangeUpdate"
-              class="mx-2"
-            />
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Konto
-            </legend>
-            <select
-              v-model="selectedAccountId"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                selectedAccountId
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle Konten</option>
-              <option
-                v-for="acc in accountStore.activeAccounts"
-                :key="acc.id"
-                :value="acc.id"
+          <div class="flex flex-wrap items-end gap-3">
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Monatswahl
+              </legend>
+              <MonthSelector
+                @update-daterange="handleDateRangeUpdate"
+                class="mx-2"
+              />
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Konto
+              </legend>
+              <select
+                v-model="selectedAccountId"
+                class="select select-sm select-bordered rounded-full"
+                :class="
+                  selectedAccountId
+                    ? 'border-2 border-accent'
+                    : 'border border-base-300'
+                "
               >
-                {{ acc.name }}
-              </option>
-            </select>
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Transaktion
-            </legend>
-            <select
-              v-model="selectedTransactionType"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                selectedTransactionType
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
+                <option value="">Alle Konten</option>
+                <option
+                  v-for="acc in accountStore.activeAccounts"
+                  :key="acc.id"
+                  :value="acc.id"
+                >
+                  {{ acc.name }}
+                </option>
+              </select>
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Transaktion
+              </legend>
+              <select
+                v-model="selectedTransactionType"
+                class="select select-sm select-bordered rounded-full"
+                :class="
+                  selectedTransactionType
+                    ? 'border-2 border-accent'
+                    : 'border border-base-300'
+                "
+              >
+                <option value="">Alle Typen</option>
+                <option value="ausgabe">Ausgabe</option>
+                <option value="einnahme">Einnahme</option>
+                <option value="transfer">Transfer</option>
+              </select>
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Abgeglichen
+              </legend>
+              <select
+                v-model="selectedReconciledFilter"
+                class="select select-sm select-bordered rounded-full"
+                :class="
+                  selectedReconciledFilter
+                    ? 'border-2 border-accent'
+                    : 'border border-base-300'
+                "
+              >
+                <option value="">Alle</option>
+                <option value="abgeglichen">Abgeglichen</option>
+                <option value="nicht abgeglichen">Nicht abgeglichen</option>
+              </select>
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Kategorien
+              </legend>
+              <SearchableSelectLite
+                v-model="selectedCategoryId"
+                :options="categoryStore.categories"
+                item-text="name"
+                item-value="id"
+                placeholder="Alle Kategorien"
+              />
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Tags
+              </legend>
+              <SearchableSelectLite
+                v-model="selectedTagId"
+                :options="tagStore.tags"
+                item-text="name"
+                item-value="id"
+                placeholder="Alle Tags"
+              />
+            </fieldset>
+          </div>
+
+          <div class="flex items-end gap-2">
+            <button
+              class="btn btn-sm btn-ghost btn-circle self-end mb-1"
+              @click="clearFilters"
             >
-              <option value="">Alle Typen</option>
-              <option value="ausgabe">Ausgabe</option>
-              <option value="einnahme">Einnahme</option>
-              <option value="transfer">Transfer</option>
-            </select>
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Abgeglichen
-            </legend>
-            <select
-              v-model="selectedReconciledFilter"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                selectedReconciledFilter
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle</option>
-              <option value="abgeglichen">Abgeglichen</option>
-              <option value="nicht abgeglichen">Nicht abgeglichen</option>
-            </select>
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Kategorien
-            </legend>
-            <SearchableSelectLite
-              v-model="selectedCategoryId"
-              :options="categoryStore.categories"
-              item-text="name"
-              item-value="id"
-              placeholder="Alle Kategorien"
+              <Icon
+                icon="mdi:filter-off"
+                class="text-xl"
+              />
+            </button>
+            <!-- Bulk Actions Dropdown -->
+            <BulkActionDropdown
+              :selectedCount="selectedTransactionCount"
+              class="self-end mb-1"
+              @assign-account="handleBulkAssignAccount"
+              @change-recipient="handleBulkChangeRecipient"
+              @assign-category="handleBulkAssignCategory"
+              @assign-tags="handleBulkAssignTags"
+              @change-date="handleBulkChangeDate"
+              @delete="handleBulkDelete"
             />
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">Tags</legend>
-            <SearchableSelectLite
-              v-model="selectedTagId"
-              :options="tagStore.tags"
-              item-text="name"
-              item-value="id"
-              placeholder="Alle Tags"
-            />
-          </fieldset>
-          <button
-            class="btn btn-sm btn-ghost btn-circle self-end mb-1"
-            @click="clearFilters"
-          >
-            <Icon icon="mdi:filter-off" class="text-xl" />
-          </button>
+          </div>
         </div>
         <div class="divider px-5 m-0" />
         <div class="card-body py-0 px-1">
@@ -368,35 +485,54 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     <div v-else>
       <div class="card bg-base-100 shadow-md border border-base-300 p-4">
         <div
-          class="card-title flex flex-wrap items-end justify-start gap-3 mx-2 pt-2 relative z-10"
+          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
         >
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Monatswahl
-            </legend>
-            <MonthSelector
-              @update-daterange="handleDateRangeUpdate"
-              class="mx-2"
+          <div class="flex flex-wrap items-end gap-3">
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Monatswahl
+              </legend>
+              <MonthSelector
+                @update-daterange="handleDateRangeUpdate"
+                class="mx-2"
+              />
+            </fieldset>
+            <fieldset class="fieldset pt-0">
+              <legend class="fieldset-legend text-center opacity-50">
+                Kategorien
+              </legend>
+              <SearchableSelectLite
+                v-model="selectedCategoryId"
+                :options="categoryStore.categories"
+                item-text="name"
+                item-value="id"
+                placeholder="Alle Kategorien"
+              />
+            </fieldset>
+          </div>
+
+          <div class="flex items-end gap-2">
+            <button
+              class="btn btn-sm btn-ghost btn-circle self-end mb-1"
+              @click="clearFilters"
+            >
+              <Icon
+                icon="mdi:filter-off"
+                class="text-xl"
+              />
+            </button>
+            <!-- Bulk Actions Dropdown -->
+            <BulkActionDropdown
+              :selectedCount="selectedTransactionCount"
+              class="self-end mb-1"
+              @assign-account="handleBulkAssignAccount"
+              @change-recipient="handleBulkChangeRecipient"
+              @assign-category="handleBulkAssignCategory"
+              @assign-tags="handleBulkAssignTags"
+              @change-date="handleBulkChangeDate"
+              @delete="handleBulkDelete"
             />
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Kategorien
-            </legend>
-            <SearchableSelectLite
-              v-model="selectedCategoryId"
-              :options="categoryStore.categories"
-              item-text="name"
-              item-value="id"
-              placeholder="Alle Kategorien"
-            />
-          </fieldset>
-          <button
-            class="btn btn-sm btn-ghost btn-circle self-end mb-1"
-            @click="clearFilters"
-          >
-            <Icon icon="mdi:filter-off" class="text-xl" />
-          </button>
+          </div>
         </div>
         <div class="divider px-5 m-0" />
         <div class="card-body py-0 px-1">
@@ -434,7 +570,10 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     </Teleport>
     <!-- Formular-Modal -->
     <Teleport to="body">
-      <div v-if="showTransactionFormModal" class="modal modal-open">
+      <div
+        v-if="showTransactionFormModal"
+        class="modal modal-open"
+      >
         <div class="modal-box overflow-visible relative w-full max-w-2xl">
           <TransactionForm
             :transaction="selectedTransaction"
@@ -444,5 +583,48 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         </div>
       </div>
     </Teleport>
+
+    <!-- Bulk Action Modals -->
+    <BulkAssignAccountModal
+      :isOpen="showBulkAssignAccountModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkAssignAccountModal = false"
+      @confirm="onBulkAssignAccountConfirm"
+    />
+
+    <BulkChangeRecipientModal
+      :isOpen="showBulkChangeRecipientModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkChangeRecipientModal = false"
+      @confirm="onBulkChangeRecipientConfirm"
+    />
+
+    <BulkAssignCategoryModal
+      :isOpen="showBulkAssignCategoryModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkAssignCategoryModal = false"
+      @confirm="onBulkAssignCategoryConfirm"
+    />
+
+    <BulkAssignTagsModal
+      :isOpen="showBulkAssignTagsModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkAssignTagsModal = false"
+      @confirm="onBulkAssignTagsConfirm"
+    />
+
+    <BulkChangeDateModal
+      :isOpen="showBulkChangeDateModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkChangeDateModal = false"
+      @confirm="onBulkChangeDateConfirm"
+    />
+
+    <BulkDeleteModal
+      :isOpen="showBulkDeleteModal"
+      :selectedCount="selectedTransactionCount"
+      @close="showBulkDeleteModal = false"
+      @confirm="onBulkDeleteConfirm"
+    />
   </div>
 </template>
