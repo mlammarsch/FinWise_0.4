@@ -61,7 +61,7 @@ const displayTransactions = computed(() => {
       const dateField = formatDate(tx.date);
       const accountName = accountStore.getAccountById(tx.accountId)?.name || "";
       const recipientName =
-        recipientStore.getRecipientById(tx.recipientId)?.name || "";
+        recipientStore.getRecipientById(tx.recipientId || "")?.name || "";
       const tagNames = tx.tagIds
         .map((tagId) => tagStore.getTagById(tagId)?.name || "")
         .join(" ");
@@ -176,10 +176,10 @@ defineExpose({ getSelectedTransactions });
 
 <template>
   <div class="overflow-x-auto">
-    <table class="table w-full">
+    <table class="table w-full table-zebra table-sm">
       <thead>
         <tr>
-          <th class="w-5">
+          <th class="w-5 px-1">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -189,7 +189,7 @@ defineExpose({ getSelectedTransactions });
           </th>
           <th
             @click="emit('sort-change', 'date')"
-            class="cursor-pointer"
+            class="cursor-pointer px-2"
           >
             <div class="flex items-center">
               Datum
@@ -203,7 +203,7 @@ defineExpose({ getSelectedTransactions });
           <th
             v-if="showAccount"
             @click="emit('sort-change', 'accountId')"
-            class="cursor-pointer"
+            class="cursor-pointer px-2"
           >
             <div class="flex items-center">
               Konto
@@ -216,7 +216,7 @@ defineExpose({ getSelectedTransactions });
           </th>
           <th
             @click="emit('sort-change', 'recipientId')"
-            class="cursor-pointer"
+            class="cursor-pointer px-2"
           >
             <div class="flex items-center">
               Empfänger
@@ -229,7 +229,7 @@ defineExpose({ getSelectedTransactions });
           </th>
           <th
             @click="emit('sort-change', 'categoryId')"
-            class="cursor-pointer"
+            class="cursor-pointer px-2"
           >
             <div class="flex items-center">
               Kategorie
@@ -240,10 +240,10 @@ defineExpose({ getSelectedTransactions });
               />
             </div>
           </th>
-          <th>Tags</th>
+          <th class="px-2">Tags</th>
           <th
             @click="emit('sort-change', 'amount')"
-            class="text-right cursor-pointer"
+            class="text-right cursor-pointer px-2"
           >
             <div class="flex items-center justify-end">
               Betrag
@@ -254,13 +254,13 @@ defineExpose({ getSelectedTransactions });
               />
             </div>
           </th>
-          <th class="text-center cursor-pointer">
+          <th class="text-center cursor-pointer px-1">
             <Icon
               icon="mdi:note-text-outline"
-              class="text-lg"
+              class="text-base"
             />
           </th>
-          <th class="text-right cursor-pointer">
+          <th class="text-right cursor-pointer px-2">
             <div class="flex items-center justify-end">
               Saldo
               <Icon
@@ -269,15 +269,16 @@ defineExpose({ getSelectedTransactions });
               />
             </div>
           </th>
-          <th class="text-right">Aktionen</th>
+          <th class="text-right px-2">Aktionen</th>
         </tr>
       </thead>
       <tbody>
         <tr
           v-for="(tx, index) in sortedDisplayTransactions"
           :key="tx.id"
+          class="hover"
         >
-          <td>
+          <td class="px-1">
             <input
               type="checkbox"
               class="checkbox checkbox-sm"
@@ -285,25 +286,31 @@ defineExpose({ getSelectedTransactions });
               @click="handleCheckboxClick(tx.id, index, $event)"
             />
           </td>
-          <td>{{ formatDate(tx.date) }}</td>
-          <td v-if="showAccount">
+          <td class="px-2">{{ formatDate(tx.date) }}</td>
+          <td
+            v-if="showAccount"
+            class="px-2"
+          >
             {{ accountStore.getAccountById(tx.accountId)?.name || "Unbekannt" }}
           </td>
-          <td>
+          <td class="px-2">
             <span v-if="tx.type === TransactionType.ACCOUNTTRANSFER">
               {{
-                accountStore.getAccountById(tx.transferToAccountId)?.name ||
-                "Unbekanntes Konto"
+                accountStore.getAccountById(tx.transferToAccountId || "")
+                  ?.name || "Unbekanntes Konto"
               }}
             </span>
             <span v-else>
-              {{ recipientStore.getRecipientById(tx.recipientId)?.name || "-" }}
+              {{
+                recipientStore.getRecipientById(tx.recipientId || "")?.name ||
+                "-"
+              }}
             </span>
           </td>
-          <td>
+          <td class="px-2">
             {{ categoryStore.getCategoryById(tx.categoryId)?.name || "-" }}
           </td>
-          <td>
+          <td class="px-2">
             <div class="flex flex-wrap gap-1">
               <BadgeSoft
                 v-for="tagId in tx.tagIds"
@@ -316,7 +323,7 @@ defineExpose({ getSelectedTransactions });
               />
             </div>
           </td>
-          <td class="text-right">
+          <td class="text-right px-2">
             <CurrencyDisplay
               :amount="tx.amount"
               :show-zero="true"
@@ -325,20 +332,20 @@ defineExpose({ getSelectedTransactions });
               }"
             />
           </td>
-          <td class="text-right flex justify-end items-center mt-1">
+          <td class="text-center px-1">
             <template v-if="tx.note && tx.note.trim()">
               <div
-                class="tooltip"
+                class="tooltip tooltip-left"
                 :data-tip="tx.note"
               >
                 <Icon
-                  icon="mdi:speaker-notes"
-                  class="text-lg opacity-50"
+                  icon="mdi:comment-text-outline"
+                  class="text-base opacity-60 cursor-help"
                 />
               </div>
             </template>
           </td>
-          <td class="text-right">
+          <td class="text-right px-2">
             <CurrencyDisplay
               :amount="tx.runningBalance || 0"
               :show-zero="true"
@@ -346,20 +353,22 @@ defineExpose({ getSelectedTransactions });
               class="text-sm"
             />
           </td>
-          <td class="text-right">
+          <td class="text-right px-2">
             <div class="flex justify-end space-x-1">
               <button
-                class="btn btn-ghost btn-xs border-none"
+                class="btn btn-ghost btn-xs border-none px-1"
                 @click="emit('edit', tx)"
+                title="Bearbeiten"
               >
                 <Icon
                   icon="mdi:pencil"
-                  class="text-base/75"
+                  class="text-base"
                 />
               </button>
               <button
-                class="btn btn-ghost btn-xs border-none text-error/75"
+                class="btn btn-ghost btn-xs border-none text-error/75 px-1"
                 @click="emit('delete', tx)"
+                title="Löschen"
               >
                 <Icon
                   icon="mdi:trash-can"
