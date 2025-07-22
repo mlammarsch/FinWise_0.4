@@ -286,7 +286,10 @@ function formatHistoryDetails(details: any): string {
         :class="{ 'tab-active': activeTab === 'general' }"
         @click="activeTab = 'general'"
       >
-        <Icon icon="mdi:cog" class="mr-2" />
+        <Icon
+          icon="mdi:cog"
+          class="mr-2"
+        />
         Allgemein
       </a>
       <a
@@ -294,7 +297,10 @@ function formatHistoryDetails(details: any): string {
         :class="{ 'tab-active': activeTab === 'import-export' }"
         @click="activeTab = 'import-export'"
       >
-        <Icon icon="mdi:database-import" class="mr-2" />
+        <Icon
+          icon="mdi:database-import"
+          class="mr-2"
+        />
         Import / Export
       </a>
       <a
@@ -302,7 +308,10 @@ function formatHistoryDetails(details: any): string {
         :class="{ 'tab-active': activeTab === 'developer' }"
         @click="activeTab = 'developer'"
       >
-        <Icon icon="mdi:developer-board" class="mr-2" />
+        <Icon
+          icon="mdi:developer-board"
+          class="mr-2"
+        />
         Entwickler
       </a>
       <a
@@ -310,13 +319,19 @@ function formatHistoryDetails(details: any): string {
         :class="{ 'tab-active': activeTab === 'logs' }"
         @click="activateLogTab"
       >
-        <Icon icon="mdi:text-box-outline" class="mr-2" />
+        <Icon
+          icon="mdi:text-box-outline"
+          class="mr-2"
+        />
         Logs
       </a>
     </div>
 
     <!-- Allgemeine Einstellungen -->
-    <div v-if="activeTab === 'general'" class="space-y-6">
+    <div
+      v-if="activeTab === 'general'"
+      class="space-y-6"
+    >
       <!-- Allgemeine Einstellungen Card -->
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
@@ -326,7 +341,10 @@ function formatHistoryDetails(details: any): string {
           <div class="form-control">
             <label class="label cursor-pointer">
               <div class="flex items-center space-x-2">
-                <Icon icon="mdi:weather-night" class="text-lg" />
+                <Icon
+                  icon="mdi:weather-night"
+                  class="text-lg"
+                />
                 <span class="label-text">Dunkles Design</span>
               </div>
               <input
@@ -364,7 +382,10 @@ function formatHistoryDetails(details: any): string {
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <h2 class="card-title flex items-center gap-2 text-info">
-            <Icon icon="mdi:information" class="text-xl" />
+            <Icon
+              icon="mdi:information"
+              class="text-xl"
+            />
             History-Logging aktivieren
           </h2>
           <p>
@@ -396,7 +417,10 @@ function formatHistoryDetails(details: any): string {
     </div>
 
     <!-- Import / Export -->
-    <div v-if="activeTab === 'import-export'" class="space-y-6">
+    <div
+      v-if="activeTab === 'import-export'"
+      class="space-y-6"
+    >
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <h2 class="card-title">Datenimport</h2>
@@ -423,8 +447,14 @@ function formatHistoryDetails(details: any): string {
           <p class="mb-4">
             Exportieren Sie alle Ihre Daten in eine JSON-Datei zur Sicherung.
           </p>
-          <button class="btn btn-primary w-full md:w-auto" @click="exportData">
-            <Icon icon="mdi:download" class="mr-2" />
+          <button
+            class="btn btn-primary w-full md:w-auto"
+            @click="exportData"
+          >
+            <Icon
+              icon="mdi:download"
+              class="mr-2"
+            />
             Alle Daten exportieren
           </button>
         </div>
@@ -432,7 +462,10 @@ function formatHistoryDetails(details: any): string {
     </div>
 
     <!-- Entwicklereinstellungen -->
-    <div v-if="activeTab === 'developer'" class="space-y-6">
+    <div
+      v-if="activeTab === 'developer'"
+      class="space-y-6"
+    >
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <h2 class="card-title">Logger-Einstellungen</h2>
@@ -441,7 +474,10 @@ function formatHistoryDetails(details: any): string {
             <label class="label">
               <span class="label-text">Log-Level</span>
             </label>
-            <select v-model="logLevel" class="select select-bordered w-full">
+            <select
+              v-model="logLevel"
+              class="select select-bordered w-full"
+            >
               <option :value="LogLevel.DEBUG">Debug (Alles)</option>
               <option :value="LogLevel.INFO">Info (ohne Debug)</option>
               <option :value="LogLevel.WARN">
@@ -499,18 +535,36 @@ function formatHistoryDetails(details: any): string {
           </div>
 
           <div class="form-control mt-6 flex-row justify-between">
-            <button class="btn btn-primary" @click="saveLoggerSettings">
-              <Icon icon="mdi:content-save" class="mr-2" />
+            <button
+              class="btn btn-primary"
+              @click="saveLoggerSettings"
+            >
+              <Icon
+                icon="mdi:content-save"
+                class="mr-2"
+              />
               Speichern
             </button>
-            <button class="btn btn-outline" @click="exportLoggerDocs">
-              <Icon icon="mdi:file-download" class="mr-2" />
+            <button
+              class="btn btn-outline"
+              @click="exportLoggerDocs"
+            >
+              <Icon
+                icon="mdi:file-download"
+                class="mr-2"
+              />
               Logger-Dokumentation exportieren
             </button>
           </div>
 
-          <div v-if="settingsSaved" class="alert alert-success mt-4">
-            <Icon icon="mdi:check-circle" class="text-lg" />
+          <div
+            v-if="settingsSaved"
+            class="alert alert-success alert-soft mt-4"
+          >
+            <Icon
+              icon="mdi:check-circle"
+              class="text-lg"
+            />
             <span>Einstellungen gespeichert</span>
           </div>
         </div>
@@ -520,7 +574,10 @@ function formatHistoryDetails(details: any): string {
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <h2 class="card-title flex items-center gap-2 text-info">
-            <Icon icon="mdi:information" class="text-xl" />
+            <Icon
+              icon="mdi:information"
+              class="text-xl"
+            />
             Logging-Kategorien erklärt
           </h2>
           <div class="overflow-x-auto">
@@ -578,28 +635,43 @@ function formatHistoryDetails(details: any): string {
     </div>
 
     <!-- Logs & Änderungshistorie -->
-    <div v-if="activeTab === 'logs'" class="space-y-6">
+    <div
+      v-if="activeTab === 'logs'"
+      class="space-y-6"
+    >
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <div class="flex justify-between items-center mb-4">
             <h2 class="card-title">Logs & Änderungshistorie</h2>
             <div class="flex gap-2">
-              <button class="btn btn-sm" @click="loadHistory">
-                <Icon icon="mdi:refresh" class="mr-1" />
+              <button
+                class="btn btn-sm"
+                @click="loadHistory"
+              >
+                <Icon
+                  icon="mdi:refresh"
+                  class="mr-1"
+                />
                 Aktualisieren
               </button>
               <button
                 class="btn btn-sm btn-outline btn-warning"
                 @click="cleanupHistory"
               >
-                <Icon icon="mdi:broom" class="mr-1" />
+                <Icon
+                  icon="mdi:broom"
+                  class="mr-1"
+                />
                 Alte löschen
               </button>
               <button
                 class="btn btn-sm btn-outline btn-error"
                 @click="clearHistory"
               >
-                <Icon icon="mdi:delete" class="mr-1" />
+                <Icon
+                  icon="mdi:delete"
+                  class="mr-1"
+                />
                 Alle löschen
               </button>
             </div>
@@ -653,7 +725,10 @@ function formatHistoryDetails(details: any): string {
                   </td>
                 </tr>
                 <tr v-if="filteredHistoryEntries.length === 0">
-                  <td colspan="5" class="text-center py-8">
+                  <td
+                    colspan="5"
+                    class="text-center py-8"
+                  >
                     <div class="flex flex-col items-center">
                       <Icon
                         icon="mdi:text-box-remove-outline"
@@ -671,15 +746,26 @@ function formatHistoryDetails(details: any): string {
     </div>
 
     <!-- Alert-Modal -->
-    <div v-if="showAlertModal" class="modal modal-open">
+    <div
+      v-if="showAlertModal"
+      class="modal modal-open"
+    >
       <div class="modal-box">
         <h3 class="font-bold text-lg">Hinweis</h3>
         <p class="py-4">{{ alertMessage }}</p>
         <div class="modal-action">
-          <button class="btn" @click="showAlertModal = false">OK</button>
+          <button
+            class="btn"
+            @click="showAlertModal = false"
+          >
+            OK
+          </button>
         </div>
       </div>
-      <div class="modal-backdrop" @click="showAlertModal = false"></div>
+      <div
+        class="modal-backdrop"
+        @click="showAlertModal = false"
+      ></div>
     </div>
   </div>
 </template>

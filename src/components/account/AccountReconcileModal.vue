@@ -247,7 +247,7 @@ function closeModal() {
         <!-- Warnung offene Buchungen -->
         <div
           v-if="hasPendingTransactions"
-          class="alert alert-warning text-xs p-2 mt-4"
+          class="alert alert-warning alert-soft text-xs p-2 mt-4"
         >
           <Icon
             icon="mdi:alert-outline"

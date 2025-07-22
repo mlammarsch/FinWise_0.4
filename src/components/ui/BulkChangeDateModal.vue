@@ -95,7 +95,7 @@ watch(
       </div>
 
       <!-- Info -->
-      <div class="alert alert-info mb-4">
+      <div class="alert alert-info alert-soft mb-4">
         <Icon icon="mdi:information" />
         <span>
           {{ selectedCount }} Transaktionen erhalten das neue Datum.
@@ -143,7 +143,7 @@ watch(
       <!-- Preview -->
       <div
         v-if="selectedDate"
-        class="alert alert-success mb-4"
+        class="alert alert-success alert-soft mb-4"
       >
         <Icon icon="mdi:check-circle" />
         <span>

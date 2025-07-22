@@ -111,7 +111,7 @@ watch(
       </div>
 
       <!-- Info -->
-      <div class="alert alert-info mb-4">
+      <div class="alert alert-info alert-soft mb-4">
         <Icon icon="mdi:information" />
         <span> {{ selectedCount }} Transaktionen werden bearbeitet. </span>
       </div>

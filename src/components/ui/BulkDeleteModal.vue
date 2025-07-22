@@ -86,7 +86,7 @@ watch(
       </div>
 
       <!-- Warning -->
-      <div class="alert alert-error mb-4">
+      <div class="alert alert-error alert-soft mb-4">
         <Icon icon="mdi:alert-circle" />
         <div>
           <div class="font-bold">
