@@ -42,7 +42,7 @@ function getAggregatedData(cat: Category) {
   );
 }
 function getSingleCategoryData(catId: string) {
-  return budgetService.getAggregatedMonthlyBudgetData(
+  return budgetService.getSingleCategoryMonthlyBudgetData(
     catId,
     normalizedMonthStart.value,
     normalizedMonthEnd.value
@@ -74,15 +74,23 @@ const sumIncomesSummary = computed(() =>
   )
 );
 
-// **NEU**: Reaktive Kategorie-Listen
+// **NEU**: Reaktive Kategorie-Listen - nur Root-Kategorien (ohne Parent)
 const expenseCategories = computed(() =>
   categoryStore.categories.filter(
-    (c) => c.isActive && !c.isIncomeCategory && !isVerfuegbareMittel(c)
+    (c) =>
+      c.isActive &&
+      !c.isIncomeCategory &&
+      !isVerfuegbareMittel(c) &&
+      !c.parentCategoryId
   )
 );
 const incomeCategories = computed(() =>
   categoryStore.categories.filter(
-    (c) => c.isActive && c.isIncomeCategory && !isVerfuegbareMittel(c)
+    (c) =>
+      c.isActive &&
+      c.isIncomeCategory &&
+      !isVerfuegbareMittel(c) &&
+      !c.parentCategoryId
   )
 );
 

@@ -2,6 +2,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { CategoryService } from "../../services/CategoryService";
+import { BalanceService } from "../../services/BalanceService";
 import CategoryForm from "../../components/budget/CategoryForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
 import { Category } from "../../types";
@@ -179,6 +180,11 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
   if (parentId === undefined) return "-";
   return CategoryService.getParentCategoryName(parentId);
 };
+
+// Berechnet den aktuellen Saldo einer Kategorie basierend auf allen Transaktionen
+const getCategoryBalance = (categoryId: string): number => {
+  return BalanceService.getTodayBalance("category", categoryId);
+};
 </script>
 
 <template>
@@ -248,9 +254,11 @@ const getParentCategoryName = (parentId: string | null | undefined): string => {
                 <td>
                   <CurrencyDisplay
                     :class="
-                      category.available >= 0 ? 'text-success' : 'text-error'
+                      getCategoryBalance(category.id) >= 0
+                        ? 'text-success'
+                        : 'text-error'
                     "
-                    :amount="category.available"
+                    :amount="getCategoryBalance(category.id)"
                     :show-zero="true"
                     :asInteger="false"
                   />

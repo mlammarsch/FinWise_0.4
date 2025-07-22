@@ -58,6 +58,65 @@ function getPlannedAmountForCategory(
 
 /* ----------------------- Expense-Kategorie-Berechnung ----------------------- */
 
+function computeExpenseCategoryDataSingle(
+  categoryId: string,
+  monthStart: Date,
+  monthEnd: Date
+): MonthlyBudgetData {
+  const categoryStore = useCategoryStore();
+  const transactionStore = useTransactionStore();
+  const cat = categoryStore.getCategoryById(categoryId);
+  if (!cat) return { budgeted: 0, forecast: 0, spent: 0, saldo: 0 };
+
+  // Vormonats-Saldo
+  const prev = new Date(monthStart);
+  prev.setDate(prev.getDate() - 1);
+  const previousSaldo = BalanceService.getProjectedBalance('category', categoryId, prev);
+
+  // Buchungen dieses Monats nach valueDate
+  const txs = transactionStore.transactions.filter(tx => {
+    const d = new Date(toDateOnlyString(tx.valueDate));
+    return tx.categoryId === categoryId && d >= monthStart && d <= monthEnd;
+  });
+
+  // Budget-Transfers (nur Quelle)
+  const budgetAmount = txs
+    .filter(tx => tx.type === TransactionType.CATEGORYTRANSFER && tx.categoryId === categoryId)
+    .reduce((s, tx) => s + tx.amount, 0);
+
+  // echte Ausgaben UND Einnahmen für diese Kategorie
+  const expenseAmount = txs
+    .filter(tx => tx.type === TransactionType.EXPENSE || tx.type === TransactionType.INCOME)
+    .reduce((s, tx) => s + tx.amount, 0);
+
+  // Prognose - Summe aller Plan- und Prognosebuchungen des Types EXPENSE & INCOME (nur für diese Kategorie)
+  const planningStore = usePlanningStore();
+  let forecastAmount = 0;
+  const startStr = toDateOnlyString(monthStart);
+  const endStr = toDateOnlyString(monthEnd);
+
+  planningStore.planningTransactions.forEach(planTx => {
+    if (planTx.isActive && planTx.categoryId === categoryId) {
+      const occurrences = PlanningService.calculateNextOccurrences(
+        planTx,
+        startStr,
+        endStr
+      );
+      forecastAmount += planTx.amount * occurrences.length;
+    }
+  });
+
+  const spent = expenseAmount;
+  const saldo = previousSaldo + budgetAmount + spent + forecastAmount;
+
+  return {
+    budgeted: budgetAmount,
+    forecast: forecastAmount,
+    spent: spent,
+    saldo: saldo
+  };
+}
+
 function computeExpenseCategoryData(
   categoryId: string,
   monthStart: Date,
@@ -121,6 +180,57 @@ function computeExpenseCategoryData(
 }
 
 /* ------------------------ Income-Kategorie-Berechnung ----------------------- */
+
+function computeIncomeCategoryDataSingle(
+  categoryId: string,
+  monthStart: Date,
+  monthEnd: Date
+): MonthlyBudgetData {
+  const categoryStore = useCategoryStore();
+  const transactionStore = useTransactionStore();
+  const cat = categoryStore.getCategoryById(categoryId);
+  if (!cat) return { budgeted: 0, forecast: 0, spent: 0, saldo: 0 };
+
+  // Buchungen dieses Monats nach valueDate
+  const txs = transactionStore.transactions.filter(tx => {
+    const d = new Date(toDateOnlyString(tx.valueDate));
+    return tx.categoryId === categoryId && d >= monthStart && d <= monthEnd;
+  });
+
+  // Budget-Transfers (analog zu Expense)
+  const budgetAmount = txs
+    .filter(tx => tx.type === TransactionType.CATEGORYTRANSFER && tx.categoryId === categoryId)
+    .reduce((s, tx) => s + tx.amount, 0);
+
+  // Prognose - Plan- und Prognosebuchungen (nur für diese Kategorie)
+  const planningStore = usePlanningStore();
+  let forecastAmount = 0;
+  const startStr = toDateOnlyString(monthStart);
+  const endStr = toDateOnlyString(monthEnd);
+
+  planningStore.planningTransactions.forEach(planTx => {
+    if (planTx.isActive && planTx.categoryId === categoryId) {
+      const occurrences = PlanningService.calculateNextOccurrences(
+        planTx,
+        startStr,
+        endStr
+      );
+      forecastAmount += planTx.amount * occurrences.length;
+    }
+  });
+
+  // Einnahmen-Transaktionen
+  const incomeAmount = txs
+    .filter(tx => tx.type === TransactionType.INCOME)
+    .reduce((s, tx) => s + tx.amount, 0);
+
+  return {
+    budgeted: budgetAmount,
+    forecast: forecastAmount,
+    spent: incomeAmount,
+    saldo: budgetAmount + incomeAmount + forecastAmount
+  };
+}
 
 function computeIncomeCategoryData(
   categoryId: string,
@@ -194,6 +304,22 @@ export const BudgetService = {
       : computeExpenseCategoryData(categoryId, monthStart, monthEnd);
   },
 
+  getSingleCategoryMonthlyBudgetData(
+    categoryId: string,
+    monthStart: Date,
+    monthEnd: Date
+  ): MonthlyBudgetData {
+    const cat = useCategoryStore().getCategoryById(categoryId);
+    if (!cat) {
+      debugLog("[BudgetService] Category not found", categoryId);
+      return { budgeted: 0, forecast: 0, spent: 0, saldo: 0 };
+    }
+
+    return cat.isIncomeCategory
+      ? computeIncomeCategoryDataSingle(categoryId, monthStart, monthEnd)
+      : computeExpenseCategoryDataSingle(categoryId, monthStart, monthEnd);
+  },
+
   getMonthlySummary(
     monthStart: Date,
     monthEnd: Date,
@@ -221,7 +347,7 @@ export const BudgetService = {
       sum.spentMiddle += d.spent;
       sum.saldoFull += d.saldo;
     });
-    debugLog("[BudgetService] Monthly summary", { monthStart, monthEnd, type, sum });
+    debugLog("[BudgetService] Monthly summary", `${type} summary for ${monthStart.toISOString().split('T')[0]} to ${monthEnd.toISOString().split('T')[0]}`);
     return sum;
   },
 };
