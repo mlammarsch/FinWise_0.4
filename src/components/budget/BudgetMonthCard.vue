@@ -103,6 +103,19 @@ const modalData = ref<{
 
 function openDropdown(event: MouseEvent, cat: Category) {
   event.preventDefault();
+
+  const categoryData = getAggregatedData(cat);
+  const hasAvailableAmount = categoryData.saldo > 0;
+
+  // Bei Einnahmenkategorien nur anzeigen, wenn Betrag verfügbar
+  if (cat.isIncomeCategory && !hasAvailableAmount) {
+    debugLog(
+      "[BudgetMonthCard] Context menu on income category without funds prevented.",
+      { category: cat.name, saldo: categoryData.saldo }
+    );
+    return;
+  }
+
   if (containerRef.value) {
     const rect = containerRef.value.getBoundingClientRect();
     dropdownX.value = event.clientX - rect.left;
@@ -115,7 +128,12 @@ function openDropdown(event: MouseEvent, cat: Category) {
   modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0 };
   showDropdown.value = true;
   nextTick(() => dropdownRef.value?.focus());
-  debugLog("[BudgetMonthCard] openDropdown", { category: cat });
+  debugLog("[BudgetMonthCard] openDropdown", {
+    category: cat,
+    isIncomeCategory: cat.isIncomeCategory,
+    hasAvailableAmount,
+    saldo: categoryData.saldo,
+  });
 }
 
 function closeDropdown() {
@@ -262,7 +280,10 @@ function executeTransfer(payload: {
 
         <!-- Ausgabenkategorien -->
         <div class="grid grid-rows-auto">
-          <template v-for="cat in expenseCategories" :key="cat.id">
+          <template
+            v-for="cat in expenseCategories"
+            :key="cat.id"
+          >
             <div
               class="grid grid-cols-4 p-2 border-b border-base-200 cursor-context-menu hover:bg-base-200"
               @contextmenu="openDropdown($event, cat)"
@@ -405,8 +426,18 @@ function executeTransfer(payload: {
 
         <!-- Einnahmen-Kategorien -->
         <div class="grid grid-rows-auto">
-          <template v-for="cat in incomeCategories" :key="cat.id">
-            <div class="grid grid-cols-4 p-2 border-b border-base-200 text-sm">
+          <template
+            v-for="cat in incomeCategories"
+            :key="cat.id"
+          >
+            <div
+              class="grid grid-cols-4 p-2 border-b border-base-200 text-sm"
+              :class="{
+                'cursor-context-menu hover:bg-base-200':
+                  getAggregatedData(cat).saldo > 0,
+              }"
+              @contextmenu="openDropdown($event, cat)"
+            >
               <div class="text-right">
                 <CurrencyDisplay
                   :amount="getAggregatedData(cat).budgeted"
@@ -444,6 +475,11 @@ function executeTransfer(payload: {
                   .filter((c) => c.isActive && !isVerfuegbareMittel(c))"
                 :key="child.id"
                 class="grid grid-cols-4 pl-6 text-sm p-2 border-b border-base-200"
+                :class="{
+                  'cursor-context-menu hover:bg-base-200/50':
+                    getSingleCategoryData(child.id).saldo > 0,
+                }"
+                @contextmenu="openDropdown($event, child)"
               >
                 <div class="text-right">
                   <CurrencyDisplay
@@ -489,12 +525,22 @@ function executeTransfer(payload: {
           @blur="onDropdownBlur"
         >
           <ul>
-            <li>
-              <button class="btn btn-ghost btn-sm w-full" @click="optionFill">
+            <!-- Fülle auf - nur bei Ausgabenkategorien -->
+            <li
+              v-if="
+                modalData?.clickedCategory &&
+                !modalData.clickedCategory.isIncomeCategory
+              "
+            >
+              <button
+                class="btn btn-ghost btn-sm w-full"
+                @click="optionFill"
+              >
                 <Icon icon="mdi:arrow-collapse-right" />
                 <span>Fülle auf von …</span>
               </button>
             </li>
+            <!-- Transferiere zu - bei allen Kategorien -->
             <li>
               <button
                 class="btn btn-ghost btn-sm w-full"
