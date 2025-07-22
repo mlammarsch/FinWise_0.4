@@ -171,7 +171,11 @@ function getSelectedTransactions(): Transaction[] {
   );
 }
 
-defineExpose({ getSelectedTransactions });
+function clearSelection() {
+  selectedIds.value = [];
+}
+
+defineExpose({ getSelectedTransactions, clearSelection });
 </script>
 
 <template>
@@ -182,7 +186,7 @@ defineExpose({ getSelectedTransactions });
           <th class="w-5 px-1">
             <input
               type="checkbox"
-              class="checkbox checkbox-sm"
+              class="checkbox checkbox-sm rounded-full"
               :checked="allSelected"
               @change="handleHeaderCheckboxChange"
             />
@@ -308,7 +312,9 @@ defineExpose({ getSelectedTransactions });
             </span>
           </td>
           <td class="px-2">
-            {{ categoryStore.getCategoryById(tx.categoryId)?.name || "-" }}
+            {{
+              categoryStore.getCategoryById(tx.categoryId || "")?.name || "-"
+            }}
           </td>
           <td class="px-2">
             <div class="flex flex-wrap gap-1">

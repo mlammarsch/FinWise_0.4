@@ -26,8 +26,8 @@ import BulkChangeDateModal from "../components/ui/BulkChangeDateModal.vue";
 import BulkDeleteModal from "../components/ui/BulkDeleteModal.vue";
 import { Transaction, TransactionType } from "../types";
 import { formatCurrency } from "../utils/formatters";
-import { debugLog } from "@/utils/logger";
-import { TransactionService } from "@/services/TransactionService"; // Service already present
+import { debugLog } from "../utils/logger";
+import { TransactionService } from "../services/TransactionService";
 
 const refreshKey = ref(0);
 
@@ -58,6 +58,7 @@ const showBulkAssignCategoryModal = ref(false);
 const showBulkAssignTagsModal = ref(false);
 const showBulkChangeDateModal = ref(false);
 const showBulkDeleteModal = ref(false);
+const bulkDeleteTransactionIds = ref<string[]>([]);
 
 const selectedTransactionCount = computed(() => {
   if (currentViewMode.value === "account") {
@@ -77,7 +78,7 @@ const currentViewMode = computed({
 
 const selectedTransaction = ref<Transaction | null>(null);
 const currentPage = ref(1);
-const itemsPerPage = ref(25);
+const itemsPerPage = ref<number | "all">(25);
 const itemsPerPageOptions = [10, 20, 25, 50, 100, "all"];
 
 const searchQuery = computed({
@@ -222,8 +223,10 @@ function clearFilters() {
 }
 
 // Toggle reconciled
-function toggleTransactionReconciled(transactionId: string) {
-  reconciliationStore.toggleTransactionReconciled(transactionId);
+function toggleTransactionReconciled(transaction: Transaction) {
+  TransactionService.updateTransaction(transaction.id, {
+    reconciled: !transaction.reconciled,
+  });
 }
 
 // Bulk Action Event Handlers -------------------------------------------------
@@ -248,7 +251,15 @@ function handleBulkChangeDate() {
 }
 
 function handleBulkDelete() {
-  showBulkDeleteModal.value = true;
+  const selectedTransactions =
+    currentViewMode.value === "account"
+      ? transactionListRef.value?.getSelectedTransactions()
+      : categoryTransactionListRef.value?.getSelectedTransactions();
+
+  if (selectedTransactions && selectedTransactions.length > 0) {
+    bulkDeleteTransactionIds.value = selectedTransactions.map((tx) => tx.id);
+    showBulkDeleteModal.value = true;
+  }
 }
 
 // Bulk Action Confirmation Handlers ------------------------------------------
@@ -282,10 +293,33 @@ function onBulkChangeDateConfirm(newDate: string) {
   showBulkChangeDateModal.value = false;
 }
 
-function onBulkDeleteConfirm() {
-  console.log("Bulk delete confirmed");
-  // TODO: Implement bulk delete
-  showBulkDeleteModal.value = false;
+async function onBulkDeleteConfirm(transactionIds: string[]) {
+  debugLog("[TransactionsView]", "onBulkDeleteConfirm", { transactionIds });
+  try {
+    const result = await TransactionService.bulkDeleteTransactions(
+      transactionIds
+    );
+    if (result.success) {
+      debugLog("[TransactionsView]", "Bulk delete successful", {
+        deletedCount: result.deletedCount,
+      });
+      // Optional: Zeige eine Erfolgsmeldung
+    } else {
+      debugLog("[TransactionsView]", "Bulk delete partially failed", {
+        result,
+      });
+      // Optional: Zeige eine Fehlermeldung
+    }
+  } catch (error) {
+    console.error("Fehler beim Massenlöschen von Transaktionen:", error);
+    // Optional: Zeige eine Fehlermeldung
+  } finally {
+    showBulkDeleteModal.value = false;
+    // Auswahl in den Listen zurücksetzen
+    transactionListRef.value?.clearSelection();
+    categoryTransactionListRef.value?.clearSelection();
+    refreshKey.value++;
+  }
 }
 
 // Filter‑Persistenz
@@ -300,7 +334,7 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     <SearchGroup
       btnRight="Neue Transaktion"
       btnRightIcon="mdi:plus"
-      @search="(query) => (searchQuery = query)"
+      @search="(query: string) => (searchQuery = query)"
       @btn-right-click="createTransaction"
     />
 
@@ -565,7 +599,8 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     <Teleport to="body">
       <TransactionDetailModal
         v-if="showTransactionDetailModal"
-        :transaction="selectedTransaction"
+        :isOpen="showTransactionDetailModal"
+        :transaction="selectedTransaction || undefined"
         @close="showTransactionDetailModal = false"
       />
     </Teleport>
@@ -577,7 +612,7 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
       >
         <div class="modal-box overflow-visible relative w-full max-w-2xl">
           <TransactionForm
-            :transaction="selectedTransaction"
+            :transaction="selectedTransaction || undefined"
             @cancel="showTransactionFormModal = false"
             @save="handleSave"
           />
@@ -624,6 +659,7 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
     <BulkDeleteModal
       :isOpen="showBulkDeleteModal"
       :selectedCount="selectedTransactionCount"
+      :transactionIds="bulkDeleteTransactionIds"
       @close="showBulkDeleteModal = false"
       @confirm="onBulkDeleteConfirm"
     />

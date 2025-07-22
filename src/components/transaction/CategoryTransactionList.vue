@@ -132,7 +132,11 @@ function getSelectedTransactions(): Transaction[] {
   return props.transactions.filter((tx) => selectedIds.value.includes(tx.id));
 }
 
-defineExpose({ getSelectedTransactions, selectedIds });
+function clearSelection() {
+  selectedIds.value = [];
+}
+
+defineExpose({ getSelectedTransactions, selectedIds, clearSelection });
 
 // --- Modal Logic für Bearbeitung von Category Transfers ---
 const showTransferModal = ref(false);

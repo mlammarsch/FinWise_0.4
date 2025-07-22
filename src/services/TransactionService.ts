@@ -585,16 +585,138 @@ updateTransaction(
     return true;
   },
 
-  deleteMultipleTransactions(ids: string[]) {
+  /**
+   * Performante Bulk-Löschung von Transaktionen
+   * Bündelt alle Löschungen und führt Balance-Neuberechnung nur einmal pro betroffenem Konto aus
+   */
+  async bulkDeleteTransactions(ids: string[]): Promise<{ success: boolean; deletedCount: number }> {
+    const txStore = useTransactionStore();
+    const catStore = useCategoryStore();
     const unique = [...new Set(ids)];
-    let deleted = 0;
-    unique.forEach(id => this.deleteTransaction(id) && deleted++);
-    const success = deleted === unique.length;
-    debugLog('[TransactionService]', 'deleteMultipleTransactions completed', { requested: unique.length, deleted });
 
-    // Salden aktualisieren
+    if (unique.length === 0) {
+      return { success: true, deletedCount: 0 };
+    }
+
+    debugLog('[TransactionService]', 'bulkDeleteTransactions started', { requestedCount: unique.length });
+
+    // 1. Alle zu löschenden Transaktionen sammeln (inkl. Counter-Transaktionen)
+    const transactionsToDelete = new Set<string>();
+    const affectedAccountIds = new Set<string>();
+    const incomeTransfersToCreate: Array<{
+      fromCategoryId: string;
+      toCategoryId: string;
+      amount: number;
+      date: string;
+      note: string;
+    }> = [];
+
+    // 2. Für jede ID prüfen und Counter-Transaktionen hinzufügen
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        debugLog('[TransactionService]', 'bulkDeleteTransactions - Transaction not found', { id });
+        continue;
+      }
+
+      transactionsToDelete.add(id);
+
+      // Betroffene Konten sammeln
+      if (tx.accountId) {
+        affectedAccountIds.add(tx.accountId);
+      }
+
+      // Counter-Transaktion hinzufügen (für TRANSFER-Typen)
+      if (tx.counterTransactionId) {
+        const counterTx = txStore.getTransactionById(tx.counterTransactionId);
+        if (counterTx) {
+          transactionsToDelete.add(tx.counterTransactionId);
+          if (counterTx.accountId) {
+            affectedAccountIds.add(counterTx.accountId);
+          }
+        }
+      }
+
+      // Einnahme-Transfer vorbereiten (für INCOME-Transaktionen)
+      if (
+        tx.type === TransactionType.INCOME &&
+        tx.amount > 0 &&
+        tx.categoryId
+      ) {
+        const available = catStore.getAvailableFundsCategory();
+        if (!available) {
+          throw new Error("Kategorie 'Verfügbare Mittel' fehlt");
+        }
+
+        const cat = catStore.getCategoryById(tx.categoryId);
+        if (cat?.isIncomeCategory) {
+          incomeTransfersToCreate.push({
+            fromCategoryId: available.id,
+            toCategoryId: tx.categoryId,
+            amount: tx.amount,
+            date: tx.date,
+            note: 'Automatischer Transfer bei Löschung der Einnahme'
+          });
+        }
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkDeleteTransactions - Analysis completed', {
+      transactionsToDelete: transactionsToDelete.size,
+      affectedAccounts: affectedAccountIds.size,
+      incomeTransfers: incomeTransfersToCreate.length
+    });
+
+    // 3. Batch-Löschung durchführen
+    let deletedCount = 0;
+    for (const id of transactionsToDelete) {
+      if (await txStore.deleteTransaction(id)) {
+        deletedCount++;
+      }
+    }
+
+    // 4. Einnahme-Transfers erstellen
+    for (const transfer of incomeTransfersToCreate) {
+      try {
+        await this.addCategoryTransfer(
+          transfer.fromCategoryId,
+          transfer.toCategoryId,
+          transfer.amount,
+          transfer.date,
+          transfer.note
+        );
+      } catch (error) {
+        debugLog('[TransactionService]', 'bulkDeleteTransactions - Error creating income transfer', {
+          transfer,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
+    const success = deletedCount === transactionsToDelete.size;
+
+    debugLog('[TransactionService]', 'bulkDeleteTransactions completed', {
+      requested: unique.length,
+      transactionsToDelete: transactionsToDelete.size,
+      deleted: deletedCount,
+      success,
+      affectedAccounts: Array.from(affectedAccountIds)
+    });
+
+    // 5. Balance-Neuberechnung nur einmal pro Konto
     BalanceService.calculateMonthlyBalances();
-    return { success, deletedCount: deleted };
+
+    if (!this._skipRunningBalanceRecalc) {
+      for (const accountId of affectedAccountIds) {
+        BalanceService.triggerRunningBalanceRecalculation(accountId);
+      }
+    }
+
+    return { success, deletedCount };
+  },
+
+  deleteMultipleTransactions(ids: string[]) {
+    return this.bulkDeleteTransactions(ids);
   },
 
   /**

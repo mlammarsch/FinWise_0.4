@@ -18,11 +18,12 @@ import { Icon } from "@iconify/vue";
 const props = defineProps<{
   isOpen: boolean;
   selectedCount: number;
+  transactionIds: string[];
 }>();
 
 const emit = defineEmits<{
   close: [];
-  confirm: [];
+  confirm: [transactionIds: string[]];
 }>();
 
 const confirmText = ref<string>("");
@@ -37,7 +38,7 @@ function handleClose() {
 
 function handleConfirm() {
   if (confirmText.value === requiredConfirmText) {
-    emit("confirm");
+    emit("confirm", props.transactionIds);
     handleClose();
   }
 }
