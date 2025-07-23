@@ -1,40 +1,18 @@
-<!-- StatisticsView.vue -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
-import { useStatisticsStore } from "../stores/statisticsStore";
-import { useAccountStore } from "../stores/accountStore";
-import { useCategoryStore } from "../stores/categoryStore";
-import { formatCurrency, formatDate } from "../utils/formatters";
-import { Bar, Pie, Line } from "vue-chartjs";
-import {
-  Chart as ChartJS,
-  Title,
-  Tooltip,
-  Legend,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-} from "chart.js";
+import { useAccountStore } from "@/stores/accountStore";
+import { useCategoryStore } from "@/stores/categoryStore";
+import { TransactionService } from "@/services/TransactionService";
+import { formatCurrency } from "@/utils/formatters";
 import dayjs from "dayjs";
 
-// Chart.js Komponenten registrieren
-ChartJS.register(
-  Title,
-  Tooltip,
-  Legend,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement
-);
+// Chart-Komponenten
+import IncomeExpenseChart from "@/components/ui/charts/IncomeExpenseChart.vue";
+import CategoryExpensesChart from "@/components/ui/charts/CategoryExpensesChart.vue";
+import MonthlyTrendChart from "@/components/ui/charts/MonthlyTrendChart.vue";
+import AccountTrendChart from "@/components/ui/charts/AccountTrendChart.vue";
 
 // Stores
-const statisticsStore = useStatisticsStore();
 const accountStore = useAccountStore();
 const categoryStore = useCategoryStore();
 
@@ -42,172 +20,107 @@ const categoryStore = useCategoryStore();
 const startDate = ref(dayjs().startOf("month").format("YYYY-MM-DD"));
 const endDate = ref(dayjs().endOf("month").format("YYYY-MM-DD"));
 
-// Ausgewähltes Konto für Kontostatistiken
-const selectedAccountId = ref("");
-
-// Anzahl der Monate für Trendanalyse
+// Filter-Optionen
+const selectedAccountId = ref("all"); // "all", "grouped", oder spezifische Account-ID
+const accountGrouping = ref("all"); // "all" oder "grouped"
 const trendMonths = ref(6);
-
-// Anzahl der Tage für Kontoentwicklung
 const accountTrendDays = ref(30);
 
 // Zusammenfassung für den ausgewählten Zeitraum
 const summary = computed(() => {
-  return statisticsStore.getIncomeExpenseSummary(
+  return TransactionService.getIncomeExpenseSummary(
     startDate.value,
     endDate.value
   );
 });
 
-// Top-Ausgabenkategorien
+// Top-Ausgabenkategorien für die Liste
 const topExpenseCategories = computed(() => {
-  return statisticsStore.getCategoryExpenses(
-    startDate.value,
-    endDate.value,
-    10
-  );
+  const transactions = TransactionService.getAllTransactions();
+  const start = new Date(startDate.value);
+  const end = new Date(endDate.value);
+
+  // Gruppiere Ausgaben nach Kategorien
+  const categoryExpenses: Record<
+    string,
+    { name: string; amount: number; categoryId: string }
+  > = {};
+
+  transactions.forEach((tx) => {
+    const txDate = new Date(tx.date);
+    if (txDate >= start && txDate <= end && tx.amount < 0 && tx.categoryId) {
+      const category = categoryStore.getCategoryById(tx.categoryId);
+      if (category) {
+        if (!categoryExpenses[tx.categoryId]) {
+          categoryExpenses[tx.categoryId] = {
+            name: category.name,
+            amount: 0,
+            categoryId: tx.categoryId,
+          };
+        }
+        categoryExpenses[tx.categoryId].amount += Math.abs(tx.amount);
+      }
+    }
+  });
+
+  return Object.values(categoryExpenses)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
 });
 
-// Top-Einnahmenkategorien (Dummy-Daten)
+// Top-Einnahmenkategorien für die Liste
 const topIncomeCategories = computed(() => {
-  return statisticsStore.getCategoryIncome
-    ? statisticsStore.getCategoryIncome(startDate.value, endDate.value, 10)
-    : [
-        { categoryId: "dummy1", name: "Dummy Income 1", amount: 1000 },
-        { categoryId: "dummy2", name: "Dummy Income 2", amount: 800 },
-      ];
+  const transactions = TransactionService.getAllTransactions();
+  const start = new Date(startDate.value);
+  const end = new Date(endDate.value);
+
+  // Gruppiere Einnahmen nach Kategorien
+  const categoryIncome: Record<
+    string,
+    { name: string; amount: number; categoryId: string }
+  > = {};
+
+  transactions.forEach((tx) => {
+    const txDate = new Date(tx.date);
+    if (txDate >= start && txDate <= end && tx.amount > 0 && tx.categoryId) {
+      const category = categoryStore.getCategoryById(tx.categoryId);
+      if (category && category.isIncomeCategory) {
+        if (!categoryIncome[tx.categoryId]) {
+          categoryIncome[tx.categoryId] = {
+            name: category.name,
+            amount: 0,
+            categoryId: tx.categoryId,
+          };
+        }
+        categoryIncome[tx.categoryId].amount += tx.amount;
+      }
+    }
+  });
+
+  return Object.values(categoryIncome)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 10);
 });
-
-// Monatlicher Trend (Dummy-Daten)
-const monthlyTrend = computed(() => {
-  return statisticsStore.getMonthlyTrend(trendMonths.value);
-});
-
-// Kontoentwicklung (Dummy-Daten)
-const accountTrend = computed(() => {
-  if (!selectedAccountId.value) return [];
-  return statisticsStore.getAccountBalanceTrend
-    ? statisticsStore.getAccountBalanceTrend(
-        selectedAccountId.value,
-        accountTrendDays.value
-      )
-    : [
-        { date: startDate.value, balance: 1000 },
-        { date: endDate.value, balance: 1200 },
-      ];
-});
-
-// Chart-Daten mit Dummy-Fallbacks
-const incomeExpenseChartData = computed(() => {
-  return statisticsStore.getIncomeExpenseChartData
-    ? statisticsStore.getIncomeExpenseChartData(startDate.value, endDate.value)
-    : {
-        labels: ["Einnahmen", "Ausgaben"],
-        datasets: [
-          {
-            label: "Betrag",
-            data: [summary.value.income || 0, summary.value.expense || 0],
-          },
-        ],
-      };
-});
-
-const categoryExpensesChartData = computed(() => {
-  return statisticsStore.getCategoryExpensesChartData
-    ? statisticsStore.getCategoryExpensesChartData(
-        startDate.value,
-        endDate.value
-      )
-    : {
-        labels: topExpenseCategories.value.map((c) => c.name),
-        datasets: [
-          {
-            label: "Ausgaben",
-            data: topExpenseCategories.value.map((c) => c.amount),
-          },
-        ],
-      };
-});
-
-const monthlyTrendChartData = computed(() => {
-  return statisticsStore.getMonthlyTrendChartData
-    ? statisticsStore.getMonthlyTrendChartData(trendMonths.value)
-    : {
-        labels: monthlyTrend.value.map((item) => item.month),
-        datasets: [
-          {
-            label: "Einnahmen",
-            data: monthlyTrend.value.map((item) => item.income),
-          },
-          {
-            label: "Ausgaben",
-            data: monthlyTrend.value.map((item) => item.expense),
-          },
-        ],
-      };
-});
-
-const accountTrendChartData = computed(() => {
-  if (!selectedAccountId.value) return { labels: [], datasets: [] };
-  return statisticsStore.getAccountBalanceTrendChartData
-    ? statisticsStore.getAccountBalanceTrendChartData(
-        selectedAccountId.value,
-        accountTrendDays.value
-      )
-    : {
-        labels: [startDate.value, endDate.value],
-        datasets: [
-          {
-            label: "Kontostand",
-            data: accountTrend.value.map((item) => item.balance),
-          },
-        ],
-      };
-});
-
-// Chart-Optionen
-const barChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      display: true,
-      position: "top",
-    },
-  },
-};
-
-const pieChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      display: true,
-      position: "right",
-    },
-  },
-};
-
-const lineChartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      display: true,
-      position: "top",
-    },
-  },
-};
 
 // Konten für das Dropdown
 const accounts = computed(() => {
-  return accountStore.activeAccounts;
+  const activeAccounts = accountStore.activeAccounts.filter(
+    (acc) => !acc.isOfflineBudget
+  );
+  const accountTypes = [
+    ...new Set(activeAccounts.map((acc) => acc.accountType)),
+  ];
+
+  return {
+    all: activeAccounts,
+    types: accountTypes,
+  };
 });
 
 // Setze das erste aktive Konto als Standard
 onMounted(() => {
-  if (accounts.value.length > 0) {
-    selectedAccountId.value = accounts.value[0].id;
+  if (accounts.value.all.length > 0) {
+    selectedAccountId.value = accounts.value.all[0].id;
   }
 });
 
@@ -250,6 +163,15 @@ const setTimeRange = (range: string) => {
       break;
   }
 };
+
+// Account-Filter-Optionen
+const getAccountFilterLabel = (accountId: string) => {
+  if (accountId === "all") return "Alle Konten";
+  if (accountId === "grouped") return "Nach Typ gruppiert";
+
+  const account = accountStore.getAccountById(accountId);
+  return account ? account.name : "Unbekanntes Konto";
+};
 </script>
 
 <template>
@@ -264,6 +186,10 @@ const setTimeRange = (range: string) => {
         <div class="btn-group">
           <button
             class="btn btn-sm"
+            :class="{
+              'btn-active':
+                startDate === dayjs().startOf('month').format('YYYY-MM-DD'),
+            }"
             @click="setTimeRange('thisMonth')"
           >
             Dieser Monat
@@ -312,7 +238,9 @@ const setTimeRange = (range: string) => {
 
     <!-- Zusammenfassung -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Einnahmen</h3>
           <p class="text-2xl font-bold text-success">
@@ -321,7 +249,9 @@ const setTimeRange = (range: string) => {
         </div>
       </div>
 
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Ausgaben</h3>
           <p class="text-2xl font-bold text-error">
@@ -330,7 +260,9 @@ const setTimeRange = (range: string) => {
         </div>
       </div>
 
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Bilanz</h3>
           <p
@@ -345,34 +277,40 @@ const setTimeRange = (range: string) => {
 
     <!-- Einnahmen vs. Ausgaben Chart -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Einnahmen vs. Ausgaben</h3>
           <div class="h-64">
-            <Bar
-              :data="incomeExpenseChartData"
-              :options="barChartOptions"
+            <IncomeExpenseChart
+              :start-date="startDate"
+              :end-date="endDate"
             />
           </div>
         </div>
       </div>
 
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Ausgaben nach Kategorien</h3>
           <div class="h-64">
-            <Pie
-              :data="categoryExpensesChartData"
-              :options="pieChartOptions"
+            <CategoryExpensesChart
+              :start-date="startDate"
+              :end-date="endDate"
             />
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Top-Kategorien -->
+    <!-- Top-Kategorien Listen -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Top-Ausgabenkategorien</h3>
 
@@ -408,7 +346,9 @@ const setTimeRange = (range: string) => {
         </div>
       </div>
 
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <h3 class="card-title text-lg">Top-Einnahmenkategorien</h3>
 
@@ -446,11 +386,12 @@ const setTimeRange = (range: string) => {
     </div>
 
     <!-- Monatlicher Trend -->
-    <div class="card bg-base-100 shadow-md mb-6">
+    <div
+      class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150 mb-6"
+    >
       <div class="card-body">
         <div class="flex justify-between items-center mb-4">
           <h3 class="card-title text-lg">Monatlicher Trend</h3>
-
           <select
             v-model="trendMonths"
             class="select select-bordered select-sm"
@@ -462,40 +403,47 @@ const setTimeRange = (range: string) => {
         </div>
 
         <div class="h-64">
-          <Line
-            :data="monthlyTrendChartData"
-            :options="lineChartOptions"
-          />
+          <MonthlyTrendChart :months="trendMonths" />
         </div>
       </div>
     </div>
 
     <!-- Kontoentwicklung -->
-    <div class="card bg-base-100 shadow-md">
+    <div
+      class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+    >
       <div class="card-body">
-        <div class="flex justify-between items-center mb-4">
+        <div
+          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4"
+        >
           <h3 class="card-title text-lg">Kontoentwicklung</h3>
 
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
+            <!-- Konto-Auswahl -->
             <select
               v-model="selectedAccountId"
               class="select select-bordered select-sm"
             >
-              <option
-                value=""
-                disabled
+              <option value="all">Alle Konten</option>
+              <option value="grouped">Nach Typ gruppiert</option>
+              <optgroup
+                v-for="accountType in accounts.types"
+                :key="accountType"
+                :label="`${accountType} Konten`"
               >
-                Konto auswählen
-              </option>
-              <option
-                v-for="account in accounts"
-                :key="account.id"
-                :value="account.id"
-              >
-                {{ account.name }}
-              </option>
+                <option
+                  v-for="account in accounts.all.filter(
+                    (acc) => acc.accountType === accountType
+                  )"
+                  :key="account.id"
+                  :value="account.id"
+                >
+                  {{ account.name }}
+                </option>
+              </optgroup>
             </select>
 
+            <!-- Zeitraum-Auswahl -->
             <select
               v-model="accountTrendDays"
               class="select select-bordered select-sm"
@@ -509,21 +457,12 @@ const setTimeRange = (range: string) => {
           </div>
         </div>
 
-        <div
-          v-if="selectedAccountId"
-          class="h-64"
-        >
-          <Line
-            :data="accountTrendChartData"
-            :options="lineChartOptions"
+        <div class="h-64">
+          <AccountTrendChart
+            :account-id="selectedAccountId"
+            :days="accountTrendDays"
+            :account-grouping="accountGrouping"
           />
-        </div>
-
-        <div
-          v-else
-          class="text-center py-4 text-base-content/70"
-        >
-          Bitte wählen Sie ein Konto aus
         </div>
       </div>
     </div>
