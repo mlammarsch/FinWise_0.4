@@ -146,7 +146,9 @@ export enum RuleActionType {
   SET_CATEGORY = 'SET_CATEGORY',
   ADD_TAG = 'ADD_TAG',
   SET_NOTE = 'SET_NOTE',
-  LINK_SCHEDULE = 'LINK_SCHEDULE'
+  LINK_SCHEDULE = 'LINK_SCHEDULE',
+  SET_ACCOUNT    = "SET_ACCOUNT",
+  SET_RECIPIENT  = "SET_RECIPIENT",
 }
 
 export interface RuleCondition {
