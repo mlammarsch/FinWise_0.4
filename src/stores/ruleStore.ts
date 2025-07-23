@@ -25,7 +25,7 @@ export const useRuleStore = defineStore('rule', () => {
       // Generiere ID falls nicht vorhanden (für neue Rules)
       id: ruleData.id || uuidv4(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (ruleData as any).updated_at || new Date().toISOString(),
+      updatedAt: (ruleData as any).updatedAt || new Date().toISOString(),
     };
 
     const tenantDbService = new TenantDbService();
@@ -33,8 +33,8 @@ export const useRuleStore = defineStore('rule', () => {
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localRule = await tenantDbService.getRuleById(ruleWithTimestamp.id);
-      if (localRule && localRule.updated_at && ruleWithTimestamp.updated_at &&
-          new Date(localRule.updated_at) >= new Date(ruleWithTimestamp.updated_at)) {
+      if (localRule && localRule.updatedAt && ruleWithTimestamp.updatedAt &&
+          new Date(localRule.updatedAt) >= new Date(ruleWithTimestamp.updatedAt)) {
         debugLog('RuleStore', `addRule (fromSync): Lokale Regel ${localRule.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localRule; // Gib die lokale, "gewinnende" Regel zurück
       }
@@ -50,7 +50,7 @@ export const useRuleStore = defineStore('rule', () => {
       rules.value.push(ruleWithTimestamp);
     } else {
       // LWW-Logik für den Store
-      if (!fromSync || (ruleWithTimestamp.updated_at && (!rules.value[existingRuleIndex].updated_at || new Date(ruleWithTimestamp.updated_at) > new Date(rules.value[existingRuleIndex].updated_at!)))) {
+      if (!fromSync || (ruleWithTimestamp.updatedAt && (!rules.value[existingRuleIndex].updatedAt || new Date(ruleWithTimestamp.updatedAt) > new Date(rules.value[existingRuleIndex].updatedAt!)))) {
         rules.value[existingRuleIndex] = ruleWithTimestamp;
       }
     }
@@ -81,7 +81,7 @@ export const useRuleStore = defineStore('rule', () => {
     const ruleUpdatesWithTimestamp: AutomationRule = {
       ...ruleUpdatesData,
       id,
-      updated_at: ruleUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: ruleUpdatesData.updatedAt || new Date().toISOString(),
     };
 
     const tenantDbService = new TenantDbService();
@@ -89,8 +89,8 @@ export const useRuleStore = defineStore('rule', () => {
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (UPDATE)
       const localRule = await tenantDbService.getRuleById(ruleUpdatesWithTimestamp.id);
-      if (localRule && localRule.updated_at && ruleUpdatesWithTimestamp.updated_at &&
-          new Date(localRule.updated_at) >= new Date(ruleUpdatesWithTimestamp.updated_at)) {
+      if (localRule && localRule.updatedAt && ruleUpdatesWithTimestamp.updatedAt &&
+          new Date(localRule.updatedAt) >= new Date(ruleUpdatesWithTimestamp.updatedAt)) {
         debugLog('RuleStore', `updateRule (fromSync): Lokale Regel ${localRule.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         // Store mit lokalen Daten "auffrischen", falls er abweicht
         const storeIdx = rules.value.findIndex(r => r.id === localRule.id);
@@ -109,7 +109,7 @@ export const useRuleStore = defineStore('rule', () => {
     // Store-Update mit LWW-Logik
     const existingRuleIndex = rules.value.findIndex(r => r.id === ruleUpdatesWithTimestamp.id);
     if (existingRuleIndex !== -1) {
-      if (!fromSync || (ruleUpdatesWithTimestamp.updated_at && (!rules.value[existingRuleIndex].updated_at || new Date(ruleUpdatesWithTimestamp.updated_at) > new Date(rules.value[existingRuleIndex].updated_at!)))) {
+      if (!fromSync || (ruleUpdatesWithTimestamp.updatedAt && (!rules.value[existingRuleIndex].updatedAt || new Date(ruleUpdatesWithTimestamp.updatedAt) > new Date(rules.value[existingRuleIndex].updatedAt!)))) {
         rules.value[existingRuleIndex] = ruleUpdatesWithTimestamp;
       }
     }
@@ -199,25 +199,113 @@ export const useRuleStore = defineStore('rule', () => {
   }
 
   function checkConditions(rule: AutomationRule, tx: Transaction): boolean {
+    // Wenn die Regel eine Kategorie setzt, darf sie nur auf Einnahmen/Ausgaben angewendet werden.
+    const setsCategory = rule.actions.some(a => a.type === RuleActionType.SET_CATEGORY);
+    if (setsCategory && tx.type !== 'INCOME' && tx.type !== 'EXPENSE') {
+      return false;
+    }
+
     if (!rule.conditions?.length) return true;
-    return rule.conditions.every((c) => {
-      switch (c.type) {
-        case RuleConditionType.ACCOUNT_IS:
-          return tx.accountId === c.value;
-        case RuleConditionType.RECIPIENT_EQUALS:
-          return tx.recipientId === c.value;
-        case RuleConditionType.RECIPIENT_CONTAINS:
-          return tx.recipientId?.toLowerCase().includes(String(c.value).toLowerCase());
-        case RuleConditionType.AMOUNT_EQUALS:
-          return tx.amount === Number(c.value);
-        case RuleConditionType.AMOUNT_GREATER:
-          return tx.amount > Number(c.value);
-        case RuleConditionType.AMOUNT_LESS:
-          return tx.amount < Number(c.value);
-        case RuleConditionType.DATE_IS:
-          return tx.date === c.value;
-        case RuleConditionType.DESCRIPTION_CONTAINS:
-          return tx.note?.toLowerCase().includes(String(c.value).toLowerCase());
+
+    // Die `checkConditions`-Logik aus der RuleForm.vue sollte hierher verschoben werden,
+    // um Konsistenz zu gewährleisten. Ich übernehme die Logik von dort.
+    return rule.conditions.every((condition) => {
+      const source = (condition as any).source || ''; // Cast to any for source
+      const operator = condition.operator || 'is';
+      const value = condition.value;
+
+      let txValue: any = null;
+
+      switch (source) {
+        case 'account':
+          txValue = tx.accountId;
+          break;
+        case 'recipient':
+          txValue = tx.payee || '';
+          break;
+        case 'amount':
+          txValue = tx.amount;
+          break;
+        case 'date':
+          txValue = tx.date;
+          break;
+        case 'valueDate':
+          txValue = tx.valueDate || tx.date;
+          break;
+        case 'description':
+          txValue = tx.note || '';
+          break;
+        case 'category':
+          txValue = tx.categoryId || '';
+          break;
+        default:
+          // Fallback für alte Regeltypen ohne 'source'
+          switch (condition.type) {
+            case RuleConditionType.ACCOUNT_IS:
+              return tx.accountId === value;
+            case RuleConditionType.RECIPIENT_EQUALS:
+               return (tx.payee || '').toLowerCase() === String(value).toLowerCase();
+            case RuleConditionType.RECIPIENT_CONTAINS:
+               return (tx.payee || '').toLowerCase().includes(String(value).toLowerCase());
+            case RuleConditionType.AMOUNT_EQUALS:
+              return tx.amount === Number(value);
+            case RuleConditionType.AMOUNT_GREATER:
+              return tx.amount > Number(value);
+            case RuleConditionType.AMOUNT_LESS:
+              return tx.amount < Number(value);
+            case RuleConditionType.DATE_IS:
+              return tx.date === value;
+            case RuleConditionType.DESCRIPTION_CONTAINS:
+              return (tx.note || '').toLowerCase().includes(String(value).toLowerCase());
+            default:
+              return false;
+          }
+      }
+
+      // Neue, vereinheitlichte Logik
+      if (source === 'category' && operator === 'is') {
+        if (value === 'NO_CATEGORY') {
+          return !tx.categoryId;
+        }
+        return tx.categoryId === value;
+      }
+
+      if (source === 'account' && operator === 'is') {
+        return tx.accountId === value;
+      }
+
+      if ((source === 'date' || source === 'valueDate') && ['is', 'greater', 'greater_equal', 'less', 'less_equal'].includes(operator)) {
+        const txDate = new Date(txValue);
+        const compareDate = new Date(value as string);
+        if (operator === 'is') return txDate.getTime() === compareDate.getTime();
+        if (operator === 'greater') return txDate > compareDate;
+        if (operator === 'greater_equal') return txDate >= compareDate;
+        if (operator === 'less') return txDate < compareDate;
+        if (operator === 'less_equal') return txDate <= compareDate;
+      }
+
+      switch (operator) {
+        case 'is':
+          return String(txValue).toLowerCase() === String(value).toLowerCase();
+        case 'contains':
+          return String(txValue).toLowerCase().includes(String(value).toLowerCase());
+        case 'starts_with':
+          return String(txValue).toLowerCase().startsWith(String(value).toLowerCase());
+        case 'ends_with':
+          return String(txValue).toLowerCase().endsWith(String(value).toLowerCase());
+        case 'greater':
+          return Number(txValue) > Number(value);
+        case 'greater_equal':
+          return Number(txValue) >= Number(value);
+        case 'less':
+          return Number(txValue) < Number(value);
+        case 'less_equal':
+          return Number(txValue) <= Number(value);
+        case 'approx':
+          const txNum = Number(txValue);
+          const valNum = Number(value);
+          const tolerance = Math.abs(valNum * 0.1);
+          return Math.abs(txNum - valNum) <= tolerance;
         default:
           return false;
       }
@@ -229,7 +317,10 @@ export const useRuleStore = defineStore('rule', () => {
     rule.actions.forEach((a) => {
       switch (a.type) {
         case RuleActionType.SET_CATEGORY:
-          out.categoryId = String(a.value);
+          // Transferbuchungen und Kategorie-Transfers ignorieren
+          if (!tx.isCategoryTransfer && !tx.counterTransactionId) {
+            out.categoryId = String(a.value);
+          }
           break;
         case RuleActionType.ADD_TAG:
           if (!out.tagIds) out.tagIds = [];

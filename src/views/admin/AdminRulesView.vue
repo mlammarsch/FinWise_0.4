@@ -165,15 +165,29 @@ const applyRuleToTransactions = async (rule: AutomationRule) => {
     ruleId: rule.id,
     ruleName: rule.name,
     totalTransactions: allTransactions.length,
+    ruleConditions: rule.conditions,
   });
 
   let matchedCount = 0;
+  const matchedTransactions = [];
 
   // Alle Transaktionen durchgehen und prüfen, ob die Regel zutrifft
   for (const tx of allTransactions) {
     try {
       if (checkSingleRuleConditions(rule, tx)) {
         matchedCount++;
+        matchedTransactions.push(tx);
+
+        // Debug-Log für die ersten 5 Treffer
+        if (matchedCount <= 5) {
+          debugLog("[AdminRulesView] Rule match found", {
+            transactionId: tx.id,
+            payee: tx.payee,
+            recipientId: tx.recipientId,
+            date: tx.date,
+            amount: tx.amount,
+          });
+        }
       }
     } catch (error) {
       console.error(
@@ -194,6 +208,11 @@ const applyRuleToTransactions = async (rule: AutomationRule) => {
     ruleId: rule.id,
     matchedCount: matchedCount,
     totalTransactions: allTransactions.length,
+    sampleMatches: matchedTransactions.slice(0, 3).map((tx) => ({
+      id: tx.id,
+      payee: tx.payee,
+      recipientId: tx.recipientId,
+    })),
   });
 };
 
@@ -204,7 +223,7 @@ function checkSingleRuleConditions(
 ): boolean {
   if (!rule.conditions?.length) return true;
 
-  return rule.conditions.every((condition: any) => {
+  const result = rule.conditions.every((condition: any) => {
     const source = condition.source || "";
     const operator = condition.operator || "is";
     const value = condition.value;
@@ -235,94 +254,149 @@ function checkSingleRuleConditions(
         txValue = tx.categoryId || "";
         break;
       default:
+        debugLog("[AdminRulesView] Unknown condition source", {
+          source,
+          condition,
+        });
         return false;
     }
 
-    // Spezialfall für Empfänger
-    if (source === "recipient") {
-      if (operator === "is") {
-        return tx.recipientId === value;
-      } else {
-        const selectedRecipient = recipientStore.recipients.find(
-          (r: any) => r.id === value
-        );
-        const recipientName = selectedRecipient?.name || "";
-        const txRecipient = recipientStore.recipients.find(
-          (r: any) => r.id === tx.recipientId
-        );
-        const txRecipientName = txRecipient?.name || tx.payee || "";
+    // Debug-Log für jede Bedingungsprüfung
+    const conditionResult = evaluateCondition(condition, tx, txValue);
 
-        switch (operator) {
-          case "contains":
-            return txRecipientName
-              .toLowerCase()
-              .includes(recipientName.toLowerCase());
-          case "starts_with":
-            return txRecipientName
-              .toLowerCase()
-              .startsWith(recipientName.toLowerCase());
-          case "ends_with":
-            return txRecipientName
-              .toLowerCase()
-              .endsWith(recipientName.toLowerCase());
-          default:
-            return false;
-        }
+    if (rule.name.toLowerCase().includes("amazon")) {
+      debugLog("[AdminRulesView] Amazon rule condition check", {
+        transactionId: tx.id,
+        payee: tx.payee,
+        recipientId: tx.recipientId,
+        condition: { source, operator, value },
+        txValue,
+        conditionResult,
+      });
+    }
+
+    return conditionResult;
+  });
+
+  return result;
+}
+
+// Hilfsfunktion zur Bedingungsauswertung
+function evaluateCondition(
+  condition: any,
+  tx: Transaction,
+  txValue: any
+): boolean {
+  const source = condition.source || "";
+  const operator = condition.operator || "is";
+  const value = condition.value;
+
+  // Spezialfall für Empfänger
+  if (source === "recipient") {
+    if (operator === "is") {
+      return tx.recipientId === value;
+    } else {
+      // Für contains, starts_with, ends_with: Sowohl Freitext als auch Recipient-ID unterstützen
+      let searchTerm = "";
+
+      // Prüfen ob value eine Recipient-ID ist (UUID-Format) oder Freitext
+      const selectedRecipient = recipientStore.recipients.find(
+        (r: any) => r.id === value
+      );
+
+      if (selectedRecipient) {
+        // Value ist eine Recipient-ID - verwende den Namen
+        searchTerm = selectedRecipient.name.toLowerCase();
+      } else {
+        // Value ist Freitext - verwende direkt
+        searchTerm = String(value).toLowerCase();
+      }
+
+      // Transaktions-Empfänger-Name ermitteln
+      const txRecipient = recipientStore.recipients.find(
+        (r: any) => r.id === tx.recipientId
+      );
+      const txRecipientName = (
+        txRecipient?.name ||
+        tx.payee ||
+        ""
+      ).toLowerCase();
+
+      // Debug-Log für recipient-Vergleiche
+      debugLog("[AdminRulesView] Recipient comparison", {
+        operator,
+        originalValue: value,
+        isRecipientId: !!selectedRecipient,
+        searchTerm,
+        txRecipientId: tx.recipientId,
+        txRecipientName,
+        txPayee: tx.payee,
+      });
+
+      switch (operator) {
+        case "contains":
+          return txRecipientName.includes(searchTerm);
+        case "starts_with":
+          return txRecipientName.startsWith(searchTerm);
+        case "ends_with":
+          return txRecipientName.endsWith(searchTerm);
+        default:
+          return false;
       }
     }
+  }
 
-    // Spezialfall für Kategorie und Konto bei "ist"
-    if ((source === "category" || source === "account") && operator === "is") {
+  // Spezialfall für Kategorie und Konto bei "ist"
+  if ((source === "category" || source === "account") && operator === "is") {
+    return txValue === value;
+  }
+
+  // Für Datumsvergleiche
+  if (
+    (source === "date" || source === "valueDate") &&
+    ["greater", "greater_equal", "less", "less_equal"].includes(operator)
+  ) {
+    const txDate = new Date(txValue as string);
+    const compareDate = new Date(value);
+
+    if (operator === "greater") return txDate > compareDate;
+    if (operator === "greater_equal") return txDate >= compareDate;
+    if (operator === "less") return txDate < compareDate;
+    if (operator === "less_equal") return txDate <= compareDate;
+  }
+
+  // Standardvergleiche
+  switch (operator) {
+    case "is":
       return txValue === value;
-    }
-
-    // Für Datumsvergleiche
-    if (
-      (source === "date" || source === "valueDate") &&
-      ["greater", "greater_equal", "less", "less_equal"].includes(operator)
-    ) {
-      const txDate = new Date(txValue as string);
-      const compareDate = new Date(value);
-
-      if (operator === "greater") return txDate > compareDate;
-      if (operator === "greater_equal") return txDate >= compareDate;
-      if (operator === "less") return txDate < compareDate;
-      if (operator === "less_equal") return txDate <= compareDate;
-    }
-
-    // Standardvergleiche
-    switch (operator) {
-      case "is":
-        return txValue === value;
-      case "contains":
-        return String(txValue)
-          .toLowerCase()
-          .includes(String(value).toLowerCase());
-      case "starts_with":
-        return String(txValue)
-          .toLowerCase()
-          .startsWith(String(value).toLowerCase());
-      case "ends_with":
-        return String(txValue)
-          .toLowerCase()
-          .endsWith(String(value).toLowerCase());
-      case "greater":
-        return Number(txValue) > Number(value);
-      case "greater_equal":
-        return Number(txValue) >= Number(value);
-      case "less":
-        return Number(txValue) < Number(value);
-      case "less_equal":
-        return Number(txValue) <= Number(value);
-      case "approx":
-        const txNum = Number(txValue);
-        const valNum = Number(value);
-        const tolerance = Math.abs(valNum * 0.1); // 10% Toleranz
-        return Math.abs(txNum - valNum) <= tolerance;
-      default:
-        return false;
-    }
-  });
+    case "contains":
+      return String(txValue)
+        .toLowerCase()
+        .includes(String(value).toLowerCase());
+    case "starts_with":
+      return String(txValue)
+        .toLowerCase()
+        .startsWith(String(value).toLowerCase());
+    case "ends_with":
+      return String(txValue)
+        .toLowerCase()
+        .endsWith(String(value).toLowerCase());
+    case "greater":
+      return Number(txValue) > Number(value);
+    case "greater_equal":
+      return Number(txValue) >= Number(value);
+    case "less":
+      return Number(txValue) < Number(value);
+    case "less_equal":
+      return Number(txValue) <= Number(value);
+    case "approx":
+      const txNum = Number(txValue);
+      const valNum = Number(value);
+      const tolerance = Math.abs(valNum * 0.1); // 10% Toleranz
+      return Math.abs(txNum - valNum) <= tolerance;
+    default:
+      return false;
+  }
 }
 
 // Regel tatsächlich anwenden (nach Bestätigung)
@@ -604,8 +678,17 @@ function formatStage(stage: string): string {
             <strong>{{ applyRuleData.matchedCount }}</strong> von
             {{ transactionStore.transactions.length }} Transaktionen zu.
           </p>
-          <p class="text-xs text-base-content/70 mt-2">
+          <p
+            class="text-xs text-base-content/70 mt-2"
+            v-if="applyRuleData.matchedCount > 0"
+          >
             Möchten Sie die Regel auf diese Transaktionen anwenden?
+          </p>
+          <p
+            class="text-xs text-base-content/70 mt-2"
+            v-else
+          >
+            Die Regel trifft auf keinen Datensatz zu.
           </p>
         </div>
 
@@ -614,9 +697,10 @@ function formatStage(stage: string): string {
             class="btn"
             @click="cancelApplyRule"
           >
-            Abbrechen
+            {{ applyRuleData.matchedCount > 0 ? "Abbrechen" : "OK" }}
           </button>
           <button
+            v-if="applyRuleData.matchedCount > 0"
             class="btn btn-primary"
             @click="confirmApplyRule"
           >

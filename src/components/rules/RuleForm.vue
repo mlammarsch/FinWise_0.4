@@ -33,7 +33,6 @@ import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import TagSearchableDropdown from "@/components/ui/TagSearchableDropdown.vue";
 import SelectCategory from "@/components/ui/SelectCategory.vue";
 import SelectAccount from "@/components/ui/SelectAccount.vue";
-import SelectRecipient from "@/components/ui/SelectRecipient.vue";
 import { debugLog } from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import { Icon } from "@iconify/vue";
@@ -275,7 +274,7 @@ function applyRuleToExistingTransactions() {
   const matchingTransactions = [];
 
   for (const transaction of allTransactions) {
-    if (checkConditions(ruleData, transaction)) {
+    if (ruleStore.checkConditions(ruleData, transaction)) {
       matchingTransactions.push(transaction);
     }
   }
@@ -291,145 +290,9 @@ function applyRuleToExistingTransactions() {
     showing: testResults.transactions.length,
   });
 }
-
-// Prüft, ob eine Transaktion die Regelbedingungen erfüllt
-function checkConditions(rule: AutomationRule, tx: Transaction): boolean {
-  if (!rule.conditions?.length) return true;
-
-  return rule.conditions.every((condition) => {
-    const source = condition.source || "";
-    const operator = condition.operator || "is";
-    const value = condition.value;
-
-    let txValue = null;
-
-    // Extrahiere den entsprechenden Wert aus der Transaktion
-    switch (source) {
-      case "account":
-        txValue = tx.accountId;
-        break;
-      case "recipient":
-        // Für recipient-Bedingungen verwenden wir die recipientId aus der Transaktion
-        txValue = tx.recipientId || "";
-        break;
-      case "amount":
-        txValue = tx.amount;
-        break;
-      case "date":
-        txValue = tx.date;
-        break;
-      case "valueDate":
-        txValue = tx.valueDate || tx.date;
-        break;
-      case "description":
-        txValue = tx.note || "";
-        break;
-      case "category":
-        txValue = tx.categoryId || "";
-        break;
-      default:
-        return false;
-    }
-
-    // Spezialfall für Empfänger - alle Operationen arbeiten mit recipientId
-    if (source === "recipient") {
-      if (operator === "is") {
-        // Direkter ID-Vergleich
-        return tx.recipientId === value;
-      } else {
-        // Für contains, starts_with, ends_with: Name des Empfängers verwenden
-        const selectedRecipient = recipientStore.recipients.find(
-          (r) => r.id === value
-        );
-        const recipientName = selectedRecipient?.name || "";
-        const txRecipient = recipientStore.recipients.find(
-          (r) => r.id === tx.recipientId
-        );
-        const txRecipientName = txRecipient?.name || tx.payee || "";
-
-        switch (operator) {
-          case "contains":
-            return txRecipientName
-              .toLowerCase()
-              .includes(recipientName.toLowerCase());
-          case "starts_with":
-            return txRecipientName
-              .toLowerCase()
-              .startsWith(recipientName.toLowerCase());
-          case "ends_with":
-            return txRecipientName
-              .toLowerCase()
-              .endsWith(recipientName.toLowerCase());
-          default:
-            return false;
-        }
-      }
-    }
-
-    // Spezialfall für Kategorie bei "ist" (ID-Vergleich)
-    if (source === "category" && operator === "is") {
-      return tx.categoryId === value;
-    }
-
-    // Spezialfall für Konto bei "ist" (ID-Vergleich)
-    if (source === "account" && operator === "is") {
-      return tx.accountId === value;
-    }
-
-    // Für Datumsvergleiche Date-Objekte verwenden
-    if (
-      (source === "date" || source === "valueDate") &&
-      ["greater", "greater_equal", "less", "less_equal"].includes(operator)
-    ) {
-      const txDate = new Date(txValue);
-      const compareDate = new Date(value);
-
-      if (operator === "greater") return txDate > compareDate;
-      if (operator === "greater_equal") return txDate >= compareDate;
-      if (operator === "less") return txDate < compareDate;
-      if (operator === "less_equal") return txDate <= compareDate;
-    }
-
-    // Standardvergleiche
-    switch (operator) {
-      case "is":
-        return txValue === value;
-      case "contains":
-        return String(txValue)
-          .toLowerCase()
-          .includes(String(value).toLowerCase());
-      case "starts_with":
-        return String(txValue)
-          .toLowerCase()
-          .startsWith(String(value).toLowerCase());
-      case "ends_with":
-        return String(txValue)
-          .toLowerCase()
-          .endsWith(String(value).toLowerCase());
-      case "greater":
-        return Number(txValue) > Number(value);
-      case "greater_equal":
-        return Number(txValue) >= Number(value);
-      case "less":
-        return Number(txValue) < Number(value);
-      case "less_equal":
-        return Number(txValue) <= Number(value);
-      case "approx":
-        const txNum = Number(txValue);
-        const valNum = Number(value);
-        const tolerance = Math.abs(valNum * 0.1); // 10% Toleranz
-        return Math.abs(txNum - valNum) <= tolerance;
-      default:
-        return false;
-    }
-  });
-}
-
-// Schließen des Test-Modals
-function closeTestResults() {
-  testResults.show = false;
-}
 </script>
+// Schließen des Test-Modals function closeTestResults() { testResults.show =
+false; }
 
 <template>
   <div class="relative">
@@ -587,13 +450,16 @@ function closeTestResults() {
                 "
                 v-model="condition.value"
                 class="w-full"
+                :show-none-option="true"
               />
 
-              <!-- Empfänger-Auswahl für alle recipient-Operationen -->
-              <SelectRecipient
+              <!-- Empfänger-Freitextfeld für alle recipient-Operationen -->
+              <input
                 v-else-if="condition.source === 'recipient'"
+                type="text"
                 v-model="condition.value"
-                class="w-full"
+                class="input input-bordered w-full"
+                placeholder="Empfänger-Name eingeben"
               />
 
               <!-- Zahleneingabe für Beträge -->
@@ -815,7 +681,7 @@ function closeTestResults() {
       v-if="testResults.show"
       class="modal modal-open"
     >
-      <div class="modal-box max-w-4xl">
+      <div class="modal-box max-w-4xl h-120">
         <h3 class="text-lg font-bold mb-4">
           Virtueller Test: {{ testResults.matchCount }} von 250 Transaktionen
           gefunden

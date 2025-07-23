@@ -22,6 +22,7 @@ import { BalanceService } from "@/services/BalanceService";
 const props = defineProps<{
   modelValue?: string;
   filterOutArray?: string[];
+  showNoneOption?: boolean;
 }>();
 const emit = defineEmits(["update:modelValue", "select"]);
 
@@ -40,13 +41,17 @@ const selected = ref(props.modelValue || "");
  */
 onMounted(() => {
   if (selected.value) {
-    const cat = categoryStore.categories.find((c) => c.id === selected.value);
-    if (cat) {
-      searchTerm.value = cat.name;
-      debugLog("[SelectCategory] onMounted → set searchTerm", {
-        id: cat.id,
-        name: cat.name,
-      });
+    if (selected.value === "NO_CATEGORY") {
+      searchTerm.value = "Keine Kategorie";
+    } else {
+      const cat = categoryStore.categories.find((c) => c.id === selected.value);
+      if (cat) {
+        searchTerm.value = cat.name;
+        debugLog("[SelectCategory] onMounted → set searchTerm", {
+          id: cat.id,
+          name: cat.name,
+        });
+      }
     }
   }
 });
@@ -58,13 +63,17 @@ watch(
   () => props.modelValue,
   (newVal) => {
     selected.value = newVal || "";
-    const cat = categoryStore.categories.find((c) => c.id === newVal);
-    if (cat && searchTerm.value !== cat.name) {
-      searchTerm.value = cat.name;
-      debugLog("[SelectCategory] watch:modelValue → set searchTerm", {
-        id: cat.id,
-        name: cat.name,
-      });
+    if (newVal === "NO_CATEGORY") {
+      searchTerm.value = "Keine Kategorie";
+    } else {
+      const cat = categoryStore.categories.find((c) => c.id === newVal);
+      if (cat && searchTerm.value !== cat.name) {
+        searchTerm.value = cat.name;
+        debugLog("[SelectCategory] watch:modelValue → set searchTerm", {
+          id: cat.id,
+          name: cat.name,
+        });
+      }
     }
   }
 );
@@ -139,6 +148,19 @@ interface Option {
 const options = computed<Option[]>(() => {
   const opts: Option[] = [];
   let includeAvailable = false;
+
+  if (props.showNoneOption) {
+    const noneOptionText = "Keine Kategorie";
+    if (
+      !searchTerm.value.trim() ||
+      noneOptionText.toLowerCase().includes(searchTerm.value.toLowerCase())
+    ) {
+      opts.push({
+        isHeader: false,
+        category: { id: "NO_CATEGORY", name: noneOptionText } as any,
+      });
+    }
+  }
 
   if (availableCategory.value) {
     const isFilteredOut = props.filterOutArray?.includes(
@@ -275,8 +297,12 @@ function toggleDropdown() {
  */
 function closeDropdown() {
   dropdownOpen.value = false;
-  const cat = categoryStore.categories.find((c) => c.id === selected.value);
-  if (cat) searchTerm.value = cat.name;
+  if (selected.value === "NO_CATEGORY") {
+    searchTerm.value = "Keine Kategorie";
+  } else {
+    const cat = categoryStore.categories.find((c) => c.id === selected.value);
+    if (cat) searchTerm.value = cat.name;
+  }
 }
 
 /**
@@ -399,7 +425,10 @@ defineExpose({ focusInput });
           </div>
         </template>
       </template>
-      <div class="px-3 py-1.5 text-sm text-base-content/60 italic" v-else>
+      <div
+        class="px-3 py-1.5 text-sm text-base-content/60 italic"
+        v-else
+      >
         Keine Kategorien gefunden.
       </div>
     </div>
