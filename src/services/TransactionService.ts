@@ -9,7 +9,7 @@ import { Transaction, TransactionType } from '@/types';
 // ExtendedTransaction muss importiert werden, wenn es als Typ verwendet wird
 import { type ExtendedTransaction } from '@/stores/transactionStore'; // Korrekter Importpfad und `type` Keyword
 import { v4 as uuidv4 } from 'uuid';
-import { debugLog, infoLog, errorLog } from '@/utils/logger';
+import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
 import { toDateOnlyString } from '@/utils/formatters';
 import { useRuleStore } from '@/stores/ruleStore';
 import { BalanceService } from './BalanceService';
@@ -86,7 +86,7 @@ export const TransactionService = {
 /* --------------------------- Write APIs --------------------------- */
 /* ------------------------------------------------------------------ */
 
-  async addTransaction(txData: Omit<Transaction, 'id' | 'runningBalance'>): Promise<Transaction> {
+  async addTransaction(txData: Omit<Transaction, 'id' | 'runningBalance'>, applyRules: boolean = true): Promise<Transaction> {
     const txStore = useTransactionStore();
     const catStore = useCategoryStore();
     const ruleStore = useRuleStore();
@@ -102,7 +102,7 @@ export const TransactionService = {
     // Leite payee aus recipientId ab, falls vorhanden
     const resolvedPayee = this.resolvePayeeFromRecipient(txData.recipientId, txData.payee);
 
-    const transactionDataForStore: ExtendedTransaction = {
+    let transactionDataForStore: ExtendedTransaction = {
       // Übernehme alle Felder von txData (Omit<Transaction, 'id' | 'runningBalance'>)
       ...txData,
       // Setze die Pflichtfelder von ExtendedTransaction oder Felder mit strengeren Typen
@@ -124,10 +124,30 @@ export const TransactionService = {
     };
     debugLog('[TransactionService]', 'addTransaction - transactionDataForStore prepared:', transactionDataForStore);
 
+    // PRE-Stage Regeln anwenden (vor dem Speichern)
+    if (applyRules) {
+      debugLog('[TransactionService]', 'Applying PRE-stage rules before saving transaction');
+      const preRuleResult = await ruleStore.applyRulesToTransaction(transactionDataForStore, 'PRE');
+      // Merge die Regel-Änderungen zurück in transactionDataForStore
+      transactionDataForStore = {
+        ...transactionDataForStore,
+        ...preRuleResult,
+        // Stelle sicher, dass ExtendedTransaction-spezifische Felder erhalten bleiben
+        payee: preRuleResult.payee || transactionDataForStore.payee,
+        runningBalance: transactionDataForStore.runningBalance,
+        counterTransactionId: preRuleResult.counterTransactionId || transactionDataForStore.counterTransactionId,
+        planningTransactionId: preRuleResult.planningTransactionId || transactionDataForStore.planningTransactionId,
+        isReconciliation: preRuleResult.isReconciliation !== undefined ? preRuleResult.isReconciliation : transactionDataForStore.isReconciliation,
+      };
+    }
+
     const added = await txStore.addTransaction(transactionDataForStore);
 
-    // → Regeln anwenden & speichern
-    await ruleStore.applyRulesToTransaction(added);
+    // DEFAULT-Stage Regeln anwenden (nach dem Speichern, wie bisher)
+    if (applyRules) {
+      debugLog('[TransactionService]', 'Applying DEFAULT-stage rules after saving transaction');
+      await ruleStore.applyRulesToTransaction(added, 'DEFAULT');
+    }
 
     debugLog('[TransactionService]', 'addTransaction completed', added);
 
@@ -180,6 +200,12 @@ export const TransactionService = {
       }
     } else {
       debugLog('[TransactionService]', 'Category Transfer SKIPPED - Conditions not met');
+    }
+
+    // POST-Stage Regeln anwenden (nach allen anderen Verarbeitungen)
+    if (applyRules) {
+      debugLog('[TransactionService]', 'Applying POST-stage rules after all processing');
+      await ruleStore.applyRulesToTransaction(added, 'POST');
     }
 
     // Salden aktualisieren
@@ -243,14 +269,14 @@ export const TransactionService = {
       amount: -abs,
       payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer zu ${toName}`,
       transferToAccountId: toAccountId,
-    });
+    }, true); // Regeln anwenden
     const toTx = await this.addTransaction({
       ...base,
       accountId: toAccountId,
       amount: abs,
       payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer von ${fromName}`,
       transferToAccountId: fromAccountId,
-    });
+    }, true); // Regeln anwenden
 
     // Verlinken
     this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
@@ -313,8 +339,8 @@ export const TransactionService = {
       toCategoryId: fromCategoryId,
     };
 
-    const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>);
-    const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>);
+    const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>, true);
+    const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>, true);
 
     this.updateTransaction(newFromTx.id, { counterTransactionId: newToTx.id });
     this.updateTransaction(newToTx.id, { counterTransactionId: newFromTx.id });
@@ -432,7 +458,7 @@ export const TransactionService = {
       reconciled: true,
       description: '', // Fehlende Eigenschaft hinzufügen
       recipientId, // recipientId hinzufügen
-    });
+    }, true); // Regeln anwenden
 
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
@@ -948,5 +974,66 @@ updateTransaction(
       this.endBatchMode();
       transactionStore.endBatchUpdate();
     }
+  },
+
+  /**
+   * Wendet PRE und DEFAULT Stage Regeln auf eine Liste von Transaktionen an
+   * Speziell für CSV-Import optimiert - alle Regeln außer POST werden vor dem Speichern angewendet
+   */
+  async applyPreAndDefaultRulesToTransactions(transactions: any[]): Promise<any[]> {
+    const ruleStore = useRuleStore();
+    let processedTransactions = [...transactions];
+
+    debugLog('[TransactionService]', `Applying PRE and DEFAULT stage rules to ${transactions.length} transactions`);
+
+    // Erst PRE-Stage Regeln anwenden
+    for (let i = 0; i < processedTransactions.length; i++) {
+      try {
+        processedTransactions[i] = await ruleStore.applyRulesToTransaction(processedTransactions[i], 'PRE');
+        debugLog('[TransactionService]', `PRE-stage rules applied to transaction ${processedTransactions[i].id}`);
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying PRE-stage rules to transaction ${processedTransactions[i].id}`, error);
+      }
+    }
+
+    // Dann DEFAULT-Stage Regeln anwenden
+    for (let i = 0; i < processedTransactions.length; i++) {
+      try {
+        processedTransactions[i] = await ruleStore.applyRulesToTransaction(processedTransactions[i], 'DEFAULT');
+        debugLog('[TransactionService]', `DEFAULT-stage rules applied to transaction ${processedTransactions[i].id}`);
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying DEFAULT-stage rules to transaction ${processedTransactions[i].id}`, error);
+      }
+    }
+
+    debugLog('[TransactionService]', `PRE and DEFAULT stage rules applied to ${processedTransactions.length} transactions`);
+    return processedTransactions;
+  },
+
+  /**
+   * Wendet POST-Stage Regeln auf gespeicherte Transaktionen an
+   * Wird nach dem Speichern und Running Balance Berechnung aufgerufen
+   */
+  async applyPostStageRulesToTransactions(transactionIds: string[]): Promise<void> {
+    const ruleStore = useRuleStore();
+    const txStore = useTransactionStore();
+
+    debugLog('[TransactionService]', `Applying POST-stage rules to ${transactionIds.length} saved transactions`);
+
+    for (const transactionId of transactionIds) {
+      try {
+        const transaction = txStore.getTransactionById(transactionId);
+        if (transaction) {
+          await ruleStore.applyRulesToTransaction(transaction, 'POST');
+          debugLog('[TransactionService]', `POST-stage rules applied to transaction ${transactionId}`);
+        } else {
+          warnLog('[TransactionService]', `Transaction ${transactionId} not found for POST-stage rules`);
+        }
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying POST-stage rules to transaction ${transactionId}`, error);
+      }
+    }
+
+    debugLog('[TransactionService]', `POST-stage rules applied to ${transactionIds.length} transactions`);
   }
 };

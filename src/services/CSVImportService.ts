@@ -1045,6 +1045,23 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         });
       }
 
+      // Phase 1.5: PRE + DEFAULT STAGE REGELN ANWENDEN vor dem Batch-Import
+      if (transactionsToImport.length > 0) {
+        infoLog('CSVImportService', `Applying PRE and DEFAULT stage rules to ${transactionsToImport.length} transactions before import`);
+        try {
+          // Wende PRE und DEFAULT Stage Regeln auf alle Transaktionen an
+          const processedTransactions = await TransactionService.applyPreAndDefaultRulesToTransactions(transactionsToImport);
+
+          // Ersetze die ursprünglichen Transaktionen mit den verarbeiteten
+          transactionsToImport.length = 0; // Array leeren
+          transactionsToImport.push(...processedTransactions);
+
+          infoLog('CSVImportService', `PRE and DEFAULT stage rules applied successfully to ${transactionsToImport.length} transactions`);
+        } catch (ruleError) {
+          warnLog('CSVImportService', 'Error applying PRE and DEFAULT stage rules, continuing with original transactions', ruleError);
+        }
+      }
+
       // Phase 2: BATCH-IMPORT aller Transaktionen
       if (transactionsToImport.length > 0) {
         try {
@@ -1075,7 +1092,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
           for (const transactionData of transactionsToImport) {
             try {
               // Erstelle die Transaktion über den TransactionService (einzeln)
-              const newTransaction = TransactionService.addTransaction(transactionData);
+              // Regeln werden nicht angewendet, da sie bereits in Phase 1.5 angewendet wurden
+              const newTransaction = await TransactionService.addTransaction(transactionData, false);
 
               // Erfolgreich importierte Transaktion für UI speichern
               importedTransactions.value.push({
@@ -1147,6 +1165,22 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         affectedAccounts: affectedAccountIds.length,
         accountIds: affectedAccountIds
       });
+
+      // Phase 2.7: POST-STAGE REGELN ANWENDEN nach Running Balance Berechnung
+      if (transactionsToImport.length > 0) {
+        infoLog('CSVImportService', `Applying POST-stage rules to ${transactionsToImport.length} saved transactions`);
+        try {
+          // Sammle alle Transaktions-IDs für POST-Stage Regelanwendung
+          const transactionIds = transactionsToImport.map(tx => tx.id);
+
+          // Wende POST-Stage Regeln auf gespeicherte Transaktionen an
+          await TransactionService.applyPostStageRulesToTransactions(transactionIds);
+
+          infoLog('CSVImportService', `POST-stage rules applied successfully to ${transactionIds.length} transactions`);
+        } catch (ruleError) {
+          warnLog('CSVImportService', 'Error applying POST-stage rules, continuing with import', ruleError);
+        }
+      }
 
       // Phase 3: WARTEN AUF VOLLSTÄNDIGE EMPFÄNGER/KATEGORIEN-SYNCHRONISATION
       infoLog('CSVImportService', 'Warte auf vollständige Synchronisation aller neuen Empfänger...');
