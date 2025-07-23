@@ -36,7 +36,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/accounts',     name: 'accounts',     component: AccountsView,    meta: { title: 'Konten',       breadcrumb: 'Konten' } },
   { path: '/transactions', name: 'transactions', component: TransactionsView,meta: { title: 'Transaktionen',breadcrumb: 'Transaktionen' } },
   { path: '/budgets',      name: 'budgets',      component: BudgetsView,     meta: { title: 'Budgets',      breadcrumb: 'Budgets' } },
-  { path: '/statistics',   name: 'statistics',   component: BudgetsView2,    meta: { title: 'Statistiken',  breadcrumb: 'Statistiken' } },
+  { path: '/statistics',   name: 'statistics',   component: StatisticsView,    meta: { title: 'Statistiken',  breadcrumb: 'Statistiken' } },
   { path: '/planning',     name: 'planning',     component: PlanningView,    meta: { title: 'Planung',      breadcrumb: 'Planung' } },
   { path: '/settings',     name: 'settings',     component: SettingsView,    meta: { title: 'Einstellungen',breadcrumb: 'Einstellungen' } },
 

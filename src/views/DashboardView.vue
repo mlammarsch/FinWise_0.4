@@ -279,7 +279,9 @@ onMounted(() => {
   <div>
     <!-- Overview Cards -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <div class="flex justify-between items-center mb-4">
             <h3 class="card-title text-lg">Kontostand</h3>
@@ -346,7 +348,10 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      <div class="card bg-base-100 shadow-md">
+
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <div class="flex justify-between items-center mb-4">
             <h3 class="card-title text-lg">Letzte 30 Tage</h3>
@@ -392,8 +397,11 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
       <!-- Financial Trend Chart - jetzt oben rechts im Dashboard -->
-      <div class="card bg-base-100 shadow-md">
+      <div
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
         <div class="card-body">
           <div class="flex justify-between items-center mb-4">
             <h3 class="card-title text-lg">Finanztrend (6 Monate)</h3>
@@ -414,10 +422,13 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
     <!-- Main Content -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div class="lg:col-span-2 space-y-6">
-        <div class="card bg-base-100 shadow-md">
+        <div
+          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+        >
           <div class="card-body">
             <div class="flex justify-between items-center mb-4">
               <h3 class="card-title text-lg">Letzte Transaktionen</h3>
@@ -533,7 +544,10 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <div class="card bg-base-100 shadow-md">
+
+        <div
+          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+        >
           <div class="card-body">
             <h3 class="card-title text-lg mb-4">Monatlicher Trend</h3>
             <div class="overflow-x-auto">
@@ -621,8 +635,11 @@ onMounted(() => {
           </div>
         </div>
       </div>
+
       <div class="space-y-6">
-        <div class="card bg-base-100 shadow-md">
+        <div
+          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+        >
           <div class="card-body">
             <div class="flex justify-between items-center mb-4">
               <div>
@@ -806,7 +823,9 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="card bg-base-100 shadow-md">
+        <div
+          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+        >
           <div class="card-body">
             <h3 class="card-title text-lg mb-4">Top-Ausgaben</h3>
             <div v-if="topExpenses.length > 0">
@@ -851,7 +870,10 @@ onMounted(() => {
             </div>
           </div>
         </div>
-        <div class="card bg-base-100 shadow-md">
+
+        <div
+          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+        >
           <div class="card-body">
             <h3 class="card-title text-lg mb-4">Sparziele</h3>
             <div v-if="savingsGoals.length > 0">
