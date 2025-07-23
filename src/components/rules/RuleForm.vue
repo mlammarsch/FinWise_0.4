@@ -262,10 +262,16 @@ function applyRuleToExistingTransactions() {
     isActive: isActive.value,
   };
 
-  debugLog("[RuleForm] applyRuleToExistingTransactions", ruleData);
+  debugLog(
+    "[RuleForm] applyRuleToExistingTransactions (Virtual Test)",
+    ruleData
+  );
 
-  // Virtuelle Regelprüfung
-  const allTransactions = transactionStore.transactions;
+  // Virtuelle Regelprüfung - nur die letzten 250 Transaktionen testen
+  const allTransactions = [...transactionStore.transactions]
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 250); // Begrenzt auf 250 Transaktionen
+
   const matchingTransactions = [];
 
   for (const transaction of allTransactions) {
@@ -274,12 +280,13 @@ function applyRuleToExistingTransactions() {
     }
   }
 
-  // Ergebnisse anzeigen
+  // Ergebnisse anzeigen - zeige bis zu 20 Transaktionen im Modal
   testResults.transactions = matchingTransactions.slice(0, 20);
   testResults.matchCount = matchingTransactions.length;
   testResults.show = true;
 
-  debugLog("[RuleForm] Test results", {
+  debugLog("[RuleForm] Virtual test results", {
+    testedTransactions: allTransactions.length,
     matched: matchingTransactions.length,
     showing: testResults.transactions.length,
   });
@@ -768,17 +775,22 @@ function closeTestResults() {
 
       <!-- Test-Button und Aktionsbuttons -->
       <div class="flex justify-between items-center pt-4">
-        <button
-          type="button"
-          class="btn btn-outline"
-          @click="applyRuleToExistingTransactions"
+        <div
+          class="tooltip tooltip-right"
+          data-tip="Virtueller Test mit den letzten 250 Transaktionen. Zeigt Vorschau ohne reale Änderungen."
         >
-          <Icon
-            icon="mdi:play"
-            class="mr-2"
-          />
-          Regel testen
-        </button>
+          <button
+            type="button"
+            class="btn btn-outline"
+            @click="applyRuleToExistingTransactions"
+          >
+            <Icon
+              icon="mdi:play"
+              class="mr-2"
+            />
+            Regel testen
+          </button>
+        </div>
 
         <div class="space-x-2">
           <button
@@ -805,8 +817,20 @@ function closeTestResults() {
     >
       <div class="modal-box max-w-4xl">
         <h3 class="text-lg font-bold mb-4">
-          Testergebnisse: {{ testResults.matchCount }} Transaktionen gefunden
+          Virtueller Test: {{ testResults.matchCount }} von 250 Transaktionen
+          gefunden
         </h3>
+
+        <div class="bg-base-200 p-3 rounded-lg mb-4">
+          <p class="text-sm text-base-content/80">
+            <Icon
+              icon="mdi:information-outline"
+              class="inline mr-1"
+            />
+            Dies ist ein virtueller Test mit den letzten 250 Transaktionen. Es
+            werden keine realen Änderungen vorgenommen.
+          </p>
+        </div>
 
         <div class="overflow-x-auto">
           <table class="table table-zebra w-full">
