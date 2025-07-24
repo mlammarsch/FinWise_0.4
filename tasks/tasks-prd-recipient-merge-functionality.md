@@ -24,12 +24,20 @@
 
 ## Tasks
 
-- [ ] 1.0 UI-Erweiterung für Checkbox-basierte Mehrfachauswahl implementieren
-  - [ ] 1.1 Checkbox-Spalte zur Recipients-Tabelle hinzufügen
-  - [ ] 1.2 Header-Checkbox für "Alle auswählen/abwählen" implementieren
-  - [ ] 1.3 Shift-Click-Unterstützung für Bereichsauswahl hinzufügen
-  - [ ] 1.4 Auswahlzustand-Management (selectedIds, lastSelectedIndex) implementieren
-  - [ ] 1.5 Visuelle Anzeige der Anzahl ausgewählter Items hinzufügen
+- [x] 1.0 UI-Erweiterung für Checkbox-basierte Mehrfachauswahl implementieren
+  - [x] 1.1 Checkbox-Spalte zur Recipients-Tabelle hinzufügen
+  - [x] 1.2 Header-Checkbox für "Alle auswählen/abwählen" implementieren
+  - [x] 1.3 Shift-Click-Unterstützung für Bereichsauswahl hinzufügen
+  - [x] 1.4 Auswahlzustand-Management (selectedIds, lastSelectedIndex) implementieren
+  - [x] 1.5 Visuelle Anzeige der Anzahl ausgewählter Items hinzufügen
+    - [x] Alert-Komponente mit Auswahlzähler zwischen Header und Tabelle platziert
+    - [x] Conditional Rendering mit `v-if="hasSelectedRecipients"`
+    - [x] DaisyUI Alert-Komponente mit Info-Styling und Check-Circle-Icon
+    - [x] Klickbarer "Auswahl aufheben" Button mit Close-Icon
+    - [x] Responsive Design mit ml-auto für Button-Positionierung
+    - [x] Tooltip mit Keyboard-Shortcut-Hinweis (ESC)
+    - [x] Verwendung der bestehenden `selectedRecipientsCount` und `hasSelectedRecipients` computed properties
+    - [x] Integration der bestehenden `clearSelection()` Funktion
 
 - [ ] 2.0 Batch-Actions Dropdown-Menü integrieren
   - [ ] 2.1 BulkActionDropdown-Komponente für Recipients anpassen
