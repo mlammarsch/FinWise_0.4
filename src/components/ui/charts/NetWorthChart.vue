@@ -148,6 +148,8 @@ const chartData = computed(() => {
   const projectedData: (number | null)[] = [];
   const incomeData: number[] = [];
   const expenseData: number[] = [];
+  const plannedIncomeData: number[] = [];
+  const plannedExpenseData: number[] = [];
 
   let currentMonth = startMonth;
   const totalMonths = endMonth.diff(startMonth, "month") + 1;
@@ -177,19 +179,34 @@ const chartData = computed(() => {
       monthStart,
       monthEndStr
     );
-    incomeData.push(Math.round(monthSummary.income));
-    expenseData.push(Math.round(-Math.abs(monthSummary.expense))); // Ausgaben als negative Werte
 
     if (currentMonth.isSameOrBefore(todayMonth)) {
       // Vergangenheit und Gegenwart: Nur tatsächliche Werte
+      incomeData.push(Math.round(monthSummary.income));
+      expenseData.push(Math.round(-Math.abs(monthSummary.expense))); // Ausgaben als negative Werte
+      plannedIncomeData.push(0);
+      plannedExpenseData.push(0);
       actualData.push(Math.round(actualNetWorth));
       projectedData.push(null);
     } else if (showProjection) {
-      // Zukunft: Nur projizierte Werte (gestrichelt)
+      // Zukunft: Planungsdaten berechnen
+      const plannedSummary = PlanningService.calculatePlannedIncomeExpense(
+        monthStart,
+        monthEndStr
+      );
+
+      incomeData.push(0);
+      expenseData.push(0);
+      plannedIncomeData.push(Math.round(plannedSummary.income));
+      plannedExpenseData.push(Math.round(-Math.abs(plannedSummary.expense)));
       actualData.push(null);
       projectedData.push(Math.round(projectedNetWorth));
     } else {
       // Kein Zukunftsdaten wenn nicht gewünscht
+      incomeData.push(Math.round(monthSummary.income));
+      expenseData.push(Math.round(-Math.abs(monthSummary.expense)));
+      plannedIncomeData.push(0);
+      plannedExpenseData.push(0);
       actualData.push(null);
       projectedData.push(null);
     }
@@ -203,12 +220,16 @@ const chartData = computed(() => {
     projectedData,
     incomeData,
     expenseData,
+    plannedIncomeData,
+    plannedExpenseData,
     showProjection,
     hasData:
       actualData.some((val) => val !== null && val !== 0) ||
       projectedData.some((val) => val !== null && val !== 0) ||
       incomeData.some((val) => val !== 0) ||
-      expenseData.some((val) => val !== 0),
+      expenseData.some((val) => val !== 0) ||
+      plannedIncomeData.some((val) => val !== 0) ||
+      plannedExpenseData.some((val) => val !== 0),
   };
 });
 
@@ -245,8 +266,24 @@ const chartOptions = computed(() => {
     },
   ];
 
-  // Füge Prognose-Serie nur hinzu, wenn Projektionen angezeigt werden sollen
+  // Füge Planungsdaten hinzu, wenn Projektionen angezeigt werden sollen
   if (data.showProjection) {
+    // Geplante Einnahmen/Ausgaben mit 70% Opacity
+    series.push(
+      {
+        name: "Einnahmen (geplant)",
+        type: "column",
+        data: data.plannedIncomeData,
+        yAxisIndex: 1,
+      },
+      {
+        name: "Ausgaben (geplant)",
+        type: "column",
+        data: data.plannedExpenseData,
+        yAxisIndex: 1,
+      }
+    );
+
     // Für nahtlosen Übergang: Letzter Ist-Wert als erster Prognose-Wert
     let lastActualValue = null;
     for (let i = data.actualData.length - 1; i >= 0; i--) {
@@ -292,21 +329,25 @@ const chartOptions = computed(() => {
     },
     colors: data.showProjection
       ? [
-          themeColors.success,
-          themeColors.error,
-          themeColors.primary,
-          themeColors.secondary,
+          themeColors.success, // Einnahmen
+          themeColors.error, // Ausgaben
+          themeColors.primary, // NetWorth (Ist)
+          themeColors.success, // Einnahmen (geplant)
+          themeColors.error, // Ausgaben (geplant)
+          themeColors.primary, // NetWorth (Prognose)
         ]
       : [themeColors.success, themeColors.error, themeColors.primary],
     stroke: {
-      width: data.showProjection ? [0, 0, 3, 3] : [0, 0, 3], // Balken: 0, Linien: 3
+      width: data.showProjection ? [0, 0, 3, 0, 0, 3] : [0, 0, 3], // Balken: 0, Linien: 3
       curve: "smooth",
-      dashArray: data.showProjection ? [0, 0, 0, 8] : [0, 0, 0], // Nur Prognose-Linie gestrichelt
+      dashArray: data.showProjection ? [0, 0, 0, 0, 0, 8] : [0, 0, 0], // Nur Prognose-Linie gestrichelt
     },
     fill: {
-      opacity: data.showProjection ? [0.85, 0.85, 1, 0.8] : [0.85, 0.85, 1],
+      opacity: data.showProjection
+        ? [0.85, 0.85, 1, 0.7, 0.7, 0.8]
+        : [0.85, 0.85, 1],
       type: data.showProjection
-        ? ["solid", "solid", "solid", "solid"]
+        ? ["solid", "solid", "solid", "solid", "solid", "solid"]
         : ["solid", "solid", "solid"],
     },
     plotOptions: {
@@ -317,14 +358,28 @@ const chartOptions = computed(() => {
     },
     labels: data.labels,
     markers: {
-      size: data.showProjection ? [5, 5] : [5],
+      size: data.showProjection ? [0, 0, 5, 0, 0, 5] : [0, 0, 5], // Nur Linien haben Marker
       strokeColors: data.showProjection
-        ? [themeColors.primary, themeColors.secondary]
-        : [themeColors.primary],
+        ? [
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+          ]
+        : [themeColors.primary, themeColors.primary, themeColors.primary],
       strokeWidth: 2,
       fillColors: data.showProjection
-        ? [themeColors.primary, themeColors.secondary]
-        : [themeColors.primary],
+        ? [
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+            themeColors.primary,
+          ]
+        : [themeColors.primary, themeColors.primary, themeColors.primary],
       hover: {
         size: 7,
       },
@@ -380,7 +435,14 @@ const chartOptions = computed(() => {
       },
       {
         // Y2-Achse für Einnahmen/Ausgaben-Balken
-        seriesName: ["Einnahmen", "Ausgaben"],
+        seriesName: data.showProjection
+          ? [
+              "Einnahmen",
+              "Ausgaben",
+              "Einnahmen (geplant)",
+              "Ausgaben (geplant)",
+            ]
+          : ["Einnahmen", "Ausgaben"],
         opposite: true,
         title: {
           text: "Einnahmen / Ausgaben (€)",
@@ -406,10 +468,21 @@ const chartOptions = computed(() => {
           show: true,
           color: themeColors.success,
         },
+        // Bessere Skalierung für Ein-/Ausgaben mit Nulllinie in der Mitte
+        min: function (min: number, max: number) {
+          const absMax = Math.max(Math.abs(min), Math.abs(max));
+          return -absMax * 1.2; // 20% Puffer nach unten
+        },
+        max: function (min: number, max: number) {
+          const absMax = Math.max(Math.abs(min), Math.abs(max));
+          return absMax * 1.2; // 20% Puffer nach oben
+        },
       },
     ],
     legend: {
       show: true,
+      clusterGroupedSeries: false,
+      clusterGroupedSeriesOrientation: "horizontal",
       position: isSmallScreen.value ? "bottom" : "top",
       horizontalAlign: "center",
       floating: false,
@@ -461,6 +534,28 @@ const chartOptions = computed(() => {
           show: true,
         },
       },
+    },
+    annotations: {
+      yaxis: [
+        {
+          // Nulllinie für NetWorth (Y1-Achse)
+          y: 0,
+          yAxisIndex: 0,
+          borderColor: themeColors.primary,
+          borderWidth: 1,
+          strokeDashArray: 0,
+          opacity: 1,
+        },
+        {
+          // Nulllinie für Ein-/Ausgaben (Y2-Achse)
+          y: 0,
+          yAxisIndex: 1,
+          borderColor: themeColors.success,
+          borderWidth: 1,
+          strokeDashArray: 0,
+          opacity: 1,
+        },
+      ],
     },
     responsive: [
       {

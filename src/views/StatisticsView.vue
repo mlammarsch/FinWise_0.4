@@ -23,7 +23,7 @@ const endDate = ref(dayjs().endOf("month").format("YYYY-MM-DD"));
 // Filter-Optionen
 const selectedAccountId = ref("all"); // "all", "grouped", oder spezifische Account-ID
 const accountGrouping = ref("all"); // "all" oder "grouped"
-const trendMonths = ref(-6);
+const trendMonths = ref(3);
 const accountTrendDays = ref(30);
 
 // Zusammenfassung für den ausgewählten Zeitraum

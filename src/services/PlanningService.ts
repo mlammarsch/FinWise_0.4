@@ -863,5 +863,52 @@ export const PlanningService = {
     await BalanceService.calculateMonthlyBalances();
 
     return result;
+  },
+
+  /**
+   * Berechnet geplante Einnahmen und Ausgaben für einen bestimmten Zeitraum
+   */
+  calculatePlannedIncomeExpense(startDate: string, endDate: string): { income: number; expense: number } {
+    const planningStore = usePlanningStore();
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    // Alle aktiven Planungstransaktionen durchgehen
+    for (const planning of planningStore.planningTransactions) {
+      if (!planning.isActive) continue;
+
+      // Berechne Ausführungstermine für den Zeitraum
+      const occurrences = this.calculateNextOccurrences(planning, startDate, endDate);
+
+      // Für jeden Ausführungstermin den Betrag addieren
+      for (const occurrence of occurrences) {
+        const occurrenceDate = dayjs(occurrence);
+        const start = dayjs(startDate);
+        const end = dayjs(endDate);
+
+        // Nur Termine im gewünschten Zeitraum berücksichtigen
+        if (occurrenceDate.isSameOrAfter(start) && occurrenceDate.isSameOrBefore(end)) {
+          // Bei Transfers nur die Hauptbuchung berücksichtigen (nicht die Gegenbuchung)
+          const isCounterBooking = planning.counterPlanningTransactionId &&
+            planningStore.planningTransactions.some(p =>
+              p.id === planning.counterPlanningTransactionId &&
+              p.counterPlanningTransactionId === planning.id
+            );
+
+          if (!isCounterBooking) {
+            if (planning.amount > 0) {
+              totalIncome += planning.amount;
+            } else {
+              totalExpense += Math.abs(planning.amount);
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      income: totalIncome,
+      expense: totalExpense
+    };
   }
 };
