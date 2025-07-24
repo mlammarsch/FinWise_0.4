@@ -37,7 +37,7 @@ import SelectRecipient from "@/components/ui/SelectRecipient.vue";
 import { debugLog } from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import { Icon } from "@iconify/vue";
-@{outputs('JSON_Body')?['fields']?['summary']}
+
 const props = defineProps<{
   rule?: AutomationRule;
   isEdit?: boolean;
