@@ -9,7 +9,7 @@ import dayjs from "dayjs";
 // Chart-Komponenten
 import IncomeExpenseChart from "@/components/ui/charts/IncomeExpenseChart.vue";
 import CategoryExpensesChart from "@/components/ui/charts/CategoryExpensesChart.vue";
-import MonthlyTrendChart from "@/components/ui/charts/MonthlyTrendChart.vue";
+import NetWorthChart from "@/components/ui/charts/NetWorthChart.vue";
 import AccountTrendChart from "@/components/ui/charts/AccountTrendChart.vue";
 
 // Stores
@@ -23,7 +23,7 @@ const endDate = ref(dayjs().endOf("month").format("YYYY-MM-DD"));
 // Filter-Optionen
 const selectedAccountId = ref("all"); // "all", "grouped", oder spezifische Account-ID
 const accountGrouping = ref("all"); // "all" oder "grouped"
-const trendMonths = ref(6);
+const trendMonths = ref(-6);
 const accountTrendDays = ref(30);
 
 // Zusammenfassung für den ausgewählten Zeitraum
@@ -391,19 +391,23 @@ const getAccountFilterLabel = (accountId: string) => {
     >
       <div class="card-body">
         <div class="flex justify-between items-center mb-4">
-          <h3 class="card-title text-lg">Monatlicher Trend</h3>
+          <h3 class="card-title text-lg">Nettovermögensentwicklung</h3>
           <select
             v-model="trendMonths"
             class="select select-bordered select-sm"
           >
-            <option :value="3">3 Monate</option>
-            <option :value="6">6 Monate</option>
-            <option :value="12">12 Monate</option>
+            <option value="all">Alle</option>
+            <option :value="-3">3 Monate</option>
+            <option :value="-6">6 Monate</option>
+            <option :value="-12">12 Monate</option>
+            <option :value="3">+ 3 Monate</option>
+            <option :value="6">+ 6 Monate</option>
+            <option :value="12">+ 12 Monate</option>
           </select>
         </div>
 
         <div class="h-64">
-          <MonthlyTrendChart :months="trendMonths" />
+          <NetWorthChart :months="trendMonths" />
         </div>
       </div>
     </div>

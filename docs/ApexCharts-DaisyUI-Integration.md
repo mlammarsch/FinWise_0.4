@@ -147,7 +147,8 @@ const updateScreenSize = () => {
 
 ```typescript
 chart: {
-  height: 350,
+  height: "100%", // Responsive Höhe für Card-Container
+  width: "100%",  // Responsive Breite für Card-Container
   type: "line",
   stacked: false,
   background: "transparent",
@@ -447,3 +448,102 @@ Die ApexCharts-DaisyUI-Integration bietet:
 - ✅ Performance-Optimierungen
 
 Die Implementierung ist robust, wartbar und erweiterbar für zukünftige Chart-Komponenten in der FinWise-Anwendung.
+
+## Container-Größen für Cards
+
+### Responsive Chart-Container
+
+Für die optimale Integration in DaisyUI-Cards sollten Charts responsive Dimensionen verwenden:
+
+```typescript
+chart: {
+  height: "100%", // Passt sich an die Card-Höhe an
+  width: "100%",  // Passt sich an die Card-Breite an
+  type: "line",
+  // ... weitere Optionen
+}
+```
+
+### Card-Container-Struktur
+
+```vue
+<template>
+  <div class="card bg-base-100 shadow-md">
+    <div class="card-body">
+      <div class="flex justify-between items-center mb-4">
+        <h3 class="card-title text-lg">Chart-Titel</h3>
+        <!-- Optional: Dropdown oder Controls -->
+      </div>
+
+      <!-- Chart-Container mit fester Höhe -->
+      <div class="h-64"> <!-- oder h-80, h-96 je nach Bedarf -->
+        <YourChart :data="chartData" />
+      </div>
+    </div>
+  </div>
+</template>
+```
+
+### Empfohlene Container-Höhen
+
+- **Kleine Charts**: `h-48` (192px) - Für Sparklines oder einfache Indikatoren
+- **Standard Charts**: `h-64` (256px) - Für die meisten Line/Bar Charts
+- **Große Charts**: `h-80` (320px) - Für komplexe Multi-Series Charts
+- **Extra große Charts**: `h-96` (384px) - Für detaillierte Dashboards
+
+### Mobile Anpassungen
+
+```typescript
+responsive: [
+  {
+    breakpoint: 640, // Tailwind sm breakpoint
+    options: {
+      chart: {
+        height: "100%", // Bleibt responsive
+      },
+      legend: {
+        position: "bottom", // Legende nach unten auf mobilen Geräten
+      },
+      // Weitere mobile Anpassungen
+    },
+  },
+],
+```
+
+### Container-Padding und Margins
+
+```vue
+<style scoped>
+.chart-container {
+  /* Zusätzlicher Padding falls nötig */
+  padding: 0.5rem;
+
+  /* Verhindert Overflow bei großen Charts */
+  overflow: hidden;
+}
+</style>
+```
+
+### Best Practices für Card-Integration
+
+1. **Konsistente Höhen**: Verwende einheitliche Höhen für Charts in derselben Ansicht
+2. **Responsive Breakpoints**: Teste Charts auf verschiedenen Bildschirmgrößen
+3. **Loading States**: Implementiere Loading-Indikatoren für Chart-Container
+4. **Error Handling**: Zeige Fallback-Content bei fehlenden Daten
+
+```vue
+<template>
+  <div class="h-64">
+    <div v-if="loading" class="flex items-center justify-center h-full">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+    <div v-else-if="!hasData" class="flex items-center justify-center h-full text-base-content/70">
+      <div class="text-center">
+        <div class="text-lg mb-2">📊</div>
+        <div>Keine Daten verfügbar</div>
+      </div>
+    </div>
+    <YourChart v-else :data="chartData" />
+  </div>
+</template>
+```
