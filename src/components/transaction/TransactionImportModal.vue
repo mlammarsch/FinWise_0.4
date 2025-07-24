@@ -423,10 +423,10 @@ watch(
           :class="{
             'alert-success': csvImportService.csvParseStatus === 'success',
             'alert-error': csvImportService.csvParseStatus === 'error',
-            'alert-info': csvImportService.csvParseStatus === 'parsing',
-            'alert-warning':
-              csvImportService.csvParseStatus === 'idle' &&
-              csvImportService.csvFile,
+            'alert-info':
+              csvImportService.csvParseStatus === 'parsing' ||
+              (csvImportService.csvParseStatus === 'idle' &&
+                csvImportService.csvFile),
           }"
           v-if="
             csvImportService.csvParseStatus !== 'idle' ||
@@ -442,19 +442,23 @@ watch(
             <Icon icon="mdi:alert-circle" />
             {{ csvImportService.error }}
           </span>
-          <span v-else-if="csvImportService.csvParseStatus === 'parsing'">
-            <span class="loading loading-dots loading-sm"></span>
-            Parsing läuft...
-          </span>
-          <span
+          <div
+            v-else-if="csvImportService.csvParseStatus === 'parsing'"
+            class="flex items-center gap-2"
+          >
+            <span class="loading loading-dots loading-md"></span>
+            <span>Parsing läuft...</span>
+          </div>
+          <div
             v-else-if="
               csvImportService.csvParseStatus === 'idle' &&
               csvImportService.csvFile
             "
+            class="flex items-center gap-2"
           >
-            <span class="loading loading-spinner loading-md"></span>
-            CSV-Datei wird eingelesen...
-          </span>
+            <span class="loading loading-dots loading-md"></span>
+            <span>CSV-Datei wird eingelesen...</span>
+          </div>
           <span v-else>
             <Icon icon="mdi:information" />
             Konfigurationsparameter anpassen, falls nötig.
