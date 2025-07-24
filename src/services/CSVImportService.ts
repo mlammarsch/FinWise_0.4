@@ -1263,7 +1263,12 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         `${importedTransactions.value.length} Transaktionen erfolgreich importiert.`
       );
       importStatus.value = "success";
-      return importedTransactions.value.length;
+      const importedCount = importedTransactions.value.length;
+
+      // NEU: Den Service-Zustand für den nächsten Import zurücksetzen
+      reset();
+
+      return importedCount;
     } catch (err) {
       // Stelle sicher, dass die CSV-Import-Optimierungen auch bei Fehlern zurückgesetzt werden
       (TransactionService as any)._skipRunningBalanceRecalc = originalSkipRunningBalanceRecalc;
