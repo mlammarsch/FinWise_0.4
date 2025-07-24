@@ -172,7 +172,7 @@ export const useRuleStore = defineStore('rule', () => {
     let applied = 0;
 
     for (const rule of sorted) {
-      if (checkConditions(rule, modified)) {
+      if (checkConditions(rule.conditions, modified)) {
         modified = applyActions(rule, modified);
         applied++;
       }
@@ -198,18 +198,12 @@ export const useRuleStore = defineStore('rule', () => {
     return modified;
   }
 
-  function checkConditions(rule: AutomationRule, tx: Transaction): boolean {
-    // Wenn die Regel eine Kategorie setzt, darf sie nur auf Einnahmen/Ausgaben angewendet werden.
-    const setsCategory = rule.actions.some(a => a.type === RuleActionType.SET_CATEGORY);
-    if (setsCategory && tx.type !== 'INCOME' && tx.type !== 'EXPENSE') {
-      return false;
-    }
-
-    if (!rule.conditions?.length) return true;
+  function checkConditions(conditions: any[], tx: Transaction): boolean {
+    if (!conditions?.length) return true;
 
     // Die `checkConditions`-Logik aus der RuleForm.vue sollte hierher verschoben werden,
     // um Konsistenz zu gewährleisten. Ich übernehme die Logik von dort.
-    return rule.conditions.every((condition) => {
+    return conditions.every((condition) => {
       const source = (condition as any).source || ''; // Cast to any for source
       const operator = condition.operator || 'is';
       const value = condition.value;
@@ -388,6 +382,8 @@ export const useRuleStore = defineStore('rule', () => {
     loadRules,
     /* engine */
     applyRulesToTransaction,
+    checkConditions,
+    applyActions,
     /* sync */
     handleSyncMessage,
     /* util */

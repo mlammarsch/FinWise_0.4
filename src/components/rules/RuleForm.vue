@@ -274,7 +274,7 @@ function applyRuleToExistingTransactions() {
   const matchingTransactions = [];
 
   for (const transaction of allTransactions) {
-    if (ruleStore.checkConditions(ruleData, transaction)) {
+    if (ruleStore.checkConditions(ruleData.conditions, transaction)) {
       matchingTransactions.push(transaction);
     }
   }

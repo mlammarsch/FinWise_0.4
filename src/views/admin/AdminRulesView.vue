@@ -174,7 +174,7 @@ const applyRuleToTransactions = async (rule: AutomationRule) => {
   // Alle Transaktionen durchgehen und prüfen, ob die Regel zutrifft
   for (const tx of allTransactions) {
     try {
-      if (checkSingleRuleConditions(rule, tx)) {
+      if (ruleStore.checkConditions(rule.conditions, tx)) {
         matchedCount++;
         matchedTransactions.push(tx);
 
@@ -216,189 +216,6 @@ const applyRuleToTransactions = async (rule: AutomationRule) => {
   });
 };
 
-// Prüft, ob eine spezifische Regel auf eine Transaktion zutrifft (analog zu RuleForm.vue)
-function checkSingleRuleConditions(
-  rule: AutomationRule,
-  tx: Transaction
-): boolean {
-  if (!rule.conditions?.length) return true;
-
-  const result = rule.conditions.every((condition: any) => {
-    const source = condition.source || "";
-    const operator = condition.operator || "is";
-    const value = condition.value;
-
-    let txValue = null;
-
-    // Extrahiere den entsprechenden Wert aus der Transaktion
-    switch (source) {
-      case "account":
-        txValue = tx.accountId;
-        break;
-      case "recipient":
-        txValue = tx.recipientId || "";
-        break;
-      case "amount":
-        txValue = tx.amount;
-        break;
-      case "date":
-        txValue = tx.date;
-        break;
-      case "valueDate":
-        txValue = tx.valueDate || tx.date;
-        break;
-      case "description":
-        txValue = tx.note || "";
-        break;
-      case "category":
-        txValue = tx.categoryId || "";
-        break;
-      default:
-        debugLog("[AdminRulesView] Unknown condition source", {
-          source,
-          condition,
-        });
-        return false;
-    }
-
-    // Debug-Log für jede Bedingungsprüfung
-    const conditionResult = evaluateCondition(condition, tx, txValue);
-
-    if (rule.name.toLowerCase().includes("amazon")) {
-      debugLog("[AdminRulesView] Amazon rule condition check", {
-        transactionId: tx.id,
-        payee: tx.payee,
-        recipientId: tx.recipientId,
-        condition: { source, operator, value },
-        txValue,
-        conditionResult,
-      });
-    }
-
-    return conditionResult;
-  });
-
-  return result;
-}
-
-// Hilfsfunktion zur Bedingungsauswertung
-function evaluateCondition(
-  condition: any,
-  tx: Transaction,
-  txValue: any
-): boolean {
-  const source = condition.source || "";
-  const operator = condition.operator || "is";
-  const value = condition.value;
-
-  // Spezialfall für Empfänger
-  if (source === "recipient") {
-    if (operator === "is") {
-      return tx.recipientId === value;
-    } else {
-      // Für contains, starts_with, ends_with: Sowohl Freitext als auch Recipient-ID unterstützen
-      let searchTerm = "";
-
-      // Prüfen ob value eine Recipient-ID ist (UUID-Format) oder Freitext
-      const selectedRecipient = recipientStore.recipients.find(
-        (r: any) => r.id === value
-      );
-
-      if (selectedRecipient) {
-        // Value ist eine Recipient-ID - verwende den Namen
-        searchTerm = selectedRecipient.name.toLowerCase();
-      } else {
-        // Value ist Freitext - verwende direkt
-        searchTerm = String(value).toLowerCase();
-      }
-
-      // Transaktions-Empfänger-Name ermitteln
-      const txRecipient = recipientStore.recipients.find(
-        (r: any) => r.id === tx.recipientId
-      );
-      const txRecipientName = (
-        txRecipient?.name ||
-        tx.payee ||
-        ""
-      ).toLowerCase();
-
-      // Debug-Log für recipient-Vergleiche
-      debugLog("[AdminRulesView] Recipient comparison", {
-        operator,
-        originalValue: value,
-        isRecipientId: !!selectedRecipient,
-        searchTerm,
-        txRecipientId: tx.recipientId,
-        txRecipientName,
-        txPayee: tx.payee,
-      });
-
-      switch (operator) {
-        case "contains":
-          return txRecipientName.includes(searchTerm);
-        case "starts_with":
-          return txRecipientName.startsWith(searchTerm);
-        case "ends_with":
-          return txRecipientName.endsWith(searchTerm);
-        default:
-          return false;
-      }
-    }
-  }
-
-  // Spezialfall für Kategorie und Konto bei "ist"
-  if ((source === "category" || source === "account") && operator === "is") {
-    return txValue === value;
-  }
-
-  // Für Datumsvergleiche
-  if (
-    (source === "date" || source === "valueDate") &&
-    ["greater", "greater_equal", "less", "less_equal"].includes(operator)
-  ) {
-    const txDate = new Date(txValue as string);
-    const compareDate = new Date(value);
-
-    if (operator === "greater") return txDate > compareDate;
-    if (operator === "greater_equal") return txDate >= compareDate;
-    if (operator === "less") return txDate < compareDate;
-    if (operator === "less_equal") return txDate <= compareDate;
-  }
-
-  // Standardvergleiche
-  switch (operator) {
-    case "is":
-      return txValue === value;
-    case "contains":
-      return String(txValue)
-        .toLowerCase()
-        .includes(String(value).toLowerCase());
-    case "starts_with":
-      return String(txValue)
-        .toLowerCase()
-        .startsWith(String(value).toLowerCase());
-    case "ends_with":
-      return String(txValue)
-        .toLowerCase()
-        .endsWith(String(value).toLowerCase());
-    case "greater":
-      return Number(txValue) > Number(value);
-    case "greater_equal":
-      return Number(txValue) >= Number(value);
-    case "less":
-      return Number(txValue) < Number(value);
-    case "less_equal":
-      return Number(txValue) <= Number(value);
-    case "approx":
-      const txNum = Number(txValue);
-      const valNum = Number(value);
-      const tolerance = Math.abs(valNum * 0.1); // 10% Toleranz
-      return Math.abs(txNum - valNum) <= tolerance;
-    default:
-      return false;
-  }
-}
-
 // Regel tatsächlich anwenden (nach Bestätigung)
 const confirmApplyRule = async () => {
   if (!applyRuleData.value.rule || applyRuleData.value.matchedCount === 0) {
@@ -412,7 +229,7 @@ const confirmApplyRule = async () => {
 
     // Alle Transaktionen durchgehen und Regel anwenden
     for (const tx of allTransactions) {
-      if (checkSingleRuleConditions(rule, tx)) {
+      if (ruleStore.checkConditions(rule.conditions, tx)) {
         // Regel-Aktionen auf die Transaktion anwenden
         const updates: Partial<Transaction> = {};
 
