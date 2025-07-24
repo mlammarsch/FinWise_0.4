@@ -14,7 +14,7 @@ import { useTransactionStore } from "@/stores/transactionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { TransactionService } from "@/services/TransactionService";
 import { BalanceService } from "@/services/BalanceService";
-import { TransactionType, EntityTypeEnum, SyncOperationType } from "@/types";
+import { TransactionType, EntityTypeEnum, SyncOperationType, CSVTransactionData } from "@/types";
 import { debugLog, infoLog, errorLog, warnLog } from "@/utils/logger";
 import { TenantDbService } from "@/services/TenantDbService";
 import { parseCSV as parseCSVUtil, parseAmount, calculateStringSimilarity } from "@/utils/csvUtils";
@@ -883,8 +883,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
         accountId: accountId,
         tagIds: row.tagIds || selectedTags.value || [],
         potentialMerge: row._potentialMerge,
-        // Task 4.1: Setze payee-Feld wenn keine recipientId gefunden wurde
-        payee: !row.recipientId && mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : undefined,
+        // REGEL-FIRST-ARCHITEKTUR: Setze payee-Feld IMMER aus CSV-Daten
+        payee: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : '',
         // Speichere den Original-Empfängernamen für weitere Verarbeitung
         originalRecipientName: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : null
       };
@@ -967,99 +967,111 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
       // Map für bereits erstellte Empfänger, um Duplikate zu vermeiden
       const createdRecipients = new Map<string, string>();  // recipientName -> recipientId
 
-      // BATCH-VERARBEITUNG: Erst alle Empfänger erstellen, dann alle Transaktionen auf einmal
+      // REGEL-FIRST-ARCHITEKTUR: Zwei-Phasen-Verarbeitung
       const transactionsToImport = [];
 
-      // Phase 1: Empfänger-Verarbeitung (sequenziell, da neue Empfänger erstellt werden können)
+      // Phase 1: Datenaufbereitung - payee aus CSV setzen, keine IDs zuweisen
       for (const item of preparedData) {
-        // Empfängerzuordnung auflösen
-        const recipientResult = resolveRecipient(item);
-
-        // Empfänger zuweisen oder erstellen
-        if (recipientResult) {
-          if (typeof recipientResult === 'string') {
-            // Neuer Empfänger erstellen, falls noch nicht vorhanden
-            const recipientName = recipientResult;
-            const lowerName = (recipientName || '').toLowerCase();
-
-            if (createdRecipients.has(lowerName)) {
-              const recipientId = createdRecipients.get(lowerName);
-              if (recipientId) {
-                item.recipientId = recipientId;
-                debugLog("CSVImportService", `Verwende bereits erstellten Empfänger: ${recipientName}`, JSON.stringify({ id: item.recipientId }));
-              }
-            } else {
-              // Neuen Empfänger erstellen
-              const newRecipient = await recipientStore.addRecipient({ name: recipientName });
-              item.recipientId = newRecipient.id;
-              createdRecipients.set(lowerName, newRecipient.id);
-              infoLog("CSVImportService", `Neuer Empfänger erstellt: ${recipientName} (${newRecipient.id})`);
-            }
-          } else {
-            // Verwende existierenden Empfänger (bereits als Objekt zurückgegeben)
-            item.recipientId = recipientResult.id;
-          }
-        }
-
-        // Bestimme Transaktionstyp basierend auf Betrag
-        const txType: TransactionType = item.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
-
-        // Transaktion für Batch-Import vorbereiten (manuell erstellen)
-        const transactionData = {
+        // WICHTIG: Setze payee IMMER aus CSV-Daten, auch wenn potentieller Match existiert
+        const transactionData: CSVTransactionData = {
           id: crypto.randomUUID(),
           date: item.date,
           valueDate: item.valueDate,
           accountId: item.accountId,
-          categoryId: item.categoryId,
-          tagIds: item.tagIds,
           amount: item.amount,
           note: item.note,
-          description: item.note, // Using note as description
-          recipientId: item.recipientId || undefined,
-          type: txType,
+          description: item.note,
+
+          // REGEL-RELEVANTE FELDER - immer aus CSV setzen
+          payee: item.originalRecipientName || '', // Aus CSV-Empfänger-Spalte
+          originalCategory: mappedColumns.value.category ?
+            (item as any)[mappedColumns.value.category] : undefined,
+          originalRecipientName: item.originalRecipientName, // Für Regel-Kompatibilität
+
+          // IDs bleiben zunächst undefined - werden durch Regeln oder Matching gesetzt
+          recipientId: undefined,
+          categoryId: undefined,
+          tagIds: item.tagIds || [],
+
+          // Weitere Felder
+          type: item.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME,
           counterTransactionId: null,
           planningTransactionId: null,
           isReconciliation: false,
-          runningBalance: 0, // Wird später berechnet
+          runningBalance: 0,
           reconciled: false,
           isCategoryTransfer: false,
           transferToAccountId: null,
           toCategoryId: undefined,
-          payee: item.payee || '',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
 
         transactionsToImport.push(transactionData);
+      }
+
+      // Phase 2: Regel-Verarbeitung (PRE + DEFAULT)
+      if (transactionsToImport.length > 0) {
+        infoLog('CSVImportService', `Applying PRE and DEFAULT stage rules to ${transactionsToImport.length} transactions`);
+
+        // Wende Regeln auf Transaktionen mit payee/originalCategory an
+        const processedTransactions = await TransactionService.applyPreAndDefaultRulesToTransactions(transactionsToImport);
+
+        // Ersetze ursprüngliche Transaktionen
+        transactionsToImport.length = 0;
+        transactionsToImport.push(...processedTransactions);
+      }
+
+      // Phase 3: Automatisches Matching nur für Transaktionen ohne Regel-Zuordnung
+      for (const tx of transactionsToImport) {
+        // Empfänger-Matching nur wenn keine Regel recipientId gesetzt hat
+        if (!tx.recipientId && !tx._skipAutoRecipientMatching && tx.payee) {
+          const matchResult = await performRecipientMatching(tx.payee);
+          if (matchResult) {
+            if (typeof matchResult === 'string') {
+              // Neuen Empfänger erstellen
+              const recipientName = matchResult;
+              const lowerName = (recipientName || '').toLowerCase();
+
+              if (createdRecipients.has(lowerName)) {
+                const recipientId = createdRecipients.get(lowerName);
+                if (recipientId) {
+                  tx.recipientId = recipientId;
+                  debugLog("CSVImportService", `Verwende bereits erstellten Empfänger: ${recipientName}`, JSON.stringify({ id: tx.recipientId }));
+                }
+              } else {
+                // Neuen Empfänger erstellen
+                const newRecipient = await recipientStore.addRecipient({ name: recipientName });
+                tx.recipientId = newRecipient.id;
+                createdRecipients.set(lowerName, newRecipient.id);
+                infoLog("CSVImportService", `Neuer Empfänger erstellt: ${recipientName} (${newRecipient.id})`);
+              }
+            } else {
+              // Existierenden Empfänger verwenden
+              tx.recipientId = matchResult.id;
+            }
+          }
+        }
+
+        // Kategorie-Matching nur wenn keine Regel categoryId gesetzt hat
+        if (!tx.categoryId && !tx._skipAutoCategoryMatching && tx.originalCategory) {
+          const categoryMatch = await performCategoryMatching(tx.originalCategory);
+          if (categoryMatch) {
+            tx.categoryId = categoryMatch.id;
+          }
+        }
 
         // Für UI-Anzeige vorbereiten
         importedTransactions.value.push({
-          ...transactionData,
-          recipientName: item.recipientId
-            ? recipientStore.getRecipientById(item.recipientId)?.name
+          ...tx,
+          recipientName: tx.recipientId
+            ? recipientStore.getRecipientById(tx.recipientId)?.name
             : "",
-          categoryName: item.categoryId
-            ? categoryStore.getCategoryById(item.categoryId)?.name
+          categoryName: tx.categoryId
+            ? categoryStore.getCategoryById(tx.categoryId)?.name
             : "",
-          accountName: accountStore.getAccountById(item.accountId)?.name || "",
+          accountName: accountStore.getAccountById(tx.accountId)?.name || "",
         });
-      }
-
-      // Phase 1.5: PRE + DEFAULT STAGE REGELN ANWENDEN vor dem Batch-Import
-      if (transactionsToImport.length > 0) {
-        infoLog('CSVImportService', `Applying PRE and DEFAULT stage rules to ${transactionsToImport.length} transactions before import`);
-        try {
-          // Wende PRE und DEFAULT Stage Regeln auf alle Transaktionen an
-          const processedTransactions = await TransactionService.applyPreAndDefaultRulesToTransactions(transactionsToImport);
-
-          // Ersetze die ursprünglichen Transaktionen mit den verarbeiteten
-          transactionsToImport.length = 0; // Array leeren
-          transactionsToImport.push(...processedTransactions);
-
-          infoLog('CSVImportService', `PRE and DEFAULT stage rules applied successfully to ${transactionsToImport.length} transactions`);
-        } catch (ruleError) {
-          warnLog('CSVImportService', 'Error applying PRE and DEFAULT stage rules, continuing with original transactions', ruleError);
-        }
       }
 
       // Phase 2: BATCH-IMPORT aller Transaktionen
@@ -1393,6 +1405,72 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
     applyRecipientToSimilarRows,
     applyCategoryToSimilarRows,
     updateRowNote,
-    resolveRecipient
+    resolveRecipient,
+    performRecipientMatching,
+    performCategoryMatching
   };
+
+  // Hilfsfunktionen für Matching (Regel-First-Architektur)
+  async function performRecipientMatching(recipientName: string): Promise<string | { id: string, name: string } | null> {
+    if (!recipientName) return null;
+
+    // Direkter Match (case-insensitive)
+    const directMatch = recipientStore.recipients.find(
+      r => r.name && r.name.toLowerCase() === recipientName.toLowerCase().trim()
+    );
+
+    if (directMatch) {
+      debugLog('CSVImportService', `Direkter Empfänger-Match: "${recipientName}" -> ${directMatch.name}`);
+      return directMatch;
+    }
+
+    // Fuzzy-Match mit hohem Schwellwert
+    const fuzzyMatches = recipientStore.recipients
+      .map(recipient => ({
+        ...recipient,
+        similarity: calculateStringSimilarity(recipient.name, recipientName)
+      }))
+      .filter(match => match.similarity > 0.8)
+      .sort((a, b) => b.similarity - a.similarity);
+
+    if (fuzzyMatches.length > 0) {
+      debugLog('CSVImportService', `Fuzzy-Match Empfänger: "${recipientName}" -> ${fuzzyMatches[0].name} (${fuzzyMatches[0].similarity})`);
+      return { id: fuzzyMatches[0].id, name: fuzzyMatches[0].name };
+    }
+
+    // Kein Match gefunden - Name für neue Empfänger-Erstellung zurückgeben
+    debugLog('CSVImportService', `Kein Empfänger-Match für "${recipientName}" - wird als neuer Empfänger erstellt`);
+    return recipientName;
+  }
+
+  async function performCategoryMatching(categoryName: string): Promise<{ id: string, name: string } | null> {
+    if (!categoryName) return null;
+
+    // Direkter Match
+    const directMatch = categoryStore.categories.find(
+      c => c.name && c.name.toLowerCase() === categoryName.toLowerCase()
+    );
+
+    if (directMatch) {
+      debugLog('CSVImportService', `Direkter Kategorie-Match: "${categoryName}" -> ${directMatch.name}`);
+      return directMatch;
+    }
+
+    // Fuzzy-Match
+    const fuzzyMatches = categoryStore.categories
+      .map(category => ({
+        ...category,
+        similarity: calculateStringSimilarity(category.name, categoryName)
+      }))
+      .filter(match => match.similarity > 0.8)
+      .sort((a, b) => b.similarity - a.similarity);
+
+    if (fuzzyMatches.length > 0) {
+      debugLog('CSVImportService', `Fuzzy-Match Kategorie: "${categoryName}" -> ${fuzzyMatches[0].name} (${fuzzyMatches[0].similarity})`);
+      return { id: fuzzyMatches[0].id, name: fuzzyMatches[0].name };
+    }
+
+    debugLog('CSVImportService', `Kein Kategorie-Match für "${categoryName}"`);
+    return null;
+  }
 });

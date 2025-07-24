@@ -97,6 +97,15 @@ export interface Transaction {
   updatedAt?: string // ISO 8601 Format
 }
 
+// Erweiterte Transaktionsdaten für CSV-Import (Regel-First-Architektur)
+export interface CSVTransactionData extends Transaction {
+  payee: string;                    // Immer aus CSV gesetzt
+  originalCategory?: string;        // Kategorie-Klartext aus CSV
+  originalRecipientName?: string;   // Empfänger-Klartext aus CSV (Alias für payee)
+  _skipAutoRecipientMatching?: boolean; // Flag für Regel-gesteuerte Empfänger
+  _skipAutoCategoryMatching?: boolean;  // Flag für Regel-gesteuerte Kategorien
+}
+
 // Planungstransaktionen
 export interface PlanningTransaction {
   id: string;

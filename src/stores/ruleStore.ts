@@ -10,9 +10,10 @@ import {
   EntityTypeEnum,
   SyncOperationType,
 } from '../types';
-import { debugLog, errorLog } from '@/utils/logger';
+import { debugLog, errorLog, warnLog } from '@/utils/logger';
 import { TransactionService } from '@/services/TransactionService';
 import { TenantDbService } from '@/services/TenantDbService';
+import { useRecipientStore } from '@/stores/recipientStore';
 
 export const useRuleStore = defineStore('rule', () => {
   /** Alle Regeln */
@@ -201,6 +202,14 @@ export const useRuleStore = defineStore('rule', () => {
   function checkConditions(conditions: any[], tx: Transaction): boolean {
     if (!conditions?.length) return true;
 
+    debugLog('RuleStore', `checkConditions: Prüfe ${conditions.length} Bedingungen für Transaktion`, {
+      txId: tx.id,
+      payee: tx.payee,
+      originalRecipientName: (tx as any).originalRecipientName,
+      amount: tx.amount,
+      conditions: conditions.map(c => ({ source: c.source, operator: c.operator, value: c.value }))
+    });
+
     // Die `checkConditions`-Logik aus der RuleForm.vue sollte hierher verschoben werden,
     // um Konsistenz zu gewährleisten. Ich übernehme die Logik von dort.
     return conditions.every((condition) => {
@@ -215,7 +224,11 @@ export const useRuleStore = defineStore('rule', () => {
           txValue = tx.accountId;
           break;
         case 'recipient':
+          // Verwende payee für Empfänger-Bedingungen (nicht recipientId)
           txValue = tx.payee || '';
+          break;
+        case 'originalRecipient': // Neue Bedingung für CSV-Import
+          txValue = (tx as any).originalRecipientName || tx.payee || '';
           break;
         case 'amount':
           txValue = tx.amount;
@@ -230,7 +243,11 @@ export const useRuleStore = defineStore('rule', () => {
           txValue = tx.note || '';
           break;
         case 'category':
-          txValue = tx.categoryId || '';
+          // Für Kategorie-Bedingungen: erst originalCategory, dann categoryId
+          if (condition.operator === 'is' && value === 'NO_CATEGORY') {
+            return !tx.categoryId && !(tx as any).originalCategory;
+          }
+          txValue = (tx as any).originalCategory || tx.categoryId || '';
           break;
         default:
           // Fallback für alte Regeltypen ohne 'source'
@@ -278,31 +295,45 @@ export const useRuleStore = defineStore('rule', () => {
         if (operator === 'less_equal') return txDate <= compareDate;
       }
 
+      // Debug-Log für jede Bedingung
+      let result = false;
       switch (operator) {
         case 'is':
-          return String(txValue).toLowerCase() === String(value).toLowerCase();
+          result = String(txValue).toLowerCase() === String(value).toLowerCase();
+          break;
         case 'contains':
-          return String(txValue).toLowerCase().includes(String(value).toLowerCase());
+          result = String(txValue).toLowerCase().includes(String(value).toLowerCase());
+          break;
         case 'starts_with':
-          return String(txValue).toLowerCase().startsWith(String(value).toLowerCase());
+          result = String(txValue).toLowerCase().startsWith(String(value).toLowerCase());
+          break;
         case 'ends_with':
-          return String(txValue).toLowerCase().endsWith(String(value).toLowerCase());
+          result = String(txValue).toLowerCase().endsWith(String(value).toLowerCase());
+          break;
         case 'greater':
-          return Number(txValue) > Number(value);
+          result = Number(txValue) > Number(value);
+          break;
         case 'greater_equal':
-          return Number(txValue) >= Number(value);
+          result = Number(txValue) >= Number(value);
+          break;
         case 'less':
-          return Number(txValue) < Number(value);
+          result = Number(txValue) < Number(value);
+          break;
         case 'less_equal':
-          return Number(txValue) <= Number(value);
+          result = Number(txValue) <= Number(value);
+          break;
         case 'approx':
           const txNum = Number(txValue);
           const valNum = Number(value);
           const tolerance = Math.abs(valNum * 0.1);
-          return Math.abs(txNum - valNum) <= tolerance;
+          result = Math.abs(txNum - valNum) <= tolerance;
+          break;
         default:
-          return false;
+          result = false;
       }
+
+      debugLog('RuleStore', `Bedingung: ${source} ${operator} "${value}" | txValue: "${txValue}" | Ergebnis: ${result}`);
+      return result;
     });
   }
 
@@ -314,6 +345,43 @@ export const useRuleStore = defineStore('rule', () => {
           // Transferbuchungen und Kategorie-Transfers ignorieren
           if (!tx.isCategoryTransfer && !tx.counterTransactionId) {
             out.categoryId = String(a.value);
+            // Für CSV-Import: Flag setzen, um automatisches Kategorie-Matching zu überspringen
+            if ('_skipAutoCategoryMatching' in out) {
+              (out as any)._skipAutoCategoryMatching = true;
+            }
+          }
+          break;
+        case RuleActionType.SET_RECIPIENT:
+          // Suche Empfänger nach Name
+          const recipientStore = useRecipientStore();
+          debugLog('RuleStore', `SET_RECIPIENT: Suche Empfänger mit Wert "${a.value}" (Typ: ${typeof a.value})`);
+          debugLog('RuleStore', `Verfügbare Empfänger: ${recipientStore.recipients.map((r: any) => `"${r.name}" (${r.id})`).join(', ')}`);
+
+          // Prüfe ob der Wert bereits eine UUID ist (dann ist es eine ID, nicht ein Name)
+          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(a.value));
+
+          let recipient;
+          if (isUUID) {
+            // Suche nach ID
+            recipient = recipientStore.recipients.find((r: any) => r.id === String(a.value));
+            debugLog('RuleStore', `Suche nach ID: ${a.value}, gefunden: ${recipient ? recipient.name : 'nicht gefunden'}`);
+          } else {
+            // Suche nach Name
+            recipient = recipientStore.recipients.find((r: any) =>
+              r.name.toLowerCase() === String(a.value).toLowerCase()
+            );
+            debugLog('RuleStore', `Suche nach Name: ${a.value}, gefunden: ${recipient ? recipient.name : 'nicht gefunden'}`);
+          }
+
+          if (recipient) {
+            out.recipientId = recipient.id;
+            // Für CSV-Import: Flag setzen, um automatisches Empfänger-Matching zu überspringen
+            if ('_skipAutoRecipientMatching' in out) {
+              (out as any)._skipAutoRecipientMatching = true;
+            }
+            debugLog('RuleStore', `Regel "${rule.name}" setzte Empfänger: ${recipient.name} (${recipient.id})`);
+          } else {
+            warnLog('RuleStore', `Regel "${rule.name}" konnte Empfänger "${a.value}" nicht finden`);
           }
           break;
         case RuleActionType.ADD_TAG:
