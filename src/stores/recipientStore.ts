@@ -26,14 +26,14 @@ export const useRecipientStore = defineStore('recipient', () => {
       ...recipientData,
       id: 'id' in recipientData ? recipientData.id : uuidv4(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (recipientData as any).updated_at || new Date().toISOString(),
+      updatedAt: (recipientData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localRecipient = await tenantDbService.getRecipientById(recipientWithTimestamp.id);
-      if (localRecipient && localRecipient.updated_at && recipientWithTimestamp.updated_at &&
-          new Date(localRecipient.updated_at) >= new Date(recipientWithTimestamp.updated_at)) {
+      if (localRecipient && localRecipient.updatedAt && recipientWithTimestamp.updatedAt &&
+          new Date(localRecipient.updatedAt) >= new Date(recipientWithTimestamp.updatedAt)) {
         infoLog('recipientStore', `addRecipient (fromSync): Lokaler Empfänger ${localRecipient.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localRecipient; // Gib den lokalen, "gewinnenden" Empfänger zurück
       }
@@ -49,7 +49,7 @@ export const useRecipientStore = defineStore('recipient', () => {
       recipients.value.push(recipientWithTimestamp);
     } else {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt, falls die DB-Operation nicht sofort reflektiert wird
-      if (!fromSync || (recipientWithTimestamp.updated_at && (!recipients.value[existingRecipientIndex].updated_at || new Date(recipientWithTimestamp.updated_at) > new Date(recipients.value[existingRecipientIndex].updated_at!)))) {
+      if (!fromSync || (recipientWithTimestamp.updatedAt && (!recipients.value[existingRecipientIndex].updatedAt || new Date(recipientWithTimestamp.updatedAt) > new Date(recipients.value[existingRecipientIndex].updatedAt!)))) {
         recipients.value[existingRecipientIndex] = recipientWithTimestamp;
       } else if (fromSync) {
         // Wenn fromSync und das Store-Empfänger neuer ist, behalte das Store-Empfänger (sollte durch obige DB-Prüfung nicht passieren)
@@ -79,7 +79,7 @@ export const useRecipientStore = defineStore('recipient', () => {
 
     const recipientUpdatesWithTimestamp: Recipient = {
       ...recipientUpdatesData,
-      updated_at: recipientUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: recipientUpdatesData.updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
@@ -92,8 +92,8 @@ export const useRecipientStore = defineStore('recipient', () => {
         return true; // Frühzeitiger Ausstieg, da addRecipient die weitere Logik übernimmt
       }
 
-      if (localRecipient.updated_at && recipientUpdatesWithTimestamp.updated_at &&
-          new Date(localRecipient.updated_at) >= new Date(recipientUpdatesWithTimestamp.updated_at)) {
+      if (localRecipient.updatedAt && recipientUpdatesWithTimestamp.updatedAt &&
+          new Date(localRecipient.updatedAt) >= new Date(recipientUpdatesWithTimestamp.updatedAt)) {
         infoLog('recipientStore', `updateRecipient (fromSync): Lokaler Empfänger ${localRecipient.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
       }
@@ -107,7 +107,7 @@ export const useRecipientStore = defineStore('recipient', () => {
     const idx = recipients.value.findIndex(r => r.id === recipientUpdatesWithTimestamp.id);
     if (idx !== -1) {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt
-      if (!fromSync || (recipientUpdatesWithTimestamp.updated_at && (!recipients.value[idx].updated_at || new Date(recipientUpdatesWithTimestamp.updated_at) > new Date(recipients.value[idx].updated_at!)))) {
+      if (!fromSync || (recipientUpdatesWithTimestamp.updatedAt && (!recipients.value[idx].updatedAt || new Date(recipientUpdatesWithTimestamp.updatedAt) > new Date(recipients.value[idx].updatedAt!)))) {
         recipients.value[idx] = { ...recipients.value[idx], ...recipientUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('recipientStore', `updateRecipient (fromSync): Store-Empfänger ${recipients.value[idx].id} war neuer als eingehender ${recipientUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -182,6 +182,148 @@ export const useRecipientStore = defineStore('recipient', () => {
     debugLog('recipientStore', 'Store zurückgesetzt');
   }
 
+  /**
+   * Führt mehrere Recipients zu einem Ziel-Recipient zusammen
+   */
+  async function mergeRecipients(
+    sourceRecipientIds: string[],
+    targetRecipient: Recipient | { name: string }
+  ): Promise<void> {
+    try {
+      // 1. Validierung der Eingaben
+      if (!sourceRecipientIds || sourceRecipientIds.length < 1) {
+        throw new Error('Mindestens ein Quell-Recipient erforderlich');
+      }
+
+      if (!targetRecipient || !targetRecipient.name?.trim()) {
+        throw new Error('Gültiger Ziel-Recipient erforderlich');
+      }
+
+      infoLog('recipientStore', `Starte Merge von ${sourceRecipientIds.length} Recipients zu "${targetRecipient.name}"`);
+
+      // 2. Ziel-Recipient erstellen oder verwenden
+      let finalTargetRecipient: Recipient;
+
+      if ('id' in targetRecipient) {
+        // Bestehender Recipient
+        finalTargetRecipient = targetRecipient;
+        infoLog('recipientStore', `Verwende bestehenden Ziel-Recipient: ${finalTargetRecipient.name} (${finalTargetRecipient.id})`);
+      } else {
+        // Neuen Recipient erstellen
+        const newRecipientData: Omit<Recipient, 'id' | 'updated_at'> = {
+          name: targetRecipient.name.trim(),
+          defaultCategoryId: null,
+          note: undefined
+        };
+
+        finalTargetRecipient = await addRecipient(newRecipientData, false);
+        infoLog('recipientStore', `Neuer Ziel-Recipient erstellt: ${finalTargetRecipient.name} (${finalTargetRecipient.id})`);
+      }
+
+      // 3. Referenzen in anderen Entitäten aktualisieren
+      await updateRecipientReferences(sourceRecipientIds, finalTargetRecipient.id);
+
+      // 4. Quell-Recipients löschen
+      for (const sourceId of sourceRecipientIds) {
+        // Überspringe den Ziel-Recipient falls er in der Quell-Liste ist
+        if (sourceId === finalTargetRecipient.id) {
+          warnLog('recipientStore', `Überspringe Löschung des Ziel-Recipients: ${sourceId}`);
+          continue;
+        }
+
+        const sourceRecipient = recipients.value.find(r => r.id === sourceId);
+        if (sourceRecipient) {
+          await deleteRecipient(sourceId, false);
+          infoLog('recipientStore', `Quell-Recipient gelöscht: ${sourceRecipient.name} (${sourceId})`);
+        } else {
+          warnLog('recipientStore', `Quell-Recipient nicht gefunden: ${sourceId}`);
+        }
+      }
+
+      infoLog('recipientStore', `Merge erfolgreich abgeschlossen. Ziel-Recipient: ${finalTargetRecipient.name} (${finalTargetRecipient.id})`);
+
+    } catch (error) {
+      errorLog('recipientStore', 'Fehler beim Mergen der Recipients', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Aktualisiert Referenzen in anderen Entitäten (Transactions, PlanningTransactions, AutomationRules)
+   */
+  async function updateRecipientReferences(oldRecipientIds: string[], newRecipientId: string): Promise<void> {
+    try {
+      infoLog('recipientStore', `Aktualisiere Referenzen von [${oldRecipientIds.join(', ')}] zu ${newRecipientId}`);
+
+      // Import der Services dynamisch, um zirkuläre Abhängigkeiten zu vermeiden
+      const { useTransactionStore } = await import('@/stores/transactionStore');
+      const { usePlanningStore } = await import('@/stores/planningStore');
+      const { useRuleStore } = await import('@/stores/ruleStore');
+
+      // Transactions aktualisieren
+      const transactionStore = useTransactionStore();
+      for (const transaction of transactionStore.transactions) {
+        if (transaction.recipientId && oldRecipientIds.includes(transaction.recipientId)) {
+          await transactionStore.updateTransaction(transaction.id, {
+            recipientId: newRecipientId,
+            updatedAt: new Date().toISOString()
+          }, false);
+          debugLog('recipientStore', `Transaction ${transaction.id} Recipient-Referenz aktualisiert`);
+        }
+      }
+
+      // PlanningTransactions aktualisieren
+      const planningStore = usePlanningStore();
+      for (const planning of planningStore.planningTransactions) {
+        if (planning.recipientId && oldRecipientIds.includes(planning.recipientId)) {
+          await planningStore.updatePlanningTransaction(planning.id, {
+            recipientId: newRecipientId,
+            updatedAt: new Date().toISOString()
+          });
+          debugLog('recipientStore', `PlanningTransaction ${planning.id} Recipient-Referenz aktualisiert`);
+        }
+      }
+
+      // AutomationRules aktualisieren
+      const ruleStore = useRuleStore();
+      for (const rule of ruleStore.rules) {
+        let ruleUpdated = false;
+
+        // Bedingungen prüfen
+        for (const condition of rule.conditions) {
+          if ((condition.type === 'RECIPIENT_EQUALS' || condition.type === 'RECIPIENT_CONTAINS') &&
+              typeof condition.value === 'string' && oldRecipientIds.includes(condition.value)) {
+            condition.value = newRecipientId;
+            ruleUpdated = true;
+          }
+        }
+
+        // Aktionen prüfen
+        for (const action of rule.actions) {
+          if (action.type === 'SET_RECIPIENT' &&
+              typeof action.value === 'string' && oldRecipientIds.includes(action.value)) {
+            action.value = newRecipientId;
+            ruleUpdated = true;
+          }
+        }
+
+        if (ruleUpdated) {
+          await ruleStore.updateRule(rule.id, {
+            ...rule,
+            updatedAt: new Date().toISOString()
+          }, false);
+          debugLog('recipientStore', `AutomationRule ${rule.id} Recipient-Referenzen aktualisiert`);
+        }
+      }
+
+      infoLog('recipientStore', 'Alle Referenzen erfolgreich aktualisiert');
+
+    } catch (error) {
+      errorLog('recipientStore', 'Fehler beim Aktualisieren der Recipient-Referenzen', error);
+      throw error;
+    }
+  }
+
   // Initialisierung
   loadRecipients();
 
@@ -193,5 +335,6 @@ export const useRecipientStore = defineStore('recipient', () => {
     deleteRecipient,
     loadRecipients,
     reset,
+    mergeRecipients,
   };
 });

@@ -7,6 +7,8 @@ import type { Recipient } from "../../types";
 import SearchGroup from "../../components/ui/SearchGroup.vue";
 import PagingComponent from "../../components/ui/PagingComponent.vue";
 import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
+import RecipientBulkActionDropdown from "../../components/ui/RecipientBulkActionDropdown.vue";
+import RecipientMergeModal from "../../components/ui/RecipientMergeModal.vue";
 import { Icon } from "@iconify/vue";
 
 /**
@@ -31,6 +33,9 @@ const searchQuery = ref("");
 
 const showDeleteConfirm = ref(false);
 const deleteTargetId = ref<string | null>(null);
+
+// Merge-Modal State
+const showMergeModal = ref(false);
 
 // Auswahlzustand-Management für Checkbox-Funktionalität
 const selectedRecipientIds = ref<Set<string>>(new Set());
@@ -198,6 +203,13 @@ const selectedRecipientsCount = computed(() => selectedRecipientIds.value.size);
 
 const hasSelectedRecipients = computed(() => selectedRecipientsCount.value > 0);
 
+// Computed property für ausgewählte Recipients (für Merge-Modal)
+const selectedRecipients = computed(() => {
+  return recipientStore.recipients.filter((r) =>
+    selectedRecipientIds.value.has(r.id)
+  );
+});
+
 // Watcher für Recipients-Änderungen zur automatischen Validierung
 watch(
   () => recipientStore.recipients,
@@ -267,6 +279,41 @@ const deleteRecipient = () => {
   }
   showDeleteConfirm.value = false;
 };
+
+// Batch-Action Event-Handler (Sub-Task 2.5)
+const handleMergeRecipients = () => {
+  if (selectedRecipientIds.value.size < 2) {
+    console.warn("Mindestens 2 Empfänger müssen ausgewählt sein für Merge");
+    return;
+  }
+  showMergeModal.value = true;
+};
+
+// Merge-Modal Event-Handler
+const handleMergeConfirm = (data: {
+  targetRecipient: Recipient;
+  sourceRecipients: Recipient[];
+  mergeMode: "existing" | "new";
+}) => {
+  // TODO: Implementierung der tatsächlichen Merge-Logik im recipientStore
+  console.log("Merge bestätigt:", data);
+  // Hier wird später die Merge-Logik aufgerufen
+  // recipientStore.mergeRecipients(data.targetRecipient, data.sourceRecipients, data.mergeMode);
+  clearSelection();
+};
+
+const handleMergeCancel = () => {
+  showMergeModal.value = false;
+};
+
+const handleDeleteRecipients = () => {
+  // TODO: Implementierung der Batch-Delete-Funktionalität
+  // Placeholder für zukünftige Batch-Delete-Bestätigung
+  console.log("Delete Recipients:", Array.from(selectedRecipientIds.value));
+  // Hier wird später ein Bestätigungsdialog für Batch-Delete geöffnet
+  // Nach Bestätigung: selectedRecipientIds.value.forEach(id => recipientStore.deleteRecipient(id))
+  // clearSelection();
+};
 </script>
 
 <template>
@@ -286,7 +333,7 @@ const deleteRecipient = () => {
       />
     </div>
 
-    <!-- Auswahlzähler-Anzeige (Sub-Task 1.5) -->
+    <!-- Auswahlzähler-Anzeige mit Batch-Actions (Sub-Task 1.5 + 2.5) -->
     <div
       v-if="hasSelectedRecipients"
       class="mb-4"
@@ -301,17 +348,26 @@ const deleteRecipient = () => {
           {{ selectedRecipientsCount === 1 ? "Empfänger" : "Empfänger" }}
           ausgewählt
         </span>
-        <button
-          @click="clearSelection"
-          class="btn btn-sm btn-ghost ml-auto"
-          title="Auswahl aufheben (ESC)"
-        >
-          <Icon
-            icon="mdi:close"
-            class="w-4 h-4"
+        <div class="ml-auto flex items-center space-x-2">
+          <!-- Batch-Actions Dropdown -->
+          <RecipientBulkActionDropdown
+            :selected-count="selectedRecipientsCount"
+            @merge-recipients="handleMergeRecipients"
+            @delete-recipients="handleDeleteRecipients"
           />
-          Auswahl aufheben
-        </button>
+          <!-- Auswahl aufheben Button -->
+          <button
+            @click="clearSelection"
+            class="btn btn-sm btn-ghost"
+            title="Auswahl aufheben (ESC)"
+          >
+            <Icon
+              icon="mdi:close"
+              class="w-4 h-4"
+            />
+            Auswahl aufheben
+          </button>
+        </div>
       </div>
     </div>
 
@@ -438,6 +494,14 @@ const deleteRecipient = () => {
       cancelText="Abbrechen"
       @confirm="deleteRecipient"
       @cancel="showDeleteConfirm = false"
+    />
+
+    <!-- Merge-Modal -->
+    <RecipientMergeModal
+      v-model:show="showMergeModal"
+      :selected-recipients="selectedRecipients"
+      @confirm-merge="handleMergeConfirm"
+      @cancel="handleMergeCancel"
     />
   </div>
 </template>

@@ -39,22 +39,22 @@
     - [x] Verwendung der bestehenden `selectedRecipientsCount` und `hasSelectedRecipients` computed properties
     - [x] Integration der bestehenden `clearSelection()` Funktion
 
-- [ ] 2.0 Batch-Actions Dropdown-Menü integrieren
-  - [ ] 2.1 BulkActionDropdown-Komponente für Recipients anpassen
-  - [ ] 2.2 Hamburger-Button mit Badge für ausgewählte Items hinzufügen
-  - [ ] 2.3 Dropdown-Menü mit "Empfänger zusammenführen" und "Empfänger löschen" Optionen
-  - [ ] 2.4 Button-Deaktivierung bei leerer Auswahl implementieren
-  - [ ] 2.5 Event-Handler für Batch-Actions in AdminRecipientsView hinzufügen
+- [x] 2.0 Batch-Actions Dropdown-Menü integrieren
+  - [x] 2.1 BulkActionDropdown-Komponente für Recipients anpassen
+  - [x] 2.2 Hamburger-Button mit Badge für ausgewählte Items hinzufügen
+  - [x] 2.3 Dropdown-Menü mit "Empfänger zusammenführen" und "Empfänger löschen" Optionen
+  - [x] 2.4 Button-Deaktivierung bei leerer Auswahl implementieren
+  - [x] 2.5 Event-Handler für Batch-Actions in AdminRecipientsView hinzufügen
 
-- [ ] 3.0 Merge-Funktionalität mit Modal-Dialog entwickeln
-  - [ ] 3.1 RecipientMergeModal-Komponente erstellen
-  - [ ] 3.2 SelectRecipient-Komponente für Ziel-Auswahl integrieren
-  - [ ] 3.3 Optionen für "Neuen Empfänger erstellen" oder "Bestehenden auswählen" implementieren
-  - [ ] 3.4 Bestätigungsdialog mit "X Empfänger zu Y zusammenführen" Meldung
-  - [ ] 3.5 Merge-Logik in recipientStore implementieren
-  - [ ] 3.6 TransactionService um updateRecipientReferences-Methode erweitern
-  - [ ] 3.7 PlanningService um updateRecipientReferences-Methode erweitern
-  - [ ] 3.8 AutomationRule-Updates in ruleStore für Recipient-Referenzen implementieren
+- [x] 3.0 Merge-Funktionalität mit Modal-Dialog entwickeln
+  - [x] 3.1 RecipientMergeModal-Komponente erstellen
+  - [x] 3.2 SelectRecipient-Komponente für Ziel-Auswahl integrieren
+  - [x] 3.3 Optionen für "Neuen Empfänger erstellen" oder "Bestehenden auswählen" implementieren
+  - [x] 3.4 Bestätigungsdialog mit "X Empfänger zu Y zusammenführen" Meldung
+  - [x] 3.5 Merge-Logik in recipientStore implementieren
+  - [x] 3.6 TransactionService um updateRecipientReferences-Methode erweitern
+  - [x] 3.7 PlanningService um updateRecipientReferences-Methode erweitern
+  - [x] 3.8 AutomationRule-Updates in ruleStore für Recipient-Referenzen implementieren
 
 - [ ] 4.0 Sichere Löschung mit Validierung implementieren
   - [ ] 4.1 RecipientDeleteConfirmModal-Komponente erstellen

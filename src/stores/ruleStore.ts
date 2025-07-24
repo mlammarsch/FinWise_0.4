@@ -436,6 +436,98 @@ export const useRuleStore = defineStore('rule', () => {
     }
   }
 
+  // ------------------------------------------------ Recipient-Referenz-Updates ------
+  /**
+   * Aktualisiert Recipient-Referenzen in AutomationRules nach einem Merge
+   * Wird vom recipientStore bei Merge-Operationen aufgerufen
+   */
+  async function updateRecipientReferences(
+    oldRecipientIds: string[],
+    newRecipientId: string
+  ): Promise<void> {
+    debugLog('RuleStore', `Starte Recipient-Referenz-Updates: ${oldRecipientIds.length} alte IDs → ${newRecipientId}`);
+
+    if (!oldRecipientIds.length || !newRecipientId) {
+      warnLog('RuleStore', 'Ungültige Parameter für updateRecipientReferences', { oldRecipientIds, newRecipientId });
+      return;
+    }
+
+    let updatedCount = 0;
+    let errorCount = 0;
+
+    try {
+      // Finde alle Rules mit Recipient-Referenzen
+      const rulesToUpdate = rules.value.filter(rule => {
+        // Prüfe Conditions auf Recipient-Referenzen
+        const hasRecipientCondition = rule.conditions.some(condition =>
+          (condition.type === RuleConditionType.RECIPIENT_EQUALS ||
+           condition.type === RuleConditionType.RECIPIENT_CONTAINS) &&
+          oldRecipientIds.includes(String(condition.value))
+        );
+
+        // Prüfe Actions auf Recipient-Referenzen
+        const hasRecipientAction = rule.actions.some(action =>
+          action.type === RuleActionType.SET_RECIPIENT &&
+          oldRecipientIds.includes(String(action.value))
+        );
+
+        return hasRecipientCondition || hasRecipientAction;
+      });
+
+      debugLog('RuleStore', `Gefunden: ${rulesToUpdate.length} Rules mit Recipient-Referenzen`);
+
+      // Aktualisiere jede betroffene Rule
+      for (const rule of rulesToUpdate) {
+        try {
+          const updatedRule: AutomationRule = {
+            ...rule,
+            conditions: rule.conditions.map(condition => {
+              if ((condition.type === RuleConditionType.RECIPIENT_EQUALS ||
+                   condition.type === RuleConditionType.RECIPIENT_CONTAINS) &&
+                  oldRecipientIds.includes(String(condition.value))) {
+                return { ...condition, value: newRecipientId };
+              }
+              return condition;
+            }),
+            actions: rule.actions.map(action => {
+              if (action.type === RuleActionType.SET_RECIPIENT &&
+                  oldRecipientIds.includes(String(action.value))) {
+                return { ...action, value: newRecipientId };
+              }
+              return action;
+            }),
+            updatedAt: new Date().toISOString()
+          };
+
+          // Verwende updateRule für konsistente Store- und Sync-Integration
+          const success = await updateRule(updatedRule.id, updatedRule);
+          if (success) {
+            updatedCount++;
+            debugLog('RuleStore', `Rule "${rule.name}" (${rule.id}) erfolgreich aktualisiert`);
+          } else {
+            errorCount++;
+            warnLog('RuleStore', `Fehler beim Aktualisieren von Rule "${rule.name}" (${rule.id})`);
+          }
+        } catch (error) {
+          errorCount++;
+          errorLog('RuleStore', `Fehler beim Aktualisieren von Rule "${rule.name}" (${rule.id})`, error);
+        }
+      }
+
+      // Zusammenfassung loggen
+      if (updatedCount > 0) {
+        debugLog('RuleStore', `Recipient-Referenz-Update abgeschlossen: ${updatedCount} Rules erfolgreich aktualisiert`);
+      }
+      if (errorCount > 0) {
+        warnLog('RuleStore', `Recipient-Referenz-Update: ${errorCount} Fehler aufgetreten`);
+      }
+
+    } catch (error) {
+      errorLog('RuleStore', 'Kritischer Fehler bei Recipient-Referenz-Updates', error);
+      throw error;
+    }
+  }
+
   // Initialisierung
   loadRules();
 
@@ -454,6 +546,8 @@ export const useRuleStore = defineStore('rule', () => {
     applyActions,
     /* sync */
     handleSyncMessage,
+    /* recipient updates */
+    updateRecipientReferences,
     /* util */
     reset,
   };

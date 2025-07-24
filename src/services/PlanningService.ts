@@ -7,7 +7,7 @@ import {
   RecurrenceEndType,
 } from "@/types";
 import dayjs from "dayjs";
-import { debugLog, infoLog } from "@/utils/logger";
+import { debugLog, infoLog, warnLog, errorLog } from "@/utils/logger";
 import { TransactionService } from "@/services/TransactionService";
 import { useRuleStore } from "@/stores/ruleStore";
 import { toDateOnlyString } from "@/utils/formatters";
@@ -910,5 +910,121 @@ export const PlanningService = {
       income: totalIncome,
       expense: totalExpense
     };
+  },
+
+  /**
+   * Aktualisiert Recipient-Referenzen in allen betroffenen PlanningTransactions
+   * Wird vom recipientStore bei Merge-Operationen aufgerufen
+   */
+  async updateRecipientReferences(
+    oldRecipientIds: string[],
+    newRecipientId: string
+  ) {
+    try {
+      debugLog('[PlanningService]', 'updateRecipientReferences gestartet', {
+        oldRecipientIds,
+        newRecipientId,
+        count: oldRecipientIds.length
+      });
+
+      // Dynamischer Import des planningStore
+      const { usePlanningStore } = await import('@/stores/planningStore');
+      const planningStore = usePlanningStore();
+
+      // Finde alle PlanningTransactions mit den alten Recipient-IDs
+      const affectedPlanningTransactions = planningStore.planningTransactions.filter(planningTransaction =>
+        planningTransaction.recipientId && oldRecipientIds.includes(planningTransaction.recipientId)
+      );
+
+      if (affectedPlanningTransactions.length === 0) {
+        infoLog('[PlanningService]', 'updateRecipientReferences: Keine betroffenen PlanningTransactions gefunden', {
+          oldRecipientIds
+        });
+        return;
+      }
+
+      infoLog('[PlanningService]', `updateRecipientReferences: ${affectedPlanningTransactions.length} PlanningTransactions gefunden für Update`, {
+        planningTransactionIds: affectedPlanningTransactions.map(pt => pt.id),
+        oldRecipientIds,
+        newRecipientId
+      });
+
+      // Batch-Verarbeitung für Performance
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: Array<{ planningTransactionId: string; error: any }> = [];
+
+      for (const planningTransaction of affectedPlanningTransactions) {
+        try {
+          const oldRecipientId = planningTransaction.recipientId;
+
+          // Aktualisiere die PlanningTransaction über den Store für konsistente Sync-Integration
+          const updateData: Partial<PlanningTransaction> & { updated_at?: string } = {
+            recipientId: newRecipientId,
+            updated_at: new Date().toISOString()
+          };
+          const success = await planningStore.updatePlanningTransaction(planningTransaction.id, updateData);
+
+          if (success) {
+            successCount++;
+            debugLog('[PlanningService]', `PlanningTransaction ${planningTransaction.id} erfolgreich aktualisiert`, {
+              planningTransactionId: planningTransaction.id,
+              oldRecipientId,
+              newRecipientId,
+              name: planningTransaction.name
+            });
+          } else {
+            errorCount++;
+            warnLog('[PlanningService]', `PlanningTransaction ${planningTransaction.id} konnte nicht aktualisiert werden`, {
+              planningTransactionId: planningTransaction.id,
+              oldRecipientId,
+              newRecipientId
+            });
+          }
+        } catch (error) {
+          errorCount++;
+          errors.push({ planningTransactionId: planningTransaction.id, error });
+          errorLog('[PlanningService]', `Fehler beim Aktualisieren von PlanningTransaction ${planningTransaction.id}`, {
+            planningTransactionId: planningTransaction.id,
+            error,
+            oldRecipientId: planningTransaction.recipientId,
+            newRecipientId
+          });
+        }
+      }
+
+      // Zusammenfassung der Batch-Operation
+      if (successCount > 0) {
+        infoLog('[PlanningService]', `updateRecipientReferences erfolgreich abgeschlossen`, {
+          totalPlanningTransactions: affectedPlanningTransactions.length,
+          successCount,
+          errorCount,
+          oldRecipientIds,
+          newRecipientId
+        });
+      }
+
+      if (errorCount > 0) {
+        warnLog('[PlanningService]', `updateRecipientReferences mit Fehlern abgeschlossen`, {
+          totalPlanningTransactions: affectedPlanningTransactions.length,
+          successCount,
+          errorCount,
+          errors: errors.map(e => ({ planningTransactionId: e.planningTransactionId, error: e.error?.message || 'Unknown error' }))
+        });
+      }
+
+      // Bei kritischen Fehlern (alle PlanningTransactions fehlgeschlagen) werfen wir einen Fehler
+      if (errorCount === affectedPlanningTransactions.length && affectedPlanningTransactions.length > 0) {
+        throw new Error(`Alle ${affectedPlanningTransactions.length} PlanningTransaction-Updates fehlgeschlagen`);
+      }
+
+    } catch (error) {
+      errorLog('[PlanningService]', 'Kritischer Fehler in updateRecipientReferences', {
+        oldRecipientIds,
+        newRecipientId,
+        error
+      });
+      throw error;
+    }
   }
 };

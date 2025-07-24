@@ -1035,5 +1035,121 @@ updateTransaction(
     }
 
     debugLog('[TransactionService]', `POST-stage rules applied to ${transactionIds.length} transactions`);
+  },
+
+  /**
+   * Aktualisiert Recipient-Referenzen in allen betroffenen Transactions
+   * Wird vom recipientStore bei Merge-Operationen aufgerufen
+   */
+  async updateRecipientReferences(
+    oldRecipientIds: string[],
+    newRecipientId: string
+  ) {
+    try {
+      debugLog('[TransactionService]', 'updateRecipientReferences gestartet', {
+        oldRecipientIds,
+        newRecipientId,
+        count: oldRecipientIds.length
+      });
+
+      // Dynamischer Import des transactionStore
+      const { useTransactionStore } = await import('@/stores/transactionStore');
+      const transactionStore = useTransactionStore();
+
+      // Finde alle Transactions mit den alten Recipient-IDs
+      const affectedTransactions = transactionStore.transactions.filter(transaction =>
+        transaction.recipientId && oldRecipientIds.includes(transaction.recipientId)
+      );
+
+      if (affectedTransactions.length === 0) {
+        infoLog('[TransactionService]', 'updateRecipientReferences: Keine betroffenen Transactions gefunden', {
+          oldRecipientIds
+        });
+        return;
+      }
+
+      infoLog('[TransactionService]', `updateRecipientReferences: ${affectedTransactions.length} Transactions gefunden für Update`, {
+        transactionIds: affectedTransactions.map(t => t.id),
+        oldRecipientIds,
+        newRecipientId
+      });
+
+      // Batch-Verarbeitung für Performance
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: Array<{ transactionId: string; error: any }> = [];
+
+      for (const transaction of affectedTransactions) {
+        try {
+          const oldRecipientId = transaction.recipientId;
+
+          // Aktualisiere die Transaction über den Store für konsistente Sync-Integration
+          const success = await transactionStore.updateTransaction(transaction.id, {
+            recipientId: newRecipientId,
+            updated_at: new Date().toISOString()
+          });
+
+          if (success) {
+            successCount++;
+            debugLog('[TransactionService]', `Transaction ${transaction.id} erfolgreich aktualisiert`, {
+              transactionId: transaction.id,
+              oldRecipientId,
+              newRecipientId,
+              description: transaction.description
+            });
+          } else {
+            errorCount++;
+            warnLog('[TransactionService]', `Transaction ${transaction.id} konnte nicht aktualisiert werden`, {
+              transactionId: transaction.id,
+              oldRecipientId,
+              newRecipientId
+            });
+          }
+        } catch (error) {
+          errorCount++;
+          errors.push({ transactionId: transaction.id, error });
+          errorLog('[TransactionService]', `Fehler beim Aktualisieren von Transaction ${transaction.id}`, {
+            transactionId: transaction.id,
+            error,
+            oldRecipientId: transaction.recipientId,
+            newRecipientId
+          });
+        }
+      }
+
+      // Zusammenfassung der Batch-Operation
+      if (successCount > 0) {
+        infoLog('[TransactionService]', `updateRecipientReferences erfolgreich abgeschlossen`, {
+          totalTransactions: affectedTransactions.length,
+          successCount,
+          errorCount,
+          oldRecipientIds,
+          newRecipientId
+        });
+      }
+
+      if (errorCount > 0) {
+        warnLog('[TransactionService]', `updateRecipientReferences mit Fehlern abgeschlossen`, {
+          totalTransactions: affectedTransactions.length,
+          successCount,
+          errorCount,
+          errors: errors.map(e => ({ transactionId: e.transactionId, error: e.error?.message || 'Unknown error' }))
+        });
+      }
+
+      // Bei kritischen Fehlern (alle Transactions fehlgeschlagen) werfen wir einen Fehler
+      if (errorCount === affectedTransactions.length && affectedTransactions.length > 0) {
+        throw new Error(`Alle ${affectedTransactions.length} Transaction-Updates fehlgeschlagen`);
+      }
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'Kritischer Fehler in updateRecipientReferences', {
+        oldRecipientIds,
+        newRecipientId,
+        error
+      });
+      throw error;
+    }
   }
+
 };
