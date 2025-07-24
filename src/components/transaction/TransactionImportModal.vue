@@ -446,6 +446,15 @@ watch(
             <span class="loading loading-dots loading-sm"></span>
             Parsing läuft...
           </span>
+          <span
+            v-else-if="
+              csvImportService.csvParseStatus === 'idle' &&
+              csvImportService.csvFile
+            "
+          >
+            <span class="loading loading-spinner loading-md"></span>
+            CSV-Datei wird eingelesen...
+          </span>
           <span v-else>
             <Icon icon="mdi:information" />
             Konfigurationsparameter anpassen, falls nötig.

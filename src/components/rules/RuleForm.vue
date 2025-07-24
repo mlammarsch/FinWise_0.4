@@ -13,7 +13,7 @@
  * - cancel: Bricht den Vorgang ab
  * - apply: Testet die Regel auf vorhandene Transaktionen an
  */
-import { ref, computed, onMounted, reactive } from "vue";
+import { ref, computed, onMounted, onUnmounted, reactive } from "vue";
 import {
   RuleConditionType,
   RuleActionType,
@@ -33,10 +33,11 @@ import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import TagSearchableDropdown from "@/components/ui/TagSearchableDropdown.vue";
 import SelectCategory from "@/components/ui/SelectCategory.vue";
 import SelectAccount from "@/components/ui/SelectAccount.vue";
+import SelectRecipient from "@/components/ui/SelectRecipient.vue";
 import { debugLog } from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import { Icon } from "@iconify/vue";
-
+@{outputs('JSON_Body')?['fields']?['summary']}
 const props = defineProps<{
   rule?: AutomationRule;
   isEdit?: boolean;
@@ -290,9 +291,57 @@ function applyRuleToExistingTransactions() {
     showing: testResults.transactions.length,
   });
 }
+
+// Erstellt einen neuen Empfänger im Store
+async function handleCreateRecipient(recipientData: { name: string }) {
+  try {
+    debugLog("[RuleForm] handleCreateRecipient", recipientData);
+    const newRecipient = await recipientStore.addRecipient({
+      name: recipientData.name,
+    });
+    debugLog("[RuleForm] Neuer Empfänger erstellt", newRecipient);
+
+    // Setze den neuen Empfänger als Wert für die entsprechende Aktion
+    // Suche die erste SET_RECIPIENT Aktion ohne Wert, oder falls alle einen Wert haben, die erste
+    const currentAction =
+      actions.value.find(
+        (action) =>
+          action.type === RuleActionType.SET_RECIPIENT && !action.value
+      ) ||
+      actions.value.find(
+        (action) => action.type === RuleActionType.SET_RECIPIENT
+      );
+
+    if (currentAction && newRecipient) {
+      currentAction.value = newRecipient.id;
+    }
+  } catch (error) {
+    errorLog("[RuleForm] Fehler beim Erstellen des Empfängers", error);
+  }
+}
+
+// Schließen des Test-Modals
+function closeTestResults() {
+  testResults.show = false;
+}
+
+// ESC-Taste-Handler für Modal
+function handleKeydown(event: KeyboardEvent) {
+  if (event.key === "Escape" && testResults.show) {
+    closeTestResults();
+  }
+}
+
+// Event Listener für ESC-Taste hinzufügen
+onMounted(() => {
+  document.addEventListener("keydown", handleKeydown);
+});
+
+// Event Listener beim Unmount entfernen
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+});
 </script>
-// Schließen des Test-Modals function closeTestResults() { testResults.show =
-false; }
 
 <template>
   <div class="relative">
@@ -578,6 +627,7 @@ false; }
                 v-else-if="action.type === RuleActionType.SET_RECIPIENT"
                 v-model="action.value"
                 class="w-full"
+                @create="handleCreateRecipient"
               />
 
               <!-- Planungsauswahl -->
