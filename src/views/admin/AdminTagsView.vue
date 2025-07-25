@@ -23,11 +23,43 @@ const searchQuery = ref("");
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
+// Sortierungsstate
+const sortField = ref<"name" | "usage">("name");
+const sortDirection = ref<"asc" | "desc">("asc");
+
 const filteredTags = computed(() => {
-  if (searchQuery.value.trim() === "") return tagStore.tags;
-  return tagStore.tags.filter((tag) =>
-    tag.name.toLowerCase().includes(searchQuery.value.toLowerCase())
-  );
+  let filtered = tagStore.tags;
+
+  // Filtern nach Suchbegriff
+  if (searchQuery.value.trim() !== "") {
+    filtered = filtered.filter((tag) =>
+      tag.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+    );
+  }
+
+  // Sortieren
+  return [...filtered].sort((a, b) => {
+    let aValue: string | number;
+    let bValue: string | number;
+
+    if (sortField.value === "name") {
+      aValue = a.name.toLowerCase();
+      bValue = b.name.toLowerCase();
+    } else {
+      // usage
+      aValue = tagUsage.value(a.id);
+      bValue = tagUsage.value(b.id);
+    }
+
+    let comparison = 0;
+    if (aValue < bValue) {
+      comparison = -1;
+    } else if (aValue > bValue) {
+      comparison = 1;
+    }
+
+    return sortDirection.value === "asc" ? comparison : -comparison;
+  });
 });
 
 const totalPages = computed(() => {
@@ -141,6 +173,27 @@ const cancelColorPicker = () => {
   showColorPicker.value = false;
   tagBeingEditedForColor.value = null;
 };
+
+// Sortierungsfunktionen
+const toggleSort = (field: "name" | "usage") => {
+  if (sortField.value === field) {
+    // Gleiche Spalte: Richtung umkehren
+    sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
+  } else {
+    // Neue Spalte: auf aufsteigend setzen
+    sortField.value = field;
+    sortDirection.value = "asc";
+  }
+};
+
+const getSortIcon = (field: "name" | "usage") => {
+  if (sortField.value !== field) {
+    return "mdi:sort";
+  }
+  return sortDirection.value === "asc"
+    ? "mdi:sort-ascending"
+    : "mdi:sort-descending";
+};
 </script>
 
 <template>
@@ -163,8 +216,19 @@ const cancelColorPicker = () => {
           <table class="table table-zebra w-full max-w-full">
             <thead>
               <tr>
-                <th>Name</th>
-                <th class="text-center hidden md:table-cell">Farbe</th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('name')"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Name</span>
+                    <Icon
+                      :icon="getSortIcon('name')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'name' }"
+                    />
+                  </div>
+                </th>
                 <th class="text-center hidden md:table-cell">
                   Übergeordnetes Tag
                 </th>
@@ -174,9 +238,17 @@ const cancelColorPicker = () => {
                   Anzahl Unter-Tags
                 </th>
                 <th
-                  class="text-center hidden md:table-cell break-words whitespace-normal"
+                  class="text-center hidden md:table-cell break-words whitespace-normal cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('usage')"
                 >
-                  Verwendet in Buchungen
+                  <div class="flex items-center justify-center">
+                    <span>Verwendet in Buchungen</span>
+                    <Icon
+                      :icon="getSortIcon('usage')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'usage' }"
+                    />
+                  </div>
                 </th>
                 <th class="text-right">Aktionen</th>
               </tr>
@@ -186,10 +258,9 @@ const cancelColorPicker = () => {
                 v-for="tag in paginatedTags"
                 :key="tag.id"
               >
-                <td>{{ tag.name }}</td>
-                <td class="text-center hidden md:table-cell">
+                <td>
                   <BadgeSoft
-                    :label="tag.color"
+                    :label="tag.name"
                     :colorIntensity="tag.color"
                     class="cursor-pointer"
                     @click="openColorPicker(tag)"
