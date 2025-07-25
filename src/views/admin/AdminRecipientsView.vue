@@ -3,6 +3,8 @@
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useRecipientStore } from "../../stores/recipientStore";
 import { useTransactionStore } from "../../stores/transactionStore";
+import { useRuleStore } from "../../stores/ruleStore";
+import { usePlanningStore } from "../../stores/planningStore";
 import type { Recipient } from "../../types";
 import SearchGroup from "../../components/ui/SearchGroup.vue";
 import PagingComponent from "../../components/ui/PagingComponent.vue";
@@ -25,6 +27,8 @@ import { Icon } from "@iconify/vue";
 
 const recipientStore = useRecipientStore();
 const transactionStore = useTransactionStore();
+const ruleStore = useRuleStore();
+const planningStore = usePlanningStore();
 
 const showRecipientModal = ref(false);
 const isEditMode = ref(false);
@@ -42,20 +46,16 @@ const deleteErrorMessage = ref("");
 // Merge-Modal State
 const showMergeModal = ref(false);
 
-// Delete-Modal State
-const showDeleteModal = ref(false);
-const deleteValidationResults = ref<
-  Array<{
-    recipientId: string;
-    recipientName: string;
-    hasActiveReferences: boolean;
-    transactionCount: number;
-    planningTransactionCount: number;
-    automationRuleCount: number;
-    canDelete: boolean;
-    warnings: string[];
-  }>
->([]);
+// Orphan Cleanup Modal State
+const showOrphanCleanupModal = ref(false);
+const orphanCleanupResult = ref<{
+  deletedCount: number;
+  warningRecipients: Array<{
+    name: string;
+    inRules: boolean;
+    inPlanning: boolean;
+  }>;
+} | null>(null);
 
 // Auswahlzustand-Management für Checkbox-Funktionalität
 const selectedRecipientIds = ref<Set<string>>(new Set());
@@ -418,108 +418,85 @@ const handleMergeCancel = () => {
   showMergeModal.value = false;
 };
 
-const handleDeleteRecipients = async () => {
+// Orphan Cleanup Funktionalität
+const handleOrphanCleanup = async () => {
   try {
-    console.log("Delete Recipients:", Array.from(selectedRecipientIds.value));
+    console.log("Starte Orphan Cleanup...");
 
-    // Konvertiere Set zu Array
-    const recipientIdsToDelete = Array.from(selectedRecipientIds.value);
+    const allRecipients = recipientStore.recipients;
+    const orphanRecipients: string[] = [];
+    const warningRecipients: Array<{
+      name: string;
+      inRules: boolean;
+      inPlanning: boolean;
+    }> = [];
 
-    if (recipientIdsToDelete.length === 0) {
-      console.warn("Keine Empfänger zum Löschen ausgewählt");
-      return;
+    // Prüfe jeden Empfänger auf Verbindungen
+    for (const recipient of allRecipients) {
+      // Prüfe Transaktionen
+      const hasTransactions = transactionStore.transactions.some(
+        (tx) => tx.recipientId === recipient.id
+      );
+
+      if (hasTransactions) {
+        continue; // Hat Transaktionen, nicht orphan
+      }
+
+      // Prüfe Planning-Transaktionen
+      const hasPlanningTransactions = planningStore.planningTransactions.some(
+        (pt) => pt.recipientId === recipient.id
+      );
+
+      // Prüfe Automation Rules
+      const hasRuleReferences =
+        (await ruleStore.countAutomationRulesWithRecipient(recipient.id)) > 0;
+
+      // Kategorisierung
+      if (!hasPlanningTransactions && !hasRuleReferences) {
+        // Vollständig orphan - kann gelöscht werden
+        orphanRecipients.push(recipient.id);
+      } else {
+        // Hat Referenzen in Rules/Planning aber nicht in Transactions
+        warningRecipients.push({
+          name: recipient.name,
+          inRules: hasRuleReferences,
+          inPlanning: hasPlanningTransactions,
+        });
+      }
     }
 
-    // Validiere die Empfänger vor dem Löschen
-    deleteValidationResults.value = recipientIdsToDelete.map((recipientId) => {
-      const recipient = recipientStore.getRecipientById(recipientId);
-      const recipientName = recipient?.name || "Unbekannter Empfänger";
-
-      // Zähle Referenzen
-      const transactionCount = transactionStore.transactions.filter(
-        (tx) => tx.recipientId === recipientId
-      ).length;
-      const planningTransactionCount = 0; // TODO: Implementierung wenn planningStore verfügbar
-      const automationRuleCount = 0; // TODO: Implementierung wenn ruleStore verfügbar
-
-      const hasActiveReferences =
-        transactionCount > 0 ||
-        planningTransactionCount > 0 ||
-        automationRuleCount > 0;
-      const warnings: string[] = [];
-
-      if (transactionCount > 0) {
-        warnings.push(
-          `${transactionCount} Transaktion${
-            transactionCount === 1 ? "" : "en"
-          } verwenden diesen Empfänger`
+    // Lösche orphane Empfänger
+    let deletedCount = 0;
+    for (const recipientId of orphanRecipients) {
+      try {
+        await recipientStore.deleteRecipient(recipientId);
+        deletedCount++;
+      } catch (error) {
+        console.error(
+          `Fehler beim Löschen von Empfänger ${recipientId}:`,
+          error
         );
       }
-      if (planningTransactionCount > 0) {
-        warnings.push(
-          `${planningTransactionCount} Planungstransaktion${
-            planningTransactionCount === 1 ? "" : "en"
-          } verwenden diesen Empfänger`
-        );
-      }
-      if (automationRuleCount > 0) {
-        warnings.push(
-          `${automationRuleCount} Automatisierungsregel${
-            automationRuleCount === 1 ? "" : "n"
-          } verwenden diesen Empfänger`
-        );
-      }
+    }
 
-      return {
-        recipientId,
-        recipientName,
-        hasActiveReferences,
-        transactionCount,
-        planningTransactionCount,
-        automationRuleCount,
-        canDelete: !hasActiveReferences, // Nur löschen wenn keine Referenzen
-        warnings,
-      };
-    });
+    // Setze Ergebnis und zeige Modal
+    orphanCleanupResult.value = {
+      deletedCount,
+      warningRecipients,
+    };
+    showOrphanCleanupModal.value = true;
 
-    // Zeige Delete-Modal
-    showDeleteModal.value = true;
-  } catch (error) {
-    console.error("Fehler bei der Validierung:", error);
-    // TODO: Fehler-Modal anzeigen
-  }
-};
-
-// Delete-Modal Event-Handler
-const handleDeleteConfirm = async (data: { recipients: Recipient[] }) => {
-  try {
-    console.log("Delete bestätigt:", data);
-
-    // Extrahiere die IDs der zu löschenden Empfänger
-    const recipientIdsToDelete = data.recipients.map((r) => r.id);
-
-    // Führe Batch-Delete durch
-    const result = await recipientStore.batchDeleteRecipients(
-      recipientIdsToDelete
+    console.log(
+      `Orphan Cleanup abgeschlossen: ${deletedCount} Empfänger gelöscht`
     );
-
-    if (result.success) {
-      console.log("Batch-Delete erfolgreich abgeschlossen:", result);
-      clearSelection();
-      showDeleteModal.value = false;
-    } else {
-      console.error("Batch-Delete fehlgeschlagen:", result.errors);
-      // TODO: Fehler-Modal anzeigen
-    }
   } catch (error) {
-    console.error("Fehler beim Batch-Delete:", error);
-    // TODO: Fehler-Modal anzeigen
+    console.error("Fehler beim Orphan Cleanup:", error);
   }
 };
 
-const handleDeleteCancel = () => {
-  showDeleteModal.value = false;
-  deleteValidationResults.value = [];
+const handleOrphanCleanupClose = () => {
+  showOrphanCleanupModal.value = false;
+  orphanCleanupResult.value = null;
 };
 
 // Sortierungsfunktionen
@@ -554,9 +531,12 @@ const getSortIcon = (field: "name" | "usage") => {
         Empfänger/Auftraggeber verwalten
       </h2>
       <SearchGroup
+        btnMiddle="Bereinigen"
+        btnMiddleIcon="mdi:broom"
         btnRight="Neu"
         btnRightIcon="mdi:plus"
         @search="(query: string) => (searchQuery = query)"
+        @btn-middle-click="handleOrphanCleanup"
         @btn-right-click="createRecipient"
       />
     </div>
@@ -581,7 +561,6 @@ const getSortIcon = (field: "name" | "usage") => {
           <RecipientBulkActionDropdown
             :selected-count="selectedRecipientsCount"
             @merge-recipients="handleMergeRecipients"
-            @delete-recipients="handleDeleteRecipients"
           />
           <!-- Auswahl aufheben Button -->
           <button
@@ -785,13 +764,73 @@ const getSortIcon = (field: "name" | "usage") => {
       @cancel="handleMergeCancel"
     />
 
-    <!-- Delete-Modal -->
-    <RecipientDeleteConfirmModal
-      v-model:show="showDeleteModal"
-      :selected-recipients="selectedRecipients"
-      :validation-results="deleteValidationResults"
-      @confirm="handleDeleteConfirm"
-      @cancel="handleDeleteCancel"
-    />
+    <!-- Orphan Cleanup Result Modal -->
+    <dialog
+      v-if="showOrphanCleanupModal"
+      class="modal modal-open"
+    >
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">Orphan-Empfänger Bereinigung</h3>
+
+        <div
+          v-if="orphanCleanupResult"
+          class="space-y-4"
+        >
+          <div class="alert alert-success alert-soft">
+            <Icon
+              icon="mdi:check-circle"
+              class="w-5 h-5"
+            />
+            <span>
+              {{ orphanCleanupResult.deletedCount }} orphane Empfänger wurden
+              erfolgreich gelöscht.
+            </span>
+          </div>
+
+          <div
+            v-if="orphanCleanupResult.warningRecipients.length > 0"
+            class="alert alert-warning"
+          >
+            <Icon
+              icon="mdi:information"
+              class="w-5 h-5"
+            />
+            <div>
+              <p class="font-semibold mb-2">
+                {{ orphanCleanupResult.warningRecipients.length }} Empfänger
+                haben noch Referenzen:
+              </p>
+              <ul class="list-disc list-inside space-y-1">
+                <li
+                  v-for="recipient in orphanCleanupResult.warningRecipients"
+                  :key="recipient.name"
+                  class="text-sm"
+                >
+                  <strong>{{ recipient.name }}</strong>
+                  <span v-if="recipient.inRules && recipient.inPlanning">
+                    - in Regeln und Planungen</span
+                  >
+                  <span v-else-if="recipient.inRules"> - in Regeln</span>
+                  <span v-else-if="recipient.inPlanning"> - in Planungen</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-action">
+          <button
+            class="btn btn-primary"
+            @click="handleOrphanCleanupClose"
+          >
+            OK
+          </button>
+        </div>
+      </div>
+      <div
+        class="modal-backdrop bg-black/30"
+        @click="handleOrphanCleanupClose"
+      ></div>
+    </dialog>
   </div>
 </template>

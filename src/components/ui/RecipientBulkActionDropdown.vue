@@ -133,22 +133,6 @@ onUnmounted(() => {
             Empfänger zusammenführen
           </a>
         </li>
-
-        <li class="divider"></li>
-
-        <!-- Empfänger löschen -->
-        <li>
-          <a
-            @click="handleAction('delete-recipients')"
-            class="text-error"
-          >
-            <Icon
-              icon="mdi:delete"
-              class="text-lg"
-            />
-            Empfänger löschen
-          </a>
-        </li>
       </ul>
     </Teleport>
   </div>
