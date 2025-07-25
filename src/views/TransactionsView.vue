@@ -466,10 +466,80 @@ async function onBulkAssignCategoryConfirm(
   }
 }
 
-function onBulkAssignTagsConfirm(tagIds: string[] | null) {
-  console.log("Bulk assign tags:", tagIds);
-  // TODO: Implement bulk tag assignment
-  showBulkAssignTagsModal.value = false;
+async function onBulkAssignTagsConfirm(
+  tagIds: string[] | null,
+  removeAll: boolean
+) {
+  debugLog("[TransactionsView]", "onBulkAssignTagsConfirm", {
+    tagIds,
+    removeAll,
+  });
+
+  try {
+    // Hole die ausgewählten Transaktionen
+    const selectedTransactions =
+      currentViewMode.value === "account"
+        ? transactionListRef.value?.getSelectedTransactions()
+        : categoryTransactionListRef.value?.getSelectedTransactions();
+
+    if (!selectedTransactions || selectedTransactions.length === 0) {
+      warnLog(
+        "[TransactionsView]",
+        "Keine Transaktionen für Bulk-Tag-Zuweisung ausgewählt"
+      );
+      showBulkAssignTagsModal.value = false;
+      return;
+    }
+
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+
+    // Führe die Bulk-Tag-Zuweisung durch
+    const result = await TransactionService.bulkAssignTags(
+      transactionIds,
+      tagIds,
+      removeAll
+    );
+
+    if (result.success) {
+      infoLog(
+        "[TransactionsView]",
+        `Bulk-Tag-Zuweisung erfolgreich: ${result.updatedCount} Transaktionen aktualisiert`
+      );
+
+      // Auswahl zurücksetzen
+      if (currentViewMode.value === "account") {
+        transactionListRef.value?.clearSelection();
+      } else {
+        categoryTransactionListRef.value?.clearSelection();
+      }
+
+      // Erfolgs-Toast anzeigen (falls Toast-System vorhanden)
+      // toast.success(`${result.updatedCount} Transaktionen erfolgreich aktualisiert`);
+    } else {
+      errorLog("[TransactionsView]", "Fehler bei Bulk-Tag-Zuweisung", {
+        errors: result.errors,
+        updatedCount: result.updatedCount,
+      });
+
+      // Fehler-Toast anzeigen (falls Toast-System vorhanden)
+      // toast.error(`Fehler bei Tag-Zuweisung: ${result.errors.join(', ')}`);
+    }
+  } catch (error) {
+    errorLog(
+      "[TransactionsView]",
+      "Unerwarteter Fehler bei Bulk-Tag-Zuweisung",
+      {
+        error: error instanceof Error ? error.message : String(error),
+        tagIds,
+        removeAll,
+      }
+    );
+
+    // Fehler-Toast anzeigen (falls Toast-System vorhanden)
+    // toast.error("Unerwarteter Fehler bei der Tag-Zuweisung");
+  } finally {
+    showBulkAssignTagsModal.value = false;
+  }
 }
 
 function onBulkChangeDateConfirm(newDate: string) {
