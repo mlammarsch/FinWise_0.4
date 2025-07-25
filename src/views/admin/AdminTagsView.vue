@@ -8,6 +8,7 @@ import PagingComponent from "../../components/ui/PagingComponent.vue";
 import SearchableSelect from "../../components/ui/SearchableSelect.vue";
 import BadgeSoft from "../../components/ui/BadgeSoft.vue";
 import ColorPicker from "../../components/ui/ColorPicker.vue";
+import { getRandomTagColor } from "../../utils/tagColorUtils";
 
 const tagStore = useTagStore();
 const transactionStore = useTransactionStore();
@@ -58,7 +59,7 @@ const createTag = () => {
     id: "", // Leere ID - wird vom TagStore erkannt und durch UUID ersetzt
     name: "",
     parentTagId: null,
-    color: "primary",
+    color: getRandomTagColor(),
   };
   isEditMode.value = false;
   showTagModal.value = true;

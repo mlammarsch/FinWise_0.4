@@ -17,6 +17,7 @@ import { ref, computed, watch, nextTick } from "vue";
 import { Icon } from "@iconify/vue";
 import { v4 as uuidv4 } from "uuid";
 import BadgeSoft from "./BadgeSoft.vue";
+import { getRandomTagColor } from "../../utils/tagColorUtils";
 
 interface TagOption {
   id: string;
@@ -95,7 +96,7 @@ function removeTag(tagId: string) {
 function createOption() {
   const val = searchTerm.value.trim();
   if (!val) return;
-  emit("create", { name: val });
+  emit("create", { name: val, color: getRandomTagColor() });
   searchTerm.value = "";
   isOpen.value = false;
   highlightedIndex.value = -1;

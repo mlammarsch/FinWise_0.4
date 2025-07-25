@@ -261,12 +261,15 @@ async function onCreateCategory(newCategoryInput: {
   }
 }
 
-async function onCreateTag(newTag: { id: string; name: string }) {
+async function onCreateTag(newTag: {
+  id: string;
+  name: string;
+  color?: string;
+}) {
   const created = await tagStore.addTag({
     name: newTag.name,
     parentTagId: null, // Standardwert
-    // color und icon könnten hier auch Standardwerte bekommen oder optional sein
-    // z.B. color: 'primary', icon: null
+    color: newTag.color, // Verwende die zufällige Farbe von TagSearchableDropdown
   });
   tagIds.value = [...tagIds.value, created.id];
   debugLog("[TransactionForm]", "onCreateTag - Tag created:", created);

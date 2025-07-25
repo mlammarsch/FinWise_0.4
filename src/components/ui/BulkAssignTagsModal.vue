@@ -71,6 +71,21 @@ function handleRemoveAllChange() {
   }
 }
 
+async function handleCreateTag(newTag: { name: string; color?: string }) {
+  try {
+    const created = await tagStore.addTag({
+      name: newTag.name,
+      color: newTag.color, // Verwende die zufällige Farbe
+    });
+    // Automatisch den neu erstellten Tag zur Auswahl hinzufügen
+    if (!selectedTagIds.value.includes(created.id)) {
+      selectedTagIds.value = [...selectedTagIds.value, created.id];
+    }
+  } catch (error) {
+    console.error("Fehler beim Erstellen des Tags:", error);
+  }
+}
+
 watch(
   () => props.isOpen,
   (isOpen) => {
@@ -141,6 +156,7 @@ watch(
           :modelValue="selectedTagIds"
           :options="tagOptions"
           @update:modelValue="selectedTagIds = $event"
+          @create="handleCreateTag"
           placeholder="Tags auswählen..."
         />
       </div>

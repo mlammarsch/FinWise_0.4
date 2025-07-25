@@ -425,9 +425,12 @@ async function onCreateRecipient(data: { name: string }) {
 /**
  * Neuen Tag erstellen und automatisch zuweisen.
  */
-async function onCreateTag(data: { name: string }) {
+async function onCreateTag(data: { name: string; color?: string }) {
   try {
-    const created = await tagStore.addTag({ name: data.name });
+    const created = await tagStore.addTag({
+      name: data.name,
+      color: data.color, // Verwende die zufällige Farbe von TagSearchableDropdown
+    });
     // Automatisch den neu erstellten Tag zur Auswahl hinzufügen
     if (!tagIds.value.includes(created.id)) {
       tagIds.value = [...tagIds.value, created.id];

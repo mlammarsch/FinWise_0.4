@@ -1199,7 +1199,8 @@ updateTransaction(
 
   /**
    * Performante Bulk-Tag-Zuweisung für Transaktionen
-   * Weist Tags zu allen übergebenen Transaktionen zu oder entfernt alle Tags
+   * Fügt Tags zu allen übergebenen Transaktionen hinzu oder entfernt alle Tags
+   * Bestehende Tags bleiben erhalten und werden erweitert
    * CATEGORYTRANSFER und ACCOUNTTRANSFER werden ausgeschlossen
    */
   async bulkAssignTags(transactionIds: string[], tagIds: string[] | null, removeAll: boolean = false): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
@@ -1268,8 +1269,11 @@ updateTransaction(
       if (removeAll) {
         newTagIds = [];
       } else if (tagIds && tagIds.length > 0) {
-        // Neue Tags zuweisen (überschreibt bestehende Tags)
-        newTagIds = [...targetTags];
+        // Neue Tags zu bestehenden Tags hinzufügen (anhängen statt ersetzen)
+        const existingTagIds = tx.tagIds || [];
+        const combinedTagIds = [...existingTagIds, ...targetTags];
+        // Duplikate entfernen
+        newTagIds = [...new Set(combinedTagIds)];
       } else {
         // Keine Änderung
         newTagIds = tx.tagIds || [];
