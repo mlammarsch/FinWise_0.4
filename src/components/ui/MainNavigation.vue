@@ -20,29 +20,33 @@ const routes = [
   { path: "/", name: "Dashboard", icon: "mdi:view-dashboard" },
   { path: "/accounts", name: "Konten", icon: "mdi:bank" },
   { path: "/transactions", name: "Transaktionen", icon: "mdi:swap-horizontal" },
+  { path: "/planning", name: "Planung", icon: "mdi:calendar" },
   { path: "/budgets", name: "Budgets", icon: "mdi:wallet" },
   { path: "/statistics", name: "Statistiken", icon: "mdi:chart-bar" },
-  { path: "/planning", name: "Planung", icon: "mdi:calendar" },
 ];
 
 /* --------------------------- Admin-Routen --------------------------- */
 const adminRoutes = [
-  { path: "/admin/accounts", name: "Konten verwalten", icon: "mdi:cash-edit" },
+  { path: "/admin/accounts", name: "Konten", icon: "mdi:cash-edit" },
   {
     path: "/admin/categories",
-    name: "Kategorien verwalten",
+    name: "Kategorien",
     icon: "mdi:category",
   },
-  { path: "/admin/tags", name: "Tags verwalten", icon: "mdi:tag-edit" },
-  { path: "/admin/recipients", name: "Empfänger", icon: "mdi:person-edit" },
+  { path: "/admin/tags", name: "Tags", icon: "mdi:tag-edit" },
+  {
+    path: "/admin/recipients",
+    name: "Empfänger",
+    icon: "mdi:person-edit",
+  },
   {
     path: "/admin/planning",
-    name: "Planungen verwalten",
+    name: "Planungen",
     icon: "mdi:calendar-edit",
   },
   {
     path: "/admin/rules",
-    name: "Regeln verwalten",
+    name: "Regeln",
     icon: "mdi:lightning-bolt",
   },
   {
@@ -116,7 +120,10 @@ function clearAndReseedData() {
 </script>
 
 <template>
-  <template v-for="route in routes" :key="route.path">
+  <template
+    v-for="route in routes"
+    :key="route.path"
+  >
     <li @click="$emit('closeMenu')">
       <router-link
         :to="route.path"
@@ -127,7 +134,10 @@ function clearAndReseedData() {
         class="rounded-box"
       >
         <span class="flex items-center">
-          <Icon class="mr-2 text-lg" :icon="route.icon" />
+          <Icon
+            class="mr-2 text-lg"
+            :icon="route.icon"
+          />
           {{ route.name }}
         </span>
       </router-link>
@@ -139,9 +149,15 @@ function clearAndReseedData() {
     @mouseenter="handleMouseEnter"
     @mouseleave="handleMouseLeave"
   >
-    <a tabindex="0" class="rounded-box cursor-default">
+    <a
+      tabindex="0"
+      class="rounded-box cursor-default"
+    >
       <span class="flex items-center">
-        <Icon class="mr-2 text-lg" icon="mdi:tools" />
+        <Icon
+          class="mr-2 text-lg"
+          icon="mdi:tools"
+        />
         Administration
       </span>
     </a>
@@ -150,7 +166,10 @@ function clearAndReseedData() {
         v-if="dropdownOpen"
         class="dropdown-content menu p-2 bg-base-100 border border-base-300 rounded-box"
       >
-        <template v-for="route in adminRoutes" :key="route.path">
+        <template
+          v-for="route in adminRoutes"
+          :key="route.path"
+        >
           <li @click="handleItemClick">
             <router-link
               :to="route.path"
@@ -161,16 +180,25 @@ function clearAndReseedData() {
               class="rounded-box"
             >
               <span class="flex items-center w-50">
-                <Icon class="mr-2 text-lg" :icon="route.icon" />
+                <Icon
+                  class="mr-2 text-lg"
+                  :icon="route.icon"
+                />
                 {{ route.name }}
               </span>
             </router-link>
           </li>
         </template>
         <li>
-          <button class="rounded-box" @click="clearAndReseedData">
+          <button
+            class="rounded-box"
+            @click="clearAndReseedData"
+          >
             <span class="flex items-center">
-              <Icon class="mr-2 text-lg" icon="mdi:database-refresh" />
+              <Icon
+                class="mr-2 text-lg"
+                icon="mdi:database-refresh"
+              />
               Daten löschen & neu laden
             </span>
           </button>

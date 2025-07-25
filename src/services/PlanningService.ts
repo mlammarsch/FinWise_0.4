@@ -396,7 +396,8 @@ export const PlanningService = {
           toCategoryId,
           Math.abs(planning.amount),
           executionDate,
-          planning.note || ''
+          planning.note || '',
+          planning.recipientId || undefined // recipientId hinzufügen (null zu undefined konvertieren)
         );
 
         transactionsCreated = true;
@@ -424,7 +425,8 @@ export const PlanningService = {
           executionDate,
           planning.valueDate || executionDate,
           planning.note || '',
-          planning.id
+          planning.id,
+          planning.recipientId || undefined // recipientId hinzufügen (null zu undefined konvertieren)
         );
 
         transactionsCreated = true;
@@ -458,6 +460,7 @@ export const PlanningService = {
           tagIds: planning.tagIds || [],
           payee: payee,
           planningTransactionId: planning.id,
+          recipientId: planning.recipientId || undefined, // recipientId hinzufügen (null zu undefined konvertieren)
         });
 
         transactionsCreated = true;

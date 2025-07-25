@@ -35,7 +35,7 @@ import SelectCategory from "../ui/SelectCategory.vue";
 import SelectRecipient from "../ui/SelectRecipient.vue";
 import CurrencyInput from "../ui/CurrencyInput.vue";
 import TagSearchableDropdown from "../ui/TagSearchableDropdown.vue";
-import { debugLog } from "@/utils/logger";
+import { debugLog, errorLog } from "@/utils/logger";
 import { Icon } from "@iconify/vue";
 import { formatDate } from "@/utils/formatters";
 import {
@@ -414,10 +414,30 @@ function calculateUpcomingDatesWrapper() {
 /**
  * Neuer Empfänger erstellen.
  */
-function onCreateRecipient(data: { name: string }) {
-  const created = recipientStore.addRecipient({ name: data.name });
+async function onCreateRecipient(data: { name: string }) {
+  const created = await recipientStore.addRecipient({ name: data.name });
   recipientId.value = created.id;
   debugLog("[PlanningTransactionForm] onCreateRecipient", created);
+}
+
+/**
+ * Neuen Tag erstellen und automatisch zuweisen.
+ */
+async function onCreateTag(data: { name: string }) {
+  try {
+    const created = await tagStore.addTag({ name: data.name });
+    // Automatisch den neu erstellten Tag zur Auswahl hinzufügen
+    if (!tagIds.value.includes(created.id)) {
+      tagIds.value = [...tagIds.value, created.id];
+    }
+    debugLog("[PlanningTransactionForm] onCreateTag", created);
+  } catch (error) {
+    errorLog(
+      "[PlanningTransactionForm]",
+      "Fehler beim Erstellen des Tags",
+      error
+    );
+  }
 }
 
 /**
@@ -1034,6 +1054,7 @@ function saveRuleAndCloseModal(ruleData: any) {
                 v-model="tagIds"
                 :options="tagStore.tags"
                 placeholder="Tags hinzufügen..."
+                @create="onCreateTag"
               />
             </div>
           </fieldset>

@@ -6,7 +6,6 @@ import DashboardView      from '@/views/DashboardView.vue';
 import AccountsView       from '@/views/AccountsView.vue';
 import TransactionsView   from '@/views/TransactionsView.vue';
 import BudgetsView        from '@/views/BudgetsView.vue';
-import BudgetsView2       from '@/views/BudgetsView2.vue';
 import StatisticsView     from '@/views/StatisticsView.vue';
 import PlanningView       from '@/views/PlanningView.vue';
 import SettingsView       from '@/views/SettingsView.vue';
@@ -35,9 +34,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/',             name: 'dashboard',    component: DashboardView,   meta: { title: 'Dashboard',    breadcrumb: 'Dashboard' } },
   { path: '/accounts',     name: 'accounts',     component: AccountsView,    meta: { title: 'Konten',       breadcrumb: 'Konten' } },
   { path: '/transactions', name: 'transactions', component: TransactionsView,meta: { title: 'Transaktionen',breadcrumb: 'Transaktionen' } },
+  { path: '/planning',     name: 'planning',     component: PlanningView,    meta: { title: 'Planung',      breadcrumb: 'Planung' } },
   { path: '/budgets',      name: 'budgets',      component: BudgetsView,     meta: { title: 'Budgets',      breadcrumb: 'Budgets' } },
   { path: '/statistics',   name: 'statistics',   component: StatisticsView,    meta: { title: 'Statistiken',  breadcrumb: 'Statistiken' } },
-  { path: '/planning',     name: 'planning',     component: PlanningView,    meta: { title: 'Planung',      breadcrumb: 'Planung' } },
   { path: '/settings',     name: 'settings',     component: SettingsView,    meta: { title: 'Einstellungen',breadcrumb: 'Einstellungen' } },
 
   /* ---------- Admin ---------- */

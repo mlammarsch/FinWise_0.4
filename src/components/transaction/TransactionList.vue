@@ -27,6 +27,7 @@ import { formatDate } from "../../utils/formatters";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { Icon } from "@iconify/vue";
 import BadgeSoft from "../ui/BadgeSoft.vue";
+import ConfirmationModal from "../ui/ConfirmationModal.vue";
 
 const props = defineProps<{
   transactions: Transaction[];
@@ -47,6 +48,10 @@ const accountStore = useAccountStore();
 const categoryStore = useCategoryStore();
 const tagStore = useTagStore();
 const recipientStore = useRecipientStore();
+
+// Confirmation Modal State
+const showDeleteConfirmation = ref(false);
+const transactionToDelete = ref<Transaction | null>(null);
 
 // Filterung: CATEGORYTRANSFER-Transaktionen ausschließen
 const displayTransactions = computed(() => {
@@ -176,6 +181,39 @@ function clearSelection() {
 }
 
 defineExpose({ getSelectedTransactions, clearSelection });
+
+// Delete confirmation functions
+function confirmDelete(transaction: Transaction) {
+  transactionToDelete.value = transaction;
+  showDeleteConfirmation.value = true;
+}
+
+function handleDeleteConfirm() {
+  if (transactionToDelete.value) {
+    emit("delete", transactionToDelete.value);
+    showDeleteConfirmation.value = false;
+    transactionToDelete.value = null;
+  }
+}
+
+function handleDeleteCancel() {
+  showDeleteConfirmation.value = false;
+  transactionToDelete.value = null;
+}
+
+// Helper function to get transaction description for confirmation
+function getTransactionDescription(transaction: Transaction): string {
+  const date = formatDate(transaction.date);
+  const amount = Math.abs(transaction.amount).toFixed(2);
+  const recipient =
+    transaction.type === TransactionType.ACCOUNTTRANSFER
+      ? accountStore.getAccountById(transaction.transferToAccountId || "")
+          ?.name || "Unbekanntes Konto"
+      : recipientStore.getRecipientById(transaction.recipientId || "")?.name ||
+        "Unbekannter Empfänger";
+
+  return `${date} - ${recipient} (${amount} €)`;
+}
 </script>
 
 <template>
@@ -373,7 +411,7 @@ defineExpose({ getSelectedTransactions, clearSelection });
               </button>
               <button
                 class="btn btn-ghost btn-xs border-none text-error/75 px-1"
-                @click="emit('delete', tx)"
+                @click="confirmDelete(tx)"
                 title="Löschen"
               >
                 <Icon
@@ -387,4 +425,17 @@ defineExpose({ getSelectedTransactions, clearSelection });
       </tbody>
     </table>
   </div>
+
+  <!-- Delete Confirmation Modal -->
+  <ConfirmationModal
+    v-if="showDeleteConfirmation && transactionToDelete"
+    title="Transaktion löschen"
+    :message="`Möchten Sie diese Transaktion wirklich löschen?\n\n${getTransactionDescription(
+      transactionToDelete
+    )}`"
+    confirm-text="Löschen"
+    cancel-text="Abbrechen"
+    @confirm="handleDeleteConfirm"
+    @cancel="handleDeleteCancel"
+  />
 </template>

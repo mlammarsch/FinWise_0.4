@@ -212,10 +212,8 @@ const handleSave = (payload: any) => {
 };
 
 const deleteTransaction = (tx: Transaction) => {
-  if (confirm("Möchten Sie diese Transaktion wirklich löschen?")) {
-    TransactionService.deleteTransaction(tx.id);
-    showTransactionDetailModal.value = false;
-  }
+  TransactionService.deleteTransaction(tx.id);
+  showTransactionDetailModal.value = false;
 };
 
 function clearFilters() {

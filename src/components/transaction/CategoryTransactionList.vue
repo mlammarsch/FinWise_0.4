@@ -21,6 +21,7 @@ import { formatDate } from "../../utils/formatters";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { Icon } from "@iconify/vue";
 import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
+import ConfirmationModal from "../ui/ConfirmationModal.vue";
 import { AccountService } from "../../services/AccountService";
 import { CategoryService } from "../../services/CategoryService";
 import { debugLog } from "../../utils/logger";
@@ -150,6 +151,10 @@ const modalData = ref<{
   note?: string;
 } | null>(null);
 
+// Confirmation Modal State
+const showDeleteConfirmation = ref(false);
+const transactionToDelete = ref<Transaction | null>(null);
+
 function editTransactionLocal(tx: Transaction) {
   if (tx.type === TransactionType.CATEGORYTRANSFER) {
     const isFromPart = tx.amount < 0;
@@ -195,6 +200,47 @@ function onTransferComplete() {
     "[CategoryTransactionList] Transfer modal closed, operation successful.",
     "null"
   );
+}
+
+// Delete confirmation functions
+function confirmDelete(transaction: Transaction) {
+  transactionToDelete.value = transaction;
+  showDeleteConfirmation.value = true;
+}
+
+function handleDeleteConfirm() {
+  if (transactionToDelete.value) {
+    emit("delete", transactionToDelete.value);
+    showDeleteConfirmation.value = false;
+    transactionToDelete.value = null;
+  }
+}
+
+function handleDeleteCancel() {
+  showDeleteConfirmation.value = false;
+  transactionToDelete.value = null;
+}
+
+// Helper function to get transaction description for confirmation
+function getTransactionDescription(transaction: Transaction): string {
+  const date = formatDate(transaction.date);
+  const amount = Math.abs(transaction.amount).toFixed(2);
+
+  if (transaction.type === TransactionType.CATEGORYTRANSFER) {
+    const fromCategory = CategoryService.getCategoryName(
+      transaction.toCategoryId || null
+    );
+    const toCategory = CategoryService.getCategoryName(
+      transaction.categoryId || null
+    );
+    return `${date} - Kategorieübertragung: ${fromCategory} → ${toCategory} (${amount} €)`;
+  } else {
+    const account = AccountService.getAccountNameSync(transaction.accountId);
+    const category = CategoryService.getCategoryName(
+      transaction.categoryId || null
+    );
+    return `${date} - ${account} → ${category} (${amount} €)`;
+  }
 }
 </script>
 
@@ -371,7 +417,7 @@ function onTransferComplete() {
                 </button>
                 <button
                   class="btn btn-ghost btn-xs border-none text-error/75 px-1"
-                  @click="TransactionService.deleteTransaction(tx.id)"
+                  @click="confirmDelete(tx)"
                   title="Löschen"
                 >
                   <Icon
@@ -406,6 +452,19 @@ function onTransferComplete() {
       :note="modalData.note"
       @close="showTransferModal = false"
       @transfer="onTransferComplete"
+    />
+
+    <!-- Delete Confirmation Modal -->
+    <ConfirmationModal
+      v-if="showDeleteConfirmation && transactionToDelete"
+      title="Transaktion löschen"
+      :message="`Möchten Sie diese Transaktion wirklich löschen?\n\n${getTransactionDescription(
+        transactionToDelete
+      )}`"
+      confirm-text="Löschen"
+      cancel-text="Abbrechen"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
     />
   </div>
 </template>
