@@ -12,13 +12,94 @@ import { Icon } from "@iconify/vue";
 const isVerfuegbareMittel = (cat: Category) =>
   cat?.name?.trim()?.toLowerCase() === "verfügbare mittel";
 
-// Gefilterte Daten (ohne ‚Verfügbare Mittel')
-const categories = computed(() =>
-  CategoryService.getCategories().value.filter((c) => !isVerfuegbareMittel(c))
-);
-const categoryGroups = computed(
-  () => CategoryService.getCategoryGroups().value
-);
+// Mehrfachsortierung für Kategorien
+interface SortCriteria {
+  field: string;
+  direction: "asc" | "desc";
+}
+
+const categorySortCriteria = ref<SortCriteria[]>([
+  { field: "group", direction: "asc" },
+  { field: "name", direction: "asc" },
+]);
+
+// Sortierung für Kategoriegruppen
+const groupSortField = ref<string>("name");
+const groupSortDirection = ref<"asc" | "desc">("asc");
+
+// Gefilterte und sortierte Daten mit Mehrfachsortierung
+const categories = computed(() => {
+  const filtered = CategoryService.getCategories().value.filter(
+    (c) => !isVerfuegbareMittel(c)
+  );
+
+  return [...filtered].sort((a, b) => {
+    for (const criteria of categorySortCriteria.value) {
+      let aValue: string | boolean;
+      let bValue: string | boolean;
+
+      switch (criteria.field) {
+        case "name":
+          aValue = a.name?.toLowerCase() || "";
+          bValue = b.name?.toLowerCase() || "";
+          break;
+        case "group":
+          aValue = getGroupName(a.categoryGroupId).toLowerCase();
+          bValue = getGroupName(b.categoryGroupId).toLowerCase();
+          break;
+        case "parent":
+          aValue = getParentCategoryName(a.parentCategoryId).toLowerCase();
+          bValue = getParentCategoryName(b.parentCategoryId).toLowerCase();
+          break;
+        case "status":
+          aValue = a.isActive;
+          bValue = b.isActive;
+          break;
+        default:
+          continue;
+      }
+
+      if (aValue < bValue) {
+        return criteria.direction === "asc" ? -1 : 1;
+      }
+      if (aValue > bValue) {
+        return criteria.direction === "asc" ? 1 : -1;
+      }
+      // Wenn gleich, weiter zur nächsten Sortierkriterium
+    }
+    return 0;
+  });
+});
+
+const categoryGroups = computed(() => {
+  const groups = CategoryService.getCategoryGroups().value;
+
+  return [...groups].sort((a, b) => {
+    let aValue: string | boolean;
+    let bValue: string | boolean;
+
+    switch (groupSortField.value) {
+      case "name":
+        aValue = a.name?.toLowerCase() || "";
+        bValue = b.name?.toLowerCase() || "";
+        break;
+      case "type":
+        aValue = a.isIncomeGroup;
+        bValue = b.isIncomeGroup;
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) {
+      return groupSortDirection.value === "asc" ? -1 : 1;
+    }
+    if (aValue > bValue) {
+      return groupSortDirection.value === "asc" ? 1 : -1;
+    }
+    return 0;
+  });
+});
 
 // Kategorie State
 const showCategoryModal = ref(false);
@@ -170,6 +251,147 @@ const toggleCategoryStatus = async (category: Category) => {
   }
 };
 
+// Update-Funktionen für Dropdowns
+const updateCategoryGroup = async (category: Category, newGroupId: string) => {
+  // Prüfe, ob sich die Gruppe tatsächlich geändert hat
+  if (category.categoryGroupId === newGroupId) {
+    console.log(
+      `Kategorie ${category.name} bleibt in derselben Gruppe ${newGroupId}`
+    );
+    return;
+  }
+
+  try {
+    await CategoryService.updateCategory(category.id, {
+      categoryGroupId: newGroupId,
+    });
+
+    console.log(
+      `Kategorie ${category.name} erfolgreich zu Gruppe ${newGroupId} verschoben`
+    );
+  } catch (error) {
+    console.error(
+      `Fehler beim Verschieben von Kategorie ${category.name} zu Gruppe ${newGroupId}`,
+      error
+    );
+  }
+};
+
+const updateCategoryParent = async (
+  category: Category,
+  newParentId: string
+) => {
+  // Prüfe, ob sich die übergeordnete Kategorie tatsächlich geändert hat
+  const currentParentId = category.parentCategoryId || "";
+  if (currentParentId === newParentId) {
+    console.log(
+      `Kategorie ${category.name} bleibt bei derselben übergeordneten Kategorie`
+    );
+    return;
+  }
+
+  try {
+    await CategoryService.updateCategory(category.id, {
+      parentCategoryId: newParentId || undefined,
+    });
+
+    console.log(
+      `Kategorie ${category.name} erfolgreich zu übergeordneter Kategorie ${
+        newParentId || "Keine"
+      } verschoben`
+    );
+  } catch (error) {
+    console.error(
+      `Fehler beim Verschieben von Kategorie ${category.name} zu übergeordneter Kategorie ${newParentId}`,
+      error
+    );
+  }
+};
+
+// Computed für verfügbare Parent-Kategorien (ohne Tochterkategorien)
+const availableParentCategories = computed(() => {
+  return categories.value.filter((c) => !c.parentCategoryId);
+});
+
+// Prüft, ob eine Kategorie bereits als übergeordnete Kategorie verwendet wird
+const isUsedAsParent = computed(() => (categoryId: string) => {
+  return categories.value.some((c) => c.parentCategoryId === categoryId);
+});
+
+// Sortier-Handler für Kategorien mit Mehrfachsortierung
+const sortCategories = (field: string, event?: MouseEvent) => {
+  const isShiftPressed = event?.shiftKey || false;
+  const existingIndex = categorySortCriteria.value.findIndex(
+    (c) => c.field === field
+  );
+
+  if (!isShiftPressed) {
+    // Kein Shift: Alle Filter löschen und nur das geklickte Feld sortieren
+    if (existingIndex >= 0 && categorySortCriteria.value.length === 1) {
+      // Wenn nur dieses eine Feld sortiert ist, Richtung umkehren
+      categorySortCriteria.value[0].direction =
+        categorySortCriteria.value[0].direction === "asc" ? "desc" : "asc";
+    } else {
+      // Neue Sortierung nur mit diesem Feld
+      categorySortCriteria.value = [{ field, direction: "asc" }];
+    }
+  } else {
+    // Shift gedrückt: Bestehende Sortierung erweitern
+    if (existingIndex >= 0) {
+      // Feld bereits in Sortierung - Richtung umkehren
+      categorySortCriteria.value[existingIndex].direction =
+        categorySortCriteria.value[existingIndex].direction === "asc"
+          ? "desc"
+          : "asc";
+    } else {
+      // Neues Feld - an erste Stelle setzen
+      categorySortCriteria.value.unshift({ field, direction: "asc" });
+      // Maximal 3 Sortierkriterien behalten
+      if (categorySortCriteria.value.length > 3) {
+        categorySortCriteria.value = categorySortCriteria.value.slice(0, 3);
+      }
+    }
+  }
+};
+
+// Sortier-Handler für Kategoriegruppen
+const sortCategoryGroups = (field: string) => {
+  if (groupSortField.value === field) {
+    groupSortDirection.value =
+      groupSortDirection.value === "asc" ? "desc" : "asc";
+  } else {
+    groupSortField.value = field;
+    groupSortDirection.value = "asc";
+  }
+};
+
+// Helper für Sortier-Icon mit Mehrfachsortierung
+const getSortIcon = (field: string) => {
+  const criteria = categorySortCriteria.value.find((c) => c.field === field);
+  if (!criteria) return "mdi:sort";
+  return criteria.direction === "asc"
+    ? "mdi:sort-ascending"
+    : "mdi:sort-descending";
+};
+
+// Helper für Sortier-Priorität (zeigt Nummer bei Mehrfachsortierung)
+const getSortPriority = (field: string): number | null => {
+  const index = categorySortCriteria.value.findIndex((c) => c.field === field);
+  return index >= 0 ? index + 1 : null;
+};
+
+// Helper für Kategoriegruppen-Sortier-Icon
+const getGroupSortIcon = (
+  field: string,
+  currentField: string,
+  currentDirection: "asc" | "desc"
+) => {
+  if (field !== currentField) return "mdi:sort";
+  return currentDirection === "asc"
+    ? "mdi:sort-ascending"
+    : "mdi:sort-descending";
+};
+
 // Helper
 const getGroupName = (groupId: string | undefined): string => {
   if (!groupId) return "Unbekannt";
@@ -228,11 +450,87 @@ const getCategoryBalance = (categoryId: string): number => {
           <table class="table table-zebra w-full">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Gruppe</th>
-                <th>Übergeordnete Kategorie</th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('group')"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Gruppe</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('group')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('group')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("group") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('name', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Name</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('name')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('name')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("name") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('parent', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Übergeordnete Kategorie</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('parent')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('parent')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("parent") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
                 <th>Saldo</th>
-                <th>Status</th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('status', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Status</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('status')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('status')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("status") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
                 <th class="text-right">Aktionen</th>
               </tr>
             </thead>
@@ -242,6 +540,26 @@ const getCategoryBalance = (categoryId: string): number => {
                 :key="category.id"
               >
                 <td>
+                  <select
+                    class="select select-sm w-full rounded-full border border-base-300"
+                    :value="category.categoryGroupId"
+                    @change="
+                      updateCategoryGroup(
+                        category,
+                        ($event.target as HTMLSelectElement).value
+                      )
+                    "
+                  >
+                    <option
+                      v-for="group in categoryGroups"
+                      :key="group.id"
+                      :value="group.id"
+                    >
+                      {{ group.name }}
+                    </option>
+                  </select>
+                </td>
+                <td>
                   {{ category.name }}
                   <span
                     v-if="category.isSavingsGoal"
@@ -249,8 +567,31 @@ const getCategoryBalance = (categoryId: string): number => {
                     >Sparziel</span
                   >
                 </td>
-                <td>{{ getGroupName(category.categoryGroupId) }}</td>
-                <td>{{ getParentCategoryName(category.parentCategoryId) }}</td>
+                <td>
+                  <select
+                    class="select select-sm w-full rounded-full border border-base-300"
+                    :class="{ 'select-disabled': isUsedAsParent(category.id) }"
+                    :disabled="isUsedAsParent(category.id)"
+                    :value="category.parentCategoryId || ''"
+                    @change="
+                      updateCategoryParent(
+                        category,
+                        ($event.target as HTMLSelectElement).value
+                      )
+                    "
+                  >
+                    <option value="">Keine übergeordnete Kategorie</option>
+                    <option
+                      v-for="parentCategory in availableParentCategories.filter(
+                        (c) => c.id !== category.id
+                      )"
+                      :key="parentCategory.id"
+                      :value="parentCategory.id"
+                    >
+                      {{ parentCategory.name }}
+                    </option>
+                  </select>
+                </td>
                 <td>
                   <CurrencyDisplay
                     :class="
@@ -320,8 +661,42 @@ const getCategoryBalance = (categoryId: string): number => {
           <table class="table table-zebra w-full">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Typ</th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategoryGroups('name')"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Name</span>
+                    <Icon
+                      :icon="
+                        getGroupSortIcon(
+                          'name',
+                          groupSortField,
+                          groupSortDirection
+                        )
+                      "
+                      class="w-4 h-4 opacity-60"
+                    />
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategoryGroups('type')"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Typ</span>
+                    <Icon
+                      :icon="
+                        getGroupSortIcon(
+                          'type',
+                          groupSortField,
+                          groupSortDirection
+                        )
+                      "
+                      class="w-4 h-4 opacity-60"
+                    />
+                  </div>
+                </th>
                 <th>Anzahl Kategorien</th>
                 <th class="text-right">Aktionen</th>
               </tr>
