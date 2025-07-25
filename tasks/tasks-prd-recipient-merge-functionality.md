@@ -64,10 +64,10 @@
   - [x] 4.5 AutomationRules-Bereinigung bei Recipient-Löschung implementieren
   - [x] 4.6 Batch-Delete-Logik mit Validierung in recipientStore implementieren
 
-- [ ] 5.0 Store-Erweiterungen für Merge- und Batch-Operationen entwickeln
-  - [ ] 5.1 mergeRecipients-Methode in recipientStore implementieren
-  - [ ] 5.2 batchDeleteRecipients-Methode in recipientStore implementieren
-  - [ ] 5.3 validateRecipientDeletion-Methode in recipientStore implementieren
-  - [ ] 5.4 Automatische Bereinigung nach erfolgreichem Merge implementieren
-  - [ ] 5.5 Sync-Integration für alle Merge- und Delete-Operationen sicherstellen
-  - [ ] 5.6 Error-Handling und Rollback-Mechanismen implementieren
+- [x] 5.0 Store-Erweiterungen für Merge- und Batch-Operationen entwickeln
+  - [x] 5.1 mergeRecipients-Methode in recipientStore implementieren
+  - [x] 5.2 batchDeleteRecipients-Methode in recipientStore implementieren
+  - [x] 5.3 validateRecipientDeletion-Methode in recipientStore implementieren
+  - [x] 5.4 Automatische Bereinigung nach erfolgreichem Merge implementieren
+  - [x] 5.5 Sync-Integration für alle Merge- und Delete-Operationen sicherstellen
+  - [x] 5.6 Error-Handling und Rollback-Mechanismen implementieren
