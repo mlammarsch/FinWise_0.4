@@ -46,18 +46,52 @@ export const useSessionStore = defineStore('session', () => {
   }
 
  async function logoutTenant(): Promise<void> {
+   const tenantId = currentTenantId.value;
+
+   // Signal ans Backend senden, um Datenbankressourcen freizugeben
+   if (tenantId) {
+     try {
+       const { WebSocketService } = await import('@/services/WebSocketService');
+       const success = WebSocketService.sendTenantDisconnect(tenantId, 'user_logout');
+       if (success) {
+         debugLog('sessionStore', 'Tenant disconnect signal sent to backend', { tenantId });
+       } else {
+         debugLog('sessionStore', 'Failed to send tenant disconnect signal - WebSocket not connected', { tenantId });
+       }
+     } catch (error) {
+       debugLog('sessionStore', 'Error sending tenant disconnect signal', { tenantId, error });
+     }
+   }
+
    currentTenantId.value = null;
    await saveSession(); // Session in IndexedDB aktualisieren
    await tenantStore.setActiveTenant(null);
-   debugLog('sessionStore', 'logoutTenant');
+   debugLog('sessionStore', 'logoutTenant', { tenantId });
  }
 
   async function switchTenant(tenantId: string): Promise<boolean> {
+    const previousTenantId = currentTenantId.value;
+
+    // Signal ans Backend für vorherigen Mandanten senden
+    if (previousTenantId && previousTenantId !== tenantId) {
+      try {
+        const { WebSocketService } = await import('@/services/WebSocketService');
+        const success = WebSocketService.sendTenantDisconnect(previousTenantId, 'tenant_switch');
+        if (success) {
+          debugLog('sessionStore', 'Tenant disconnect signal sent for previous tenant', { previousTenantId, newTenantId: tenantId });
+        } else {
+          debugLog('sessionStore', 'Failed to send tenant disconnect signal - WebSocket not connected', { previousTenantId, newTenantId: tenantId });
+        }
+      } catch (error) {
+        debugLog('sessionStore', 'Error sending tenant disconnect signal for previous tenant', { previousTenantId, newTenantId: tenantId, error });
+      }
+    }
+
     const ok = await tenantStore.setActiveTenant(tenantId);
     if (ok) {
      // currentTenantId is set by setActiveTenant
      await saveSession(); // Session in IndexedDB aktualisieren
-     debugLog('sessionStore', 'switchTenant', { tenantId });
+     debugLog('sessionStore', 'switchTenant', { previousTenantId, tenantId });
    }
    return ok;
  }

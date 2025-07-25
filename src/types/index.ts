@@ -415,8 +415,21 @@ export interface MaintenanceNotificationMessage extends WebSocketMessageBase {
   timestamp: number;
 }
 
+export interface TenantDisconnectMessage {
+  type: 'tenant_disconnect';
+  tenant_id: string;
+  reason?: string; // "user_logout", "tenant_switch", "manual_disconnect"
+}
+
+export interface TenantDisconnectAckMessage extends WebSocketMessageBase {
+  type: 'tenant_disconnect_ack';
+  tenant_id: string;
+  status: 'success' | 'error';
+  message?: string;
+}
+
 // Union-Typ für alle möglichen WebSocket-Nachrichten vom Server
-export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage | PongMessage | ConnectionStatusResponseMessage | SystemNotificationMessage | MaintenanceNotificationMessage;
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage | PongMessage | ConnectionStatusResponseMessage | SystemNotificationMessage | MaintenanceNotificationMessage | TenantDisconnectAckMessage;
 
 // Sync Queue Typen
 export enum SyncOperationType {

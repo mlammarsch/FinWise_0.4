@@ -1,7 +1,7 @@
 import { useSessionStore } from '@/stores/sessionStore';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
 import { infoLog, errorLog, debugLog, warnLog } from '@/utils/logger';
-import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type Recipient, type Tag, type AutomationRule, type PlanningTransaction, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage } from '@/types';
+import { BackendStatus, type ServerWebSocketMessage, type StatusMessage, SyncStatus, type SyncQueueEntry, EntityTypeEnum, SyncOperationType, type DataUpdateNotificationMessage, type Account, type AccountGroup, type Category, type CategoryGroup, type Recipient, type Tag, type AutomationRule, type PlanningTransaction, type DeletePayload, type RequestInitialDataMessage, type InitialDataLoadMessage, type SyncAckMessage, type SyncNackMessage, type DataStatusResponseMessage, type PongMessage, type ConnectionStatusResponseMessage, type SystemNotificationMessage, type MaintenanceNotificationMessage, type TenantDisconnectMessage, type TenantDisconnectAckMessage } from '@/types';
 import { watch } from 'vue';
 import { TenantDbService } from './TenantDbService';
 import { useTenantStore, type FinwiseTenantSpecificDB } from '@/stores/tenantStore';
@@ -556,6 +556,10 @@ export const WebSocketService = {
           } else if (message.type === 'maintenance_notification') {
             warnLog('[WebSocketService]', 'Received maintenance notification', message);
             // Wartungsbenachrichtigungen verarbeiten
+          } else if (message.type === 'tenant_disconnect_ack') {
+            const ackMessage = message as TenantDisconnectAckMessage;
+            infoLog('[WebSocketService]', 'Received tenant_disconnect_ack', ackMessage);
+            await this.processTenantDisconnectAck(ackMessage);
           }
 
         } catch (e) {
@@ -1692,6 +1696,58 @@ export const WebSocketService = {
     // Business Logic ist jetzt im TransactionService
     const { TransactionService } = await import('./TransactionService');
     return await TransactionService.processTransactionsIntelligently(incomingTransactions);
+  },
+
+  /**
+   * Sendet ein Tenant-Disconnect-Signal ans Backend, um Datenbankressourcen freizugeben
+   */
+  sendTenantDisconnect(tenantId: string, reason: string = 'user_logout'): boolean {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      warnLog('[WebSocketService]', 'Cannot send tenant disconnect - WebSocket not connected', {
+        tenantId,
+        reason,
+        socketState: socket?.readyState || 'null'
+      });
+      return false;
+    }
+
+    const disconnectMessage: TenantDisconnectMessage = {
+      type: 'tenant_disconnect',
+      tenant_id: tenantId,
+      reason: reason
+    };
+
+    infoLog('[WebSocketService]', `Sending tenant disconnect signal for tenant ${tenantId}`, {
+      tenantId,
+      reason,
+      messageType: 'tenant_disconnect'
+    });
+
+    return this.sendMessage(disconnectMessage);
+  },
+
+  /**
+   * Verarbeitet Tenant-Disconnect-Acknowledgment-Nachrichten vom Backend
+   */
+  async processTenantDisconnectAck(ackMessage: TenantDisconnectAckMessage): Promise<void> {
+    infoLog('[WebSocketService]', `Received tenant disconnect acknowledgment for tenant ${ackMessage.tenant_id}`, {
+      tenantId: ackMessage.tenant_id,
+      status: ackMessage.status,
+      message: ackMessage.message
+    });
+
+    if (ackMessage.status === 'success') {
+      infoLog('[WebSocketService]', `Backend successfully released database resources for tenant ${ackMessage.tenant_id}`, {
+        tenantId: ackMessage.tenant_id,
+        message: ackMessage.message
+      });
+    } else {
+      errorLog('[WebSocketService]', `Backend failed to release database resources for tenant ${ackMessage.tenant_id}`, {
+        tenantId: ackMessage.tenant_id,
+        message: ackMessage.message,
+        status: ackMessage.status
+      });
+    }
   }
 };
 

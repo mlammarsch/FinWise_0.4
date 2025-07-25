@@ -162,7 +162,8 @@ interface TenantStoreState {
   loadTenants: () => Promise<void>;
   addTenant: (tenantName: string, userId: string) => Promise<DbTenant | null>;
   updateTenant: (id: string, tenantName: string) => Promise<boolean>;
-  deleteTenant: (id: string) => Promise<boolean>;
+  deleteTenant: (id: string, sendBackendSignal?: boolean) => Promise<boolean>;
+  deleteTenantCompletely: (id: string, userId: string) => Promise<boolean>;
   setActiveTenant: (id: string | null) => Promise<boolean>;
   reset: () => Promise<void>;
   syncCurrentTenantData: () => Promise<void>;
@@ -266,8 +267,25 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     }
   }
 
-  async function deleteTenant(id: string): Promise<boolean> {
+  async function deleteTenant(id: string, sendBackendSignal: boolean = true): Promise<boolean> {
     try {
+      // Signal ans Backend senden, um Datenbankressourcen freizugeben
+      if (sendBackendSignal) {
+        try {
+          const { WebSocketService } = await import('@/services/WebSocketService');
+          const success = WebSocketService.sendTenantDisconnect(id, 'tenant_deletion');
+          if (success) {
+            infoLog('tenantStore', 'Tenant deletion signal sent to backend', { tenantId: id });
+            // Kurze Pause, um dem Backend Zeit zu geben, Ressourcen freizugeben
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } else {
+            warnLog('tenantStore', 'Failed to send tenant deletion signal - WebSocket not connected', { tenantId: id });
+          }
+        } catch (error) {
+          warnLog('tenantStore', 'Error sending tenant deletion signal', { tenantId: id, error });
+        }
+      }
+
       await userDB.dbTenants.delete(id);
       const dbName = `finwiseTenantDB_${id}`;
       await Dexie.delete(dbName);
@@ -286,6 +304,60 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       return true;
     } catch (err) {
       errorLog('tenantStore', `Fehler beim Löschen des Tenants ${id}`, err);
+      return false;
+    }
+  }
+
+  async function deleteTenantCompletely(id: string, userId: string): Promise<boolean> {
+    try {
+      // Zuerst Backend-Signal senden, um Datenbankressourcen freizugeben
+      try {
+        const { WebSocketService } = await import('@/services/WebSocketService');
+        const success = WebSocketService.sendTenantDisconnect(id, 'tenant_deletion');
+        if (success) {
+          infoLog('tenantStore', 'Tenant deletion signal sent to backend', { tenantId: id });
+          // Kurze Pause, um dem Backend Zeit zu geben, Ressourcen freizugeben
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } else {
+          warnLog('tenantStore', 'Failed to send tenant deletion signal - WebSocket not connected', { tenantId: id });
+        }
+      } catch (error) {
+        warnLog('tenantStore', 'Error sending tenant deletion signal', { tenantId: id, error });
+      }
+
+      // Backend-API für vollständige Löschung aufrufen
+      try {
+        await apiService.delete(`/tenants/${id}/complete?user_id=${userId}`);
+        infoLog('tenantStore', `Tenant ${id} erfolgreich im Backend gelöscht`);
+      } catch (apiError: any) {
+        // Wenn Tenant bereits gelöscht (404), ist das OK
+        if (apiError?.status === 404 || apiError?.message?.includes('404') || apiError?.message?.includes('not found')) {
+          warnLog('tenantStore', `Tenant ${id} war bereits im Backend gelöscht`, apiError);
+        } else {
+          errorLog('tenantStore', `Fehler beim Löschen des Tenants ${id} im Backend`, apiError);
+          // Bei anderen Fehlern trotzdem lokale Löschung durchführen
+        }
+      }
+
+      // Lokale Löschung durchführen
+      await userDB.dbTenants.delete(id);
+      const dbName = `finwiseTenantDB_${id}`;
+      await Dexie.delete(dbName);
+      infoLog('tenantStore', `Mandantenspezifische DB ${dbName} gelöscht.`);
+
+      tenants.value = tenants.value.filter(t => t.uuid !== id);
+      if (activeTenantId.value === id) {
+        if (activeTenantDB.value) {
+          activeTenantDB.value.close();
+          activeTenantDB.value = null;
+        }
+        activeTenantId.value = null;
+        localStorage.removeItem('finwise_activeTenant');
+      }
+      infoLog('tenantStore', 'Tenant vollständig gelöscht', { tenantId: id });
+      return true;
+    } catch (err) {
+      errorLog('tenantStore', `Fehler beim vollständigen Löschen des Tenants ${id}`, err);
       return false;
     }
   }
@@ -450,6 +522,7 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
     addTenant,
     updateTenant,
     deleteTenant,
+    deleteTenantCompletely,
     setActiveTenant,
     reset,
     syncCurrentTenantData,
