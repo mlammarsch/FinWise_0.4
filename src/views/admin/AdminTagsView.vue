@@ -48,7 +48,7 @@ const tagUsage = computed(() => {
       .length;
 });
 
-const getParentTagName = (parentId: string | null): string => {
+const getParentTagName = (parentId: string | null | undefined): string => {
   if (!parentId) return "-";
   const parent = tagStore.tags.find((t) => t.id === parentId);
   return parent ? parent.name : "Unbekannt";
@@ -152,7 +152,7 @@ const cancelColorPicker = () => {
       <SearchGroup
         btnRight="Neu"
         btnRightIcon="mdi:plus"
-        @search="(query) => (searchQuery.value = query)"
+        @search="(query: string) => (searchQuery = query)"
         @btn-right-click="createTag"
       />
     </div>
@@ -238,8 +238,8 @@ const cancelColorPicker = () => {
           :currentPage="currentPage"
           :totalPages="totalPages"
           :itemsPerPage="itemsPerPage"
-          @update:currentPage="(val) => (currentPage.value = val)"
-          @update:itemsPerPage="(val) => (itemsPerPage.value = val)"
+          @update:currentPage="(val: number) => (currentPage = val)"
+          @update:itemsPerPage="(val: number | string) => (itemsPerPage = val)"
         />
       </div>
     </div>
@@ -259,7 +259,7 @@ const cancelColorPicker = () => {
       <div class="form-control mb-4">
         <label class="label"><span class="label-text">Name</span></label>
         <input
-          v-model="selectedTag.name"
+          v-model="selectedTag!.name"
           type="text"
           class="input input-bordered w-full"
         />
@@ -280,7 +280,7 @@ const cancelColorPicker = () => {
           ><span class="label-text">Übergeordnetes Tag</span></label
         >
         <select
-          v-model="selectedTag.parentTagId"
+          v-model="selectedTag!.parentTagId"
           class="select select-bordered"
         >
           <option :value="null">Keines</option>
