@@ -31,6 +31,7 @@ import { debugLog } from "../../utils/logger";
 import { Icon } from "@iconify/vue";
 import { TransactionService } from "../../services/TransactionService";
 import { BalanceService } from "../../services/BalanceService";
+import ButtonGroup from "../ui/ButtonGroup.vue";
 
 const props = withDefaults(
   defineProps<{
@@ -175,23 +176,42 @@ watch(
   { immediate: true }
 );
 
+// Validierung
+const submitAttempted = ref(false);
+const showValidationAlert = ref(false);
+
+// Validierungsfehler sammeln
+const validationErrors = computed(() => {
+  const errors: string[] = [];
+  if (!fromCategoryIdLocal.value) errors.push("Von-Kategorie ist erforderlich");
+  if (!toCategoryIdLocal.value) errors.push("Zu-Kategorie ist erforderlich");
+  if (!amount.value || amount.value <= 0)
+    errors.push("Betrag muss größer als 0 sein");
+  if (!date.value) errors.push("Datum ist erforderlich");
+  return errors;
+});
+
+// Schließt das Validierungs-Alert
+const closeValidationAlert = () => {
+  showValidationAlert.value = false;
+};
+
 async function performTransfer() {
-  if (
-    !fromCategoryIdLocal.value ||
-    !toCategoryIdLocal.value ||
-    amount.value <= 0 ||
-    !date.value ||
-    isProcessing.value
-  ) {
-    debugLog("CategoryTransferModal", "Validation failed or processing", {
-      from: fromCategoryIdLocal.value,
-      to: toCategoryIdLocal.value,
-      amount: amount.value,
-      date: date.value,
-    });
+  submitAttempted.value = true;
+
+  if (validationErrors.value.length > 0) {
+    showValidationAlert.value = true;
+    debugLog(
+      "CategoryTransferModal",
+      "Validation failed",
+      validationErrors.value
+    );
     return;
   }
 
+  if (isProcessing.value) return;
+
+  showValidationAlert.value = false;
   isProcessing.value = true;
 
   try {
@@ -243,7 +263,19 @@ async function performTransfer() {
     tabindex="0"
     @keydown.escape="$emit('close')"
   >
-    <div class="modal-box w-full max-w-lg">
+    <div class="modal-box w-full max-w-lg relative">
+      <!-- X-Icon zum Schließen -->
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+        @click="$emit('close')"
+      >
+        <Icon
+          icon="mdi:close"
+          class="text-lg"
+        />
+      </button>
+
       <h3 class="font-bold text-lg mb-4 flex items-center">
         <Icon
           icon="mdi:swap-horizontal-bold"
@@ -267,6 +299,39 @@ async function performTransfer() {
           zu...
         </template>
       </h3>
+
+      <!-- Validierungs-Alert -->
+      <div
+        v-if="showValidationAlert && validationErrors.length > 0"
+        class="alert alert-error alert-soft mb-6"
+      >
+        <Icon
+          icon="mdi:alert-circle"
+          class="text-lg"
+        />
+        <div>
+          <h3 class="font-bold">Bitte korrigieren Sie folgende Fehler:</h3>
+          <ul class="list-disc list-inside mt-2">
+            <li
+              v-for="error in validationErrors"
+              :key="error"
+              class="text-sm"
+            >
+              {{ error }}
+            </li>
+          </ul>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-circle btn-ghost"
+          @click="closeValidationAlert"
+        >
+          <Icon
+            icon="mdi:close"
+            class="text-sm"
+          />
+        </button>
+      </div>
 
       <form
         @submit.prevent="performTransfer"
@@ -366,24 +431,23 @@ async function performTransfer() {
 
         <!-- Actions -->
         <div class="modal-action mt-6">
-          <button
-            type="button"
-            class="btn btn-ghost"
-            @click="$emit('close')"
+          <ButtonGroup
+            left-label="Abbrechen"
+            :right-label="transactionId ? 'Speichern' : 'Übertragen'"
+            left-color="btn-ghost"
+            right-color="btn-primary"
+            :right-disabled="isProcessing"
+            @left-click="$emit('close')"
+            @right-click="performTransfer"
           >
-            Abbrechen
-          </button>
-          <button
-            type="submit"
-            class="btn btn-primary"
-            :disabled="isProcessing"
-          >
-            <span
-              v-if="isProcessing"
-              class="loading loading-spinner loading-xs"
-            ></span>
-            {{ transactionId ? "Speichern" : "Übertragen" }}
-          </button>
+            <template #right-content>
+              <span
+                v-if="isProcessing"
+                class="loading loading-spinner loading-xs mr-2"
+              ></span>
+              {{ transactionId ? "Speichern" : "Übertragen" }}
+            </template>
+          </ButtonGroup>
         </div>
       </form>
     </div>

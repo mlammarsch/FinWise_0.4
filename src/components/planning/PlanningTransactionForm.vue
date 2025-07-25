@@ -85,6 +85,8 @@ const toAccountId = ref("");
 
 // Validierungsstatus
 const formAttempted = ref(false);
+const validationErrors = ref<string[]>([]);
+const showValidationAlert = ref(false);
 
 // Tab-Management
 const activeTab = ref("categorization");
@@ -441,13 +443,70 @@ async function onCreateTag(data: { name: string }) {
 }
 
 /**
- * Validiert Formular.
+ * Sammelt alle Validierungsfehler für das Alert.
+ */
+function collectValidationErrors(): string[] {
+  const errors: string[] = [];
+
+  if (!isNameValid.value) {
+    errors.push("Name ist erforderlich");
+  }
+
+  if (!isAmountValid.value) {
+    errors.push("Betrag muss eine gültige Zahl sein");
+  }
+
+  if (!isStartDateValid.value) {
+    errors.push("Startdatum ist erforderlich");
+  }
+
+  if (!isValueDateValid.value) {
+    errors.push("Wertstellungsdatum ist erforderlich");
+  }
+
+  if (isAccountIdRequired.value && !isAccountIdValid.value) {
+    if (isAccountTransfer.value) {
+      errors.push("Quellkonto ist erforderlich");
+    } else {
+      errors.push("Konto ist erforderlich");
+    }
+  }
+
+  if (isCategoryIdRequired.value && !isCategoryIdValid.value) {
+    errors.push("Kategorie ist erforderlich");
+  }
+
+  if (isToAccountIdRequired.value && !isToAccountIdValid.value) {
+    errors.push("Zielkonto ist erforderlich");
+  }
+
+  if (isFromCategoryIdRequired.value && !isFromCategoryIdValid.value) {
+    errors.push("Quellkategorie ist erforderlich");
+  }
+
+  if (isTargetCategoryIdRequired.value && !isTargetCategoryIdValid.value) {
+    errors.push("Zielkategorie ist erforderlich");
+  }
+
+  return errors;
+}
+
+/**
+ * Validiert Formular und zeigt Fehler-Alert an.
  */
 function validateForm(): boolean {
   formAttempted.value = true;
   const valid = isFormValid.value;
+
   if (!valid) {
-    debugLog("[PlanningTransactionForm] Validation failed.");
+    validationErrors.value = collectValidationErrors();
+    showValidationAlert.value = true;
+
+    debugLog(
+      "[PlanningTransactionForm] Validation failed.",
+      validationErrors.value
+    );
+
     nextTick(() => {
       const firstError = planningFormRef.value?.querySelector(
         '.input-bordered:invalid, .select-bordered:invalid, .validator-hint.text-error:not([style*="display: none"])'
@@ -456,8 +515,19 @@ function validateForm(): boolean {
         firstError.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     });
+  } else {
+    showValidationAlert.value = false;
+    validationErrors.value = [];
   }
+
   return valid;
+}
+
+/**
+ * Schließt das Validierungs-Alert.
+ */
+function closeValidationAlert() {
+  showValidationAlert.value = false;
 }
 
 /**
@@ -583,7 +653,7 @@ function saveRuleAndCloseModal(ruleData: any) {
     <!-- X-Icon zum Schließen -->
     <button
       type="button"
-      class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+      class="btn btn-sm btn-circle btn-ghost absolute right-2 -top-12 z-10"
       @click="emit('cancel')"
     >
       <Icon
@@ -591,6 +661,39 @@ function saveRuleAndCloseModal(ruleData: any) {
         class="text-lg"
       />
     </button>
+
+    <!-- Validierungs-Alert -->
+    <div
+      v-if="showValidationAlert && validationErrors.length > 0"
+      class="alert alert-error alert-soft mb-6"
+    >
+      <Icon
+        icon="mdi:alert-circle"
+        class="text-lg"
+      />
+      <div>
+        <h3 class="font-bold">Bitte korrigieren Sie folgende Fehler:</h3>
+        <ul class="list-disc list-inside mt-2">
+          <li
+            v-for="error in validationErrors"
+            :key="error"
+            class="text-sm"
+          >
+            {{ error }}
+          </li>
+        </ul>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        @click="closeValidationAlert"
+      >
+        <Icon
+          icon="mdi:close"
+          class="text-sm"
+        />
+      </button>
+    </div>
 
     <form
       ref="planningFormRef"

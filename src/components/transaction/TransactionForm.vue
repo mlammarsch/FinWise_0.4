@@ -16,6 +16,7 @@ import SelectRecipient from "../ui/SelectRecipient.vue";
 import { debugLog } from "../../utils/logger"; // Korrigierter Pfad
 import { toDateOnlyString } from "../../utils/formatters";
 import { CategoryService } from "../../services/CategoryService"; // CategoryService importiert
+import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
   transaction?: Transaction;
@@ -47,6 +48,7 @@ const reconciled = ref(false);
 const recipientsLoaded = ref(false);
 const submitAttempted = ref(false);
 const isSubmitting = ref(false);
+const showValidationAlert = ref(false);
 
 const amountInputRef = ref<InstanceType<typeof CurrencyInput> | null>(null);
 const formModalRef = ref<HTMLFormElement | null>(null);
@@ -356,21 +358,28 @@ const submitForm = () => {
 
   submitAttempted.value = true;
   if (validationErrors.value.length > 0) {
-    alert(
-      "Bitte fülle alle Pflichtfelder aus: " + validationErrors.value.join(", ")
-    );
+    showValidationAlert.value = true;
     debugLog("[TransactionForm]", "submitForm aborted: validation errors", {
       errors: validationErrors.value,
     });
     isSubmitting.value = false;
     return;
   }
+
+  showValidationAlert.value = false;
   const transactionPayload = saveTransaction();
   debugLog("[TransactionForm]", "submitForm payload:", {
     payload: transactionPayload,
   });
   emit("save", transactionPayload);
   isSubmitting.value = false;
+};
+
+/**
+ * Schließt das Validierungs-Alert.
+ */
+const closeValidationAlert = () => {
+  showValidationAlert.value = false;
 };
 </script>
 
@@ -381,178 +390,219 @@ const submitForm = () => {
   >
     Lade Empfänger...
   </div>
-  <form
-    ref="formModalRef"
-    novalidate
-    tabindex="-1"
+  <div
     v-else
-    @submit.prevent="submitForm"
-    @keydown.esc.prevent="emit('cancel')"
-    class="space-y-4 max-w-[calc(100%-80px)] mx-auto relative"
+    class="relative"
   >
-    <div class="flex flex-row justify-between items-start">
-      <div class="flex justify-center gap-4 pt-4">
-        <label class="flex items-center gap-2">
-          <input
-            type="radio"
-            class="radio radio-sm border-neutral checked:bg-error/60 checked:text-error checked:border-error"
-            v-model="transactionType"
-            :value="TransactionType.EXPENSE"
-            :disabled="locked"
-          />
-          <span class="text-sm">Ausgabe</span>
-        </label>
-        <label class="flex items-center gap-2">
-          <input
-            type="radio"
-            class="radio radio-sm border-neutral checked:bg-success/60 checked:text-success checked:border-success"
-            v-model="transactionType"
-            :value="TransactionType.INCOME"
-            :disabled="locked"
-          />
-          <span class="text-sm">Einnahme</span>
-        </label>
-        <label class="flex items-center gap-2">
-          <input
-            type="radio"
-            class="radio radio-sm border-neutral checked:bg-warning/60 checked:text-warning checked:border-warning"
-            v-model="transactionType"
-            :value="TransactionType.ACCOUNTTRANSFER"
-          />
-          <span class="text-sm">Transfer</span>
-        </label>
-      </div>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          v-model="reconciled"
-          class="checkbox checkbox-xs"
-        />
-        abgeglichen?
-      </label>
-    </div>
-    <!-- Fehlermeldungen -->
-    <div
-      v-if="submitAttempted && validationErrors.length > 0"
-      class="alert alert-error alert-soft p-2"
+    <!-- X-Icon zum Schließen -->
+    <button
+      type="button"
+      class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+      @click="emit('cancel')"
     >
-      <ul class="list-disc list-inside">
-        <li
-          v-for="(err, index) in validationErrors"
-          :key="index"
-        >
-          {{ err }}
-        </li>
-      </ul>
-    </div>
-
-    <div class="divider" />
-
-    <!-- Datum und Betrag -->
-    <div class="grid grid-cols-3 gap-4 items-end">
-      <DatePicker
-        v-model="date"
-        label="Buchungsdatum (Pflicht)"
-        required
-        class="self-end fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+      <Icon
+        icon="mdi:close"
+        class="text-lg"
       />
-      <DatePicker
-        v-model="valueDate"
-        label="Wertstellung"
-        required
-        class="self-end fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+    </button>
+
+    <!-- Überschrift -->
+    <h3 class="font-bold text-lg mb-4">
+      {{
+        props.transaction ? "Transaktionsbearbeitung" : "Transaktionserstellung"
+      }}
+    </h3>
+
+    <!-- Validierungs-Alert -->
+    <div
+      v-if="showValidationAlert && validationErrors.length > 0"
+      class="alert alert-error alert-soft mb-6"
+    >
+      <Icon
+        icon="mdi:alert-circle"
+        class="text-lg"
       />
-      <div class="flex justify-end items-center gap-2 self-end">
-        <CurrencyInput
-          ref="amountInputRef"
-          v-model="amount"
-          class="w-[150px] focus:outline-none focus:ring-2 focus:ring-accent"
-        />
-        <span class="text-3xl">€</span>
-      </div>
-    </div>
-
-    <!-- Notiz -->
-    <div class="flex items-start justify-between gap-2 mt-5">
-      <Icon icon="mdi:speaker-notes" />
-      <textarea
-        v-model="note"
-        class="textarea textarea-bordered w-full min-h-[3rem] fieldset focus:outline-none focus:ring-2 focus:ring-accent"
-        placeholder="Notiz"
-      ></textarea>
-    </div>
-
-    <div class="divider pt-5" />
-
-    <!-- Konto und Transfer-Konto -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">Konto</legend>
-        <SelectAccount v-model="accountId" />
-      </fieldset>
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">
-          Transfer-Konto (Pflicht bei Transfer)
-        </legend>
-        <select
-          v-model="toAccountId"
-          class="select select-bordered focus:outline-none focus:ring-2 focus:ring-accent w-full"
-          :disabled="!isTransfer"
-        >
-          <option
-            v-for="a in filteredAccounts"
-            :key="a.id"
-            :value="a.id"
+      <div>
+        <h3 class="font-bold">Bitte korrigieren Sie folgende Fehler:</h3>
+        <ul class="list-disc list-inside mt-2">
+          <li
+            v-for="error in validationErrors"
+            :key="error"
+            class="text-sm"
           >
-            {{ a.name }}
-          </option>
-        </select>
-      </fieldset>
+            {{ error }}
+          </li>
+        </ul>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        @click="closeValidationAlert"
+      >
+        <Icon
+          icon="mdi:close"
+          class="text-sm"
+        />
+      </button>
     </div>
 
-    <div class="divider pt-5" />
-
-    <!-- Empfänger -->
-    <fieldset class="fieldset">
-      <legend class="fieldset-legend">Empfänger</legend>
-      <SelectRecipient
-        v-model="recipientId"
-        @create="onCreateRecipient"
-        :class="isTransfer ? 'opacity-50' : ''"
-        :disabled="isTransfer"
-      />
-    </fieldset>
-
-    <!-- Kategorie & Tags -->
-    <div
-      v-if="transactionType !== TransactionType.ACCOUNTTRANSFER"
-      class="grid grid-cols-1 md:grid-cols-2 gap-4"
+    <form
+      ref="formModalRef"
+      novalidate
+      tabindex="-1"
+      @submit.prevent="submitForm"
+      @keydown.esc.prevent="emit('cancel')"
+      class="space-y-4 max-w-[calc(100%-80px)] mx-auto relative"
     >
+      <div class="flex flex-row justify-between items-start">
+        <div class="flex justify-center gap-4 pt-4">
+          <label class="flex items-center gap-2">
+            <input
+              type="radio"
+              class="radio radio-sm border-neutral checked:bg-error/60 checked:text-error checked:border-error"
+              v-model="transactionType"
+              :value="TransactionType.EXPENSE"
+              :disabled="locked"
+            />
+            <span class="text-sm">Ausgabe</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <input
+              type="radio"
+              class="radio radio-sm border-neutral checked:bg-success/60 checked:text-success checked:border-success"
+              v-model="transactionType"
+              :value="TransactionType.INCOME"
+              :disabled="locked"
+            />
+            <span class="text-sm">Einnahme</span>
+          </label>
+          <label class="flex items-center gap-2">
+            <input
+              type="radio"
+              class="radio radio-sm border-neutral checked:bg-warning/60 checked:text-warning checked:border-warning"
+              v-model="transactionType"
+              :value="TransactionType.ACCOUNTTRANSFER"
+            />
+            <span class="text-sm">Transfer</span>
+          </label>
+        </div>
+        <label class="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            v-model="reconciled"
+            class="checkbox checkbox-xs"
+          />
+          abgeglichen?
+        </label>
+      </div>
+      <div class="divider" />
+
+      <!-- Datum und Betrag -->
+      <div class="grid grid-cols-3 gap-4 items-end">
+        <DatePicker
+          v-model="date"
+          label="Buchungsdatum (Pflicht)"
+          required
+          class="self-end fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+        <DatePicker
+          v-model="valueDate"
+          label="Wertstellung"
+          required
+          class="self-end fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+        />
+        <div class="flex justify-end items-center gap-2 self-end">
+          <CurrencyInput
+            ref="amountInputRef"
+            v-model="amount"
+            class="w-[150px] focus:outline-none focus:ring-2 focus:ring-accent"
+          />
+          <span class="text-3xl">€</span>
+        </div>
+      </div>
+
+      <!-- Notiz -->
+      <div class="flex items-start justify-between gap-2 mt-5">
+        <Icon icon="mdi:speaker-notes" />
+        <textarea
+          v-model="note"
+          class="textarea textarea-bordered w-full min-h-[3rem] fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+          placeholder="Notiz"
+        ></textarea>
+      </div>
+
+      <div class="divider pt-5" />
+
+      <!-- Konto und Transfer-Konto -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Konto</legend>
+          <SelectAccount v-model="accountId" />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Transfer-Konto (Pflicht bei Transfer)
+          </legend>
+          <select
+            v-model="toAccountId"
+            class="select select-bordered focus:outline-none focus:ring-2 focus:ring-accent w-full"
+            :disabled="!isTransfer"
+          >
+            <option
+              v-for="a in filteredAccounts"
+              :key="a.id"
+              :value="a.id"
+            >
+              {{ a.name }}
+            </option>
+          </select>
+        </fieldset>
+      </div>
+
+      <div class="divider pt-5" />
+
+      <!-- Empfänger -->
       <fieldset class="fieldset">
-        <legend class="fieldset-legend">Kategorie</legend>
-        <SelectCategory v-model="categoryId" />
-      </fieldset>
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">Tags</legend>
-        <TagSearchableDropdown
-          class="fieldset focus:outline-none focus:ring-2 focus:ring-accent"
-          v-model="tagIds"
-          :options="tags"
-          @create="onCreateTag"
+        <legend class="fieldset-legend">Empfänger</legend>
+        <SelectRecipient
+          v-model="recipientId"
+          @create="onCreateRecipient"
+          :class="isTransfer ? 'opacity-50' : ''"
+          :disabled="isTransfer"
         />
       </fieldset>
-    </div>
 
-    <!-- Buttons -->
-    <div class="flex justify-end pt-5">
-      <ButtonGroup
-        left-label="Abbrechen"
-        right-label="Speichern"
-        left-color="btn-soft"
-        right-color="btn-primary"
-        @left-click="emit('cancel')"
-        @right-click="submitForm"
-      />
-    </div>
-  </form>
+      <!-- Kategorie & Tags -->
+      <div
+        v-if="transactionType !== TransactionType.ACCOUNTTRANSFER"
+        class="grid grid-cols-1 md:grid-cols-2 gap-4"
+      >
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Kategorie</legend>
+          <SelectCategory v-model="categoryId" />
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Tags</legend>
+          <TagSearchableDropdown
+            class="fieldset focus:outline-none focus:ring-2 focus:ring-accent"
+            v-model="tagIds"
+            :options="tags"
+            @create="onCreateTag"
+          />
+        </fieldset>
+      </div>
+
+      <!-- Buttons -->
+      <div class="flex justify-end pt-5">
+        <ButtonGroup
+          left-label="Abbrechen"
+          right-label="Speichern"
+          left-color="btn-soft"
+          right-color="btn-primary"
+          @left-click="emit('cancel')"
+          @right-click="submitForm"
+        />
+      </div>
+    </form>
+  </div>
 </template>

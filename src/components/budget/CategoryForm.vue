@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { Category } from "../../types";
 import { CategoryService } from "../../services/CategoryService";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
+import ButtonGroup from "../ui/ButtonGroup.vue";
 import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
@@ -22,6 +23,10 @@ const targetDate = ref("");
 const categoryGroupId = ref("");
 const parentCategoryId = ref<string | undefined>(undefined);
 const balance = ref(0);
+
+// Validierung
+const submitAttempted = ref(false);
+const showValidationAlert = ref(false);
 
 // Lade die Daten, wenn eine Kategorie zum Bearbeiten übergeben wurde
 onMounted(() => {
@@ -55,8 +60,28 @@ const formatNumber = (value: number | undefined | null): string => {
   return value.toString().replace(".", ",");
 };
 
+// Validierungsfehler sammeln
+const validationErrors = computed(() => {
+  const errors: string[] = [];
+  if (!name.value.trim()) errors.push("Name ist erforderlich");
+  if (!categoryGroupId.value) errors.push("Kategoriegruppe ist erforderlich");
+  if (isSavingsGoal.value && targetAmount.value <= 0) {
+    errors.push("Zielbetrag muss größer als 0 sein");
+  }
+  return errors;
+});
+
 // Speichere die Kategorie
 const saveCategory = () => {
+  submitAttempted.value = true;
+
+  if (validationErrors.value.length > 0) {
+    showValidationAlert.value = true;
+    return;
+  }
+
+  showValidationAlert.value = false;
+
   const categoryData: Omit<Category, "id"> = {
     name: name.value,
     icon: undefined,
@@ -70,10 +95,14 @@ const saveCategory = () => {
     categoryGroupId: categoryGroupId.value,
     parentCategoryId: parentCategoryId.value,
     isSavingsGoal: isSavingsGoal.value,
-    updated_at: new Date().toISOString(),
   };
 
   emit("save", categoryData);
+};
+
+// Schließt das Validierungs-Alert
+const closeValidationAlert = () => {
+  showValidationAlert.value = false;
 };
 
 const categoryGroups = computed(
@@ -95,7 +124,7 @@ const parentCategories = computed(() => {
     <!-- X-Icon zum Schließen -->
     <button
       type="button"
-      class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2 z-10"
+      class="btn btn-sm btn-circle btn-ghost absolute right-2 -top-12 z-10"
       @click="emit('cancel')"
     >
       <Icon
@@ -103,6 +132,39 @@ const parentCategories = computed(() => {
         class="text-lg"
       />
     </button>
+
+    <!-- Validierungs-Alert -->
+    <div
+      v-if="showValidationAlert && validationErrors.length > 0"
+      class="alert alert-error alert-soft mb-6"
+    >
+      <Icon
+        icon="mdi:alert-circle"
+        class="text-lg"
+      />
+      <div>
+        <h3 class="font-bold">Bitte korrigieren Sie folgende Fehler:</h3>
+        <ul class="list-disc list-inside mt-2">
+          <li
+            v-for="error in validationErrors"
+            :key="error"
+            class="text-sm"
+          >
+            {{ error }}
+          </li>
+        </ul>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        @click="closeValidationAlert"
+      >
+        <Icon
+          icon="mdi:close"
+          class="text-sm"
+        />
+      </button>
+    </div>
 
     <form
       @submit.prevent="saveCategory"
@@ -219,7 +281,7 @@ const parentCategories = computed(() => {
       </div>
 
       <div
-        v-if="isEdit"
+        v-if="props.category"
         class="form-control"
       >
         <label class="label">
@@ -243,20 +305,15 @@ const parentCategories = computed(() => {
         </label>
       </div>
 
-      <div class="flex justify-end space-x-2 pt-4">
-        <button
-          type="button"
-          class="btn"
-          @click="$emit('cancel')"
-        >
-          Abbrechen
-        </button>
-        <button
-          type="submit"
-          class="btn btn-primary"
-        >
-          Speichern
-        </button>
+      <div class="flex justify-end pt-4">
+        <ButtonGroup
+          left-label="Abbrechen"
+          right-label="Speichern"
+          left-color="btn-ghost"
+          right-color="btn-primary"
+          @left-click="emit('cancel')"
+          @right-click="saveCategory"
+        />
       </div>
     </form>
   </div>
