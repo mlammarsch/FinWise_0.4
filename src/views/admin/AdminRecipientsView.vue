@@ -44,13 +44,43 @@ const lastSelectedIndex = ref<number | null>(null);
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
+// Sortierungsstate
+const sortField = ref<"name" | "usage">("name");
+const sortDirection = ref<"asc" | "desc">("asc");
+
 const filteredRecipients = computed(() => {
-  if (searchQuery.value.trim() === "") {
-    return recipientStore.recipients;
+  let filtered = recipientStore.recipients;
+
+  // Filtern nach Suchbegriff
+  if (searchQuery.value.trim() !== "") {
+    filtered = filtered.filter((r) =>
+      r.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+    );
   }
-  return recipientStore.recipients.filter((r) =>
-    r.name.toLowerCase().includes(searchQuery.value.toLowerCase())
-  );
+
+  // Sortieren
+  return [...filtered].sort((a, b) => {
+    let aValue: string | number;
+    let bValue: string | number;
+
+    if (sortField.value === "name") {
+      aValue = a.name.toLowerCase();
+      bValue = b.name.toLowerCase();
+    } else {
+      // usage
+      aValue = recipientUsage.value(a.id);
+      bValue = recipientUsage.value(b.id);
+    }
+
+    let comparison = 0;
+    if (aValue < bValue) {
+      comparison = -1;
+    } else if (aValue > bValue) {
+      comparison = 1;
+    }
+
+    return sortDirection.value === "asc" ? comparison : -comparison;
+  });
 });
 
 const totalPages = computed(() => {
@@ -314,6 +344,27 @@ const handleDeleteRecipients = () => {
   // Nach Bestätigung: selectedRecipientIds.value.forEach(id => recipientStore.deleteRecipient(id))
   // clearSelection();
 };
+
+// Sortierungsfunktionen
+const toggleSort = (field: "name" | "usage") => {
+  if (sortField.value === field) {
+    // Gleiche Spalte: Richtung umkehren
+    sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
+  } else {
+    // Neue Spalte: auf aufsteigend setzen
+    sortField.value = field;
+    sortDirection.value = "asc";
+  }
+};
+
+const getSortIcon = (field: "name" | "usage") => {
+  if (sortField.value !== field) {
+    return "mdi:sort";
+  }
+  return sortDirection.value === "asc"
+    ? "mdi:sort-ascending"
+    : "mdi:sort-descending";
+};
 </script>
 
 <template>
@@ -387,9 +438,31 @@ const handleDeleteRecipients = () => {
                     @change="toggleAllRecipients"
                   />
                 </th>
-                <th>Name</th>
-                <th class="text-center hidden md:table-cell">
-                  Verwendet in Buchungen
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('name')"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Name</span>
+                    <Icon
+                      :icon="getSortIcon('name')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'name' }"
+                    />
+                  </div>
+                </th>
+                <th
+                  class="text-center hidden md:table-cell cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('usage')"
+                >
+                  <div class="flex items-center justify-center">
+                    <span>Verwendet in Buchungen</span>
+                    <Icon
+                      :icon="getSortIcon('usage')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'usage' }"
+                    />
+                  </div>
                 </th>
                 <th class="text-right">Aktionen</th>
               </tr>

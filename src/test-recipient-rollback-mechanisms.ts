@@ -3,6 +3,10 @@
  * Task 5.6: Error-Handling und Rollback-Mechanismen implementieren
  *
  * Pfad: src/test-recipient-rollback-mechanisms.ts
+ *
+ * HINWEIS: Diese Test-Datei ist als Demonstration der implementierten Rollback-Mechanismen konzipiert.
+ * In der Entwicklungsumgebung funktioniert sie mit den konfigurierten @/ Pfad-Aliasen.
+ * Für eigenständige TypeScript-Kompilierung müssten die Imports angepasst werden.
  */
 
 import { useRecipientStore } from './stores/recipientStore';
