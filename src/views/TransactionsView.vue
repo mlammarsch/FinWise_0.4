@@ -329,10 +329,70 @@ async function onBulkAssignAccountConfirm(accountId: string) {
   }
 }
 
-function onBulkChangeRecipientConfirm(recipientId: string | null) {
-  console.log("Bulk change recipient:", recipientId);
-  // TODO: Implement bulk recipient change
-  showBulkChangeRecipientModal.value = false;
+async function onBulkChangeRecipientConfirm(
+  recipientId: string | null,
+  removeAll: boolean = false
+) {
+  debugLog("[TransactionsView]", "onBulkChangeRecipientConfirm", {
+    recipientId,
+    removeAll,
+  });
+
+  try {
+    // Hole die ausgewählten Transaktionen
+    const selectedTransactions =
+      currentViewMode.value === "account"
+        ? transactionListRef.value?.getSelectedTransactions()
+        : categoryTransactionListRef.value?.getSelectedTransactions();
+
+    if (!selectedTransactions || selectedTransactions.length === 0) {
+      warnLog(
+        "[TransactionsView]",
+        "Keine Transaktionen für Bulk-Empfänger-Änderung ausgewählt"
+      );
+      showBulkChangeRecipientModal.value = false;
+      return;
+    }
+
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+
+    // Verwende die neue bulkChangeRecipient Funktion
+    const result = await TransactionService.bulkChangeRecipient(
+      transactionIds,
+      removeAll ? null : recipientId,
+      removeAll
+    );
+
+    if (result.success) {
+      infoLog("[TransactionsView]", "Bulk-Empfänger-Änderung erfolgreich", {
+        updatedCount: result.updatedCount,
+        recipientId: removeAll ? "alle entfernt" : recipientId,
+      });
+
+      // Auswahl zurücksetzen
+      if (currentViewMode.value === "account") {
+        transactionListRef.value?.clearSelection();
+      } else {
+        categoryTransactionListRef.value?.clearSelection();
+      }
+
+      // Refresh der Transaktionsliste
+      refreshKey.value++;
+    } else {
+      errorLog("[TransactionsView]", "Bulk-Empfänger-Änderung fehlgeschlagen", {
+        errors: result.errors,
+        updatedCount: result.updatedCount,
+      });
+    }
+  } catch (error) {
+    errorLog("[TransactionsView]", "Fehler bei Bulk-Empfänger-Änderung", {
+      error: error instanceof Error ? error.message : String(error),
+      recipientId,
+      removeAll,
+    });
+  } finally {
+    showBulkChangeRecipientModal.value = false;
+  }
 }
 
 async function onBulkAssignCategoryConfirm(

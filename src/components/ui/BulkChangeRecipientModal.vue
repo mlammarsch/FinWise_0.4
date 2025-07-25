@@ -16,6 +16,7 @@ import { ref, watch } from "vue";
 import { Icon } from "@iconify/vue";
 import SelectRecipient from "./SelectRecipient.vue";
 import type { Recipient } from "../../types";
+import { debugLog, errorLog } from "../../utils/logger";
 
 const props = defineProps<{
   isOpen: boolean;
@@ -46,10 +47,46 @@ function handleConfirm() {
   handleClose();
 }
 
-function handleRecipientSelect(recipient: Recipient | null) {
-  selectedRecipientId.value = recipient?.id || "";
-  if (recipient) {
+function handleRecipientSelect(recipientId: string | undefined) {
+  selectedRecipientId.value = recipientId || "";
+  if (recipientId) {
     removeAllRecipients.value = false;
+  }
+}
+
+async function handleRecipientCreate(recipientData: { name: string }) {
+  // Erstelle den neuen Empfänger über den recipientStore
+  const { useRecipientStore } = await import("../../stores/recipientStore");
+  const recipientStore = useRecipientStore();
+
+  try {
+    const newRecipient = await recipientStore.addRecipient({
+      name: recipientData.name,
+      defaultCategoryId: undefined,
+      note: "",
+    });
+
+    // Setze den neu erstellten Empfänger als ausgewählt
+    selectedRecipientId.value = newRecipient.id;
+    removeAllRecipients.value = false;
+
+    debugLog(
+      "[BulkChangeRecipientModal]",
+      "Neuer Empfänger erstellt und ausgewählt",
+      {
+        recipientId: newRecipient.id,
+        name: newRecipient.name,
+      }
+    );
+  } catch (error) {
+    errorLog(
+      "[BulkChangeRecipientModal]",
+      "Fehler beim Erstellen des Empfängers",
+      {
+        error: error instanceof Error ? error.message : String(error),
+        recipientName: recipientData.name,
+      }
+    );
   }
 }
 
@@ -127,7 +164,8 @@ watch(
         </label>
         <SelectRecipient
           :selected-recipient-id="selectedRecipientId"
-          @recipient-selected="handleRecipientSelect"
+          @select="handleRecipientSelect"
+          @create="handleRecipientCreate"
           placeholder="Empfänger auswählen..."
         />
       </div>

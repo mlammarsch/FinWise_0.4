@@ -991,7 +991,7 @@ updateTransaction(
             // Bei Counter-Transaktion: toCategoryId auf die neue Quellkategorie setzen
             transactionsToUpdate.set(tx.counterTransactionId, {
               transaction: counterTx,
-              newCategoryId: counterTx.categoryId, // Kategorie der Counter-Transaktion bleibt gleich
+              newCategoryId: counterTx.categoryId || null, // Kategorie der Counter-Transaktion bleibt gleich
               isCounterTransaction: true,
               originalTransactionId: id
             });
@@ -1092,6 +1092,145 @@ updateTransaction(
       infoLog('[TransactionService]', `Bulk-Kategorienzuweisung erfolgreich abgeschlossen: ${updatedCount} Transaktionen zu Kategorie "${targetCategory?.name || 'entfernt'}" zugewiesen`);
     } else {
       warnLog('[TransactionService]', `Bulk-Kategorienzuweisung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
+  },
+
+  /**
+   * Performante Bulk-Empfänger-Änderung für Transaktionen
+   * Ändert den Empfänger für alle übergebenen Transaktionen
+   * CATEGORYTRANSFER und ACCOUNTTRANSFER werden ausgeschlossen, da sie keine Recipients haben
+   */
+  async bulkChangeRecipient(transactionIds: string[], newRecipientId: string | null, removeAll: boolean = false): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const recipientStore = useRecipientStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    // Validiere den Ziel-Empfänger (falls nicht null für "alle entfernen")
+    let targetRecipient = null;
+    if (newRecipientId && !removeAll) {
+      targetRecipient = recipientStore.getRecipientById(newRecipientId);
+      if (!targetRecipient) {
+        const error = `Ziel-Empfänger mit ID ${newRecipientId} nicht gefunden`;
+        errorLog('[TransactionService]', 'bulkChangeRecipient - Invalid target recipient', { newRecipientId });
+        return { success: false, updatedCount: 0, errors: [error] };
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkChangeRecipient started', {
+      requestedCount: unique.length,
+      newRecipientId,
+      removeAll,
+      targetRecipientName: targetRecipient?.name || (removeAll ? 'Alle Empfänger entfernen' : 'Empfänger entfernen')
+    });
+
+    // Sammle alle zu ändernden Transaktionen (ohne CATEGORYTRANSFER und ACCOUNTTRANSFER)
+    const transactionsToUpdate = new Map<string, {
+      transaction: Transaction;
+      newRecipientId: string | null;
+    }>();
+
+    // 1. Analysiere alle Transaktionen und filtere ungeeignete Typen aus
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkChangeRecipient - Transaction not found', { id });
+        continue;
+      }
+
+      // Schließe CATEGORYTRANSFER und ACCOUNTTRANSFER aus, da sie keine Recipients haben
+      if (tx.type === TransactionType.CATEGORYTRANSFER || tx.type === TransactionType.ACCOUNTTRANSFER) {
+        debugLog('[TransactionService]', `Skipping transaction ${id} - Type ${tx.type} does not support recipients`, {
+          transactionId: id,
+          type: tx.type
+        });
+        continue;
+      }
+
+      // Normale Transaktionen (INCOME, EXPENSE, RECONCILE)
+      transactionsToUpdate.set(id, {
+        transaction: tx,
+        newRecipientId: removeAll ? null : newRecipientId
+      });
+    }
+
+    debugLog('[TransactionService]', 'bulkChangeRecipient - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      skippedTransfers: unique.length - transactionsToUpdate.size,
+      eligibleTypes: Array.from(transactionsToUpdate.values()).map(item => item.transaction.type)
+    });
+
+    // 2. Batch-Update durchführen
+    let updatedCount = 0;
+    for (const [transactionId, updateInfo] of transactionsToUpdate) {
+      try {
+        const { transaction, newRecipientId: targetRecipientId } = updateInfo;
+        const updates: Partial<Transaction> = {
+          recipientId: targetRecipientId || undefined
+        };
+
+        // Payee aktualisieren basierend auf dem neuen Empfänger
+        if (targetRecipientId && targetRecipient) {
+          updates.payee = targetRecipient.name;
+        } else {
+          // Empfänger entfernt - payee leeren oder auf Standardwert setzen
+          updates.payee = '';
+        }
+
+        // Transaktion aktualisieren
+        const success = this.updateTransaction(transactionId, updates);
+        if (success) {
+          updatedCount++;
+          debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
+            transactionId,
+            oldRecipientId: transaction.recipientId,
+            newRecipientId: targetRecipientId,
+            type: transaction.type,
+            newPayee: updates.payee
+          });
+        } else {
+          const error = `Fehler beim Aktualisieren der Transaktion ${transactionId}`;
+          errors.push(error);
+          warnLog('[TransactionService]', error, { transactionId, targetRecipientId });
+        }
+      } catch (error) {
+        const errorMsg = `Fehler beim Aktualisieren der Transaktion ${transactionId}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMsg);
+        errorLog('[TransactionService]', errorMsg, {
+          transactionId,
+          error,
+          updateInfo
+        });
+      }
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkChangeRecipient completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      targetRecipient: targetRecipient?.name || (removeAll ? 'Alle entfernt' : 'Empfänger entfernt')
+    });
+
+    // 3. Balance-Neuberechnung (nicht nötig für Empfänger-Änderungen, aber für Konsistenz)
+    BalanceService.calculateMonthlyBalances();
+
+    if (success) {
+      const actionText = removeAll ? 'entfernt' : (targetRecipient ? `zu "${targetRecipient.name}" geändert` : 'entfernt');
+      infoLog('[TransactionService]', `Bulk-Empfänger-Änderung erfolgreich abgeschlossen: ${updatedCount} Transaktionen ${actionText}`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Empfänger-Änderung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
     }
 
     return { success, updatedCount, errors };
