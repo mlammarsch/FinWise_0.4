@@ -9,6 +9,7 @@ import PagingComponent from "../../components/ui/PagingComponent.vue";
 import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import RecipientBulkActionDropdown from "../../components/ui/RecipientBulkActionDropdown.vue";
 import RecipientMergeModal from "../../components/ui/RecipientMergeModal.vue";
+import RecipientDeleteConfirmModal from "../../components/ui/RecipientDeleteConfirmModal.vue";
 import { Icon } from "@iconify/vue";
 
 /**
@@ -40,6 +41,21 @@ const deleteErrorMessage = ref("");
 
 // Merge-Modal State
 const showMergeModal = ref(false);
+
+// Delete-Modal State
+const showDeleteModal = ref(false);
+const deleteValidationResults = ref<
+  Array<{
+    recipientId: string;
+    recipientName: string;
+    hasActiveReferences: boolean;
+    transactionCount: number;
+    planningTransactionCount: number;
+    automationRuleCount: number;
+    canDelete: boolean;
+    warnings: string[];
+  }>
+>([]);
 
 // Auswahlzustand-Management für Checkbox-Funktionalität
 const selectedRecipientIds = ref<Set<string>>(new Set());
@@ -367,29 +383,143 @@ const handleMergeRecipients = () => {
 };
 
 // Merge-Modal Event-Handler
-const handleMergeConfirm = (data: {
+const handleMergeConfirm = async (data: {
   targetRecipient: Recipient;
   sourceRecipients: Recipient[];
   mergeMode: "existing" | "new";
 }) => {
-  // TODO: Implementierung der tatsächlichen Merge-Logik im recipientStore
-  console.log("Merge bestätigt:", data);
-  // Hier wird später die Merge-Logik aufgerufen
-  // recipientStore.mergeRecipients(data.targetRecipient, data.sourceRecipients, data.mergeMode);
-  clearSelection();
+  try {
+    console.log("Merge bestätigt:", data);
+
+    // Extrahiere die IDs der Quell-Empfänger
+    const sourceRecipientIds = data.sourceRecipients.map((r) => r.id);
+
+    // Führe den Merge durch
+    const result = await recipientStore.mergeRecipients(
+      sourceRecipientIds,
+      data.targetRecipient
+    );
+
+    if (result.success) {
+      console.log("Merge erfolgreich abgeschlossen:", result);
+      clearSelection();
+      showMergeModal.value = false;
+    } else {
+      console.error("Merge fehlgeschlagen:", result.errors);
+      // TODO: Fehler-Modal anzeigen
+    }
+  } catch (error) {
+    console.error("Fehler beim Merge:", error);
+    // TODO: Fehler-Modal anzeigen
+  }
 };
 
 const handleMergeCancel = () => {
   showMergeModal.value = false;
 };
 
-const handleDeleteRecipients = () => {
-  // TODO: Implementierung der Batch-Delete-Funktionalität
-  // Placeholder für zukünftige Batch-Delete-Bestätigung
-  console.log("Delete Recipients:", Array.from(selectedRecipientIds.value));
-  // Hier wird später ein Bestätigungsdialog für Batch-Delete geöffnet
-  // Nach Bestätigung: selectedRecipientIds.value.forEach(id => recipientStore.deleteRecipient(id))
-  // clearSelection();
+const handleDeleteRecipients = async () => {
+  try {
+    console.log("Delete Recipients:", Array.from(selectedRecipientIds.value));
+
+    // Konvertiere Set zu Array
+    const recipientIdsToDelete = Array.from(selectedRecipientIds.value);
+
+    if (recipientIdsToDelete.length === 0) {
+      console.warn("Keine Empfänger zum Löschen ausgewählt");
+      return;
+    }
+
+    // Validiere die Empfänger vor dem Löschen
+    deleteValidationResults.value = recipientIdsToDelete.map((recipientId) => {
+      const recipient = recipientStore.getRecipientById(recipientId);
+      const recipientName = recipient?.name || "Unbekannter Empfänger";
+
+      // Zähle Referenzen
+      const transactionCount = transactionStore.transactions.filter(
+        (tx) => tx.recipientId === recipientId
+      ).length;
+      const planningTransactionCount = 0; // TODO: Implementierung wenn planningStore verfügbar
+      const automationRuleCount = 0; // TODO: Implementierung wenn ruleStore verfügbar
+
+      const hasActiveReferences =
+        transactionCount > 0 ||
+        planningTransactionCount > 0 ||
+        automationRuleCount > 0;
+      const warnings: string[] = [];
+
+      if (transactionCount > 0) {
+        warnings.push(
+          `${transactionCount} Transaktion${
+            transactionCount === 1 ? "" : "en"
+          } verwenden diesen Empfänger`
+        );
+      }
+      if (planningTransactionCount > 0) {
+        warnings.push(
+          `${planningTransactionCount} Planungstransaktion${
+            planningTransactionCount === 1 ? "" : "en"
+          } verwenden diesen Empfänger`
+        );
+      }
+      if (automationRuleCount > 0) {
+        warnings.push(
+          `${automationRuleCount} Automatisierungsregel${
+            automationRuleCount === 1 ? "" : "n"
+          } verwenden diesen Empfänger`
+        );
+      }
+
+      return {
+        recipientId,
+        recipientName,
+        hasActiveReferences,
+        transactionCount,
+        planningTransactionCount,
+        automationRuleCount,
+        canDelete: !hasActiveReferences, // Nur löschen wenn keine Referenzen
+        warnings,
+      };
+    });
+
+    // Zeige Delete-Modal
+    showDeleteModal.value = true;
+  } catch (error) {
+    console.error("Fehler bei der Validierung:", error);
+    // TODO: Fehler-Modal anzeigen
+  }
+};
+
+// Delete-Modal Event-Handler
+const handleDeleteConfirm = async (data: { recipients: Recipient[] }) => {
+  try {
+    console.log("Delete bestätigt:", data);
+
+    // Extrahiere die IDs der zu löschenden Empfänger
+    const recipientIdsToDelete = data.recipients.map((r) => r.id);
+
+    // Führe Batch-Delete durch
+    const result = await recipientStore.batchDeleteRecipients(
+      recipientIdsToDelete
+    );
+
+    if (result.success) {
+      console.log("Batch-Delete erfolgreich abgeschlossen:", result);
+      clearSelection();
+      showDeleteModal.value = false;
+    } else {
+      console.error("Batch-Delete fehlgeschlagen:", result.errors);
+      // TODO: Fehler-Modal anzeigen
+    }
+  } catch (error) {
+    console.error("Fehler beim Batch-Delete:", error);
+    // TODO: Fehler-Modal anzeigen
+  }
+};
+
+const handleDeleteCancel = () => {
+  showDeleteModal.value = false;
+  deleteValidationResults.value = [];
 };
 
 // Sortierungsfunktionen
@@ -653,6 +783,15 @@ const getSortIcon = (field: "name" | "usage") => {
       :selected-recipients="selectedRecipients"
       @confirm-merge="handleMergeConfirm"
       @cancel="handleMergeCancel"
+    />
+
+    <!-- Delete-Modal -->
+    <RecipientDeleteConfirmModal
+      v-model:show="showDeleteModal"
+      :selected-recipients="selectedRecipients"
+      :validation-results="deleteValidationResults"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
     />
   </div>
 </template>

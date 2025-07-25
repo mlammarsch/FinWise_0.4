@@ -3,6 +3,8 @@
 import { ref, computed, watch } from "vue";
 import { Icon } from "@iconify/vue";
 import type { Recipient } from "../../types";
+import { useRecipientStore } from "../../stores/recipientStore";
+import SelectRecipient from "./SelectRecipient.vue";
 
 /**
  * Pfad zur Komponente: src/components/ui/RecipientMergeModal.vue
@@ -36,30 +38,23 @@ const emit = defineEmits<{
   (e: "cancel"): void;
 }>();
 
+const recipientStore = useRecipientStore();
+
 // Lokaler State
 const currentStep = ref<"select-target" | "confirm">("select-target");
-const mergeMode = ref<"existing" | "new">("existing");
 const targetRecipient = ref<Recipient | null>(null);
-const newRecipientName = ref("");
+const selectedRecipientId = ref<string>("");
 
 // Computed Properties
 const selectedCount = computed(() => props.selectedRecipients.length);
 
 const canProceedToConfirm = computed(() => {
-  if (mergeMode.value === "existing") {
-    return targetRecipient.value !== null;
-  } else {
-    return newRecipientName.value.trim().length > 0;
-  }
+  return targetRecipient.value !== null;
 });
 
 const confirmationMessage = computed(() => {
-  if (mergeMode.value === "existing" && targetRecipient.value) {
+  if (targetRecipient.value) {
     return `${selectedCount.value} Empfänger zu "${targetRecipient.value.name}" zusammenführen`;
-  } else if (mergeMode.value === "new" && newRecipientName.value.trim()) {
-    return `${
-      selectedCount.value
-    } Empfänger zu neuem Empfänger "${newRecipientName.value.trim()}" zusammenführen`;
   }
   return "";
 });
@@ -73,9 +68,8 @@ const closeModal = () => {
 
 const resetModal = () => {
   currentStep.value = "select-target";
-  mergeMode.value = "existing";
   targetRecipient.value = null;
-  newRecipientName.value = "";
+  selectedRecipientId.value = "";
 };
 
 const proceedToConfirm = () => {
@@ -87,26 +81,13 @@ const goBackToSelection = () => {
   currentStep.value = "select-target";
 };
 
-const confirmMerge = () => {
-  if (!canProceedToConfirm.value) return;
-
-  let finalTargetRecipient: Recipient;
-
-  if (mergeMode.value === "existing" && targetRecipient.value) {
-    finalTargetRecipient = targetRecipient.value;
-  } else {
-    // Erstelle neuen Empfänger für Merge
-    finalTargetRecipient = {
-      id: "", // Wird vom Store generiert
-      name: newRecipientName.value.trim(),
-      updatedAt: new Date().toISOString(),
-    };
-  }
+const confirmMerge = async () => {
+  if (!canProceedToConfirm.value || !targetRecipient.value) return;
 
   emit("confirm-merge", {
-    targetRecipient: finalTargetRecipient,
+    targetRecipient: targetRecipient.value,
     sourceRecipients: props.selectedRecipients,
-    mergeMode: mergeMode.value,
+    mergeMode: "existing" as const, // Da wir nur noch SelectRecipient verwenden
   });
 
   closeModal();
@@ -114,6 +95,30 @@ const confirmMerge = () => {
 
 const selectExistingRecipient = (recipient: Recipient) => {
   targetRecipient.value = recipient;
+};
+
+// Handler für SelectRecipient Komponente
+const handleRecipientSelect = (recipientId: string | undefined) => {
+  if (recipientId) {
+    const recipient = recipientStore.getRecipientById(recipientId);
+    if (recipient) {
+      targetRecipient.value = recipient;
+    }
+  } else {
+    targetRecipient.value = null;
+  }
+};
+
+const handleRecipientCreate = async (data: { name: string }) => {
+  try {
+    const newRecipient = await recipientStore.addRecipient({
+      name: data.name.trim(),
+    });
+    targetRecipient.value = newRecipient;
+    selectedRecipientId.value = newRecipient.id;
+  } catch (error) {
+    console.error("Fehler beim Erstellen des Empfängers:", error);
+  }
 };
 
 // Watcher für Modal-Reset bei Schließung
@@ -195,98 +200,22 @@ watch(
           </div>
         </div>
 
-        <!-- Merge-Modus Auswahl -->
+        <!-- Ziel-Empfänger Auswahl -->
         <div class="space-y-4">
           <h4 class="font-medium">Zusammenführen zu:</h4>
+          <div class="text-sm text-base-content/70 mb-3">
+            Wählen Sie einen bestehenden Empfänger aus oder erstellen Sie einen
+            neuen durch Eingabe des Namens.
+          </div>
 
-          <!-- Option: Bestehenden Empfänger auswählen -->
-          <label class="flex items-start space-x-3 cursor-pointer">
-            <input
-              type="radio"
-              v-model="mergeMode"
-              value="existing"
-              class="radio radio-primary mt-1"
+          <div class="space-y-2">
+            <div class="text-sm font-medium">Ziel-Empfänger:</div>
+            <SelectRecipient
+              v-model="selectedRecipientId"
+              @select="handleRecipientSelect"
+              @create="handleRecipientCreate"
             />
-            <div class="flex-1">
-              <div class="font-medium">Bestehenden Empfänger auswählen</div>
-              <div class="text-sm text-base-content/70 mt-1">
-                Wählen Sie einen vorhandenen Empfänger als Ziel für die
-                Zusammenführung
-              </div>
-
-              <!-- Empfänger-Auswahl (nur wenn dieser Modus aktiv ist) -->
-              <div
-                v-if="mergeMode === 'existing'"
-                class="mt-3 space-y-2"
-              >
-                <div class="text-sm font-medium">Ziel-Empfänger:</div>
-                <div
-                  class="max-h-40 overflow-y-auto border border-base-300 rounded-lg"
-                >
-                  <div
-                    v-for="recipient in selectedRecipients"
-                    :key="recipient.id"
-                    class="p-3 hover:bg-base-200 cursor-pointer border-b border-base-300 last:border-b-0"
-                    :class="{
-                      'bg-primary/10 border-primary':
-                        targetRecipient?.id === recipient.id,
-                    }"
-                    @click="selectExistingRecipient(recipient)"
-                  >
-                    <div class="flex items-center justify-between">
-                      <div>
-                        <div class="font-medium">{{ recipient.name }}</div>
-                        <div
-                          v-if="recipient.note"
-                          class="text-sm text-base-content/70"
-                        >
-                          {{ recipient.note }}
-                        </div>
-                      </div>
-                      <Icon
-                        v-if="targetRecipient?.id === recipient.id"
-                        icon="mdi:check-circle"
-                        class="w-5 h-5 text-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </label>
-
-          <!-- Option: Neuen Empfänger erstellen -->
-          <label class="flex items-start space-x-3 cursor-pointer">
-            <input
-              type="radio"
-              v-model="mergeMode"
-              value="new"
-              class="radio radio-primary mt-1"
-            />
-            <div class="flex-1">
-              <div class="font-medium">Neuen Empfänger erstellen</div>
-              <div class="text-sm text-base-content/70 mt-1">
-                Erstellen Sie einen neuen Empfänger für die Zusammenführung
-              </div>
-
-              <!-- Name-Eingabe (nur wenn dieser Modus aktiv ist) -->
-              <div
-                v-if="mergeMode === 'new'"
-                class="mt-3"
-              >
-                <label class="block text-sm font-medium mb-1"
-                  >Name des neuen Empfängers:</label
-                >
-                <input
-                  type="text"
-                  v-model="newRecipientName"
-                  class="input input-bordered w-full"
-                  placeholder="Name eingeben..."
-                  @keyup.enter="proceedToConfirm"
-                />
-              </div>
-            </div>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -344,18 +273,7 @@ watch(
                 icon="mdi:account-check"
                 class="w-4 h-4 text-success"
               />
-              <span>
-                {{
-                  mergeMode === "existing"
-                    ? targetRecipient?.name
-                    : newRecipientName.trim()
-                }}
-                <span
-                  v-if="mergeMode === 'new'"
-                  class="text-base-content/70"
-                  >(neu)</span
-                >
-              </span>
+              <span>{{ targetRecipient?.name }}</span>
             </div>
           </div>
         </div>
