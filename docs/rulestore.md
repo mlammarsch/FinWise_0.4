@@ -1,11 +1,8 @@
-Ich habe nun alle relevanten Dateien und Anwendungsfälle analysiert. Der nächste Schritt ist die Erstellung der umfassenden Dokumentation für alle vier Fälle, die die Ablaufbeschreibungen, die Rolle der Regel-Felder und die beteiligten Dateien zusammenfasst. Danach werde ich das Mermaid-Diagramm erstellen.
-Ich habe alle angefragten Analysen durchgeführt. Hier ist die zusammenfassende Dokumentation für die Anwendung von Automatisierungsregeln in FinWise, aufgeteilt nach den vier Fallunterscheidungen:
-
----
-
 ## Dokumentation: Anwendung von Automatisierungsregeln in FinWise
 
 Diese Dokumentation beschreibt, wann und wie Automatisierungsregeln in FinWise angewendet werden, unter Berücksichtigung ihrer Aktivität, Ausführungsphase und Priorität.
+
+**WICHTIGER HINWEIS:** Automatisierungsregeln werden ausschließlich auf **EXPENSE** und **INCOME** Transaktionen angewendet. Bei **CATEGORYTRANSFER** und **ACCOUNTTRANSFER** Transaktionen greifen die Regeln nicht.
 
 ### 1. Grundlagen der Regel-Engine (`src/stores/ruleStore.ts`)
 
@@ -164,11 +161,30 @@ Die zentrale Logik für die Regelanwendung befindet sich im `ruleStore`.
 
 ### Zusammenfassung der Regelanwendung
 
-| Szenario                  | `applyRulesToTransaction` Aufruf | `isActive` berücksichtigt? | `stage` berücksichtigt? | `priority` berücksichtigt? | Änderungen gespeichert? |
-| :------------------------ | :------------------------------- | :------------------------ | :---------------------- | :------------------------ | :---------------------- |
-| **RuleForm Testbutton**   | `ruleStore.checkConditions()`    | Nein                      | Nein                    | Nein                      | Nein (virtuell)         |
-| **AdminRulesView Playbutton** | `checkSingleRuleConditions()` (lokal) | Nein                      | Nein                    | Nein                      | Ja (direkt über `transactionStore.updateTransaction()`) |
-| **Manuelle Transaktion**  | `ruleStore.applyRulesToTransaction()` (3x) | Ja                        | Ja                      | Ja                        | Ja (über `TransactionService.updateTransaction()`) |
-| **CSV Import**            | `TransactionService.applyPreAndDefaultRulesToTransactions()` & `TransactionService.applyPostStageRulesToTransactions()` | Ja                        | Ja                      | Ja                        | Ja (Batch-Import & `TransactionService.updateTransaction()`) |
+**WICHTIG:** Alle Szenarien berücksichtigen jetzt automatisch nur **EXPENSE** und **INCOME** Transaktionen. **CATEGORYTRANSFER** und **ACCOUNTTRANSFER** werden in allen Fällen übersprungen.
+
+| Szenario                  | `applyRulesToTransaction` Aufruf | `isActive` berücksichtigt? | `stage` berücksichtigt? | `priority` berücksichtigt? | Änderungen gespeichert? | **Transaktionstyp-Filter** |
+| :------------------------ | :------------------------------- | :------------------------ | :---------------------- | :------------------------ | :---------------------- | :------------------------ |
+| **RuleForm Testbutton**   | `ruleStore.checkConditions()`    | Nein                      | Nein                    | Nein                      | Nein (virtuell)         | **Ja (EXPENSE/INCOME)** |
+| **AdminRulesView Playbutton** | `checkSingleRuleConditions()` (lokal) | Nein                      | Nein                    | Nein                      | Ja (direkt über `transactionStore.updateTransaction()`) | **Ja (EXPENSE/INCOME)** |
+| **Manuelle Transaktion**  | `ruleStore.applyRulesToTransaction()` (3x) | Ja                        | Ja                      | Ja                        | Ja (über `TransactionService.updateTransaction()`) | **Ja (EXPENSE/INCOME)** |
+| **CSV Import**            | `TransactionService.applyPreAndDefaultRulesToTransactions()` & `TransactionService.applyPostStageRulesToTransactions()` | Ja                        | Ja                      | Ja                        | Ja (Batch-Import & `TransactionService.updateTransaction()`) | **Ja (EXPENSE/INCOME)** |
+
+### Implementierte Änderungen
+
+#### 1. **ruleStore.ts** - Zentrale Filterung
+- **`applyRulesToTransaction()`**: Prüft Transaktionstyp und bricht bei CATEGORYTRANSFER/ACCOUNTTRANSFER ab
+- **`checkConditions()`**: Zusätzliche Sicherheitsprüfung für Transaktionstyp
+
+#### 2. **TransactionService.ts** - Transfer-Methoden angepasst
+- **`addAccountTransfer()`**: `applyRules` Parameter auf `false` gesetzt
+- **`addCategoryTransfer()`**: `applyRules` Parameter auf `false` gesetzt
+
+#### 3. **AdminRulesView.vue** - Manuelle Regelanwendung
+- **`applyRuleToTransactions()`**: Filtert Transaktionen vor Regelprüfung
+- **`confirmApplyRule()`**: Filtert Transaktionen vor Regelanwendung
+
+#### 4. **RuleForm.vue** - Regel-Test
+- **`applyRuleToExistingTransactions()`**: Filtert Transaktionen vor virtuellem Test
 
 ---

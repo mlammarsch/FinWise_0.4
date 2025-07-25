@@ -237,8 +237,10 @@ function applyRuleToExistingTransactions() {
     ruleData
   );
 
-  // Virtuelle Regelprüfung - nur die letzten 250 Transaktionen testen
+  // Virtuelle Regelprüfung - nur die letzten 250 EXPENSE/INCOME Transaktionen testen
+  // Rules greifen nicht bei CATEGORYTRANSFER und ACCOUNTTRANSFER
   const allTransactions = [...transactionStore.transactions]
+    .filter((tx) => tx.type === "EXPENSE" || tx.type === "INCOME")
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 250); // Begrenzt auf 250 Transaktionen
 

@@ -42,8 +42,8 @@ function handleConfirm() {
   }
 }
 
-function handleAccountSelect(account: Account | null) {
-  selectedAccountId.value = account?.id || "";
+function handleAccountSelect(accountId: string | undefined) {
+  selectedAccountId.value = accountId || "";
 }
 
 watch(
@@ -101,7 +101,7 @@ watch(
         </label>
         <SelectAccount
           :selected-account-id="selectedAccountId"
-          @account-selected="handleAccountSelect"
+          @select="handleAccountSelect"
           placeholder="Konto auswählen..."
         />
       </div>

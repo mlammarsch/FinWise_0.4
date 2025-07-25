@@ -193,6 +193,12 @@ export const useRuleStore = defineStore('rule', () => {
     transaction: Transaction,
     stage: 'PRE' | 'DEFAULT' | 'POST' = 'DEFAULT'
   ) {
+    // Rules nur auf EXPENSE und INCOME Transaktionen anwenden
+    if (transaction.type !== 'EXPENSE' && transaction.type !== 'INCOME') {
+      debugLog('RuleStore', `Regelanwendung übersprungen für Transaktionstyp: ${transaction.type} (ID: ${transaction.id})`);
+      return transaction;
+    }
+
     const sorted = [...rules.value]
       .filter((r) => r.isActive && r.stage === stage)
       .sort((a, b) => a.priority - b.priority);
@@ -229,6 +235,12 @@ export const useRuleStore = defineStore('rule', () => {
 
   function checkConditions(conditions: any[], tx: Transaction, rule?: AutomationRule): boolean {
     if (!conditions?.length) return true;
+
+    // Rules nur auf EXPENSE und INCOME Transaktionen anwenden
+    if (tx.type !== 'EXPENSE' && tx.type !== 'INCOME') {
+      debugLog('RuleStore', `checkConditions: Übersprungen für Transaktionstyp: ${tx.type} (ID: ${tx.id})`);
+      return false;
+    }
 
     debugLog('RuleStore', `checkConditions: Prüfe ${conditions.length} Bedingungen für Transaktion`, {
       txId: tx.id,

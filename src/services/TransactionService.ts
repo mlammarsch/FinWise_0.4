@@ -269,14 +269,14 @@ export const TransactionService = {
       amount: -abs,
       payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer zu ${toName}`,
       transferToAccountId: toAccountId,
-    }, true); // Regeln anwenden
+    }, false); // Keine Regeln auf ACCOUNTTRANSFER anwenden
     const toTx = await this.addTransaction({
       ...base,
       accountId: toAccountId,
       amount: abs,
       payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer von ${fromName}`,
       transferToAccountId: fromAccountId,
-    }, true); // Regeln anwenden
+    }, false); // Keine Regeln auf ACCOUNTTRANSFER anwenden
 
     // Verlinken
     this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
@@ -339,8 +339,8 @@ export const TransactionService = {
       toCategoryId: fromCategoryId,
     };
 
-    const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>, true);
-    const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>, true);
+    const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>, false); // Keine Regeln auf CATEGORYTRANSFER anwenden
+    const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>, false); // Keine Regeln auf CATEGORYTRANSFER anwenden
 
     this.updateTransaction(newFromTx.id, { counterTransactionId: newToTx.id });
     this.updateTransaction(newToTx.id, { counterTransactionId: newFromTx.id });
@@ -743,6 +743,358 @@ updateTransaction(
 
   deleteMultipleTransactions(ids: string[]) {
     return this.bulkDeleteTransactions(ids);
+  },
+
+  /**
+   * Performante Bulk-Kontozuweisung für Transaktionen
+   * Ändert das Konto für alle übergebenen Transaktionen
+   * Bei ACCOUNTTRANSFERS wird das Quellkonto geändert und die Gegenbuchung entsprechend angepasst
+   */
+  async bulkAssignAccount(transactionIds: string[], newAccountId: string): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const accountStore = useAccountStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    // Validiere das Zielkonto
+    const targetAccount = accountStore.getAccountById(newAccountId);
+    if (!targetAccount) {
+      const error = `Zielkonto mit ID ${newAccountId} nicht gefunden`;
+      errorLog('[TransactionService]', 'bulkAssignAccount - Invalid target account', { newAccountId });
+      return { success: false, updatedCount: 0, errors: [error] };
+    }
+
+    debugLog('[TransactionService]', 'bulkAssignAccount started', {
+      requestedCount: unique.length,
+      newAccountId,
+      targetAccountName: targetAccount.name
+    });
+
+    // Sammle alle zu ändernden Transaktionen und ihre Counter-Transaktionen
+    const transactionsToUpdate = new Map<string, {
+      transaction: Transaction;
+      newAccountId: string;
+      updatePayee?: boolean;
+      isCounterTransaction?: boolean;
+    }>();
+    const affectedAccountIds = new Set<string>();
+    const processedCounterTransactions = new Set<string>();
+
+    // 1. Analysiere alle Transaktionen
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkAssignAccount - Transaction not found', { id });
+        continue;
+      }
+
+      // Sammle betroffene Konten für Balance-Neuberechnung
+      if (tx.accountId) {
+        affectedAccountIds.add(tx.accountId);
+      }
+      affectedAccountIds.add(newAccountId);
+
+      // Spezielle Behandlung für ACCOUNTTRANSFER
+      if (tx.type === TransactionType.ACCOUNTTRANSFER) {
+        // Haupttransaktion (Quellkonto ändern)
+        transactionsToUpdate.set(id, {
+          transaction: tx,
+          newAccountId: newAccountId,
+          updatePayee: true
+        });
+
+        // Counter-Transaktion behandeln (Zielkonto anpassen)
+        if (tx.counterTransactionId && !processedCounterTransactions.has(tx.counterTransactionId)) {
+          const counterTx = txStore.getTransactionById(tx.counterTransactionId);
+          if (counterTx) {
+            // Bei Counter-Transaktion: transferToAccountId auf das neue Quellkonto setzen
+            transactionsToUpdate.set(tx.counterTransactionId, {
+              transaction: counterTx,
+              newAccountId: counterTx.accountId, // Konto der Counter-Transaktion bleibt gleich
+              updatePayee: true,
+              isCounterTransaction: true
+            });
+
+            if (counterTx.accountId) {
+              affectedAccountIds.add(counterTx.accountId);
+            }
+            processedCounterTransactions.add(tx.counterTransactionId);
+          }
+        }
+      } else {
+        // Normale Transaktionen (INCOME, EXPENSE, RECONCILE)
+        transactionsToUpdate.set(id, {
+          transaction: tx,
+          newAccountId: newAccountId
+        });
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkAssignAccount - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      affectedAccounts: affectedAccountIds.size,
+      accountTransfers: Array.from(transactionsToUpdate.values()).filter(item =>
+        item.transaction.type === TransactionType.ACCOUNTTRANSFER
+      ).length
+    });
+
+    // 2. Batch-Update durchführen
+    let updatedCount = 0;
+    for (const [transactionId, updateInfo] of transactionsToUpdate) {
+      try {
+        const { transaction, newAccountId: targetAccountId, updatePayee, isCounterTransaction } = updateInfo;
+        const updates: Partial<Transaction> = {
+          accountId: targetAccountId
+        };
+
+        // Payee für ACCOUNTTRANSFER aktualisieren
+        if (updatePayee && transaction.type === TransactionType.ACCOUNTTRANSFER) {
+          if (isCounterTransaction) {
+            // Counter-Transaktion: Payee zeigt auf das neue Quellkonto
+            const newSourceAccount = accountStore.getAccountById(newAccountId);
+            updates.payee = `Transfer von ${newSourceAccount?.name || 'Unbekanntes Konto'}`;
+            updates.transferToAccountId = newAccountId; // transferToAccountId zeigt auf neues Quellkonto
+          } else {
+            // Haupttransaktion: Payee zeigt auf das Zielkonto (bleibt gleich)
+            const targetAccount = accountStore.getAccountById(transaction.transferToAccountId || '');
+            updates.payee = `Transfer zu ${targetAccount?.name || 'Unbekanntes Konto'}`;
+          }
+        }
+
+        // Transaktion aktualisieren
+        const success = this.updateTransaction(transactionId, updates);
+        if (success) {
+          updatedCount++;
+          debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
+            transactionId,
+            oldAccountId: transaction.accountId,
+            newAccountId: targetAccountId,
+            type: transaction.type,
+            isCounterTransaction: isCounterTransaction || false,
+            payeeUpdated: !!updatePayee
+          });
+        } else {
+          const error = `Fehler beim Aktualisieren der Transaktion ${transactionId}`;
+          errors.push(error);
+          warnLog('[TransactionService]', error, { transactionId, targetAccountId });
+        }
+      } catch (error) {
+        const errorMsg = `Fehler beim Aktualisieren der Transaktion ${transactionId}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMsg);
+        errorLog('[TransactionService]', errorMsg, {
+          transactionId,
+          error,
+          updateInfo
+        });
+      }
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkAssignAccount completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      affectedAccounts: Array.from(affectedAccountIds),
+      targetAccount: targetAccount.name
+    });
+
+    // 3. Balance-Neuberechnung für alle betroffenen Konten
+    BalanceService.calculateMonthlyBalances();
+
+    if (!this._skipRunningBalanceRecalc) {
+      for (const accountId of affectedAccountIds) {
+        BalanceService.triggerRunningBalanceRecalculation(accountId);
+      }
+    }
+
+    if (success) {
+      infoLog('[TransactionService]', `Bulk-Kontozuweisung erfolgreich abgeschlossen: ${updatedCount} Transaktionen zu Konto "${targetAccount.name}" zugewiesen`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Kontozuweisung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
+  },
+
+  /**
+   * Performante Bulk-Kategorienzuweisung für Transaktionen
+   * Ändert die Kategorie für alle übergebenen Transaktionen
+   * Bei CATEGORYTRANSFERS wird sowohl die Quell- als auch die Zielkategorie in der Gegenbuchung korrigiert
+   */
+  async bulkAssignCategory(transactionIds: string[], newCategoryId: string | null): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const categoryStore = useCategoryStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    // Validiere die Zielkategorie (falls nicht null für "alle entfernen")
+    let targetCategory = null;
+    if (newCategoryId) {
+      targetCategory = categoryStore.getCategoryById(newCategoryId);
+      if (!targetCategory) {
+        const error = `Zielkategorie mit ID ${newCategoryId} nicht gefunden`;
+        errorLog('[TransactionService]', 'bulkAssignCategory - Invalid target category', { newCategoryId });
+        return { success: false, updatedCount: 0, errors: [error] };
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkAssignCategory started', {
+      requestedCount: unique.length,
+      newCategoryId,
+      targetCategoryName: targetCategory?.name || 'Kategorie entfernen'
+    });
+
+    // Sammle alle zu ändernden Transaktionen und ihre Counter-Transaktionen
+    const transactionsToUpdate = new Map<string, {
+      transaction: Transaction;
+      newCategoryId: string | null;
+      isCounterTransaction?: boolean;
+      originalTransactionId?: string;
+    }>();
+    const processedCounterTransactions = new Set<string>();
+
+    // 1. Analysiere alle Transaktionen
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkAssignCategory - Transaction not found', { id });
+        continue;
+      }
+
+      // Spezielle Behandlung für CATEGORYTRANSFER
+      if (tx.type === TransactionType.CATEGORYTRANSFER) {
+        // Haupttransaktion (Quellkategorie ändern)
+        transactionsToUpdate.set(id, {
+          transaction: tx,
+          newCategoryId: newCategoryId
+        });
+
+        // Counter-Transaktion behandeln (Zielkategorie anpassen)
+        if (tx.counterTransactionId && !processedCounterTransactions.has(tx.counterTransactionId)) {
+          const counterTx = txStore.getTransactionById(tx.counterTransactionId);
+          if (counterTx) {
+            // Bei Counter-Transaktion: toCategoryId auf die neue Quellkategorie setzen
+            transactionsToUpdate.set(tx.counterTransactionId, {
+              transaction: counterTx,
+              newCategoryId: counterTx.categoryId, // Kategorie der Counter-Transaktion bleibt gleich
+              isCounterTransaction: true,
+              originalTransactionId: id
+            });
+
+            processedCounterTransactions.add(tx.counterTransactionId);
+          }
+        }
+      } else {
+        // Normale Transaktionen (INCOME, EXPENSE, RECONCILE, ACCOUNTTRANSFER)
+        transactionsToUpdate.set(id, {
+          transaction: tx,
+          newCategoryId: newCategoryId
+        });
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkAssignCategory - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      categoryTransfers: Array.from(transactionsToUpdate.values()).filter(item =>
+        item.transaction.type === TransactionType.CATEGORYTRANSFER
+      ).length
+    });
+
+    // 2. Batch-Update durchführen
+    let updatedCount = 0;
+    for (const [transactionId, updateInfo] of transactionsToUpdate) {
+      try {
+        const { transaction, newCategoryId: targetCategoryId, isCounterTransaction, originalTransactionId } = updateInfo;
+        const updates: Partial<Transaction> = {
+          categoryId: targetCategoryId || undefined
+        };
+
+        // Spezielle Behandlung für CATEGORYTRANSFER Counter-Transaktionen
+        if (isCounterTransaction && transaction.type === TransactionType.CATEGORYTRANSFER && originalTransactionId) {
+          // Für Counter-Transaktion: toCategoryId auf die neue Quellkategorie setzen
+          updates.toCategoryId = targetCategoryId || undefined;
+
+          // Payee aktualisieren
+          if (targetCategoryId) {
+            const newSourceCategory = categoryStore.getCategoryById(targetCategoryId);
+            updates.payee = `Kategorientransfer von ${newSourceCategory?.name || 'Unbekannte Kategorie'}`;
+          } else {
+            updates.payee = 'Kategorientransfer von entfernter Kategorie';
+          }
+        } else if (transaction.type === TransactionType.CATEGORYTRANSFER && !isCounterTransaction) {
+          // Für Haupt-CATEGORYTRANSFER: toCategoryId bleibt unverändert, aber Payee aktualisieren
+          if (transaction.toCategoryId) {
+            const targetCat = categoryStore.getCategoryById(transaction.toCategoryId);
+            if (targetCategoryId) {
+              // Neue Quellkategorie gesetzt
+              updates.payee = `Kategorientransfer zu ${targetCat?.name || 'Unbekannte Kategorie'}`;
+            } else {
+              // Quellkategorie entfernt
+              updates.payee = `Kategorientransfer zu ${targetCat?.name || 'Unbekannte Kategorie'}`;
+            }
+          }
+        }
+
+        // Transaktion aktualisieren
+        const success = this.updateTransaction(transactionId, updates);
+        if (success) {
+          updatedCount++;
+          debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
+            transactionId,
+            oldCategoryId: transaction.categoryId,
+            newCategoryId: targetCategoryId,
+            type: transaction.type,
+            isCounterTransaction: isCounterTransaction || false
+          });
+        } else {
+          const error = `Fehler beim Aktualisieren der Transaktion ${transactionId}`;
+          errors.push(error);
+          warnLog('[TransactionService]', error, { transactionId, targetCategoryId });
+        }
+      } catch (error) {
+        const errorMsg = `Fehler beim Aktualisieren der Transaktion ${transactionId}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMsg);
+        errorLog('[TransactionService]', errorMsg, {
+          transactionId,
+          error,
+          updateInfo
+        });
+      }
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkAssignCategory completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      targetCategory: targetCategory?.name || 'Kategorie entfernen'
+    });
+
+    if (success) {
+      infoLog('[TransactionService]', `Bulk-Kategorienzuweisung erfolgreich abgeschlossen: ${updatedCount} Transaktionen zu Kategorie "${targetCategory?.name || 'entfernt'}" zugewiesen`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Kategorienzuweisung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
   },
 
   /**

@@ -207,13 +207,16 @@ const hideToast = () => {
 };
 
 const applyRuleToTransactions = async (rule: AutomationRule) => {
-  // Alle Transaktionen holen
-  const allTransactions = [...transactionStore.transactions];
+  // Nur EXPENSE und INCOME Transaktionen holen (Rules greifen nicht bei Transfers)
+  const allTransactions = [...transactionStore.transactions].filter(
+    (tx) => tx.type === "EXPENSE" || tx.type === "INCOME"
+  );
 
   debugLog("[AdminRulesView] Analyzing rule application", {
     ruleId: rule.id,
     ruleName: rule.name,
     totalTransactions: allTransactions.length,
+    filteredTransactions: allTransactions.length,
     ruleConditions: rule.conditions,
   });
 
@@ -273,7 +276,10 @@ const confirmApplyRule = async () => {
 
   try {
     const rule = applyRuleData.value.rule;
-    const allTransactions = [...transactionStore.transactions];
+    // Nur EXPENSE und INCOME Transaktionen berücksichtigen (Rules greifen nicht bei Transfers)
+    const allTransactions = [...transactionStore.transactions].filter(
+      (tx) => tx.type === "EXPENSE" || tx.type === "INCOME"
+    );
     let appliedCount = 0;
 
     // Alle Transaktionen durchgehen und Regel anwenden

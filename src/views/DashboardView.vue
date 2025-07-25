@@ -104,15 +104,17 @@ const monthlyTrend = computed(() =>
 );
 const savingsGoals = computed(() => statisticsStore.getSavingsGoalProgress());
 
-// Kommende geplante Transaktionen für die nächsten 14 Tage
+// Kommende geplante Transaktionen für die nächsten 14 Tage (inkl. überfällige)
 const upcomingPlanningTransactions = computed(() => {
   const today = dayjs();
+  const startDate = today.subtract(30, "days"); // 30 Tage zurück für überfällige
   const endDate = today.add(14, "days");
 
   const upcomingTransactions: Array<{
     planningTransaction: PlanningTransaction;
     executionDate: string;
     formattedDate: string;
+    isDue: boolean;
   }> = [];
 
   planningStore.planningTransactions
@@ -124,15 +126,19 @@ const upcomingPlanningTransactions = computed(() => {
       try {
         const occurrences = PlanningService.calculateNextOccurrences(
           planningTransaction,
-          today.format("YYYY-MM-DD"),
+          startDate.format("YYYY-MM-DD"),
           endDate.format("YYYY-MM-DD")
         );
 
         occurrences.forEach((executionDate) => {
+          const executionDay = dayjs(executionDate);
+          const isDue = executionDay.isSameOrBefore(today, "day");
+
           upcomingTransactions.push({
             planningTransaction,
             executionDate: executionDate,
-            formattedDate: dayjs(executionDate).format("DD.MM.YYYY"),
+            formattedDate: executionDay.format("DD.MM.YYYY"),
+            isDue: isDue,
           });
         });
       } catch (error) {
@@ -268,6 +274,29 @@ const setTransactionLimit = (limit: number) => {
 // Funktionen für Planungslimit-Buttons
 const setPlanningLimit = (limit: number) => {
   planningLimit.value = limit;
+};
+
+// Fällige Transaktionen für Auto-Ausführen
+const dueTransactions = computed(() => {
+  return upcomingPlanningTransactions.value.filter((item) => item.isDue);
+});
+
+// Auto-Ausführen Funktion (aus PlanningView übernommen)
+const executeAutomaticTransactions = async () => {
+  try {
+    const count = await PlanningService.executeAllDuePlanningTransactions();
+    if (count > 0) {
+      alert(`${count} fällige Planungsbuchungen wurden ausgeführt.`);
+    } else {
+      alert("Keine fälligen Planungsbuchungen gefunden.");
+    }
+  } catch (error) {
+    console.error(
+      "Fehler beim Ausführen der fälligen Planungsbuchungen:",
+      error
+    );
+    alert("Fehler beim Ausführen der fälligen Planungsbuchungen.");
+  }
 };
 
 onMounted(() => {
@@ -646,7 +675,7 @@ onMounted(() => {
                 <h3 class="card-title text-lg">Geplante Zahlungen</h3>
                 <p class="text-sm">Nächste 14 Tage</p>
               </div>
-              <!-- Buttons für Planungslimit -->
+              <!-- Buttons für Planungslimit und Fällige ausführen -->
               <div class="flex gap-2 items-center">
                 <div class="flex gap-2">
                   <button
@@ -679,16 +708,26 @@ onMounted(() => {
                   >
                     16
                   </button>
+                  <button
+                    class="btn btn-xs btn-outline"
+                    @click="navigateToPlanning"
+                  >
+                    Alle
+                  </button>
                 </div>
+
+                <!-- Fällige ausführen Button -->
                 <button
-                  class="btn btn-sm btn-ghost"
-                  @click="navigateToPlanning"
+                  v-if="dueTransactions.length > 0"
+                  class="btn btn-xs btn-info btn-outline"
+                  @click="executeAutomaticTransactions"
+                  :title="`${dueTransactions.length} fällige Planungen ausführen`"
                 >
-                  Alle anzeigen
-                  <span
-                    class="iconify ml-1"
-                    data-icon="mdi:chevron-right"
-                  ></span>
+                  <Icon
+                    icon="mdi:play-circle"
+                    class="mr-1"
+                  />
+                  Fällige ({{ dueTransactions.length }})
                 </button>
               </div>
             </div>
@@ -704,7 +743,12 @@ onMounted(() => {
                   planningLimit
                 )"
                 :key="`${item.planningTransaction.id}-${item.executionDate}`"
-                class="flex items-center justify-between p-2 rounded-lg bg-base-200 hover:bg-base-300 cursor-pointer transition-colors"
+                :class="[
+                  'flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors',
+                  item.isDue
+                    ? 'bg-info/10 hover:bg-info/20 border border-info/20'
+                    : 'bg-base-200 hover:bg-base-300',
+                ]"
                 @click="navigateToPlanningEdit(item.planningTransaction.id)"
               >
                 <!-- Linke Seite: Icon, Name und Datum -->

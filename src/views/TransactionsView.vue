@@ -26,7 +26,7 @@ import BulkChangeDateModal from "../components/ui/BulkChangeDateModal.vue";
 import BulkDeleteModal from "../components/ui/BulkDeleteModal.vue";
 import { Transaction, TransactionType } from "../types";
 import { formatCurrency } from "../utils/formatters";
-import { debugLog } from "../utils/logger";
+import { debugLog, infoLog, errorLog, warnLog } from "../utils/logger";
 import { TransactionService } from "../services/TransactionService";
 
 const refreshKey = ref(0);
@@ -261,10 +261,72 @@ function handleBulkDelete() {
 }
 
 // Bulk Action Confirmation Handlers ------------------------------------------
-function onBulkAssignAccountConfirm(accountId: string) {
-  console.log("Bulk assign account:", accountId);
-  // TODO: Implement bulk account assignment
-  showBulkAssignAccountModal.value = false;
+async function onBulkAssignAccountConfirm(accountId: string) {
+  debugLog("[TransactionsView]", "onBulkAssignAccountConfirm", { accountId });
+
+  try {
+    // Hole die ausgewählten Transaktionen
+    const selectedTransactions =
+      currentViewMode.value === "account"
+        ? transactionListRef.value?.getSelectedTransactions()
+        : categoryTransactionListRef.value?.getSelectedTransactions();
+
+    if (!selectedTransactions || selectedTransactions.length === 0) {
+      warnLog(
+        "[TransactionsView]",
+        "Keine Transaktionen für Bulk-Kontozuweisung ausgewählt"
+      );
+      showBulkAssignAccountModal.value = false;
+      return;
+    }
+
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+
+    // Führe die Bulk-Kontozuweisung durch
+    const result = await TransactionService.bulkAssignAccount(
+      transactionIds,
+      accountId
+    );
+
+    if (result.success) {
+      infoLog(
+        "[TransactionsView]",
+        `Bulk-Kontozuweisung erfolgreich: ${result.updatedCount} Transaktionen aktualisiert`
+      );
+
+      // Auswahl zurücksetzen
+      if (currentViewMode.value === "account") {
+        transactionListRef.value?.clearSelection();
+      } else {
+        categoryTransactionListRef.value?.clearSelection();
+      }
+
+      // Erfolgs-Toast anzeigen (falls Toast-System vorhanden)
+      // toast.success(`${result.updatedCount} Transaktionen erfolgreich zugewiesen`);
+    } else {
+      errorLog("[TransactionsView]", "Fehler bei Bulk-Kontozuweisung", {
+        errors: result.errors,
+        updatedCount: result.updatedCount,
+      });
+
+      // Fehler-Toast anzeigen (falls Toast-System vorhanden)
+      // toast.error(`Fehler bei Kontozuweisung: ${result.errors.join(', ')}`);
+    }
+  } catch (error) {
+    errorLog(
+      "[TransactionsView]",
+      "Unerwarteter Fehler bei Bulk-Kontozuweisung",
+      {
+        error: error instanceof Error ? error.message : String(error),
+        accountId,
+      }
+    );
+
+    // Fehler-Toast anzeigen (falls Toast-System vorhanden)
+    // toast.error("Unerwarteter Fehler bei der Kontozuweisung");
+  } finally {
+    showBulkAssignAccountModal.value = false;
+  }
 }
 
 function onBulkChangeRecipientConfirm(recipientId: string | null) {
@@ -273,10 +335,75 @@ function onBulkChangeRecipientConfirm(recipientId: string | null) {
   showBulkChangeRecipientModal.value = false;
 }
 
-function onBulkAssignCategoryConfirm(categoryId: string | null) {
-  console.log("Bulk assign category:", categoryId);
-  // TODO: Implement bulk category assignment
-  showBulkAssignCategoryModal.value = false;
+async function onBulkAssignCategoryConfirm(
+  categoryId: string | null,
+  removeAll: boolean = false
+) {
+  debugLog("[TransactionsView]", "onBulkAssignCategoryConfirm", {
+    categoryId,
+    removeAll,
+  });
+
+  try {
+    // Hole die ausgewählten Transaktionen
+    const selectedTransactions =
+      currentViewMode.value === "account"
+        ? transactionListRef.value?.getSelectedTransactions()
+        : categoryTransactionListRef.value?.getSelectedTransactions();
+
+    if (!selectedTransactions || selectedTransactions.length === 0) {
+      warnLog(
+        "[TransactionsView]",
+        "Keine Transaktionen für Bulk-Kategorienzuweisung ausgewählt"
+      );
+      showBulkAssignCategoryModal.value = false;
+      return;
+    }
+
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+
+    // Verwende die neue bulkAssignCategory Funktion
+    const result = await TransactionService.bulkAssignCategory(
+      transactionIds,
+      removeAll ? null : categoryId
+    );
+
+    if (result.success) {
+      infoLog("[TransactionsView]", "Bulk-Kategorienzuweisung erfolgreich", {
+        updatedCount: result.updatedCount,
+        categoryId: removeAll ? "entfernt" : categoryId,
+      });
+
+      // Auswahl zurücksetzen
+      if (currentViewMode.value === "account") {
+        transactionListRef.value?.clearSelection();
+      } else {
+        categoryTransactionListRef.value?.clearSelection();
+      }
+
+      // Optional: Zeige eine Erfolgsmeldung
+      // TODO: Implementiere Toast-Notification
+    } else {
+      warnLog("[TransactionsView]", "Bulk-Kategorienzuweisung mit Fehlern", {
+        updatedCount: result.updatedCount,
+        errors: result.errors,
+      });
+
+      // Optional: Zeige Fehlermeldung
+      // TODO: Implementiere Error-Notification mit Details
+    }
+  } catch (error) {
+    errorLog("[TransactionsView]", "Fehler bei Bulk-Kategorienzuweisung", {
+      error: error instanceof Error ? error.message : String(error),
+      categoryId,
+      removeAll,
+    });
+
+    // Optional: Zeige Fehlermeldung
+    // TODO: Implementiere Error-Notification
+  } finally {
+    showBulkAssignCategoryModal.value = false;
+  }
 }
 
 function onBulkAssignTagsConfirm(tagIds: string[] | null) {

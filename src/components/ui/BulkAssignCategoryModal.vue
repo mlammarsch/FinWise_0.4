@@ -46,9 +46,9 @@ function handleConfirm() {
   handleClose();
 }
 
-function handleCategorySelect(category: Category | null) {
-  selectedCategoryId.value = category?.id || "";
-  if (category) {
+function handleCategorySelect(categoryId: string | undefined) {
+  selectedCategoryId.value = categoryId || "";
+  if (categoryId) {
     removeAllCategories.value = false;
   }
 }
@@ -127,7 +127,7 @@ watch(
         </label>
         <SelectCategory
           :selected-category-id="selectedCategoryId"
-          @category-selected="handleCategorySelect"
+          @select="handleCategorySelect"
           placeholder="Kategorie auswählen..."
         />
       </div>
