@@ -324,6 +324,171 @@ export const useRecipientStore = defineStore('recipient', () => {
     }
   }
 
+  /**
+   * Löscht mehrere Recipients mit Validierung und Batch-Verarbeitung
+   * @param recipientIds Array der zu löschenden Recipient-IDs
+   * @returns Promise mit Ergebnis der Batch-Delete-Operation
+   */
+  async function batchDeleteRecipients(recipientIds: string[]): Promise<{
+    success: boolean;
+    deletedCount: number;
+    errors: Array<{ recipientId: string; error: string }>;
+  }> {
+    try {
+      infoLog('recipientStore', `Starte Batch-Delete für ${recipientIds.length} Recipients`, {
+        recipientIds
+      });
+
+      // Eingabevalidierung
+      if (!recipientIds || recipientIds.length === 0) {
+        throw new Error('Keine Recipient-IDs für Batch-Delete angegeben');
+      }
+
+      // Validierung durch alle Services
+      debugLog('recipientStore', 'Starte umfassende Validierung für alle Recipients');
+
+      // Import der Services dynamisch, um zirkuläre Abhängigkeiten zu vermeiden
+      const { TransactionService } = await import('@/services/TransactionService');
+      const { PlanningService } = await import('@/services/PlanningService');
+      const { useRuleStore } = await import('@/stores/ruleStore');
+
+      const ruleStore = useRuleStore();
+
+      // Parallele Validierung durch alle Services
+      const [transactionValidation, planningValidation, ruleValidation] = await Promise.all([
+        TransactionService.validateRecipientDeletion(recipientIds),
+        PlanningService.validateRecipientDeletion(recipientIds),
+        ruleStore.validateRecipientDeletion(recipientIds)
+      ]);
+
+      debugLog('recipientStore', 'Validierungsergebnisse erhalten', {
+        transactionResults: transactionValidation.length,
+        planningResults: planningValidation.length,
+        ruleResults: ruleValidation.length
+      });
+
+      // Kombiniere Validierungsergebnisse
+      const combinedValidation = new Map<string, {
+        recipientId: string;
+        recipientName: string;
+        hasActiveReferences: boolean;
+        transactionCount: number;
+        planningTransactionCount: number;
+        automationRuleCount: number;
+        canDelete: boolean;
+        warnings: string[];
+      }>();
+
+      // Initialisiere mit Transaction-Validierung
+      for (const result of transactionValidation) {
+        combinedValidation.set(result.recipientId, { ...result });
+      }
+
+      // Ergänze Planning-Validierung
+      for (const result of planningValidation) {
+        const existing = combinedValidation.get(result.recipientId);
+        if (existing) {
+          existing.planningTransactionCount = result.planningTransactionCount;
+          existing.hasActiveReferences = existing.hasActiveReferences || result.hasActiveReferences;
+          existing.canDelete = existing.canDelete && result.canDelete;
+          existing.warnings.push(...result.warnings);
+        }
+      }
+
+      // Ergänze Rule-Validierung
+      for (const result of ruleValidation) {
+        const existing = combinedValidation.get(result.recipientId);
+        if (existing) {
+          existing.automationRuleCount = result.automationRuleCount;
+          existing.hasActiveReferences = existing.hasActiveReferences || result.hasActiveReferences;
+          existing.canDelete = existing.canDelete && result.canDelete;
+          existing.warnings.push(...result.warnings);
+        }
+      }
+
+      // Batch-Verarbeitung
+      let deletedCount = 0;
+      const errors: Array<{ recipientId: string; error: string }> = [];
+
+      debugLog('recipientStore', 'Starte sequenzielle Verarbeitung der Recipients');
+
+      for (const recipientId of recipientIds) {
+        try {
+          const validation = combinedValidation.get(recipientId);
+          const recipient = recipients.value.find(r => r.id === recipientId);
+          const recipientName = recipient?.name || `Unbekannter Recipient (${recipientId})`;
+
+          debugLog('recipientStore', `Verarbeite Recipient: ${recipientName} (${recipientId})`, {
+            canDelete: validation?.canDelete,
+            hasActiveReferences: validation?.hasActiveReferences,
+            warnings: validation?.warnings
+          });
+
+          if (!validation) {
+            const error = `Validierungsergebnis für Recipient ${recipientId} nicht gefunden`;
+            errorLog('recipientStore', error);
+            errors.push({ recipientId, error });
+            continue;
+          }
+
+          if (!validation.canDelete) {
+            const error = `Recipient kann nicht gelöscht werden: ${validation.warnings.join(', ')}`;
+            warnLog('recipientStore', `Überspringe Recipient ${recipientName}: ${error}`);
+            errors.push({ recipientId, error });
+            continue;
+          }
+
+          // Bereinige AutomationRules vor der Löschung
+          if (validation.automationRuleCount > 0) {
+            debugLog('recipientStore', `Bereinige ${validation.automationRuleCount} AutomationRule(s) für ${recipientName}`);
+            await ruleStore.cleanupRecipientReferences(recipientId);
+            infoLog('recipientStore', `AutomationRules für ${recipientName} bereinigt`);
+          }
+
+          // Lösche den Recipient
+          await deleteRecipient(recipientId, false);
+          deletedCount++;
+          infoLog('recipientStore', `Recipient erfolgreich gelöscht: ${recipientName} (${recipientId})`);
+
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          errorLog('recipientStore', `Fehler beim Löschen von Recipient ${recipientId}`, error);
+          errors.push({ recipientId, error: errorMessage });
+        }
+      }
+
+      // Ergebnis zusammenfassen
+      const success = errors.length === 0;
+      const result = {
+        success,
+        deletedCount,
+        errors
+      };
+
+      if (success) {
+        infoLog('recipientStore', `Batch-Delete erfolgreich abgeschlossen: ${deletedCount} Recipients gelöscht`);
+      } else {
+        warnLog('recipientStore', `Batch-Delete mit Fehlern abgeschlossen: ${deletedCount} gelöscht, ${errors.length} Fehler`, {
+          deletedCount,
+          errorCount: errors.length,
+          errors: errors.map(e => ({ recipientId: e.recipientId, error: e.error }))
+        });
+      }
+
+      return result;
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      errorLog('recipientStore', 'Kritischer Fehler bei Batch-Delete-Operation', error);
+
+      return {
+        success: false,
+        deletedCount: 0,
+        errors: [{ recipientId: 'BATCH_OPERATION', error: errorMessage }]
+      };
+    }
+  }
+
   // Initialisierung
   loadRecipients();
 
@@ -336,5 +501,6 @@ export const useRecipientStore = defineStore('recipient', () => {
     loadRecipients,
     reset,
     mergeRecipients,
+    batchDeleteRecipients,
   };
 });

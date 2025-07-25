@@ -16,6 +16,18 @@ import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import { useRecipientStore } from "@/stores/recipientStore";
 
+// RecipientValidationResult Interface für TypeScript-Typisierung
+interface RecipientValidationResult {
+  recipientId: string;
+  recipientName: string;
+  hasActiveReferences: boolean;
+  transactionCount: number;
+  planningTransactionCount: number;
+  automationRuleCount: number;
+  canDelete: boolean;
+  warnings: string[];
+}
+
 /**
  * Erstellt eine Gegenbuchung für eine Transfer-Planungstransaktion
  */
@@ -1023,6 +1035,177 @@ export const PlanningService = {
         oldRecipientIds,
         newRecipientId,
         error
+      });
+      throw error;
+    }
+  },
+
+  /* -------------------- Recipient-Validierungsmethoden -------------------- */
+
+  /**
+   * Findet alle PlanningTransactions die einen bestimmten Recipient referenzieren
+   * Sucht in recipientId-Feld der PlanningTransactions
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<PlanningTransaction[]> Array der gefundenen PlanningTransactions
+   */
+  async getPlanningTransactionsWithRecipient(recipientId: string): Promise<PlanningTransaction[]> {
+    try {
+      debugLog('[PlanningService]', 'getPlanningTransactionsWithRecipient gestartet', { recipientId });
+
+      const planningStore = usePlanningStore();
+      const recipientStore = useRecipientStore();
+
+      // Hole Recipient-Name für Logging
+      const recipient = recipientStore.getRecipientById(recipientId);
+      const recipientName = recipient?.name;
+
+      const matchingPlanningTransactions = planningStore.planningTransactions.filter(planningTransaction => {
+        // Direkte Recipient-ID-Referenz
+        if (planningTransaction.recipientId === recipientId) {
+          return true;
+        }
+
+        return false;
+      });
+
+      debugLog('[PlanningService]', `getPlanningTransactionsWithRecipient gefunden: ${matchingPlanningTransactions.length} PlanningTransactions`, {
+        recipientId,
+        recipientName,
+        planningTransactionIds: matchingPlanningTransactions.map(pt => pt.id),
+        directMatches: matchingPlanningTransactions.filter(pt => pt.recipientId === recipientId).length
+      });
+
+      return matchingPlanningTransactions;
+
+    } catch (error) {
+      errorLog('[PlanningService]', 'Fehler bei getPlanningTransactionsWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Zählt die Anzahl der PlanningTransactions die einen bestimmten Recipient referenzieren
+   * Optimierte Version von getPlanningTransactionsWithRecipient für reine Zählung
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<number> Anzahl der gefundenen PlanningTransactions
+   */
+  async countPlanningTransactionsWithRecipient(recipientId: string): Promise<number> {
+    try {
+      debugLog('[PlanningService]', 'countPlanningTransactionsWithRecipient gestartet', { recipientId });
+
+      const planningStore = usePlanningStore();
+      const recipientStore = useRecipientStore();
+
+      // Hole Recipient-Name für Logging
+      const recipient = recipientStore.getRecipientById(recipientId);
+      const recipientName = recipient?.name;
+
+      let count = 0;
+      let directMatches = 0;
+
+      for (const planningTransaction of planningStore.planningTransactions) {
+        let isMatch = false;
+
+        // Direkte Recipient-ID-Referenz
+        if (planningTransaction.recipientId === recipientId) {
+          directMatches++;
+          isMatch = true;
+        }
+
+        if (isMatch) {
+          count++;
+        }
+      }
+
+      debugLog('[PlanningService]', `countPlanningTransactionsWithRecipient Ergebnis: ${count} PlanningTransactions`, {
+        recipientId,
+        recipientName,
+        totalCount: count,
+        directMatches,
+        totalPlanningTransactions: planningStore.planningTransactions.length
+      });
+
+      return count;
+
+    } catch (error) {
+      errorLog('[PlanningService]', 'Fehler bei countPlanningTransactionsWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Validiert die Löschung von Recipients durch Prüfung auf aktive Referenzen in PlanningTransactions
+   * @param recipientIds Array der zu validierenden Recipient-IDs
+   * @returns Promise<RecipientValidationResult[]> Validierungsergebnisse pro Recipient
+   */
+  async validateRecipientDeletion(recipientIds: string[]): Promise<RecipientValidationResult[]> {
+    try {
+      debugLog('[PlanningService]', 'validateRecipientDeletion gestartet', {
+        recipientIds,
+        count: recipientIds.length
+      });
+
+      const recipientStore = useRecipientStore();
+      const results: RecipientValidationResult[] = [];
+
+      for (const recipientId of recipientIds) {
+        const recipient = recipientStore.getRecipientById(recipientId);
+        const recipientName = recipient?.name || `Unbekannter Empfänger (${recipientId})`;
+
+        // Zähle PlanningTransactions mit diesem Recipient
+        const planningTransactionCount = await this.countPlanningTransactionsWithRecipient(recipientId);
+
+        // Bestimme ob Löschung möglich ist
+        const hasActiveReferences = planningTransactionCount > 0;
+        const canDelete = !hasActiveReferences; // Aktuell: Keine Löschung wenn Referenzen vorhanden
+
+        // Erstelle Warnungen basierend auf gefundenen Referenzen
+        const warnings: string[] = [];
+        if (planningTransactionCount > 0) {
+          warnings.push(`${planningTransactionCount} Planungstransaktion${planningTransactionCount === 1 ? '' : 'en'} verwenden diesen Empfänger`);
+        }
+
+        const validationResult: RecipientValidationResult = {
+          recipientId,
+          recipientName,
+          hasActiveReferences,
+          transactionCount: 0, // Wird vom TransactionService gesetzt
+          planningTransactionCount,
+          automationRuleCount: 0, // Wird in späteren Subtasks implementiert
+          canDelete,
+          warnings
+        };
+
+        results.push(validationResult);
+
+        debugLog('[PlanningService]', `Recipient ${recipientId} validiert`, {
+          recipientName,
+          planningTransactionCount,
+          hasActiveReferences,
+          canDelete,
+          warnings
+        });
+      }
+
+      infoLog('[PlanningService]', `validateRecipientDeletion abgeschlossen für ${recipientIds.length} Recipients`, {
+        totalRecipients: results.length,
+        canDeleteCount: results.filter(r => r.canDelete).length,
+        hasReferencesCount: results.filter(r => r.hasActiveReferences).length,
+        totalPlanningTransactionReferences: results.reduce((sum, r) => sum + r.planningTransactionCount, 0)
+      });
+
+      return results;
+
+    } catch (error) {
+      errorLog('[PlanningService]', 'Fehler bei validateRecipientDeletion', {
+        recipientIds,
+        error: error instanceof Error ? error.message : String(error)
       });
       throw error;
     }

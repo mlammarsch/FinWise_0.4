@@ -15,6 +15,18 @@ import { TransactionService } from '@/services/TransactionService';
 import { TenantDbService } from '@/services/TenantDbService';
 import { useRecipientStore } from '@/stores/recipientStore';
 
+// RecipientValidationResult Interface für TypeScript-Typisierung
+interface RecipientValidationResult {
+  recipientId: string;
+  recipientName: string;
+  hasActiveReferences: boolean;
+  transactionCount: number;
+  planningTransactionCount: number;
+  automationRuleCount: number;
+  canDelete: boolean;
+  warnings: string[];
+}
+
 export const useRuleStore = defineStore('rule', () => {
   /** Alle Regeln */
   const rules = ref<AutomationRule[]>([]);
@@ -528,6 +540,324 @@ export const useRuleStore = defineStore('rule', () => {
     }
   }
 
+  // ------------------------------------------------ Recipient-Validierung und -Bereinigung ------
+  /**
+   * Findet alle AutomationRules die einen bestimmten Recipient referenzieren
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<AutomationRule[]> Array der gefundenen AutomationRules
+   */
+  async function getAutomationRulesWithRecipient(recipientId: string): Promise<AutomationRule[]> {
+    debugLog('RuleStore', 'getAutomationRulesWithRecipient gestartet', { recipientId });
+
+    if (!recipientId) {
+      warnLog('RuleStore', 'getAutomationRulesWithRecipient: Keine recipientId angegeben');
+      return [];
+    }
+
+    try {
+      const matchingRules = rules.value.filter(rule => {
+        // Prüfe Conditions auf Recipient-Referenzen
+        const hasRecipientCondition = rule.conditions.some(condition => {
+          if (condition.type === RuleConditionType.RECIPIENT_EQUALS ||
+              condition.type === RuleConditionType.RECIPIENT_CONTAINS) {
+            // Prüfe sowohl direkte ID-Referenz als auch Name-Referenz
+            const conditionValue = String(condition.value);
+            return conditionValue === recipientId;
+          }
+          return false;
+        });
+
+        // Prüfe Actions auf Recipient-Referenzen
+        const hasRecipientAction = rule.actions.some(action => {
+          if (action.type === RuleActionType.SET_RECIPIENT) {
+            const actionValue = String(action.value);
+            return actionValue === recipientId;
+          }
+          return false;
+        });
+
+        return hasRecipientCondition || hasRecipientAction;
+      });
+
+      debugLog('RuleStore', `Gefunden: ${matchingRules.length} AutomationRules mit Recipient-Referenzen`, {
+        recipientId,
+        ruleIds: matchingRules.map(rule => rule.id),
+        ruleNames: matchingRules.map(rule => rule.name)
+      });
+
+      return matchingRules;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler bei getAutomationRulesWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Zählt die Anzahl der AutomationRules die einen bestimmten Recipient referenzieren
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<number> Anzahl der gefundenen AutomationRules
+   */
+  async function countAutomationRulesWithRecipient(recipientId: string): Promise<number> {
+    debugLog('RuleStore', 'countAutomationRulesWithRecipient gestartet', { recipientId });
+
+    if (!recipientId) {
+      warnLog('RuleStore', 'countAutomationRulesWithRecipient: Keine recipientId angegeben');
+      return 0;
+    }
+
+    try {
+      let count = 0;
+
+      for (const rule of rules.value) {
+        // Prüfe Conditions auf Recipient-Referenzen
+        const hasRecipientCondition = rule.conditions.some(condition => {
+          if (condition.type === RuleConditionType.RECIPIENT_EQUALS ||
+              condition.type === RuleConditionType.RECIPIENT_CONTAINS) {
+            const conditionValue = String(condition.value);
+            return conditionValue === recipientId;
+          }
+          return false;
+        });
+
+        // Prüfe Actions auf Recipient-Referenzen
+        const hasRecipientAction = rule.actions.some(action => {
+          if (action.type === RuleActionType.SET_RECIPIENT) {
+            const actionValue = String(action.value);
+            return actionValue === recipientId;
+          }
+          return false;
+        });
+
+        if (hasRecipientCondition || hasRecipientAction) {
+          count++;
+        }
+      }
+
+      debugLog('RuleStore', `Anzahl AutomationRules mit Recipient-Referenzen: ${count}`, { recipientId });
+      return count;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler bei countAutomationRulesWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Validiert die Löschung von Recipients durch Prüfung auf aktive Referenzen in AutomationRules
+   * @param recipientIds Array der zu validierenden Recipient-IDs
+   * @returns Promise<RecipientValidationResult[]> Validierungsergebnisse pro Recipient
+   */
+  async function validateRecipientDeletion(recipientIds: string[]): Promise<RecipientValidationResult[]> {
+    debugLog('RuleStore', 'validateRecipientDeletion gestartet', {
+      recipientIds,
+      recipientCount: recipientIds.length
+    });
+
+    if (!recipientIds.length) {
+      warnLog('RuleStore', 'validateRecipientDeletion: Keine recipientIds angegeben');
+      return [];
+    }
+
+    try {
+      const recipientStore = useRecipientStore();
+      const results: RecipientValidationResult[] = [];
+
+      for (const recipientId of recipientIds) {
+        const recipient = recipientStore.getRecipientById(recipientId);
+        const recipientName = recipient?.name || `Unbekannter Recipient (${recipientId})`;
+
+        debugLog('RuleStore', `Validiere Recipient: ${recipientName} (${recipientId})`);
+
+        // Zähle AutomationRules mit diesem Recipient
+        const automationRuleCount = await countAutomationRulesWithRecipient(recipientId);
+        const hasActiveReferences = automationRuleCount > 0;
+
+        const warnings: string[] = [];
+        if (hasActiveReferences) {
+          warnings.push(`${automationRuleCount} AutomationRule(s) verwenden diesen Recipient`);
+        }
+
+        const validationResult: RecipientValidationResult = {
+          recipientId,
+          recipientName,
+          hasActiveReferences,
+          transactionCount: 0, // Wird vom TransactionService gesetzt
+          planningTransactionCount: 0, // Wird vom PlanningService gesetzt
+          automationRuleCount,
+          canDelete: !hasActiveReferences,
+          warnings
+        };
+
+        results.push(validationResult);
+
+        debugLog('RuleStore', `Validierung für ${recipientName} abgeschlossen`, {
+          recipientId,
+          automationRuleCount,
+          hasActiveReferences,
+          canDelete: validationResult.canDelete
+        });
+      }
+
+      debugLog('RuleStore', 'validateRecipientDeletion abgeschlossen', {
+        totalRecipients: recipientIds.length,
+        recipientsWithReferences: results.filter(r => r.hasActiveReferences).length,
+        recipientsCanDelete: results.filter(r => r.canDelete).length
+      });
+
+      return results;
+    } catch (error) {
+      errorLog('RuleStore', 'Fehler bei validateRecipientDeletion', {
+        recipientIds,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Bereinigt Recipient-Referenzen aus AutomationRules bei Recipient-Löschung
+   * @param recipientId Die ID des zu löschenden Recipients
+   * @returns Promise<void>
+   */
+  async function cleanupRecipientReferences(recipientId: string): Promise<void> {
+    debugLog('RuleStore', 'cleanupRecipientReferences gestartet', { recipientId });
+
+    if (!recipientId) {
+      warnLog('RuleStore', 'cleanupRecipientReferences: Keine recipientId angegeben');
+      return;
+    }
+
+    try {
+      // Finde alle betroffenen Rules
+      const affectedRules = await getAutomationRulesWithRecipient(recipientId);
+
+      if (!affectedRules.length) {
+        debugLog('RuleStore', 'Keine AutomationRules mit Recipient-Referenzen gefunden', { recipientId });
+        return;
+      }
+
+      debugLog('RuleStore', `Starte Bereinigung von ${affectedRules.length} AutomationRules`, {
+        recipientId,
+        ruleIds: affectedRules.map(rule => rule.id)
+      });
+
+      let updatedCount = 0;
+      let deactivatedCount = 0;
+      let errorCount = 0;
+
+      for (const rule of affectedRules) {
+        try {
+          // Bereinige Conditions
+          const cleanedConditions = rule.conditions.filter(condition => {
+            if (condition.type === RuleConditionType.RECIPIENT_EQUALS ||
+                condition.type === RuleConditionType.RECIPIENT_CONTAINS) {
+              const conditionValue = String(condition.value);
+              if (conditionValue === recipientId) {
+                debugLog('RuleStore', `Entferne Recipient-Condition aus Rule "${rule.name}"`, {
+                  ruleId: rule.id,
+                  conditionType: condition.type,
+                  conditionValue
+                });
+                return false; // Condition entfernen
+              }
+            }
+            return true; // Condition beibehalten
+          });
+
+          // Bereinige Actions
+          const cleanedActions = rule.actions.filter(action => {
+            if (action.type === RuleActionType.SET_RECIPIENT) {
+              const actionValue = String(action.value);
+              if (actionValue === recipientId) {
+                debugLog('RuleStore', `Entferne SET_RECIPIENT-Action aus Rule "${rule.name}"`, {
+                  ruleId: rule.id,
+                  actionValue
+                });
+                return false; // Action entfernen
+              }
+            }
+            return true; // Action beibehalten
+          });
+
+          // Prüfe ob Rule noch funktionsfähig ist
+          const hasConditions = cleanedConditions.length > 0;
+          const hasActions = cleanedActions.length > 0;
+          const shouldDeactivate = !hasConditions || !hasActions;
+
+          const updatedRule: AutomationRule = {
+            ...rule,
+            conditions: cleanedConditions,
+            actions: cleanedActions,
+            isActive: shouldDeactivate ? false : rule.isActive,
+            updatedAt: new Date().toISOString()
+          };
+
+          // Aktualisiere Rule
+          const success = await updateRule(updatedRule.id, updatedRule);
+          if (success) {
+            updatedCount++;
+            if (shouldDeactivate && rule.isActive) {
+              deactivatedCount++;
+              warnLog('RuleStore', `Rule "${rule.name}" wurde deaktiviert (keine gültigen Conditions/Actions mehr)`, {
+                ruleId: rule.id,
+                originalConditions: rule.conditions.length,
+                cleanedConditions: cleanedConditions.length,
+                originalActions: rule.actions.length,
+                cleanedActions: cleanedActions.length
+              });
+            }
+            debugLog('RuleStore', `Rule "${rule.name}" erfolgreich bereinigt`, {
+              ruleId: rule.id,
+              removedConditions: rule.conditions.length - cleanedConditions.length,
+              removedActions: rule.actions.length - cleanedActions.length,
+              deactivated: shouldDeactivate
+            });
+          } else {
+            errorCount++;
+            warnLog('RuleStore', `Fehler beim Bereinigen von Rule "${rule.name}"`, { ruleId: rule.id });
+          }
+        } catch (error) {
+          errorCount++;
+          errorLog('RuleStore', `Fehler beim Bereinigen von Rule "${rule.name}"`, {
+            ruleId: rule.id,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
+
+      // Zusammenfassung loggen
+      debugLog('RuleStore', 'cleanupRecipientReferences abgeschlossen', {
+        recipientId,
+        totalRules: affectedRules.length,
+        updatedCount,
+        deactivatedCount,
+        errorCount
+      });
+
+      if (updatedCount > 0) {
+        debugLog('RuleStore', `Recipient-Referenz-Bereinigung erfolgreich: ${updatedCount} Rules aktualisiert`);
+      }
+      if (deactivatedCount > 0) {
+        warnLog('RuleStore', `${deactivatedCount} Rules wurden deaktiviert (keine gültigen Conditions/Actions mehr)`);
+      }
+      if (errorCount > 0) {
+        warnLog('RuleStore', `Recipient-Referenz-Bereinigung: ${errorCount} Fehler aufgetreten`);
+      }
+
+    } catch (error) {
+      errorLog('RuleStore', 'Kritischer Fehler bei cleanupRecipientReferences', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
   // Initialisierung
   loadRules();
 
@@ -548,6 +878,11 @@ export const useRuleStore = defineStore('rule', () => {
     handleSyncMessage,
     /* recipient updates */
     updateRecipientReferences,
+    /* recipient validation & cleanup */
+    getAutomationRulesWithRecipient,
+    countAutomationRulesWithRecipient,
+    validateRecipientDeletion,
+    cleanupRecipientReferences,
     /* util */
     reset,
   };

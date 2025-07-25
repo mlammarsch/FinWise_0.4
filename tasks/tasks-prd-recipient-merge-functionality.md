@@ -56,13 +56,13 @@
   - [x] 3.7 PlanningService um updateRecipientReferences-Methode erweitern
   - [x] 3.8 AutomationRule-Updates in ruleStore für Recipient-Referenzen implementieren
 
-- [ ] 4.0 Sichere Löschung mit Validierung implementieren
-  - [ ] 4.1 RecipientDeleteConfirmModal-Komponente erstellen
-  - [ ] 4.2 Validierungslogik für Recipient-Referenzen in Transactions implementieren
-  - [ ] 4.3 Validierungslogik für Recipient-Referenzen in PlanningTransactions implementieren
-  - [ ] 4.4 Warnmodal bei Recipients mit aktiven Referenzen anzeigen
-  - [ ] 4.5 AutomationRules-Bereinigung bei Recipient-Löschung implementieren
-  - [ ] 4.6 Batch-Delete-Logik mit Validierung in recipientStore implementieren
+- [x] 4.0 Sichere Löschung mit Validierung implementieren
+  - [x] 4.1 RecipientDeleteConfirmModal-Komponente erstellen
+  - [x] 4.2 Validierungslogik für Recipient-Referenzen in Transactions implementieren
+  - [x] 4.3 Validierungslogik für Recipient-Referenzen in PlanningTransactions implementieren
+  - [x] 4.4 Warnmodal bei Recipients mit aktiven Referenzen anzeigen
+  - [x] 4.5 AutomationRules-Bereinigung bei Recipient-Löschung implementieren
+  - [x] 4.6 Batch-Delete-Logik mit Validierung in recipientStore implementieren
 
 - [ ] 5.0 Store-Erweiterungen für Merge- und Batch-Operationen entwickeln
   - [ ] 5.1 mergeRecipients-Methode in recipientStore implementieren

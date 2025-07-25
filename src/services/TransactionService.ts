@@ -1150,6 +1150,220 @@ updateTransaction(
       });
       throw error;
     }
+  },
+
+/* ------------------------------------------------------------------ */
+/* ---------------------- Recipient Validation APIs ---------------- */
+/* ------------------------------------------------------------------ */
+
+  /**
+   * Validiert die Löschung von Recipients durch Prüfung auf aktive Referenzen in Transactions
+   * @param recipientIds Array der zu validierenden Recipient-IDs
+   * @returns Promise<RecipientValidationResult[]> Validierungsergebnisse pro Recipient
+   */
+  async validateRecipientDeletion(recipientIds: string[]): Promise<RecipientValidationResult[]> {
+    try {
+      debugLog('[TransactionService]', 'validateRecipientDeletion gestartet', {
+        recipientIds,
+        count: recipientIds.length
+      });
+
+      const recipientStore = useRecipientStore();
+      const results: RecipientValidationResult[] = [];
+
+      for (const recipientId of recipientIds) {
+        const recipient = recipientStore.getRecipientById(recipientId);
+        const recipientName = recipient?.name || `Unbekannter Empfänger (${recipientId})`;
+
+        // Zähle Transactions mit diesem Recipient
+        const transactionCount = await this.countTransactionsWithRecipient(recipientId);
+
+        // Bestimme ob Löschung möglich ist
+        const hasActiveReferences = transactionCount > 0;
+        const canDelete = !hasActiveReferences; // Aktuell: Keine Löschung wenn Referenzen vorhanden
+
+        // Erstelle Warnungen basierend auf gefundenen Referenzen
+        const warnings: string[] = [];
+        if (transactionCount > 0) {
+          warnings.push(`${transactionCount} Transaktion${transactionCount === 1 ? '' : 'en'} verwenden diesen Empfänger`);
+        }
+
+        const validationResult: RecipientValidationResult = {
+          recipientId,
+          recipientName,
+          hasActiveReferences,
+          transactionCount,
+          planningTransactionCount: 0, // Wird in Subtask 4.3 implementiert
+          automationRuleCount: 0, // Wird in späteren Subtasks implementiert
+          canDelete,
+          warnings
+        };
+
+        results.push(validationResult);
+
+        debugLog('[TransactionService]', `Recipient ${recipientId} validiert`, {
+          recipientName,
+          transactionCount,
+          hasActiveReferences,
+          canDelete,
+          warnings
+        });
+      }
+
+      infoLog('[TransactionService]', `validateRecipientDeletion abgeschlossen für ${recipientIds.length} Recipients`, {
+        totalRecipients: results.length,
+        canDeleteCount: results.filter(r => r.canDelete).length,
+        hasReferencesCount: results.filter(r => r.hasActiveReferences).length,
+        totalTransactionReferences: results.reduce((sum, r) => sum + r.transactionCount, 0)
+      });
+
+      return results;
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'Fehler bei validateRecipientDeletion', {
+        recipientIds,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Findet alle Transactions die einen bestimmten Recipient referenzieren
+   * Sucht sowohl in recipientId als auch im payee-Feld (String-Match)
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<Transaction[]> Array der gefundenen Transactions
+   */
+  async getTransactionsWithRecipient(recipientId: string): Promise<Transaction[]> {
+    try {
+      debugLog('[TransactionService]', 'getTransactionsWithRecipient gestartet', { recipientId });
+
+      const txStore = useTransactionStore();
+      const recipientStore = useRecipientStore();
+
+      // Hole Recipient-Name für Payee-String-Matching
+      const recipient = recipientStore.getRecipientById(recipientId);
+      const recipientName = recipient?.name;
+
+      const matchingTransactions = txStore.transactions.filter(transaction => {
+        // Direkte Recipient-ID-Referenz
+        if (transaction.recipientId === recipientId) {
+          return true;
+        }
+
+        // Payee-String-Match (falls Recipient-Name verfügbar)
+        if (recipientName && transaction.payee) {
+          // Exakter Match (case-insensitive)
+          if (transaction.payee.toLowerCase() === recipientName.toLowerCase()) {
+            return true;
+          }
+
+          // Enthält-Match für flexiblere Suche
+          if (transaction.payee.toLowerCase().includes(recipientName.toLowerCase())) {
+            return true;
+          }
+        }
+
+        return false;
+      });
+
+      debugLog('[TransactionService]', `getTransactionsWithRecipient gefunden: ${matchingTransactions.length} Transactions`, {
+        recipientId,
+        recipientName,
+        transactionIds: matchingTransactions.map(t => t.id),
+        directMatches: matchingTransactions.filter(t => t.recipientId === recipientId).length,
+        payeeMatches: matchingTransactions.filter(t => t.recipientId !== recipientId).length
+      });
+
+      return matchingTransactions;
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'Fehler bei getTransactionsWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  },
+
+  /**
+   * Zählt die Anzahl der Transactions die einen bestimmten Recipient referenzieren
+   * Optimierte Version von getTransactionsWithRecipient für reine Zählung
+   * @param recipientId Die zu suchende Recipient-ID
+   * @returns Promise<number> Anzahl der gefundenen Transactions
+   */
+  async countTransactionsWithRecipient(recipientId: string): Promise<number> {
+    try {
+      debugLog('[TransactionService]', 'countTransactionsWithRecipient gestartet', { recipientId });
+
+      const txStore = useTransactionStore();
+      const recipientStore = useRecipientStore();
+
+      // Hole Recipient-Name für Payee-String-Matching
+      const recipient = recipientStore.getRecipientById(recipientId);
+      const recipientName = recipient?.name;
+
+      let count = 0;
+      let directMatches = 0;
+      let payeeMatches = 0;
+
+      for (const transaction of txStore.transactions) {
+        let isMatch = false;
+
+        // Direkte Recipient-ID-Referenz
+        if (transaction.recipientId === recipientId) {
+          directMatches++;
+          isMatch = true;
+        }
+        // Payee-String-Match (falls Recipient-Name verfügbar und noch kein direkter Match)
+        else if (recipientName && transaction.payee) {
+          // Exakter Match (case-insensitive)
+          if (transaction.payee.toLowerCase() === recipientName.toLowerCase()) {
+            payeeMatches++;
+            isMatch = true;
+          }
+          // Enthält-Match für flexiblere Suche
+          else if (transaction.payee.toLowerCase().includes(recipientName.toLowerCase())) {
+            payeeMatches++;
+            isMatch = true;
+          }
+        }
+
+        if (isMatch) {
+          count++;
+        }
+      }
+
+      debugLog('[TransactionService]', `countTransactionsWithRecipient Ergebnis: ${count} Transactions`, {
+        recipientId,
+        recipientName,
+        totalCount: count,
+        directMatches,
+        payeeMatches,
+        totalTransactions: txStore.transactions.length
+      });
+
+      return count;
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'Fehler bei countTransactionsWithRecipient', {
+        recipientId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
   }
 
 };
+
+// RecipientValidationResult Interface für TypeScript-Typisierung
+interface RecipientValidationResult {
+  recipientId: string;
+  recipientName: string;
+  hasActiveReferences: boolean;
+  transactionCount: number;
+  planningTransactionCount: number;
+  automationRuleCount: number;
+  canDelete: boolean;
+  warnings: string[];
+}
