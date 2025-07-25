@@ -72,11 +72,19 @@ export const useRuleStore = defineStore('rule', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+        const backendPayload = {
+          ...tenantDbService.toPlainObject(ruleWithTimestamp),
+          updated_at: ruleWithTimestamp.updatedAt
+        };
+        // Entferne das Frontend-Feld
+        delete (backendPayload as any).updatedAt;
+
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.RULE,
           entityId: ruleWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tenantDbService.toPlainObject(ruleWithTimestamp),
+          payload: backendPayload,
         });
         debugLog('RuleStore', `Regel "${ruleWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -131,11 +139,19 @@ export const useRuleStore = defineStore('rule', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+        const backendPayload = {
+          ...tenantDbService.toPlainObject(ruleUpdatesWithTimestamp),
+          updated_at: ruleUpdatesWithTimestamp.updatedAt
+        };
+        // Entferne das Frontend-Feld
+        delete (backendPayload as any).updatedAt;
+
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.RULE,
           entityId: ruleUpdatesWithTimestamp.id,
           operationType: SyncOperationType.UPDATE,
-          payload: tenantDbService.toPlainObject(ruleUpdatesWithTimestamp),
+          payload: backendPayload,
         });
         debugLog('RuleStore', `Regel "${ruleUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
       } catch (e) {
@@ -185,7 +201,7 @@ export const useRuleStore = defineStore('rule', () => {
     let applied = 0;
 
     for (const rule of sorted) {
-      if (checkConditions(rule.conditions, modified)) {
+      if (checkConditions(rule.conditions, modified, rule)) {
         modified = applyActions(rule, modified);
         applied++;
       }
@@ -211,7 +227,7 @@ export const useRuleStore = defineStore('rule', () => {
     return modified;
   }
 
-  function checkConditions(conditions: any[], tx: Transaction): boolean {
+  function checkConditions(conditions: any[], tx: Transaction, rule?: AutomationRule): boolean {
     if (!conditions?.length) return true;
 
     debugLog('RuleStore', `checkConditions: Prüfe ${conditions.length} Bedingungen für Transaktion`, {
@@ -219,12 +235,16 @@ export const useRuleStore = defineStore('rule', () => {
       payee: tx.payee,
       originalRecipientName: (tx as any).originalRecipientName,
       amount: tx.amount,
-      conditions: conditions.map(c => ({ source: c.source, operator: c.operator, value: c.value }))
+      conditions: conditions.map(c => ({ source: c.source, operator: c.operator, value: c.value })),
+      conditionLogic: rule?.conditionLogic || 'all'
     });
 
-    // Die `checkConditions`-Logik aus der RuleForm.vue sollte hierher verschoben werden,
-    // um Konsistenz zu gewährleisten. Ich übernehme die Logik von dort.
-    return conditions.every((condition) => {
+    // Bestimme die Verknüpfungslogik: 'all' (UND) oder 'any' (ODER)
+    // Fallback auf 'all', wenn conditionLogic nicht vorhanden ist
+    const logic = rule?.conditionLogic || 'all';
+
+    // Evaluiere jede Bedingung einzeln
+    const conditionResults = conditions.map((condition) => {
       const source = (condition as any).source || ''; // Cast to any for source
       const operator = condition.operator || 'is';
       const value = condition.value;
@@ -334,6 +354,20 @@ export const useRuleStore = defineStore('rule', () => {
         case 'less_equal':
           result = Number(txValue) <= Number(value);
           break;
+        case 'one_of':
+          if (!Array.isArray(condition.value)) {
+            console.warn(`Regel-Engine: 'one_of' Operator erwartet Array-Wert, aber erhielt: ${typeof condition.value}`, {
+              ruleId: rule?.id,
+              ruleName: rule?.name,
+              conditionValue: condition.value,
+              source: source,
+              operator: operator
+            });
+            result = false;
+          } else {
+            result = (value as string[]).includes(String(txValue));
+          }
+          break;
         case 'approx':
           const txNum = Number(txValue);
           const valNum = Number(value);
@@ -347,6 +381,14 @@ export const useRuleStore = defineStore('rule', () => {
       debugLog('RuleStore', `Bedingung: ${source} ${operator} "${value}" | txValue: "${txValue}" | Ergebnis: ${result}`);
       return result;
     });
+
+    // Wende die Verknüpfungslogik an
+    const finalResult = logic === 'any'
+      ? conditionResults.some(result => result === true)
+      : conditionResults.every(result => result === true);
+
+    debugLog('RuleStore', `checkConditions Endergebnis: ${finalResult} (Logik: ${logic}, Ergebnisse: [${conditionResults.join(', ')}])`);
+    return finalResult;
   }
 
   function applyActions(rule: AutomationRule, tx: Transaction): Transaction {

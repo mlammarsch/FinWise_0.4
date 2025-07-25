@@ -8,6 +8,7 @@ import { AutomationRule, Transaction } from "@/types";
 import RuleForm from "@/components/rules/RuleForm.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
 import PagingComponent from "@/components/ui/PagingComponent.vue";
+import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
 import { debugLog } from "@/utils/logger";
 import { Icon } from "@iconify/vue";
 
@@ -20,6 +21,16 @@ const showNewRuleModal = ref(false);
 const showEditRuleModal = ref(false);
 const selectedRule = ref<AutomationRule | null>(null);
 const searchQuery = ref("");
+
+// Bestätigungsmodal für "Alle Regeln anwenden"
+const showApplyAllRulesModal = ref(false);
+const applyAllRulesData = ref<{
+  activeRulesCount: number;
+  totalTransactionsCount: number;
+}>({
+  activeRulesCount: 0,
+  totalTransactionsCount: 0,
+});
 
 // Pagination
 const currentPage = ref(1);
@@ -80,6 +91,44 @@ const saveRule = (data: Omit<AutomationRule, "id">) => {
   }
   showNewRuleModal.value = false;
   showEditRuleModal.value = false;
+};
+
+// Regel duplizieren
+const duplicateRule = async (rule: AutomationRule) => {
+  try {
+    // Erstelle eine Kopie der Regel mit neuem Namen und ohne ID
+    const duplicatedRuleData: Omit<AutomationRule, "id" | "updatedAt"> = {
+      name: `Kopie von ${rule.name}`,
+      description: rule.description,
+      stage: rule.stage,
+      conditions: [...rule.conditions], // Deep copy der Bedingungen
+      actions: [...rule.actions], // Deep copy der Aktionen
+      priority: rule.priority,
+      isActive: rule.isActive,
+      conditionLogic: rule.conditionLogic,
+    };
+
+    // Regel über den Store hinzufügen (generiert automatisch neue ID und updatedAt)
+    await ruleStore.addRule(duplicatedRuleData);
+
+    debugLog("[AdminRulesView] Duplicated rule", {
+      originalId: rule.id,
+      originalName: rule.name,
+      newName: duplicatedRuleData.name,
+    });
+
+    // Toast-Notification anzeigen
+    showToastNotification(
+      `Die Regel "${rule.name}" wurde erfolgreich als "${duplicatedRuleData.name}" dupliziert.`,
+      "success"
+    );
+  } catch (error) {
+    console.error(`Fehler beim Duplizieren der Regel "${rule.name}":`, error);
+    showToastNotification(
+      `Fehler beim Duplizieren der Regel "${rule.name}". Bitte versuchen Sie es erneut.`,
+      "error"
+    );
+  }
 };
 
 // Regel löschen
@@ -308,6 +357,165 @@ const cancelApplyRule = () => {
   };
 };
 
+// Alle aktiven Regeln auf alle Transaktionen anwenden
+const applyAllRules = async () => {
+  try {
+    // Alle aktiven Regeln holen, sortiert nach Priorität
+    const activeRules = ruleStore.rules
+      .filter((rule: AutomationRule) => rule.isActive)
+      .sort(
+        (a: AutomationRule, b: AutomationRule) =>
+          (a.priority || 0) - (b.priority || 0)
+      );
+
+    if (activeRules.length === 0) {
+      showToastNotification(
+        "Keine aktiven Regeln vorhanden. Aktivieren Sie mindestens eine Regel.",
+        "error"
+      );
+      return;
+    }
+
+    // Daten für Bestätigungsmodal setzen und Modal öffnen
+    applyAllRulesData.value = {
+      activeRulesCount: activeRules.length,
+      totalTransactionsCount: transactionStore.transactions.length,
+    };
+    showApplyAllRulesModal.value = true;
+  } catch (error) {
+    console.error("Fehler beim Vorbereiten der Regel-Anwendung:", error);
+    showToastNotification(
+      "Fehler beim Vorbereiten der Regel-Anwendung. Bitte versuchen Sie es erneut.",
+      "error"
+    );
+  }
+};
+
+// Bestätigung für "Alle Regeln anwenden" - tatsächliche Ausführung
+const confirmApplyAllRules = async () => {
+  try {
+    showApplyAllRulesModal.value = false;
+
+    // Alle aktiven Regeln holen, sortiert nach Priorität
+    const activeRules = ruleStore.rules
+      .filter((rule: AutomationRule) => rule.isActive)
+      .sort(
+        (a: AutomationRule, b: AutomationRule) =>
+          (a.priority || 0) - (b.priority || 0)
+      );
+
+    const allTransactions = [...transactionStore.transactions];
+    let totalAppliedCount = 0;
+    const ruleResults: { ruleName: string; appliedCount: number }[] = [];
+
+    debugLog("[AdminRulesView] Starting bulk rule application", {
+      activeRulesCount: activeRules.length,
+      totalTransactions: allTransactions.length,
+    });
+
+    // Jede aktive Regel auf alle Transaktionen anwenden
+    for (const rule of activeRules) {
+      let ruleAppliedCount = 0;
+
+      for (const tx of allTransactions) {
+        try {
+          if (ruleStore.checkConditions(rule.conditions, tx)) {
+            // Regel-Aktionen auf die Transaktion anwenden
+            const updates: Partial<Transaction> = {};
+
+            for (const action of rule.actions) {
+              switch (action.type) {
+                case "SET_CATEGORY":
+                  if (tx.categoryId !== action.value) {
+                    updates.categoryId = String(action.value);
+                  }
+                  break;
+                case "SET_RECIPIENT":
+                  if (tx.recipientId !== action.value) {
+                    updates.recipientId = String(action.value);
+                  }
+                  break;
+                case "SET_NOTE":
+                  if (tx.note !== action.value) {
+                    updates.note = String(action.value);
+                  }
+                  break;
+                case "ADD_TAG":
+                  const currentTags = tx.tagIds || [];
+                  const newTag = String(action.value);
+                  if (!currentTags.includes(newTag)) {
+                    updates.tagIds = [...currentTags, newTag];
+                  }
+                  break;
+                case "SET_ACCOUNT":
+                  if (tx.accountId !== action.value) {
+                    updates.accountId = String(action.value);
+                  }
+                  break;
+              }
+            }
+
+            // Update über TransactionStore, falls Änderungen vorhanden
+            if (Object.keys(updates).length > 0) {
+              await transactionStore.updateTransaction(tx.id, updates);
+              ruleAppliedCount++;
+              totalAppliedCount++;
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Fehler beim Anwenden der Regel "${rule.name}" auf Transaktion ${tx.id}:`,
+            error
+          );
+        }
+      }
+
+      ruleResults.push({
+        ruleName: rule.name,
+        appliedCount: ruleAppliedCount,
+      });
+
+      debugLog("[AdminRulesView] Rule applied", {
+        ruleId: rule.id,
+        ruleName: rule.name,
+        appliedCount: ruleAppliedCount,
+      });
+    }
+
+    // Erfolgs-Toast mit Details anzeigen
+    const successMessage = `Alle Regeln wurden erfolgreich angewendet!\n\nInsgesamt: ${totalAppliedCount} Änderungen\n${ruleResults
+      .filter((r) => r.appliedCount > 0)
+      .map((r) => `• ${r.ruleName}: ${r.appliedCount}`)
+      .join("\n")}`;
+
+    showToastNotification(
+      `Alle ${activeRules.length} Regeln wurden erfolgreich angewendet. Insgesamt ${totalAppliedCount} Transaktionen wurden aktualisiert.`,
+      "success"
+    );
+
+    debugLog("[AdminRulesView] Bulk rule application completed", {
+      totalRules: activeRules.length,
+      totalAppliedCount,
+      ruleResults,
+    });
+  } catch (error) {
+    console.error("Fehler beim Anwenden aller Regeln:", error);
+    showToastNotification(
+      "Fehler beim Anwenden der Regeln. Bitte versuchen Sie es erneut.",
+      "error"
+    );
+  }
+};
+
+// Abbrechen der "Alle Regeln anwenden" Aktion
+const cancelApplyAllRules = () => {
+  showApplyAllRulesModal.value = false;
+  applyAllRulesData.value = {
+    activeRulesCount: 0,
+    totalTransactionsCount: 0,
+  };
+};
+
 // Formatierung der Ausführungsphase
 function formatStage(stage: string): string {
   switch (stage) {
@@ -331,9 +539,12 @@ function formatStage(stage: string): string {
     >
       <h2 class="text-xl font-bold flex-shrink-0">Regelverwaltung</h2>
       <SearchGroup
+        btnMiddle="Alle Regeln anwenden"
+        btnMiddleIcon="mdi:play-circle"
         btnRight="Neue Regel"
         btnRightIcon="mdi:plus"
         @search="(query: string) => (searchQuery = query)"
+        @btn-middle-click="applyAllRules"
         @btn-right-click="createRule"
       />
     </div>
@@ -399,6 +610,20 @@ function formatStage(stage: string): string {
                       >
                         <Icon
                           icon="mdi:play"
+                          class="text-base"
+                        />
+                      </button>
+                    </div>
+                    <div
+                      class="tooltip tooltip-left"
+                      data-tip="Regel duplizieren. Erstellt eine Kopie der Regel mit dem Präfix 'Kopie von'."
+                    >
+                      <button
+                        class="btn btn-ghost btn-xs border-none text-info"
+                        @click="duplicateRule(rule)"
+                      >
+                        <Icon
+                          icon="mdi:content-copy"
                           class="text-base"
                         />
                       </button>
@@ -530,6 +755,17 @@ function formatStage(stage: string): string {
         @click="cancelApplyRule"
       ></div>
     </div>
+
+    <!-- Bestätigungsmodal für "Alle Regeln anwenden" -->
+    <ConfirmationModal
+      v-if="showApplyAllRulesModal"
+      title="Alle Regeln anwenden"
+      :message="`Möchten Sie alle ${applyAllRulesData.activeRulesCount} aktiven Regeln auf alle ${applyAllRulesData.totalTransactionsCount} Transaktionen anwenden?\n\nDies kann nicht rückgängig gemacht werden.`"
+      confirmText="Regeln anwenden"
+      cancelText="Abbrechen"
+      @confirm="confirmApplyAllRules"
+      @cancel="cancelApplyAllRules"
+    />
 
     <!-- Toast-Notification -->
     <div

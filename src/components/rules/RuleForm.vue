@@ -34,7 +34,8 @@ import TagSearchableDropdown from "@/components/ui/TagSearchableDropdown.vue";
 import SelectCategory from "@/components/ui/SelectCategory.vue";
 import SelectAccount from "@/components/ui/SelectAccount.vue";
 import SelectRecipient from "@/components/ui/SelectRecipient.vue";
-import { debugLog } from "@/utils/logger";
+import RuleConditionRow from "@/components/rules/RuleConditionRow.vue";
+import { debugLog, errorLog } from "@/utils/logger";
 import { v4 as uuidv4 } from "uuid";
 import { Icon } from "@iconify/vue";
 
@@ -59,6 +60,7 @@ const description = ref("");
 const isActive = ref(true);
 const stage = ref<"PRE" | "DEFAULT" | "POST">("DEFAULT");
 const priority = ref(100);
+const conditionLogic = ref<"all" | "any">("all");
 const conditions = ref<RuleCondition[]>([]);
 const actions = ref<RuleAction[]>([]);
 
@@ -76,6 +78,7 @@ onMounted(() => {
     isActive.value = props.rule.isActive;
     stage.value = props.rule.stage;
     priority.value = props.rule.priority;
+    conditionLogic.value = props.rule.conditionLogic || "all";
     conditions.value = [...props.rule.conditions];
     actions.value = [...props.rule.actions];
   } else if (props.initialValues) {
@@ -87,6 +90,7 @@ onMounted(() => {
         : true;
     stage.value = props.initialValues.stage || "DEFAULT";
     priority.value = props.initialValues.priority || 100;
+    conditionLogic.value = props.initialValues.conditionLogic || "all";
     conditions.value = props.initialValues.conditions
       ? [...props.initialValues.conditions]
       : [];
@@ -142,52 +146,6 @@ onMounted(() => {
   });
 });
 
-// Quelle-Optionen
-const sourceOptions = [
-  { value: "recipient", label: "Empfänger", type: "string" },
-  { value: "date", label: "Datum", type: "date" },
-  { value: "valueDate", label: "Wertstellung", type: "date" },
-  { value: "amount", label: "Betrag", type: "number" },
-  { value: "category", label: "Kategorie", type: "select" },
-  { value: "description", label: "Beschreibung", type: "string" },
-  { value: "account", label: "Konto", type: "select" },
-];
-
-// Operator-Optionen basierend auf Datentyp
-function getOperatorOptions(source) {
-  const sourceType = sourceOptions.find((s) => s.value === source)?.type;
-
-  if (sourceType === "string") {
-    return [
-      { value: "is", label: "ist" },
-      { value: "contains", label: "enthält" },
-      { value: "starts_with", label: "beginnt mit" },
-      { value: "ends_with", label: "endet mit" },
-    ];
-  } else if (sourceType === "number") {
-    return [
-      { value: "is", label: "ist" },
-      { value: "greater", label: "größer" },
-      { value: "greater_equal", label: "größer gleich" },
-      { value: "less", label: "kleiner" },
-      { value: "less_equal", label: "kleiner gleich" },
-      { value: "approx", label: "ungefähr (±10%)" },
-    ];
-  } else if (sourceType === "date") {
-    return [
-      { value: "is", label: "ist" },
-      { value: "greater", label: "größer" },
-      { value: "greater_equal", label: "größer gleich" },
-      { value: "less", label: "kleiner" },
-      { value: "less_equal", label: "kleiner gleich" },
-    ];
-  } else if (sourceType === "select") {
-    return [{ value: "is", label: "ist" }];
-  }
-
-  return [{ value: "is", label: "ist" }];
-}
-
 const actionTypeOptions = [
   { value: RuleActionType.SET_CATEGORY, label: "Kategorie setzen" },
   { value: RuleActionType.ADD_TAG, label: "Tag hinzufügen" },
@@ -205,6 +163,16 @@ const tags = computed(() =>
     color: t.color,
   }))
 );
+
+// Computed property für dynamischen Bedingungstext
+const dynamicConditionText = computed(() => {
+  if (conditionLogic.value === "all") {
+    return "Wenn **alle** der folgenden Bedingungen zutreffen:";
+  } else if (conditionLogic.value === "any") {
+    return "Wenn **eine beliebige** der folgenden Bedingungen zutrifft:";
+  }
+  return "Bedingungen:";
+});
 
 function addCondition() {
   conditions.value.push({
@@ -244,6 +212,7 @@ function saveRule() {
     actions: actions.value,
     priority: priority.value,
     isActive: isActive.value,
+    conditionLogic: conditionLogic.value,
   };
 
   debugLog("[RuleForm] saveRule", ruleData);
@@ -260,6 +229,7 @@ function applyRuleToExistingTransactions() {
     actions: actions.value,
     priority: priority.value,
     isActive: isActive.value,
+    conditionLogic: conditionLogic.value,
   };
 
   debugLog(
@@ -275,7 +245,7 @@ function applyRuleToExistingTransactions() {
   const matchingTransactions = [];
 
   for (const transaction of allTransactions) {
-    if (ruleStore.checkConditions(ruleData.conditions, transaction)) {
+    if (ruleStore.checkConditions(ruleData.conditions, transaction, ruleData)) {
       matchingTransactions.push(transaction);
     }
   }
@@ -389,11 +359,29 @@ onUnmounted(() => {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">
             Ausführungsphase
-            <Icon
-              icon="mdi:help-circle-outline"
-              class="text-base-content/50 cursor-help ml-1"
-              title="Bestimmt, wann die Regel ausgeführt wird. PRE: Vor anderen Regeln, DEFAULT: Normale Ausführung, POST: Nach allen anderen Regeln."
-            />
+            <div
+              class="tooltip tooltip-bottom max-w-xs"
+              data-tip="Bestimmt die Reihenfolge der Regelausführung:
+
+PRE (Vorab): Wird vor allen anderen Regeln ausgeführt
+• Beispiel: Grundlegende Kategorisierung von Überweisungen
+• Verwendung: Wenn eine Regel andere Regeln beeinflussen soll
+
+DEFAULT (Normal): Standard-Ausführungsreihenfolge
+• Beispiel: Normale Kategorisierung nach Empfänger oder Betrag
+• Verwendung: Für die meisten alltäglichen Regeln
+
+POST (Nachgelagert): Wird nach allen anderen Regeln ausgeführt
+• Beispiel: Finale Bereinigung oder spezielle Markierungen
+• Verwendung: Für Regeln, die auf bereits verarbeitete Daten zugreifen
+
+Innerhalb jeder Phase bestimmt die Priorität die genaue Reihenfolge."
+            >
+              <Icon
+                icon="mdi:help-circle-outline"
+                class="text-base-content/50 cursor-help ml-1"
+              />
+            </div>
           </legend>
           <select
             v-model="stage"
@@ -409,11 +397,27 @@ onUnmounted(() => {
         <fieldset class="fieldset">
           <legend class="fieldset-legend">
             Priorität
-            <Icon
-              icon="mdi:help-circle-outline"
-              class="text-base-content/50 cursor-help ml-1"
-              title="Kleinere Werte werden zuerst ausgeführt. Standard ist 100."
-            />
+            <div
+              class="tooltip tooltip-bottom max-w-xs"
+              data-tip="Bestimmt die Ausführungsreihenfolge innerhalb der gewählten Phase:
+
+Niedrigere Zahlen = Höhere Priorität (werden zuerst ausgeführt)
+Höhere Zahlen = Niedrigere Priorität (werden später ausgeführt)
+
+Beispiele:
+• Priorität 10: Sehr wichtige Regel (z.B. Miete kategorisieren)
+• Priorität 50: Wichtige Regel (z.B. Supermarkt-Einkäufe)
+• Priorität 100: Standard-Priorität (Standardwert)
+• Priorität 200: Weniger wichtige Regel (z.B. allgemeine Kategorisierung)
+
+💡 Tipp: Lassen Sie Platz zwischen den Prioritäten (10, 20, 30...)
+um später neue Regeln dazwischen einfügen zu können."
+            >
+              <Icon
+                icon="mdi:help-circle-outline"
+                class="text-base-content/50 cursor-help ml-1"
+              />
+            </div>
           </legend>
           <input
             type="number"
@@ -444,118 +448,36 @@ onUnmounted(() => {
             icon="mdi:filter-outline"
             class="mr-2"
           />
-          Wenn alle dieser Bedingungen zutreffen:
+          <span v-html="dynamicConditionText"></span>
         </h3>
 
-        <div
+        <!-- Dropdown für Haupt-Verknüpfungsoperator -->
+        <div class="mb-4">
+          <label class="label">
+            <span class="label-text">Verknüpfung der Bedingungen:</span>
+          </label>
+          <select
+            v-model="conditionLogic"
+            class="select select-bordered w-full max-w-xs"
+          >
+            <option value="all">Alle Bedingungen müssen zutreffen (UND)</option>
+            <option value="any">
+              Beliebige Bedingung muss zutreffen (ODER)
+            </option>
+          </select>
+        </div>
+
+        <RuleConditionRow
           v-for="(condition, index) in conditions"
           :key="index"
-          class="mb-3"
-        >
-          <div class="flex items-center space-x-2">
-            <!-- Erste Dropdown: Quelle auswählen -->
-            <select
-              v-model="condition.source"
-              class="select select-bordered w-1/3"
-            >
-              <option
-                v-for="option in sourceOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-
-            <!-- Zweite Dropdown: Operator basierend auf Quellentyp -->
-            <select
-              v-model="condition.operator"
-              class="select select-bordered w-1/4"
-            >
-              <option
-                v-for="option in getOperatorOptions(condition.source)"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-
-            <!-- Dynamischer Wert-Input basierend auf der Quelle -->
-            <div class="w-1/3">
-              <!-- Konto-Auswahl -->
-              <SelectAccount
-                v-if="
-                  condition.source === 'account' && condition.operator === 'is'
-                "
-                v-model="condition.value"
-                class="w-full"
-              />
-
-              <!-- Kategorie-Auswahl -->
-              <SelectCategory
-                v-else-if="
-                  condition.source === 'category' && condition.operator === 'is'
-                "
-                v-model="condition.value"
-                class="w-full"
-                :show-none-option="true"
-              />
-
-              <!-- Empfänger-Freitextfeld für alle recipient-Operationen -->
-              <input
-                v-else-if="condition.source === 'recipient'"
-                type="text"
-                v-model="condition.value"
-                class="input input-bordered w-full"
-                placeholder="Empfänger-Name eingeben"
-              />
-
-              <!-- Zahleneingabe für Beträge -->
-              <input
-                v-else-if="condition.source === 'amount'"
-                type="number"
-                step="0.01"
-                v-model="condition.value"
-                class="input input-bordered w-full"
-                placeholder="Betrag (z.B. 42.99)"
-              />
-
-              <!-- Datumseingabe -->
-              <input
-                v-else-if="
-                  condition.source === 'date' ||
-                  condition.source === 'valueDate'
-                "
-                type="date"
-                v-model="condition.value"
-                class="input input-bordered w-full"
-              />
-
-              <!-- Standard-Texteingabe für andere Quellen -->
-              <input
-                v-else
-                type="text"
-                v-model="condition.value"
-                class="input input-bordered w-full"
-                placeholder="Wert eingeben"
-              />
-            </div>
-
-            <!-- Entfernen-Button -->
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              @click="removeCondition(index)"
-              :disabled="conditions.length <= 1"
-            >
-              <Icon
-                icon="mdi:close"
-                class="text-error"
-              />
-            </button>
-          </div>
-        </div>
+          :condition="condition"
+          :index="index"
+          :can-remove="conditions.length > 1"
+          @update:condition="
+            (updatedCondition) => (conditions[index] = updatedCondition)
+          "
+          @remove="removeCondition(index)"
+        />
 
         <button
           type="button"
@@ -585,21 +507,25 @@ onUnmounted(() => {
           :key="index"
           class="mb-3"
         >
-          <div class="flex items-center space-x-2">
-            <select
-              v-model="action.type"
-              class="select select-bordered w-1/3"
-            >
-              <option
-                v-for="option in actionTypeOptions"
-                :key="option.value"
-                :value="option.value"
+          <div class="grid grid-cols-12 gap-3 items-center">
+            <!-- Aktionstyp -->
+            <div class="col-span-4">
+              <select
+                v-model="action.type"
+                class="select select-bordered w-full"
               >
-                {{ option.label }}
-              </option>
-            </select>
+                <option
+                  v-for="option in actionTypeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
 
-            <div class="w-1/2">
+            <!-- Aktionswert -->
+            <div class="col-span-7">
               <!-- Tag-Auswahl -->
               <TagSearchableDropdown
                 v-if="action.type === RuleActionType.ADD_TAG"
@@ -662,17 +588,19 @@ onUnmounted(() => {
             </div>
 
             <!-- Entfernen-Button -->
-            <button
-              type="button"
-              class="btn btn-ghost btn-sm"
-              @click="removeAction(index)"
-              :disabled="actions.length <= 1"
-            >
-              <Icon
-                icon="mdi:close"
-                class="text-error"
-              />
-            </button>
+            <div class="col-span-1 flex justify-center">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                @click="removeAction(index)"
+                :disabled="actions.length <= 1"
+              >
+                <Icon
+                  icon="mdi:close"
+                  class="text-error"
+                />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -738,7 +666,7 @@ onUnmounted(() => {
         </h3>
 
         <div class="bg-base-200 p-3 rounded-lg mb-4">
-          <p class="text-sm text-base-content/80">
+          <p class="text-sm text-base-content/80 mb-2">
             <Icon
               icon="mdi:information-outline"
               class="inline mr-1"
@@ -746,10 +674,26 @@ onUnmounted(() => {
             Dies ist ein virtueller Test mit den letzten 250 Transaktionen. Es
             werden keine realen Änderungen vorgenommen.
           </p>
+          <div class="text-xs text-base-content/60">
+            <strong>Regel-Logik:</strong>
+            <span
+              v-if="conditionLogic === 'all'"
+              class="badge badge-primary badge-sm ml-1"
+            >
+              ALLE Bedingungen (UND)
+            </span>
+            <span
+              v-else
+              class="badge badge-secondary badge-sm ml-1"
+            >
+              BELIEBIGE Bedingung (ODER)
+            </span>
+            <span class="ml-2">{{ conditions.length }} Bedingung(en)</span>
+          </div>
         </div>
 
         <div class="overflow-x-auto">
-          <table class="table table-zebra w-full">
+          <table class="table table-zebra table-xs w-full">
             <thead>
               <tr>
                 <th>Datum</th>

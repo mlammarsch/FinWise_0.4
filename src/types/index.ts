@@ -160,10 +160,12 @@ export enum RuleActionType {
   SET_RECIPIENT  = "SET_RECIPIENT",
 }
 
+export type RuleOperator = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_empty' | 'is_not_empty' | 'one_of' | 'starts_with' | 'ends_with';
+
 export interface RuleCondition {
   type: RuleConditionType
   operator: string
-  value: string | number
+  value: string | number | string[]
 }
 
 export interface RuleAction {
@@ -181,6 +183,7 @@ export interface AutomationRule {
   actions: RuleAction[]
   priority: number
   isActive: boolean
+  conditionLogic?: 'all' | 'any'
   updatedAt?: string // ISO 8601 Format
 }
 
@@ -502,4 +505,11 @@ export interface SyncMetrics {
   success: boolean;
   error?: string;
   entitiesProcessed: number;
+}
+
+// ===== UTILITY FUNCTIONS =====
+
+// Type Guard für Multi-Value-Bedingungen
+export function isMultiValueCondition(condition: RuleCondition): condition is RuleCondition & { value: string[] } {
+  return condition.operator === 'one_of' && Array.isArray(condition.value);
 }
