@@ -1954,6 +1954,145 @@ updateTransaction(
       });
       throw error;
     }
+  },
+
+  /**
+   * Performante Bulk-Datumsänderung für Transaktionen
+   * Ändert das Datum und valueDate für alle übergebenen Transaktionen
+   * Bei CATEGORYTRANSFERS und ACCOUNTTRANSFERS wird nicht in der Gegenbuchung mitverankert
+   */
+  async bulkChangeDate(transactionIds: string[], newDate: string): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    // Validiere das neue Datum
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(newDate)) {
+      const error = `Ungültiges Datumsformat: ${newDate}. Erwartet: YYYY-MM-DD`;
+      errorLog('[TransactionService]', 'bulkChangeDate - Invalid date format', { newDate });
+      return { success: false, updatedCount: 0, errors: [error] };
+    }
+
+    debugLog('[TransactionService]', 'bulkChangeDate started', {
+      requestedCount: unique.length,
+      newDate
+    });
+
+    // Sammle alle zu ändernden Transaktionen (ohne CATEGORYTRANSFER und ACCOUNTTRANSFER)
+    const transactionsToUpdate = new Map<string, {
+      transaction: Transaction;
+      newDate: string;
+    }>();
+    const affectedAccountIds = new Set<string>();
+
+    // 1. Analysiere alle Transaktionen und filtere ungeeignete Typen aus
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkChangeDate - Transaction not found', { id });
+        continue;
+      }
+
+      // Schließe CATEGORYTRANSFER und ACCOUNTTRANSFER aus, da bei diesen nicht in der Gegenbuchung mitverankert werden soll
+      if (tx.type === TransactionType.CATEGORYTRANSFER || tx.type === TransactionType.ACCOUNTTRANSFER) {
+        debugLog('[TransactionService]', `Skipping transaction ${id} - Type ${tx.type} excluded from bulk date change`, {
+          transactionId: id,
+          type: tx.type
+        });
+        continue;
+      }
+
+      // Sammle betroffene Konten für Balance-Neuberechnung
+      if (tx.accountId) {
+        affectedAccountIds.add(tx.accountId);
+      }
+
+      // Normale Transaktionen (INCOME, EXPENSE, RECONCILE)
+      transactionsToUpdate.set(id, {
+        transaction: tx,
+        newDate: newDate
+      });
+    }
+
+    debugLog('[TransactionService]', 'bulkChangeDate - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      affectedAccounts: affectedAccountIds.size,
+      skippedTransfers: unique.length - transactionsToUpdate.size,
+      eligibleTypes: Array.from(transactionsToUpdate.values()).map(item => item.transaction.type)
+    });
+
+    // 2. Batch-Update durchführen
+    let updatedCount = 0;
+    for (const [transactionId, updateInfo] of transactionsToUpdate) {
+      try {
+        const { transaction, newDate: targetDate } = updateInfo;
+        const updates: Partial<Transaction> = {
+          date: targetDate,
+          valueDate: targetDate // valueDate wird auf das ausgewählte Datum umgestellt
+        };
+
+        // Transaktion aktualisieren
+        const success = this.updateTransaction(transactionId, updates);
+        if (success) {
+          updatedCount++;
+          debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
+            transactionId,
+            oldDate: transaction.date,
+            oldValueDate: transaction.valueDate,
+            newDate: targetDate,
+            type: transaction.type
+          });
+        } else {
+          const error = `Fehler beim Aktualisieren der Transaktion ${transactionId}`;
+          errors.push(error);
+          warnLog('[TransactionService]', error, { transactionId, targetDate });
+        }
+      } catch (error) {
+        const errorMsg = `Fehler beim Aktualisieren der Transaktion ${transactionId}: ${error instanceof Error ? error.message : String(error)}`;
+        errors.push(errorMsg);
+        errorLog('[TransactionService]', errorMsg, {
+          transactionId,
+          error,
+          updateInfo
+        });
+      }
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkChangeDate completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      affectedAccounts: Array.from(affectedAccountIds),
+      newDate
+    });
+
+    // 3. Balance-Neuberechnung für alle betroffenen Konten
+    BalanceService.calculateMonthlyBalances();
+
+    if (!this._skipRunningBalanceRecalc) {
+      for (const accountId of affectedAccountIds) {
+        BalanceService.triggerRunningBalanceRecalculation(accountId, newDate);
+      }
+    }
+
+    if (success) {
+      infoLog('[TransactionService]', `Bulk-Datumsänderung erfolgreich abgeschlossen: ${updatedCount} Transaktionen auf ${newDate} geändert`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Datumsänderung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
   }
 
 };

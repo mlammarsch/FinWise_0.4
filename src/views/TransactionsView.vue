@@ -542,10 +542,71 @@ async function onBulkAssignTagsConfirm(
   }
 }
 
-function onBulkChangeDateConfirm(newDate: string) {
-  console.log("Bulk change date:", newDate);
-  // TODO: Implement bulk date change
-  showBulkChangeDateModal.value = false;
+async function onBulkChangeDateConfirm(newDate: string) {
+  debugLog("[TransactionsView]", "onBulkChangeDateConfirm", { newDate });
+
+  try {
+    // Hole die ausgewählten Transaktionen
+    const selectedTransactions =
+      currentViewMode.value === "account"
+        ? transactionListRef.value?.getSelectedTransactions()
+        : categoryTransactionListRef.value?.getSelectedTransactions();
+
+    if (!selectedTransactions || selectedTransactions.length === 0) {
+      warnLog(
+        "[TransactionsView]",
+        "Keine Transaktionen für Bulk-Datumsänderung ausgewählt"
+      );
+      showBulkChangeDateModal.value = false;
+      return;
+    }
+
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+
+    // Verwende die neue bulkChangeDate Funktion
+    const result = await TransactionService.bulkChangeDate(
+      transactionIds,
+      newDate
+    );
+
+    if (result.success) {
+      infoLog("[TransactionsView]", "Bulk-Datumsänderung erfolgreich", {
+        updatedCount: result.updatedCount,
+        newDate,
+      });
+
+      // Auswahl zurücksetzen
+      if (currentViewMode.value === "account") {
+        transactionListRef.value?.clearSelection();
+      } else {
+        categoryTransactionListRef.value?.clearSelection();
+      }
+
+      // Refresh der Ansicht
+      refreshKey.value++;
+
+      // Optional: Zeige eine Erfolgsmeldung
+      // TODO: Implementiere Toast-Notification
+    } else {
+      warnLog("[TransactionsView]", "Bulk-Datumsänderung mit Fehlern", {
+        updatedCount: result.updatedCount,
+        errors: result.errors,
+      });
+
+      // Optional: Zeige Fehlermeldung
+      // TODO: Implementiere Toast-Notification für Fehler
+    }
+  } catch (error) {
+    errorLog("[TransactionsView]", "Fehler bei Bulk-Datumsänderung", {
+      error: error instanceof Error ? error.message : String(error),
+      newDate,
+    });
+
+    // Optional: Zeige eine Fehlermeldung
+    // TODO: Implementiere Toast-Notification für kritische Fehler
+  } finally {
+    showBulkChangeDateModal.value = false;
+  }
 }
 
 async function onBulkDeleteConfirm(transactionIds: string[]) {
