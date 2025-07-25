@@ -34,6 +34,10 @@ const searchQuery = ref("");
 const showDeleteConfirm = ref(false);
 const deleteTargetId = ref<string | null>(null);
 
+// Fehlermodal für Löschvalidierung
+const showDeleteError = ref(false);
+const deleteErrorMessage = ref("");
+
 // Merge-Modal State
 const showMergeModal = ref(false);
 
@@ -298,14 +302,57 @@ const saveRecipient = () => {
 };
 
 const confirmDeleteRecipient = (recipientId: string) => {
+  // Prüfe ob Empfänger in Transaktionen verwendet wird
+  const usageCount = recipientUsage.value(recipientId);
+
+  if (usageCount > 0) {
+    // Zeige Fehlermeldung wenn Empfänger noch verwendet wird
+    const recipient = recipientStore.getRecipientById(recipientId);
+    const recipientName = recipient?.name || "Unbekannter Empfänger";
+
+    // Setze Fehlermeldung und zeige Modal
+    deleteErrorMessage.value = `Der Empfänger "${recipientName}" kann nicht gelöscht werden, da er noch in ${usageCount} Transaktion${
+      usageCount === 1 ? "" : "en"
+    } verwendet wird.\n\nBitte entfernen Sie zuerst alle Transaktionen mit diesem Empfänger oder weisen Sie sie einem anderen Empfänger zu.`;
+    showDeleteError.value = true;
+    return;
+  }
+
   deleteTargetId.value = recipientId;
   showDeleteConfirm.value = true;
 };
 
-const deleteRecipient = () => {
+const deleteRecipient = async () => {
   if (deleteTargetId.value) {
-    recipientStore.deleteRecipient(deleteTargetId.value);
-    deleteTargetId.value = null;
+    try {
+      // Zusätzliche Sicherheitsprüfung vor dem Löschen
+      const usageCount = recipientUsage.value(deleteTargetId.value);
+
+      if (usageCount > 0) {
+        const recipient = recipientStore.getRecipientById(deleteTargetId.value);
+        const recipientName = recipient?.name || "Unbekannter Empfänger";
+
+        deleteErrorMessage.value = `Fehler: Der Empfänger "${recipientName}" kann nicht gelöscht werden, da er noch in ${usageCount} Transaktion${
+          usageCount === 1 ? "" : "en"
+        } verwendet wird.`;
+        showDeleteError.value = true;
+        showDeleteConfirm.value = false;
+        deleteTargetId.value = null;
+        return;
+      }
+
+      await recipientStore.deleteRecipient(deleteTargetId.value);
+      deleteTargetId.value = null;
+    } catch (error) {
+      // Fehler vom Store abfangen und als Modal anzeigen
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Unbekannter Fehler beim Löschen des Empfängers";
+      deleteErrorMessage.value = errorMessage;
+      showDeleteError.value = true;
+      deleteTargetId.value = null;
+    }
   }
   showDeleteConfirm.value = false;
 };
@@ -568,6 +615,37 @@ const getSortIcon = (field: "name" | "usage") => {
       @confirm="deleteRecipient"
       @cancel="showDeleteConfirm = false"
     />
+
+    <!-- Fehlermodal für Löschvalidierung -->
+    <dialog
+      v-if="showDeleteError"
+      class="modal modal-open"
+    >
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+          Löschen nicht möglich
+        </h3>
+        <div class="alert alert-soft alert-error mb-4">
+          <Icon
+            icon="mdi:information"
+            class="w-5 h-5"
+          />
+          <div class="whitespace-pre-line">{{ deleteErrorMessage }}</div>
+        </div>
+        <div class="modal-action">
+          <button
+            class="btn btn-primary"
+            @click="showDeleteError = false"
+          >
+            Verstanden
+          </button>
+        </div>
+      </div>
+      <div
+        class="modal-backdrop bg-black/30"
+        @click="showDeleteError = false"
+      ></div>
+    </dialog>
 
     <!-- Merge-Modal -->
     <RecipientMergeModal

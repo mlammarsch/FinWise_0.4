@@ -484,6 +484,73 @@ export const useRecipientStore = defineStore('recipient', () => {
   async function deleteRecipient(recipientId: string, fromSync = false): Promise<void> {
     const recipientToDelete = recipients.value.find(r => r.id === recipientId);
 
+    // Validierung: Prüfe ob Empfänger noch in Transaktionen verwendet wird (nur bei lokalen Löschungen)
+    if (!fromSync) {
+      try {
+        // Importiere TransactionStore dynamisch um zirkuläre Abhängigkeiten zu vermeiden
+        const { useTransactionStore } = await import('@/stores/transactionStore');
+        const transactionStore = useTransactionStore();
+
+        // Prüfe Transaktionen
+        const transactionsWithRecipient = transactionStore.transactions.filter(
+          tx => tx.recipientId === recipientId
+        );
+
+        if (transactionsWithRecipient.length > 0) {
+          const recipientName = recipientToDelete?.name || 'Unbekannter Empfänger';
+          const errorMessage = `Der Empfänger "${recipientName}" kann nicht gelöscht werden, da er noch in ${transactionsWithRecipient.length} Transaktion${transactionsWithRecipient.length === 1 ? '' : 'en'} verwendet wird.`;
+
+          errorLog('recipientStore', errorMessage, {
+            recipientId,
+            recipientName,
+            transactionCount: transactionsWithRecipient.length,
+            transactionIds: transactionsWithRecipient.map(tx => tx.id)
+          });
+
+          throw new Error(errorMessage);
+        }
+
+        // Prüfe auch PlanningTransactions
+        const { usePlanningStore } = await import('@/stores/planningStore');
+        const planningStore = usePlanningStore();
+
+        const planningTransactionsWithRecipient = planningStore.planningTransactions.filter(
+          ptx => ptx.recipientId === recipientId
+        );
+
+        if (planningTransactionsWithRecipient.length > 0) {
+          const recipientName = recipientToDelete?.name || 'Unbekannter Empfänger';
+          const errorMessage = `Der Empfänger "${recipientName}" kann nicht gelöscht werden, da er noch in ${planningTransactionsWithRecipient.length} Planungstransaktion${planningTransactionsWithRecipient.length === 1 ? '' : 'en'} verwendet wird.`;
+
+          errorLog('recipientStore', errorMessage, {
+            recipientId,
+            recipientName,
+            planningTransactionCount: planningTransactionsWithRecipient.length,
+            planningTransactionIds: planningTransactionsWithRecipient.map(ptx => ptx.id)
+          });
+
+          throw new Error(errorMessage);
+        }
+
+        infoLog('recipientStore', `Validierung erfolgreich: Empfänger "${recipientToDelete?.name}" kann sicher gelöscht werden`, {
+          recipientId,
+          transactionCount: 0,
+          planningTransactionCount: 0
+        });
+
+      } catch (error) {
+        // Wenn es ein Validierungsfehler ist, werfe ihn weiter
+        if (error instanceof Error && error.message.includes('kann nicht gelöscht werden')) {
+          throw error;
+        }
+        // Bei anderen Fehlern (z.B. Import-Probleme) logge und fahre fort
+        warnLog('recipientStore', 'Fehler bei der Validierung vor Löschung, fahre trotzdem fort', {
+          recipientId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+
     // Lokale DB immer zuerst (oder zumindest vor dem Hinzufügen zur SyncQueue) aktualisieren,
     // unabhängig davon, ob es vom Sync kommt oder eine lokale Änderung ist,
     // um den lokalen Zustand konsistent zu halten.
