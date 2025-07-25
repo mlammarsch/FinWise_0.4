@@ -65,7 +65,7 @@ const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
 // Sortierungsstate
-const sortField = ref<"name" | "usage">("name");
+const sortField = ref<"name" | "usage" | "planning" | "rules">("name");
 const sortDirection = ref<"asc" | "desc">("asc");
 
 const filteredRecipients = computed(() => {
@@ -86,10 +86,16 @@ const filteredRecipients = computed(() => {
     if (sortField.value === "name") {
       aValue = a.name.toLowerCase();
       bValue = b.name.toLowerCase();
-    } else {
-      // usage
+    } else if (sortField.value === "usage") {
       aValue = recipientUsage.value(a.id);
       bValue = recipientUsage.value(b.id);
+    } else if (sortField.value === "planning") {
+      aValue = recipientPlanningUsage.value(a.id);
+      bValue = recipientPlanningUsage.value(b.id);
+    } else {
+      // rules
+      aValue = recipientRuleUsage.value(a.id);
+      bValue = recipientRuleUsage.value(b.id);
     }
 
     let comparison = 0;
@@ -121,6 +127,37 @@ const recipientUsage = computed(() => {
   return (recipientId: string) =>
     transactionStore.transactions.filter((tx) => tx.recipientId === recipientId)
       .length;
+});
+
+const recipientPlanningUsage = computed(() => {
+  return (recipientId: string) =>
+    planningStore.planningTransactions.filter(
+      (pt) => pt.recipientId === recipientId
+    ).length;
+});
+
+const recipientRuleUsage = computed(() => {
+  return (recipientId: string) => {
+    return ruleStore.rules.filter((rule: any) => {
+      // Prüfe ob der Empfänger in den Bedingungen oder Aktionen der Regel verwendet wird
+      const conditions = rule.conditions || [];
+      const actions = rule.actions || [];
+
+      // Prüfe Bedingungen auf Empfänger-Referenzen
+      const hasRecipientInConditions = conditions.some(
+        (condition: any) =>
+          condition.type === "recipient" && condition.value === recipientId
+      );
+
+      // Prüfe Aktionen auf Empfänger-Referenzen
+      const hasRecipientInActions = actions.some(
+        (action: any) =>
+          action.type === "setRecipient" && action.value === recipientId
+      );
+
+      return hasRecipientInConditions || hasRecipientInActions;
+    }).length;
+  };
 });
 
 // Checkbox-Funktionalität
@@ -500,7 +537,7 @@ const handleOrphanCleanupClose = () => {
 };
 
 // Sortierungsfunktionen
-const toggleSort = (field: "name" | "usage") => {
+const toggleSort = (field: "name" | "usage" | "planning" | "rules") => {
   if (sortField.value === field) {
     // Gleiche Spalte: Richtung umkehren
     sortDirection.value = sortDirection.value === "asc" ? "desc" : "asc";
@@ -511,7 +548,7 @@ const toggleSort = (field: "name" | "usage") => {
   }
 };
 
-const getSortIcon = (field: "name" | "usage") => {
+const getSortIcon = (field: "name" | "usage" | "planning" | "rules") => {
   if (sortField.value !== field) {
     return "mdi:sort";
   }
@@ -612,11 +649,37 @@ const getSortIcon = (field: "name" | "usage") => {
                   @click="toggleSort('usage')"
                 >
                   <div class="flex items-center justify-center">
-                    <span>Verwendet in Buchungen</span>
+                    <span>Buchungen</span>
                     <Icon
                       :icon="getSortIcon('usage')"
                       class="w-4 h-4 ml-1"
                       :class="{ 'text-primary': sortField === 'usage' }"
+                    />
+                  </div>
+                </th>
+                <th
+                  class="text-center hidden lg:table-cell cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('planning')"
+                >
+                  <div class="flex items-center justify-center">
+                    <span>Planbuchungen</span>
+                    <Icon
+                      :icon="getSortIcon('planning')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'planning' }"
+                    />
+                  </div>
+                </th>
+                <th
+                  class="text-center hidden lg:table-cell cursor-pointer hover:bg-base-200 select-none"
+                  @click="toggleSort('rules')"
+                >
+                  <div class="flex items-center justify-center">
+                    <span>Regeln</span>
+                    <Icon
+                      :icon="getSortIcon('rules')"
+                      class="w-4 h-4 ml-1"
+                      :class="{ 'text-primary': sortField === 'rules' }"
                     />
                   </div>
                 </th>
@@ -639,6 +702,12 @@ const getSortIcon = (field: "name" | "usage") => {
                 <td>{{ recipient.name }}</td>
                 <td class="text-center hidden md:table-cell">
                   {{ recipientUsage(recipient.id) }}
+                </td>
+                <td class="text-center hidden lg:table-cell">
+                  {{ recipientPlanningUsage(recipient.id) }}
+                </td>
+                <td class="text-center hidden lg:table-cell">
+                  {{ recipientRuleUsage(recipient.id) }}
                 </td>
                 <td class="text-right">
                   <div class="flex justify-end space-x-1">
