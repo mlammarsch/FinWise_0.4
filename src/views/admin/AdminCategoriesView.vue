@@ -3,8 +3,10 @@
 import { ref, computed } from "vue";
 import { CategoryService } from "../../services/CategoryService";
 import { BalanceService } from "../../services/BalanceService";
+import { useTransactionStore } from "../../stores/transactionStore";
 import CategoryForm from "../../components/budget/CategoryForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
+import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import { Category } from "../../types";
 import { Icon } from "@iconify/vue";
 
@@ -113,6 +115,77 @@ const groupSort = ref(0);
 const groupIsIncome = ref(false);
 const editingGroupId = ref<string | null>(null);
 
+// Confirmation Modal State
+const showConfirmationModal = ref(false);
+const confirmationTitle = ref("");
+const confirmationMessage = ref("");
+const confirmationAction = ref<(() => Promise<void>) | null>(null);
+
+// Transaction Store für Prüfungen
+const transactionStore = useTransactionStore();
+
+// Hilfsfunktionen zur Prüfung von Transaktions-Zuordnungen
+const categoryHasTransactions = (categoryId: string): boolean => {
+  const transactions = transactionStore.getTransactionsByCategory(categoryId);
+  return transactions.length > 0;
+};
+
+const categoryGroupHasCategories = (groupId: string): boolean => {
+  return categories.value.some(
+    (category) => category.categoryGroupId === groupId
+  );
+};
+
+const categoryGroupHasTransactions = (groupId: string): boolean => {
+  return categories.value
+    .filter((category) => category.categoryGroupId === groupId)
+    .some((category) => categoryHasTransactions(category.id));
+};
+
+const canDeleteCategory = (category: Category): boolean => {
+  // Prüfe auf Kindkategorien
+  const hasChildren = categories.value.some(
+    (c) => c.parentCategoryId === category.id
+  );
+  if (hasChildren) return false;
+
+  // Prüfe auf Transaktionen
+  return !categoryHasTransactions(category.id);
+};
+
+const canDeleteCategoryGroup = (groupId: string): boolean => {
+  // Prüfe auf zugeordnete Kategorien
+  if (categoryGroupHasCategories(groupId)) return false;
+
+  // Prüfe auf Transaktionen in Kategorien der Gruppe
+  return !categoryGroupHasTransactions(groupId);
+};
+
+// Confirmation Modal Funktionen
+const showDeleteConfirmation = (
+  title: string,
+  message: string,
+  action: () => Promise<void>
+) => {
+  confirmationTitle.value = title;
+  confirmationMessage.value = message;
+  confirmationAction.value = action;
+  showConfirmationModal.value = true;
+};
+
+const handleConfirmation = async () => {
+  if (confirmationAction.value) {
+    await confirmationAction.value();
+  }
+  showConfirmationModal.value = false;
+  confirmationAction.value = null;
+};
+
+const handleCancellation = () => {
+  showConfirmationModal.value = false;
+  confirmationAction.value = null;
+};
+
 // Kategorie-Aktionen
 const editCategory = (category: Category) => {
   selectedCategory.value = category;
@@ -144,21 +217,43 @@ const saveCategory = async (categoryData: Omit<Category, "id">) => {
 };
 
 const deleteCategory = async (category: Category) => {
-  if (
-    confirm(`Möchten Sie die Kategorie "${category.name}" wirklich löschen?`)
-  ) {
+  // Prüfe ob Kategorie gelöscht werden kann
+  if (!canDeleteCategory(category)) {
+    const hasChildren = categories.value.some(
+      (c) => c.parentCategoryId === category.id
+    );
+    const hasTransactions = categoryHasTransactions(category.id);
+
+    let message = "Die Kategorie kann nicht gelöscht werden, da sie ";
+    if (hasChildren && hasTransactions) {
+      message += "Unterkategorien und Buchungen enthält.";
+    } else if (hasChildren) {
+      message += "Unterkategorien enthält.";
+    } else if (hasTransactions) {
+      message += "Buchungen zugeordnet hat.";
+    }
+
+    alert(message);
+    return;
+  }
+
+  const action = async () => {
     try {
       const result = await CategoryService.deleteCategory(category.id);
       if (!result) {
-        alert(
-          "Die Kategorie kann nicht gelöscht werden, da sie Unterkategorien enthält."
-        );
+        alert("Die Kategorie konnte nicht gelöscht werden.");
       }
     } catch (error) {
       console.error("Fehler beim Löschen der Kategorie:", error);
       alert("Fehler beim Löschen der Kategorie.");
     }
-  }
+  };
+
+  showDeleteConfirmation(
+    "Kategorie löschen",
+    `Möchten Sie die Kategorie "${category.name}" wirklich löschen?`,
+    action
+  );
 };
 
 // Kategoriegruppen-Aktionen
@@ -205,21 +300,42 @@ const saveCategoryGroup = async () => {
 const deleteCategoryGroup = async (groupId: string) => {
   const group = categoryGroups.value?.find((g) => g.id === groupId);
   if (!group) return;
-  if (
-    confirm(`Möchten Sie die Kategoriegruppe "${group.name}" wirklich löschen?`)
-  ) {
+
+  // Prüfe ob Kategoriegruppe gelöscht werden kann
+  if (!canDeleteCategoryGroup(groupId)) {
+    const hasCategories = categoryGroupHasCategories(groupId);
+    const hasTransactions = categoryGroupHasTransactions(groupId);
+
+    let message = "Die Kategoriegruppe kann nicht gelöscht werden, da sie ";
+    if (hasCategories && hasTransactions) {
+      message += "noch Kategorien mit Buchungen enthält.";
+    } else if (hasCategories) {
+      message += "noch Kategorien enthält.";
+    } else if (hasTransactions) {
+      message += "Kategorien mit Buchungen enthält.";
+    }
+
+    alert(message);
+    return;
+  }
+
+  const action = async () => {
     try {
       const result = await CategoryService.deleteCategoryGroup(groupId);
       if (!result) {
-        alert(
-          "Die Kategoriegruppe kann nicht gelöscht werden, da sie noch Kategorien enthält."
-        );
+        alert("Die Kategoriegruppe konnte nicht gelöscht werden.");
       }
     } catch (error) {
       console.error("Fehler beim Löschen der Kategoriegruppe:", error);
       alert("Fehler beim Löschen der Kategoriegruppe.");
     }
-  }
+  };
+
+  showDeleteConfirmation(
+    "Kategoriegruppe löschen",
+    `Möchten Sie die Kategoriegruppe "${group.name}" wirklich löschen?`,
+    action
+  );
 };
 
 /**
@@ -628,8 +744,23 @@ const getCategoryBalance = (categoryId: string): number => {
                       />
                     </button>
                     <button
-                      class="btn btn-ghost btn-xs text-error"
-                      @click="deleteCategory(category)"
+                      class="btn btn-ghost btn-xs"
+                      :class="
+                        canDeleteCategory(category)
+                          ? 'text-error hover:bg-error hover:text-error-content'
+                          : 'text-base-300 cursor-not-allowed'
+                      "
+                      :disabled="!canDeleteCategory(category)"
+                      :title="
+                        canDeleteCategory(category)
+                          ? 'Kategorie löschen'
+                          : 'Kategorie kann nicht gelöscht werden (hat Unterkategorien oder Buchungen)'
+                      "
+                      @click="
+                        canDeleteCategory(category)
+                          ? deleteCategory(category)
+                          : null
+                      "
                     >
                       <Icon
                         icon="mdi:trash-can"
@@ -735,8 +866,23 @@ const getCategoryBalance = (categoryId: string): number => {
                       />
                     </button>
                     <button
-                      class="btn btn-ghost btn-xs text-error"
-                      @click="deleteCategoryGroup(group.id)"
+                      class="btn btn-ghost btn-xs"
+                      :class="
+                        canDeleteCategoryGroup(group.id)
+                          ? 'text-error hover:bg-error hover:text-error-content'
+                          : 'text-base-300 cursor-not-allowed'
+                      "
+                      :disabled="!canDeleteCategoryGroup(group.id)"
+                      :title="
+                        canDeleteCategoryGroup(group.id)
+                          ? 'Kategoriegruppe löschen'
+                          : 'Kategoriegruppe kann nicht gelöscht werden (enthält Kategorien oder Buchungen)'
+                      "
+                      @click="
+                        canDeleteCategoryGroup(group.id)
+                          ? deleteCategoryGroup(group.id)
+                          : null
+                      "
                     >
                       <Icon
                         icon="mdi:trash-can"
@@ -852,5 +998,16 @@ const getCategoryBalance = (categoryId: string): number => {
         @click="showGroupModal = false"
       ></div>
     </div>
+
+    <!-- Confirmation Modal -->
+    <ConfirmationModal
+      v-if="showConfirmationModal"
+      :title="confirmationTitle"
+      :message="confirmationMessage"
+      confirm-text="Löschen"
+      cancel-text="Abbrechen"
+      @confirm="handleConfirmation"
+      @cancel="handleCancellation"
+    />
   </div>
 </template>

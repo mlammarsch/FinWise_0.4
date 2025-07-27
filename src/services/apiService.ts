@@ -1,4 +1,5 @@
 import { infoLog, errorLog } from '@/utils/logger';
+import { useSessionStore } from '@/stores/sessionStore';
 
 // This is a common workaround for Vite's import.meta.env typing issues in TS files.
 const BASE_URL = (import.meta as any).env.VITE_API_BASE_URL as string;
@@ -17,9 +18,18 @@ async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Pr
   const url = `${BASE_URL}${endpoint}`;
   const { method = 'GET', headers = {}, body } = options;
 
+  // Automatisch TenantId und UserId als Header hinzufügen, falls verfügbar
+  const sessionStore = useSessionStore();
+  const tenantId = sessionStore.currentTenantId;
+  const userId = sessionStore.currentUserId;
+
   const config: RequestInit = {
     method,
-    headers: { ...headers },
+    headers: {
+      ...headers,
+      ...(tenantId && { 'X-Tenant-Id': tenantId }),
+      ...(userId && { 'X-User-Id': userId })
+    },
   };
 
   if (body) {
@@ -45,12 +55,26 @@ async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Pr
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+
+      // Verbesserte Fehlermeldung für besseres Debugging
+      let errorMessage = errorData.detail || `API request failed with status ${response.status}`;
+
+      // Bei 422 Validation Error: Detaillierte Fehlermeldung extrahieren
+      if (response.status === 422 && errorData.detail && Array.isArray(errorData.detail)) {
+        const validationErrors = errorData.detail.map((err: any) =>
+          `${err.loc?.join('.')} - ${err.msg}`
+        ).join('; ');
+        errorMessage = `Validation Error: ${validationErrors}`;
+      }
+
       errorLog('ApiService', `API Error: ${response.status} ${response.statusText}`, {
         url,
         status: response.status,
         errorData,
+        errorMessage
       });
-      const err = new Error(errorData.detail || `API request failed with status ${response.status}`);
+
+      const err = new Error(errorMessage);
       (err as any).status = response.status;
       (err as any).errorData = errorData;
       throw err;
@@ -63,6 +87,84 @@ async function request<T>(endpoint: string, options: ApiServiceOptions = {}): Pr
     const data: T = await response.json();
     infoLog('ApiService', `Response: ${method} ${url}`, { status: response.status, data });
     return data;
+  } catch (error) {
+    errorLog('ApiService', `Network or other error: ${method} ${url}`, { error });
+    throw error;
+  }
+}
+
+/**
+ * Spezielle Request-Funktion für Datei-Downloads (Binärdateien)
+ */
+async function downloadFile(endpoint: string, options: ApiServiceOptions = {}): Promise<ArrayBuffer> {
+  const url = `${BASE_URL}${endpoint}`;
+  const { method = 'GET', headers = {}, body } = options;
+
+  // Automatisch TenantId und UserId als Header hinzufügen, falls verfügbar
+  const sessionStore = useSessionStore();
+  const tenantId = sessionStore.currentTenantId;
+  const userId = sessionStore.currentUserId;
+
+  const config: RequestInit = {
+    method,
+    headers: {
+      ...headers,
+      ...(tenantId && { 'X-Tenant-Id': tenantId }),
+      ...(userId && { 'X-User-Id': userId })
+    },
+  };
+
+  if (body) {
+    if (body instanceof FormData) {
+      config.body = body;
+      delete (config.headers as Record<string, string>)['Content-Type'];
+    } else {
+      config.body = JSON.stringify(body);
+      if (!(config.headers as Record<string, string>)['Content-Type']) {
+        (config.headers as Record<string, string>)['Content-Type'] = 'application/json';
+      }
+    }
+  }
+
+  infoLog('ApiService', `File Download Request: ${method} ${url}`, { body: options.body instanceof FormData ? 'FormData' : options.body });
+
+  try {
+    const response = await fetch(url, config);
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+
+      // Verbesserte Fehlermeldung für besseres Debugging
+      let errorMessage = errorData.detail || `API request failed with status ${response.status}`;
+
+      // Bei 422 Validation Error: Detaillierte Fehlermeldung extrahieren
+      if (response.status === 422 && errorData.detail && Array.isArray(errorData.detail)) {
+        const validationErrors = errorData.detail.map((err: any) =>
+          `${err.loc?.join('.')} - ${err.msg}`
+        ).join('; ');
+        errorMessage = `Validation Error: ${validationErrors}`;
+      }
+
+      errorLog('ApiService', `API Error: ${response.status} ${response.statusText}`, {
+        url,
+        status: response.status,
+        errorData,
+        errorMessage
+      });
+
+      const err = new Error(errorMessage);
+      (err as any).status = response.status;
+      (err as any).errorData = errorData;
+      throw err;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    infoLog('ApiService', `File Download Response: ${method} ${url}`, {
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      size: arrayBuffer.byteLength
+    });
+    return arrayBuffer;
   } catch (error) {
     errorLog('ApiService', `Network or other error: ${method} ${url}`, { error });
     throw error;
@@ -84,6 +186,10 @@ export const apiService = {
 
   delete: <T>(endpoint: string, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
     request<T>(endpoint, { ...options, method: 'DELETE' }),
+
+  // Spezielle Methode für Datei-Downloads
+  downloadFile: (endpoint: string, options?: Omit<ApiServiceOptions, 'body' | 'method'>) =>
+    downloadFile(endpoint, { ...options, method: 'GET' }),
 
   getUsers: () => apiService.get<UserFromApi[]>('/users'),
   createUser: (userData: { uuid: string; name: string; email: string; hashed_password?: string }) =>

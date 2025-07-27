@@ -1,14 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useSettingsStore } from "@/stores/settingsStore";
-import { useThemeStore } from "@/stores/themeStore";
-import { useReconciliationStore } from "@/stores/reconciliationStore";
-import { LogLevel, historyManager } from "@/utils/logger";
-import { debugLog } from "@/utils/logger";
-import { formatCurrency } from "@/utils/formatters";
-import { useAccountStore } from "@/stores/accountStore";
-import { useCategoryStore } from "@/stores/categoryStore";
-import { useRecipientStore } from "@/stores/recipientStore";
+import { LogLevel } from "@/utils/logger";
+import { debugLog, infoLog, errorLog } from "@/utils/logger";
+import {
+  DataImportExportService,
+  type ExportDataType,
+  type ImportMode,
+} from "@/services/DataImportExportService";
 
 /**
  * Pfad zur Komponente: src/views/SettingsView.vue
@@ -17,9 +16,6 @@ import { useRecipientStore } from "@/stores/recipientStore";
 
 // State
 const activeTab = ref("general");
-const themeStore = useThemeStore();
-const reconciliationStore = useReconciliationStore();
-const defaultCurrency = ref("EUR");
 
 // SettingsStore
 const settingsStore = useSettingsStore();
@@ -27,257 +23,233 @@ const logLevel = computed({
   get: () => settingsStore.logLevel,
   set: (value) => (settingsStore.logLevel = value),
 });
-const logRetention = computed({
-  get: () => settingsStore.historyRetentionDays,
-  set: (value) => (settingsStore.historyRetentionDays = value),
-});
-const enabledLogCategories = computed({
-  get: () => settingsStore.enabledLogCategories,
-  set: (value) => (settingsStore.enabledLogCategories = value),
-});
 
-// Andere Stores
-const accountStore = useAccountStore();
-const categoryStore = useCategoryStore();
-const recipientStore = useRecipientStore();
+// Export-Funktionalität
+const selectedExportType = ref<ExportDataType>("rules");
+const isExporting = ref(false);
+const exportSuccess = ref(false);
 
-// Logger-Optionen
-const historyEntries = ref<any[]>([]);
-const settingsSaved = ref(false);
+const availableExportTypes = DataImportExportService.getAvailableDataTypes();
 
-const logLevelLabels = {
-  [LogLevel.DEBUG]: "Debug",
-  [LogLevel.INFO]: "Info",
-  [LogLevel.WARN]: "Warnung",
-  [LogLevel.ERROR]: "Fehler",
-};
+// Import-Funktionalität
+const selectedImportFile = ref<File | null>(null);
+const showImportModal = ref(false);
+const selectedImportMode = ref<ImportMode>("merge");
+const isImporting = ref(false);
+const importSuccess = ref(false);
+const importError = ref<string | null>(null);
 
-const availableLogCategories = [
-  { value: "store", label: "Datenspeicher" },
-  { value: "ui", label: "Benutzeroberfläche" },
-  { value: "service", label: "Dienste" },
-  { value: "api", label: "API-Aufrufe" },
-  { value: "import", label: "Importe" },
-  { value: "export", label: "Exporte" },
-];
+// SQLite Export-Funktionalität
+const isSqliteExporting = ref(false);
+const sqliteExportSuccess = ref(false);
+const sqliteExportError = ref<string | null>(null);
 
-// Logger-Einstellungen speichern
-function saveLoggerSettings() {
-  settingsStore.setLoggerSettings(
-    logLevel.value,
-    enabledLogCategories.value,
-    logRetention.value
-  );
-  settingsSaved.value = true;
-  debugLog(
-    "[settings]",
-    `Logger-Einstellungen gespeichert: Level=${logLevel.value}, Retention=${
-      logRetention.value
-    }, Kategorien=${[...enabledLogCategories.value].join(", ")}`
-  );
-  setTimeout(() => {
-    settingsSaved.value = false;
-  }, 2000);
+// SQLite Import-Funktionalität
+const selectedSqliteFile = ref<File | null>(null);
+const newTenantName = ref("");
+const isSqliteImporting = ref(false);
+const sqliteImportSuccess = ref(false);
+const sqliteImportError = ref<string | null>(null);
+
+async function handleExport() {
+  if (isExporting.value) return;
+
+  try {
+    isExporting.value = true;
+    debugLog(
+      "[settings]",
+      `Starte Export für Typ: ${selectedExportType.value}`
+    );
+
+    await DataImportExportService.exportDataAsJSON(selectedExportType.value);
+
+    exportSuccess.value = true;
+    infoLog(
+      "[settings]",
+      `Export für ${selectedExportType.value} erfolgreich abgeschlossen`
+    );
+
+    setTimeout(() => {
+      exportSuccess.value = false;
+    }, 5000);
+  } catch (error) {
+    errorLog(
+      "[settings]",
+      `Fehler beim Export für ${selectedExportType.value}`,
+      error
+    );
+  } finally {
+    isExporting.value = false;
+  }
 }
 
-// Dateiimport
-function handleFileImport(event: Event) {
-  const fileInput = event.target as HTMLInputElement;
-  if (fileInput.files && fileInput.files.length > 0) {
-    alert(`Datei "${fileInput.files[0].name}" würde importiert werden.`);
+// Import-Funktionen
+function handleFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+
+  if (file) {
+    selectedImportFile.value = file;
+    showImportModal.value = true;
+    importError.value = null;
+    debugLog("[settings]", `Datei ausgewählt: ${file.name}`);
+  }
+}
+
+function closeImportModal() {
+  showImportModal.value = false;
+  selectedImportFile.value = null;
+  selectedImportMode.value = "merge";
+  importError.value = null;
+}
+
+async function handleImport() {
+  if (!selectedImportFile.value || isImporting.value) return;
+
+  try {
+    isImporting.value = true;
+    importError.value = null;
+
+    debugLog(
+      "[settings]",
+      `Starte Import im ${selectedImportMode.value}-Modus für Datei: ${selectedImportFile.value.name}`
+    );
+
+    await DataImportExportService.importDataFromJSON(
+      selectedImportFile.value,
+      selectedImportMode.value
+    );
+
+    importSuccess.value = true;
+    showImportModal.value = false;
+
+    infoLog(
+      "[settings]",
+      `Import erfolgreich abgeschlossen im ${selectedImportMode.value}-Modus`
+    );
+
+    setTimeout(() => {
+      importSuccess.value = false;
+    }, 5000);
+
+    // Dateiauswahl zurücksetzen
+    const fileInput = document.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = "";
+    }
+    selectedImportFile.value = null;
+  } catch (error) {
+    importError.value =
+      error instanceof Error ? error.message : "Unbekannter Fehler beim Import";
+    errorLog("[settings]", "Fehler beim Import", error);
+  } finally {
+    isImporting.value = false;
+  }
+}
+
+// SQLite Export Handler
+async function handleSqliteExport() {
+  if (isSqliteExporting.value) return;
+
+  try {
+    isSqliteExporting.value = true;
+    sqliteExportError.value = null;
+    debugLog("[settings]", "Starte SQLite-Datenbank-Export");
+
+    await DataImportExportService.exportTenantDatabase();
+
+    sqliteExportSuccess.value = true;
+    infoLog("[settings]", "SQLite-Datenbank-Export erfolgreich abgeschlossen");
+
+    setTimeout(() => {
+      sqliteExportSuccess.value = false;
+    }, 5000);
+  } catch (error) {
+    sqliteExportError.value =
+      error instanceof Error ? error.message : "Unbekannter Fehler beim Export";
+    errorLog("[settings]", "Fehler beim SQLite-Datenbank-Export", error);
+  } finally {
+    isSqliteExporting.value = false;
+  }
+}
+
+// SQLite Import Handler
+// Hilfsfunktion zum Zurücksetzen des SQLite-Import-Formulars
+function resetSqliteImportForm() {
+  const fileInput = document.querySelector(
+    'input[type="file"][accept=".sqlite,.db"]'
+  ) as HTMLInputElement;
+  if (fileInput) {
     fileInput.value = "";
   }
+  selectedSqliteFile.value = null;
+  newTenantName.value = "";
+  sqliteImportError.value = null;
 }
 
-// Datenexport
-function exportData() {
-  const demoData = {
-    exportDate: new Date().toISOString(),
-    version: "1.0",
-    data: {
-      transactions: "...",
-      accounts: "...",
-      categories: "...",
-    },
-  };
-  const dataStr =
-    "data:text/json;charset=utf-8," +
-    encodeURIComponent(JSON.stringify(demoData, null, 2));
-  const downloadAnchorNode = document.createElement("a");
-  downloadAnchorNode.setAttribute("href", dataStr);
-  downloadAnchorNode.setAttribute("download", "finwise_export.json");
-  document.body.appendChild(downloadAnchorNode);
-  downloadAnchorNode.click();
-  downloadAnchorNode.remove();
-}
+function handleSqliteFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
 
-// Modal
-const alertMessage = ref("");
-const showAlertModal = ref(false);
-
-function showAlert(message) {
-  alertMessage.value = message;
-  showAlertModal.value = true;
-}
-
-// Logs
-function activateLogTab() {
-  activeTab.value = "logs";
-  loadHistory();
-}
-
-function loadHistory() {
-  historyEntries.value = historyManager
-    .getEntries()
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, 200);
-}
-
-function clearHistory() {
-  if (confirm("Möchten Sie wirklich die gesamte Log-Historie löschen?")) {
-    historyManager.clear();
-    historyEntries.value = [];
+  if (file) {
+    selectedSqliteFile.value = file;
+    sqliteImportError.value = null;
+    debugLog("[settings]", `SQLite-Datei ausgewählt: ${file.name}`);
   }
 }
 
-function cleanupHistory() {
-  historyManager.cleanupOldEntries();
-  loadHistory();
+async function handleSqliteImport() {
+  if (
+    !selectedSqliteFile.value ||
+    !newTenantName.value.trim() ||
+    isSqliteImporting.value
+  )
+    return;
+
+  try {
+    isSqliteImporting.value = true;
+    sqliteImportError.value = null;
+
+    debugLog(
+      "[settings]",
+      `Starte SQLite-Import für neuen Mandanten: ${newTenantName.value}`
+    );
+
+    await DataImportExportService.importTenantDatabase(
+      selectedSqliteFile.value,
+      newTenantName.value.trim()
+    );
+
+    sqliteImportSuccess.value = true;
+    infoLog(
+      "[settings]",
+      `SQLite-Import erfolgreich abgeschlossen für Mandant: ${newTenantName.value}`
+    );
+
+    // Formular vollständig zurücksetzen
+    resetSqliteImportForm();
+
+    setTimeout(() => {
+      sqliteImportSuccess.value = false;
+    }, 5000);
+  } catch (error) {
+    sqliteImportError.value =
+      error instanceof Error ? error.message : "Unbekannter Fehler beim Import";
+    errorLog("[settings]", "Fehler beim SQLite-Import", error);
+  } finally {
+    isSqliteImporting.value = false;
+  }
 }
 
 onMounted(() => {
   debugLog("[settings]", "SettingsView geladen");
 });
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleString("de-DE");
-}
-
-function getLogLevelName(level: LogLevel): string {
-  return logLevelLabels[level] || `Level ${level}`;
-}
-
-function exportLoggerDocs() {
-  const docs = `# Logger-Dokumentation für FinWise
-
-## Verwendung des Logger-Moduls
-
-\`\`\`typescript
-import { debugLog, infoLog, warnLog, errorLog } from "@/utils/logger";
-
-function myFunction() {
-  debugLog("[modulName]", "Beschreibung", optionalesObjekt);
-  infoLog("[modulName]", "Beschreibung", optionalesObjekt);
-  warnLog("[modulName]", "Beschreibung", optionalesObjekt);
-  errorLog("[modulName]", "Beschreibung", optionalesObjekt);
-}
-\`\`\`
-
-## Log-Kategorien
-
-- \`store\`
-- \`ui\`
-- \`service\`
-- \`api\`
-- \`import\`
-- \`export\`
-
-## Best Practices
-
-- Konsistente Kategorie-Kennung
-- Relevante Daten hinzufügen
-- Keine überflüssigen Logs
-
-## Beispiele
-
-\`\`\`typescript
-debugLog("[transactionStore]", "Transaktion hinzugefügt", { id: tx.id, amount: tx.amount });
-errorLog("[accountService]", "Fehler beim Laden", error);
-debugLog("[ui]", "Datei ausgewählt", { filename: file.name, size: file.size });
-\`\`\`
-
-## Aktivierung
-
-- Log-Level einstellen
-- Kategorien aktivieren
-- Aufbewahrungszeit setzen
-`;
-  const dataStr =
-    "data:text/markdown;charset=utf-8," + encodeURIComponent(docs);
-  const downloadAnchorNode = document.createElement("a");
-  downloadAnchorNode.setAttribute("href", dataStr);
-  downloadAnchorNode.setAttribute("download", "logger_documentation.md");
-  document.body.appendChild(downloadAnchorNode);
-  downloadAnchorNode.click();
-  downloadAnchorNode.remove();
-  showAlert("Logger-Dokumentation wurde exportiert.");
-}
-
-function formatHistoryValue(key: string, value: any): string {
-  let store;
-  if (key === "accountId" || key === "transferToAccountId") {
-    store = accountStore;
-  } else if (key === "categoryId") {
-    store = categoryStore;
-  } else if (key === "recipientId") {
-    store = recipientStore;
-  }
-  if (store?.getAccountById) {
-    const item = store.getAccountById(value);
-    if (item) return item.name;
-  }
-  if (store?.getCategoryById) {
-    const item = store.getCategoryById(value);
-    if (item) return item.name;
-  }
-  if (store?.getRecipientById) {
-    const item = store.getRecipientById(value);
-    if (item) return item.name;
-  }
-  return String(value);
-}
-
-const historySearchTerm = ref("");
-
-const filteredHistoryEntries = computed(() => {
-  if (!historySearchTerm.value.trim()) return historyEntries.value;
-  const search = historySearchTerm.value.toLowerCase();
-  return historyEntries.value.filter((entry) => {
-    const detailsString = JSON.stringify(entry.details).toLowerCase();
-    return (
-      entry.message.toLowerCase().includes(search) ||
-      entry.category.toLowerCase().includes(search) ||
-      detailsString.includes(search)
-    );
-  });
-});
-
-watch(activeTab, (newTab) => {
-  if (newTab === "logs") {
-    loadHistory();
-  }
-});
-
-function formatHistoryDetails(details: any): string {
-  if (!details) return "";
-  const parts = [];
-  for (const key in details) {
-    if (key === "id") continue;
-    if (["accountId", "categoryId", "recipientId"].includes(key)) {
-      const name = formatHistoryValue(key, details[key]);
-      parts.push(`${key}: ${name}`);
-    } else if (key === "amount") {
-      parts.push(`${key}: ${formatCurrency(details[key])}`);
-    } else {
-      parts.push(`${key}: ${details[key]}`);
-    }
-  }
-  return parts.join(" | ");
-}
 </script>
 
 <template>
-  <div class="container mx-auto py-8 max-w-4xl">
+  <div class="container mx-auto py-4 sm:py-8 max-w-4xl px-4">
     <h1 class="text-2xl font-bold mb-6">Einstellungen</h1>
 
     <div class="tabs tabs-boxed mb-6">
@@ -301,29 +273,7 @@ function formatHistoryDetails(details: any): string {
           icon="mdi:database-import"
           class="mr-2"
         />
-        Import / Export
-      </a>
-      <a
-        class="tab"
-        :class="{ 'tab-active': activeTab === 'developer' }"
-        @click="activeTab = 'developer'"
-      >
-        <Icon
-          icon="mdi:developer-board"
-          class="mr-2"
-        />
-        Entwickler
-      </a>
-      <a
-        class="tab"
-        :class="{ 'tab-active': activeTab === 'logs' }"
-        @click="activateLogTab"
-      >
-        <Icon
-          icon="mdi:text-box-outline"
-          class="mr-2"
-        />
-        Logs
+        Daten Import/Export
       </a>
     </div>
 
@@ -332,140 +282,7 @@ function formatHistoryDetails(details: any): string {
       v-if="activeTab === 'general'"
       class="space-y-6"
     >
-      <!-- Allgemeine Einstellungen Card -->
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title">Design & Darstellung</h2>
-
-          <!-- Theme Toggle -->
-          <div class="form-control">
-            <label class="label cursor-pointer">
-              <div class="flex items-center space-x-2">
-                <Icon
-                  icon="mdi:weather-night"
-                  class="text-lg"
-                />
-                <span class="label-text">Dunkles Design</span>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle"
-                :checked="themeStore.theme === 'dark'"
-                @change="themeStore.toggleTheme()"
-              />
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <!-- Kontoabstimmung Card -->
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title">Kontoabstimmung</h2>
-
-          <div class="form-control">
-            <label class="label cursor-pointer">
-              <span class="label-text"
-                >Automatisch bei Saldoabgleich markieren</span
-              >
-              <input
-                type="checkbox"
-                class="toggle"
-                v-model="reconciliationStore.autoMarkAsReconciledOnBalanceMatch"
-              />
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <!-- History-Legende -->
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title flex items-center gap-2 text-info">
-            <Icon
-              icon="mdi:information"
-              class="text-xl"
-            />
-            History-Logging aktivieren
-          </h2>
-          <p>
-            Damit die History-Logeinträge ordnungsgemäß befüllt werden, müssen
-            Sie:
-          </p>
-          <ol class="list-decimal ml-6 space-y-2 mt-2">
-            <li>
-              Im Tab "Entwickler" ein Log-Level von mindestens "Debug" auswählen
-            </li>
-            <li>
-              Die Kategorie "store" unter "Aktivierte Kategorien" aktivieren
-            </li>
-            <li>
-              Bei Bedarf die Kategorie "service" für Dienstaufrufe aktivieren
-            </li>
-            <li>
-              Eine angemessene Aufbewahrungszeit für die Logs festlegen (z.B. 60
-              Tage)
-            </li>
-          </ol>
-          <p class="mt-2">
-            Die History dokumentiert automatisch jede Änderung an Transaktionen,
-            Kategorien und Planungen, solange die oben genannten Einstellungen
-            aktiviert sind.
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Import / Export -->
-    <div
-      v-if="activeTab === 'import-export'"
-      class="space-y-6"
-    >
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title">Datenimport</h2>
-          <p class="mb-4">
-            Importieren Sie Daten aus einer Datei. Unterstützte Formate: JSON.
-          </p>
-          <label class="form-control w-full">
-            <div class="label">
-              <span class="label-text">JSON-Datei auswählen</span>
-            </div>
-            <input
-              type="file"
-              class="file-input file-input-bordered w-full"
-              accept=".json"
-              @change="handleFileImport"
-            />
-          </label>
-        </div>
-      </div>
-
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title">Datenexport</h2>
-          <p class="mb-4">
-            Exportieren Sie alle Ihre Daten in eine JSON-Datei zur Sicherung.
-          </p>
-          <button
-            class="btn btn-primary w-full md:w-auto"
-            @click="exportData"
-          >
-            <Icon
-              icon="mdi:download"
-              class="mr-2"
-            />
-            Alle Daten exportieren
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Entwicklereinstellungen -->
-    <div
-      v-if="activeTab === 'developer'"
-      class="space-y-6"
-    >
+      <!-- Logger-Einstellungen Card -->
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
           <h2 class="card-title">Logger-Einstellungen</h2>
@@ -486,286 +303,416 @@ function formatHistoryDetails(details: any): string {
               <option :value="LogLevel.ERROR">Fehler (nur Fehler)</option>
             </select>
           </div>
-
-          <div class="form-control mt-4">
-            <label class="label">
-              <span class="label-text">Aufbewahrungszeit (Tage)</span>
-            </label>
-            <input
-              type="number"
-              v-model.number="logRetention"
-              min="1"
-              max="365"
-              class="input input-bordered w-full"
-            />
-          </div>
-
-          <div class="form-control mt-4">
-            <label class="label">
-              <span class="label-text">Aktivierte Kategorien</span>
-            </label>
-            <div class="flex flex-wrap gap-2">
-              <label
-                v-for="category in availableLogCategories"
-                :key="category.value"
-                class="label cursor-pointer inline-flex items-center p-2 border rounded-lg"
-                :class="
-                  enabledLogCategories.has(category.value)
-                    ? 'border-primary bg-primary/10'
-                    : 'border-base-300'
-                "
-              >
-                <span class="label-text mr-2">{{ category.label }}</span>
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-primary checkbox-sm"
-                  :checked="enabledLogCategories.has(category.value)"
-                  @change="
-                    (e) => {
-                      if (e.target.checked) {
-                        enabledLogCategories.add(category.value);
-                      } else {
-                        enabledLogCategories.delete(category.value);
-                      }
-                    }
-                  "
-                />
-              </label>
-            </div>
-          </div>
-
-          <div class="form-control mt-6 flex-row justify-between">
-            <button
-              class="btn btn-primary"
-              @click="saveLoggerSettings"
-            >
-              <Icon
-                icon="mdi:content-save"
-                class="mr-2"
-              />
-              Speichern
-            </button>
-            <button
-              class="btn btn-outline"
-              @click="exportLoggerDocs"
-            >
-              <Icon
-                icon="mdi:file-download"
-                class="mr-2"
-              />
-              Logger-Dokumentation exportieren
-            </button>
-          </div>
-
-          <div
-            v-if="settingsSaved"
-            class="alert alert-success alert-soft mt-4"
-          >
-            <Icon
-              icon="mdi:check-circle"
-              class="text-lg"
-            />
-            <span>Einstellungen gespeichert</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Logging-Kategorien Erklärung -->
-      <div class="card bg-base-100 shadow-md border border-base-300">
-        <div class="card-body">
-          <h2 class="card-title flex items-center gap-2 text-info">
-            <Icon
-              icon="mdi:information"
-              class="text-xl"
-            />
-            Logging-Kategorien erklärt
-          </h2>
-          <div class="overflow-x-auto">
-            <table class="table table-zebra w-full">
-              <thead>
-                <tr>
-                  <th>Kategorie</th>
-                  <th>Beschreibung</th>
-                  <th>Typische Ereignisse</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><code>store</code></td>
-                  <td>Datenspeicher-Operationen</td>
-                  <td>
-                    Hinzufügen, Aktualisieren und Löschen von Objekten in Stores
-                  </td>
-                </tr>
-                <tr>
-                  <td><code>ui</code></td>
-                  <td>Benutzeroberflächen-Aktionen</td>
-                  <td>Benutzerinteraktionen, UI-Zustandsänderungen</td>
-                </tr>
-                <tr>
-                  <td><code>service</code></td>
-                  <td>Dienst-Operationen</td>
-                  <td>Hintergrundprozesse, Berechnungen, Datenoperationen</td>
-                </tr>
-                <tr>
-                  <td><code>api</code></td>
-                  <td>API-Kommunikation</td>
-                  <td>Externe API-Aufrufe, Antworten und Fehler</td>
-                </tr>
-                <tr>
-                  <td><code>import</code></td>
-                  <td>Datenimport-Prozesse</td>
-                  <td>Datei-Importe, Daten-Parsing, Importfehler</td>
-                </tr>
-                <tr>
-                  <td><code>export</code></td>
-                  <td>Datenexport-Prozesse</td>
-                  <td>Datei-Exporte, Daten-Serialisierung</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p class="mt-4">
-            <strong>Hinweis:</strong> Die Kategorien sind bereits aktiv und
-            werden genutzt, sobald Sie sie in den Logger-Einstellungen
-            aktivieren und das entsprechende Log-Level auswählen.
-          </p>
         </div>
       </div>
     </div>
 
-    <!-- Logs & Änderungshistorie -->
+    <!-- Daten Import/Export -->
     <div
-      v-if="activeTab === 'logs'"
+      v-if="activeTab === 'import-export'"
       class="space-y-6"
     >
+      <!-- Kombinierte Import/Export Card -->
       <div class="card bg-base-100 shadow-md border border-base-300">
         <div class="card-body">
-          <div class="flex justify-between items-center mb-4">
-            <h2 class="card-title">Logs & Änderungshistorie</h2>
-            <div class="flex gap-2">
+          <h2 class="card-title">
+            <Icon
+              icon="mdi:database-import"
+              class="mr-2"
+            />
+            Daten Import & Export
+          </h2>
+          <p class="text-base-content/70 mb-6">
+            Verwalten Sie Ihre Daten durch Import und Export verschiedener
+            Formate.
+          </p>
+
+          <!-- Stammdaten (JSON) Bereich -->
+          <div class="mb-8">
+            <h3 class="text-xl font-semibold mb-4">
+              <Icon
+                icon="mdi:code-json"
+                class="mr-2"
+              />
+              Stammdaten (JSON)
+            </h3>
+            <p class="text-base-content/70 mb-6">
+              Exportieren oder importieren Sie Ihre Stammdaten als JSON-Datei
+              für Backup oder Transfer zwischen Mandanten.
+            </p>
+
+            <!-- JSON Export -->
+            <div class="mb-6">
+              <h4 class="text-lg font-medium mb-3">Export</h4>
+              <div class="form-control mb-4">
+                <label class="label">
+                  <span class="label-text">Datentyp auswählen</span>
+                </label>
+                <select
+                  v-model="selectedExportType"
+                  class="select select-bordered w-full"
+                  :disabled="isExporting"
+                  :class="{ 'select-disabled': isExporting }"
+                >
+                  <option
+                    v-for="type in availableExportTypes"
+                    :key="type.value"
+                    :value="type.value"
+                  >
+                    {{ type.label }}
+                  </option>
+                </select>
+              </div>
+
               <button
-                class="btn btn-sm"
-                @click="loadHistory"
+                class="btn btn-primary"
+                @click="handleExport"
+                :disabled="isExporting"
               >
                 <Icon
-                  icon="mdi:refresh"
-                  class="mr-1"
+                  v-if="!isExporting"
+                  icon="mdi:download"
+                  class="mr-2"
                 />
-                Aktualisieren
+                <Icon
+                  v-else
+                  icon="mdi:loading"
+                  class="mr-2 animate-spin"
+                />
+                {{ isExporting ? "Exportiere..." : "JSON exportieren" }}
               </button>
-              <button
-                class="btn btn-sm btn-outline btn-warning"
-                @click="cleanupHistory"
+
+              <div
+                v-if="exportSuccess"
+                class="alert alert-success alert-soft mt-4"
               >
                 <Icon
-                  icon="mdi:broom"
-                  class="mr-1"
+                  icon="mdi:check-circle"
+                  class="text-lg"
                 />
-                Alte löschen
-              </button>
-              <button
-                class="btn btn-sm btn-outline btn-error"
-                @click="clearHistory"
+                <span
+                  >Export erfolgreich! Die Datei wurde heruntergeladen.</span
+                >
+              </div>
+            </div>
+
+            <!-- JSON Import -->
+            <div>
+              <h4 class="text-lg font-medium mb-3">Import</h4>
+              <p class="text-sm text-base-content/60 mb-4">
+                Importieren Sie zuvor exportierte JSON-Dateien. Wählen Sie
+                zwischen "Zusammenführen" (neue Einträge hinzufügen) oder
+                "Ersetzen" (alle bestehenden Daten löschen).
+              </p>
+
+              <div class="form-control mb-4">
+                <label class="label">
+                  <span class="label-text">JSON-Datei auswählen</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".json"
+                  class="file-input file-input-bordered w-full"
+                  @change="handleFileSelect"
+                  :disabled="isImporting"
+                />
+              </div>
+
+              <div
+                v-if="importSuccess"
+                class="alert alert-success alert-soft mt-4"
               >
                 <Icon
-                  icon="mdi:delete"
-                  class="mr-1"
+                  icon="mdi:check-circle"
+                  class="text-lg"
                 />
-                Alle löschen
-              </button>
+                <span>Import erfolgreich abgeschlossen!</span>
+              </div>
             </div>
           </div>
 
-          <!-- Suchfeld -->
-          <div class="mb-4 flex justify-end">
-            <input
-              v-model="historySearchTerm"
-              type="text"
-              placeholder="Logs durchsuchen..."
-              class="input input-sm input-bordered w-full md:w-80"
-            />
-          </div>
+          <div class="divider"></div>
 
-          <!-- Tabelle -->
-          <div class="overflow-x-auto">
-            <table class="table table-zebra w-full">
-              <thead>
-                <tr>
-                  <th>Zeitstempel</th>
-                  <th>Kategorie</th>
-                  <th>Nachricht</th>
-                  <th>Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="(entry, index) in filteredHistoryEntries"
-                  :key="index"
+          <!-- Gesamter Mandant (SQLite-Datenbank) Bereich -->
+          <div>
+            <h3 class="text-xl font-semibold mb-4">
+              <Icon
+                icon="mdi:database"
+                class="mr-2"
+              />
+              Gesamter Mandant (SQLite-Datenbank)
+            </h3>
+            <p class="text-base-content/70 mb-6">
+              Exportieren Sie Ihre komplette Mandanten-Datenbank als Backup oder
+              importieren Sie eine Datenbank als neuen Mandanten.
+            </p>
+
+            <!-- SQLite Export -->
+            <div class="mb-6">
+              <h4 class="text-lg font-medium mb-3">Export</h4>
+              <p class="text-sm text-base-content/60 mb-4">
+                Erstellt eine vollständige Sicherung Ihrer aktuellen
+                Mandanten-Datenbank.
+              </p>
+
+              <button
+                class="btn btn-primary"
+                @click="handleSqliteExport"
+                :disabled="isSqliteExporting"
+              >
+                <Icon
+                  v-if="!isSqliteExporting"
+                  icon="mdi:download"
+                  class="mr-2"
+                />
+                <Icon
+                  v-else
+                  icon="mdi:loading"
+                  class="mr-2 animate-spin"
+                />
+                {{
+                  isSqliteExporting
+                    ? "Exportiere..."
+                    : "Mandanten-Datenbank exportieren"
+                }}
+              </button>
+
+              <div
+                v-if="sqliteExportSuccess"
+                class="alert alert-success alert-soft mt-4"
+              >
+                <Icon
+                  icon="mdi:check-circle"
+                  class="text-lg"
+                />
+                <span
+                  >Datenbank erfolgreich exportiert! Die Datei wurde
+                  heruntergeladen.</span
                 >
-                  <td>{{ formatTimestamp(entry.timestamp) }}</td>
-                  <td>
-                    <code>{{ entry.category }}</code>
-                  </td>
-                  <td>{{ entry.message }}</td>
-                  <td class="text-right">
-                    <div class="flex justify-end space-x-1">
-                      <button
-                        class="btn btn-ghost btn-xs border-none"
-                        @click="
-                          showAlert(JSON.stringify(entry.details, null, 2))
-                        "
-                      >
-                        <Icon
-                          icon="mdi:information-outline"
-                          class="text-base"
-                        />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <tr v-if="filteredHistoryEntries.length === 0">
-                  <td
-                    colspan="5"
-                    class="text-center py-8"
-                  >
-                    <div class="flex flex-col items-center">
-                      <Icon
-                        icon="mdi:text-box-remove-outline"
-                        class="text-4xl opacity-50 mb-2"
-                      />
-                      <span>Keine passenden Log-Einträge gefunden.</span>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+              </div>
+
+              <div
+                v-if="sqliteExportError"
+                class="alert alert-error alert-soft mt-4"
+              >
+                <Icon
+                  icon="mdi:alert-circle"
+                  class="text-lg"
+                />
+                <span>{{ sqliteExportError }}</span>
+              </div>
+            </div>
+
+            <!-- SQLite Import -->
+            <div>
+              <h4 class="text-lg font-medium mb-3">Import</h4>
+
+              <div class="alert alert-warning alert-soft mb-4">
+                <Icon
+                  icon="mdi:alert"
+                  class="text-lg"
+                />
+                <div>
+                  <strong>Wichtiger Hinweis:</strong> Diese Aktion erstellt
+                  einen <strong>neuen, separaten Mandanten</strong>. Ihre
+                  bestehenden Daten bleiben unverändert. Nach dem Import müssen
+                  Sie sich ab- und wieder anmelden oder den Mandanten wechseln,
+                  um den neuen Mandanten zu sehen.
+                </div>
+              </div>
+
+              <div class="form-control mb-4">
+                <label class="label">
+                  <span class="label-text">SQLite-Datei auswählen</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".sqlite,.db"
+                  class="file-input file-input-bordered w-full"
+                  @change="handleSqliteFileSelect"
+                  :disabled="isSqliteImporting"
+                />
+              </div>
+
+              <div class="form-control mb-4">
+                <label class="label">
+                  <span class="label-text">Neuer Mandantenname</span>
+                </label>
+                <input
+                  type="text"
+                  v-model="newTenantName"
+                  placeholder="Name für den neuen Mandanten eingeben..."
+                  class="input input-bordered w-full"
+                  :disabled="isSqliteImporting"
+                />
+              </div>
+
+              <button
+                class="btn btn-primary"
+                @click="handleSqliteImport"
+                :disabled="
+                  !selectedSqliteFile ||
+                  !newTenantName.trim() ||
+                  isSqliteImporting
+                "
+              >
+                <Icon
+                  v-if="!isSqliteImporting"
+                  icon="mdi:database-import"
+                  class="mr-2"
+                />
+                <Icon
+                  v-else
+                  icon="mdi:loading"
+                  class="mr-2 animate-spin"
+                />
+                {{
+                  isSqliteImporting ? "Importiere..." : "Mandanten importieren"
+                }}
+              </button>
+
+              <div
+                v-if="sqliteImportSuccess"
+                class="alert alert-success alert-soft mt-4"
+              >
+                <Icon
+                  icon="mdi:check-circle"
+                  class="text-lg"
+                />
+                <div>
+                  <strong>Import erfolgreich!</strong> Der neue Mandant wurde
+                  erstellt. Bitte melden Sie sich ab und wieder an oder wechseln
+                  Sie den Mandanten, um den neuen Mandanten zu sehen.
+                </div>
+              </div>
+
+              <div
+                v-if="sqliteImportError"
+                class="alert alert-error alert-soft mt-4"
+              >
+                <Icon
+                  icon="mdi:alert-circle"
+                  class="text-lg"
+                />
+                <span>{{ sqliteImportError }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Alert-Modal -->
+    <!-- Import Modal -->
     <div
-      v-if="showAlertModal"
+      v-if="showImportModal"
       class="modal modal-open"
     >
-      <div class="modal-box">
-        <h3 class="font-bold text-lg">Hinweis</h3>
-        <p class="py-4">{{ alertMessage }}</p>
+      <div class="modal-box max-w-lg">
+        <h3 class="font-bold text-lg mb-4">
+          <Icon
+            icon="mdi:import"
+            class="mr-2"
+          />
+          Import-Modus auswählen
+        </h3>
+
+        <p class="text-base-content/70 mb-6">
+          Datei: <strong>{{ selectedImportFile?.name }}</strong>
+        </p>
+
+        <div class="flex flex-col w-[95%] mx-auto space-y-4 mb-6">
+          <!-- <div class="form-control w-full"> -->
+          <label
+            class="label cursor-pointer p-4 border border-base-300 rounded-lg hover:bg-base-200 transition-colors w-full flex"
+          >
+            <div class="flex-1 w-45">
+              <div class="flex items-center mb-2">
+                <Icon
+                  icon="mdi:merge"
+                  class="mr-2 text-primary"
+                />
+                <strong class="text-base">Zusammenführen</strong>
+              </div>
+              <p class="text-sm text-base-content/70">
+                Neue Einträge hinzufügen, bestehende beibehalten
+              </p>
+            </div>
+            <input
+              type="radio"
+              name="importMode"
+              value="merge"
+              v-model="selectedImportMode"
+              class="radio radio-primary"
+            />
+          </label>
+          <!-- </div> -->
+
+          <!-- <div class="form-control w-full"> -->
+          <label
+            class="label cursor-pointer p-4 border border-base-300 rounded-lg hover:bg-base-200 transition-colors w-full"
+          >
+            <div class="flex-1 w-45">
+              <div class="flex items-center mb-2">
+                <Icon
+                  icon="mdi:database-refresh"
+                  class="mr-2 text-warning"
+                />
+                <strong class="text-base">Ersetzen</strong>
+              </div>
+              <p class="text-sm text-base-content/70">
+                Alle bestehenden Daten löschen und durch<br />importierte
+                ersetzen
+              </p>
+            </div>
+            <input
+              type="radio"
+              name="importMode"
+              value="replace"
+              v-model="selectedImportMode"
+              class="radio radio-primary"
+            />
+          </label>
+          <!-- </div> -->
+        </div>
+
+        <div
+          v-if="importError"
+          class="alert alert-error alert-soft mb-4"
+        >
+          <Icon
+            icon="mdi:alert-circle"
+            class="text-lg"
+          />
+          <span>{{ importError }}</span>
+        </div>
+
         <div class="modal-action">
           <button
-            class="btn"
-            @click="showAlertModal = false"
+            class="btn btn-ghost"
+            @click="closeImportModal"
+            :disabled="isImporting"
           >
-            OK
+            Abbrechen
+          </button>
+          <button
+            class="btn btn-primary"
+            @click="handleImport"
+            :disabled="isImporting"
+          >
+            <Icon
+              v-if="!isImporting"
+              icon="mdi:import"
+              class="mr-2"
+            />
+            <Icon
+              v-else
+              icon="mdi:loading"
+              class="mr-2 animate-spin"
+            />
+            {{ isImporting ? "Importiere..." : "Importieren" }}
           </button>
         </div>
       </div>
-      <div
-        class="modal-backdrop"
-        @click="showAlertModal = false"
-      ></div>
     </div>
   </div>
 </template>
