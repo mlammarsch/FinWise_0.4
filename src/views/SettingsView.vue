@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useSessionStore } from "@/stores/sessionStore";
+import { useWebSocketStore } from "@/stores/webSocketStore";
 import { LogLevel } from "@/utils/logger";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import {
@@ -17,19 +20,26 @@ import {
 // State
 const activeTab = ref("general");
 
-// SettingsStore
+// Router und Stores
+const router = useRouter();
 const settingsStore = useSettingsStore();
+const session = useSessionStore();
+const webSocketStore = useWebSocketStore();
 const logLevel = computed({
   get: () => settingsStore.logLevel,
   set: (value) => {
-    debugLog('[settings]', 'LogLevel wird geändert', {
+    debugLog("[settings]", "LogLevel wird geändert", {
       oldValue: settingsStore.logLevel,
-      newValue: value
+      newValue: value,
     });
     settingsStore.logLevel = value;
     // Explizit speichern nach Änderung
-    settingsStore.saveToStorage().catch(error => {
-      errorLog('[settings]', 'Fehler beim Speichern nach LogLevel-Änderung', error);
+    settingsStore.saveToStorage().catch((error) => {
+      errorLog(
+        "[settings]",
+        "Fehler beim Speichern nach LogLevel-Änderung",
+        error
+      );
     });
   },
 });
@@ -235,15 +245,36 @@ async function handleSqliteImport() {
     sqliteImportSuccess.value = true;
     infoLog(
       "[settings]",
-      `SQLite-Import erfolgreich abgeschlossen für Mandant: ${newTenantName.value}`
+      `SQLite-Import erfolgreich abgeschlossen für Mandant: ${newTenantName.value}. User wird automatisch abgemeldet.`
     );
 
     // Formular vollständig zurücksetzen
     resetSqliteImportForm();
 
-    setTimeout(() => {
-      sqliteImportSuccess.value = false;
-    }, 5000);
+    // Nach erfolgreichem Import automatisch abmelden
+    setTimeout(async () => {
+      try {
+        // WebSocket-Store zurücksetzen
+        webSocketStore.reset();
+
+        // User-Session löschen
+        await session.logout();
+
+        // Zur Login-Seite weiterleiten
+        router.push("/login");
+
+        infoLog(
+          "[settings]",
+          "User nach SQLite-Import automatisch abgemeldet und zur Login-Seite weitergeleitet"
+        );
+      } catch (error) {
+        errorLog(
+          "[settings]",
+          "Fehler beim automatischen Logout nach SQLite-Import",
+          error
+        );
+      }
+    }, 2000); // 2 Sekunden warten, damit der User die Erfolgsmeldung sehen kann
   } catch (error) {
     sqliteImportError.value =
       error instanceof Error ? error.message : "Unbekannter Fehler beim Import";
@@ -525,9 +556,9 @@ onMounted(() => {
                 <div>
                   <strong>Wichtiger Hinweis:</strong> Diese Aktion erstellt
                   einen <strong>neuen, separaten Mandanten</strong>. Ihre
-                  bestehenden Daten bleiben unverändert. Nach dem Import müssen
-                  Sie sich ab- und wieder anmelden oder den Mandanten wechseln,
-                  um den neuen Mandanten zu sehen.
+                  bestehenden Daten bleiben unverändert. Nach dem Import werden
+                  Sie automatisch abgemeldet und müssen sich neu anmelden, um
+                  den neuen Mandanten zu sehen.
                 </div>
               </div>
 
@@ -591,8 +622,8 @@ onMounted(() => {
                 />
                 <div>
                   <strong>Import erfolgreich!</strong> Der neue Mandant wurde
-                  erstellt. Bitte melden Sie sich ab und wieder an oder wechseln
-                  Sie den Mandanten, um den neuen Mandanten zu sehen.
+                  erstellt. Sie werden automatisch abgemeldet und müssen sich
+                  neu anmelden, um den neuen Mandanten zu sehen.
                 </div>
               </div>
 
