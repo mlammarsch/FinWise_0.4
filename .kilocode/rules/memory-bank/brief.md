@@ -1,94 +1,78 @@
-## Briefing: Entwicklung einer Haushaltsfinanzplanungs-App
+# FinWise - Projektgrundlagen
 
-**1. Projektname:** FinWise: Dein smarter Finanzassistent
+## Projektname
+**FinWise: Dein smarter Finanzassistent**
 
-**2. Projektbeschreibung:**
+## Projektbeschreibung
+Umfassende Haushaltsfinanzplanungs- und Haushaltskassenführungs-App mit Offline-Funktionalität und Synchronisation mit einem Backend-Server. Die App ermöglicht es Benutzern, ihre Finanzen detailliert zu verwalten, Budgets zu erstellen und ihre Ausgaben zu kategorisieren.
 
-Entwicklung einer umfassenden Haushaltsfinanzplanungs- und Haushaltskassenführungs-App mit Offline-Funktionalität und Synchronisation mit einem Backend-Server. Die App ermöglicht es Benutzern, ihre Finanzen detailliert zu verwalten, Budgets zu erstellen und ihre Ausgaben zu kategorisieren. Sie bietet auch Prognosefunktionen und Automatisierungsmöglichkeiten für wiederkehrende Transaktionen.
+## Hauptfunktionen
 
-**3. Zielgruppe:**
+### Kernfunktionen
+- **Kontoverwaltung**: Hinzufügen, Bearbeiten und Anzeigen von Konten
+- **Transaktionsverwaltung**: Vollständige CRUD-Operationen für Finanztransaktionen
+- **Budgetverwaltung**: Erstellung und Verwaltung von Budgets für verschiedene Kategorien
+- **Kategorien- und Tagsverwaltung**: Definieren und Zuweisen von Kategorien und Tags zu Transaktionen
+- **Regelverwaltung**: Automatisches Kategorisieren von Transaktionen basierend auf definierten Regeln
+- **Regelbuchungen**: Erstellung automatischer Buchungen (z.B. monatliche Miete) in definierten Zeitintervallen
+- **Kontoprognose**: Vorhersage der Kontostände basierend auf vergangenen Transaktionen und geplanten Buchungen
 
-*   Privatpersonen, die ihre Finanzen effizient planen und verwalten möchten.
-*   Benutzer, die Wert auf eine detaillierte Kategorisierung und Analyse ihrer Ausgaben legen.
-*   Benutzer, die eine Offline-Funktionalität wünschen, um ihre Finanzen auch ohne Internetverbindung zu verwalten.
+### Erweiterte Funktionen
+- **User- und Mandantenverwaltung**: Benutzer-Authentifizierung und -Registrierung, Erstellung und Verwaltung von Mandanten (getrennte Datenbanken pro Mandant)
+- **Offline-Bearbeitung**: Vollständige Funktionalität der App auch ohne Internetverbindung
+- **Bidirektionale Synchronisation**: Synchronisation von Daten zwischen Frontend und Backend bei bestehender Internetverbindung
+- **Im- und Exportfunktionalität**: CSV Import von Transaktionen, Stammdaten können gezielt ex- und importiert werden
 
-**4. Hauptfunktionen:**
+## Technische Spezifikationen
 
-*   **Kontoverwaltung:** Hinzufügen, Bearbeiten und Anzeigen von Konten.
-*   **Budgetverwaltung:** Erstellung und Verwaltung von Budgets für verschiedene Kategorien.
-*   **Kategorien- und Tagsverwaltung:** Definieren und Zuweisen von Kategorien und Tags zu Transaktionen.
-*   **Regelverwaltung:** Automatisches Kategorisieren von Transaktionen basierend auf definierten Regeln.
-*   **Regelbuchungen:** Erstellung automatischer Buchungen (z.B. monatliche Miete) in definierten Zeitintervallen.
-*   **Kontoprognose:** Vorhersage der Kontostände basierend auf vergangenen Transaktionen und geplanten Buchungen.
-*   **User- und Mandantenverwaltung:**
-    *   Benutzer-Authentifizierung und -Registrierung.
-    *   Erstellung und Verwaltung von Mandanten (getrennte Datenbanken pro Mandant).
-*   **Offline-Bearbeitung:** Vollständige Funktionalität der App auch ohne Internetverbindung.
-*   **Bidirektionale Synchronisation:**
-    *   Synchronisation von Daten zwischen Frontend und Backend bei bestehender Internetverbindung.
-    *   Erstellung einer Task-Queue für Offline-Änderungen, die automatisch bei Verbindung synchronisiert werden.
+### Frontend
+- **Pfad**: `../FinWise_0.4` (aktuelles Arbeitsverzeichnis)
+- **Technologie**: Vite, Vue.js 3 mit TypeScript und Composition API
+- **Lokale Datenspeicherung**: IndexedDB mit Dexie.js
+- **State Management**: Pinia
+- **UI Framework**: DaisyUI + Tailwind CSS
 
-**5. Technische Spezifikationen:**
+### Backend
+- **Pfad**: `../FinWise_0.4_BE`
+- **Technologie**: FastAPI (Python)
+- **Datenbank**: SQLite (getrennte Datenbanken für User-Mandanten-Informationen und pro Mandant)
+- **Authentifizierung**: Bcrypt für Passwortverschlüsselung, JWT-Token
+- **Kommunikation**: WebSockets und direkte API Endpunkte
 
-*   **Frontend:**
-    *   Technologie: Vite, Vue.js mit TypeScript
-    *   Lokale Datenspeicherung: IndexedDB mit Dexie.js
-*   **Backend:**
-    *   Technologie: FastAPI (Python)
-    *   Datenbank: SQLite (getrennte Datenbanken für User-Mandanten-Informationen und pro Mandant).
-    *   Authentifizierung: Bcrypt für Passwortverschlüsselung
-    *   Kommunikation Frontend/Backend: Websockets und direkte API Endpunkte.
-*   **Authentifizierung:** Verwendung von Token-basierter Authentifizierung zwischen Frontend und Backend.
+## Projektstruktur
 
-**6. Non-functional Requirements:**
+### Frontend-Struktur
+```
+src/
+├── components/          # Wiederverwendbare Vue-Komponenten
+├── layouts/            # Layout-Komponenten
+├── router/             # Vue Router Konfiguration
+├── services/           # Business Logic und API-Services
+├── stores/             # Pinia Stores
+├── types/              # TypeScript-Definitionen
+├── utils/              # Hilfsfunktionen
+└── views/              # Hauptansichten/Seiten
+```
 
-*   **Performance:** Die App soll flüssig und reaktionsschnell sein, sowohl online als auch offline.
-*   **Sicherheit:** Hohe Sicherheitsstandards bei der Speicherung von sensiblen Finanzdaten.
-*   **Benutzerfreundlichkeit:** Intuitive Bedienung und ansprechendes Design.
-*   **Skalierbarkeit:** Das System soll in der Lage sein, eine wachsende Anzahl von Benutzern und Mandanten zu unterstützen.
-*   **Plattformen:** Web-App (responsive Design für Desktop und mobile Geräte).
+### Backend-Struktur
+```
+app/
+├── api/                # API-Endpunkte
+├── core/               # Kernkonfiguration
+├── db/                 # Datenbankmodelle und -konfiguration
+├── services/           # Business Logic Services
+└── utils/              # Hilfsfunktionen
+```
 
-**7. Aktueller Implementierungsstand:**
+## Non-functional Requirements
+- **Performance**: Flüssige und reaktionsschnelle App, sowohl online als auch offline
+- **Sicherheit**: Hohe Sicherheitsstandards bei der Speicherung von sensiblen Finanzdaten
+- **Benutzerfreundlichkeit**: Intuitive Bedienung und ansprechendes Design
+- **Skalierbarkeit**: Unterstützung für wachsende Anzahl von Benutzern und Mandanten
+- **Plattformen**: Web-App (responsive Design für Desktop und mobile Geräte)
 
-*   ✅ **Vollständige bidirektionale Synchronisation für Accounts und AccountGroups**
-*   ✅ **WebSocket-basierte Echtzeit-Updates zwischen Frontend und Backend**
-*   ✅ **IndexedDB-Migration abgeschlossen** (von localStorage zu IndexedDB mit Dexie.js)
-*   ✅ **Multi-Tenant-System mit strikter Datentrennung**
-*   ✅ **Offline-First-Architektur mit Sync-Queue-System**
-*   ✅ **Last-Write-Wins Konfliktlösung implementiert**
-*   ✅ **Umfassende Testing-Infrastruktur** (26 Integration Tests für Sync-Funktionalität)
-*   ✅ **Token-basierte Authentifizierung zwischen Frontend und Backend**
-*   ✅ **Planning-Funktionalität vollständig implementiert** (PlanningService, PlanningStore, IndexedDB-Integration)
-*   ✅ **Komplexe Recurrence-Engine** mit Weekend-Handling und Transfer-Logic
-*   ✅ **Auto-Execution für fällige Planungstransaktionen**
-*   ✅ **Sync-Acknowledgment-System vollständig implementiert** (ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung)
-*   ✅ **Erweiterte Entitäts-Synchronisation** für Categories, Tags, Recipients, AutomationRules
-
-**8. Zu erledigende Aufgaben (High-Level):**
-
-*   **Planning-Synchronisation**: Integration von PlanningTransactions in WebSocket-Service
-*   **Transaction-Synchronisation**: Erweitern der bidirektionalen Synchronisation auf Transactions
-*   **Performance-Optimierungen**: Paginierung, Batch-Operationen, WebSocket-Optimierung
-*   **Initial Data Load Optimierung**: Effizienter Bulk-Transfer für neue Clients
-*   **WebSocket-Reconnection**: Robuste Verbindungswiederherstellung
-*   **Produktionsreife**: Umfassende End-to-End-Tests, Deployment-Pipeline
-
-**9. Besondere Anforderungen:**
-
-*   Die Offline-Funktionalität und die bidirektionale Synchronisation sind kritische Erfolgsfaktoren für dieses Projekt.
-*   Die Sicherheit der Finanzdaten hat höchste Priorität.
-*   Eine klare Trennung der Daten zwischen den Mandanten ist essenziell.
-
-**10. Nächste Schritte:**
-
-*   Planning-WebSocket-Integration finalisieren
-*   Transaction-Synchronisation als nächste kritische Entität implementieren
-*   Performance-Optimierungen für große Datenmengen
-*   Initial Data Load für schnelleren App-Start optimieren
-*   Monitoring und Metriken für Sync-Performance implementieren
-
-**11. Erfolgreiche Problemlösungen:**
-
-*   ✅ **Problem 1: Inkonsistente Synchronisation** - Vollständig gelöst durch LWW-Konfliktlösung und einheitliche Sync-Patterns
-*   ✅ **Problem 2: Fehlende Sync-Bestätigungen** - Vollständig gelöst durch ACK/NACK-System mit automatischer Queue-Bereinigung
-*   ✅ **Problem 3: Testing-Infrastruktur** - Vollständig implementiert mit 26 Integration Tests und Mock-Architektur
+## Entwicklungsrichtlinien
+- **Offline-First**: Vollständige Funktionalität ohne Internetverbindung
+- **Multi-Tenant**: Strikte Datenisolation zwischen Mandanten
+- **IndexedDB-basiert**: Moderne Datenpersistierung für Performance und Skalierbarkeit
+- **Sync-Integration**: Nahtlose bidirektionale Synchronisation mit Backend

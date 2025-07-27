@@ -1,211 +1,101 @@
-# FinWise: Dein smarter Finanzassistent
+# FinWise - Produktvision
 
-## Warum existiert dieses Projekt?
+## Warum FinWise existiert
 
-FinWise löst das Problem der ineffizienten und unübersichtlichen Haushaltsfinanzplanung für Privatpersonen. Viele Menschen haben Schwierigkeiten dabei:
+### Problemstellung
+Viele Menschen haben Schwierigkeiten, ihre persönlichen Finanzen effektiv zu verwalten:
+- **Unübersichtliche Ausgaben**: Schwierigkeiten beim Nachvollziehen, wofür Geld ausgegeben wurde
+- **Fehlende Budgetkontrolle**: Keine klare Übersicht über verfügbare Mittel in verschiedenen Kategorien
+- **Manuelle Kategorisierung**: Zeitaufwändige manuelle Zuordnung von Transaktionen
+- **Offline-Limitierungen**: Bestehende Lösungen funktionieren nicht ohne Internetverbindung
+- **Komplexe Tools**: Viele Finanztools sind zu komplex oder nicht benutzerfreundlich
 
-- Ihre Finanzen detailliert zu verwalten und zu kategorisieren
-- Budgets zu erstellen und einzuhalten
-- Ausgaben zu prognostizieren und zu planen
-- Ihre Finanzen auch ohne Internetverbindung zu verwalten
-- Automatisierte Regeln für wiederkehrende Transaktionen zu nutzen
+### Zielgruppe
+- **Privatpersonen** mit dem Wunsch nach besserer Finanzkontrolle
+- **Haushalte** die gemeinsam ihre Finanzen verwalten möchten
+- **Kleine Unternehmen** mit einfachen Buchhaltungsanforderungen
+- **Nutzer mit unregelmäßiger Internetverbindung** die Offline-Funktionalität benötigen
 
-## Welche Probleme löst es?
+## Wie FinWise das Problem löst
 
-### Hauptprobleme:
-1. **Fehlende Offline-Funktionalität**: Bestehende Finanzapps erfordern meist eine ständige Internetverbindung
-2. **Unzureichende Kategorisierung**: Schwierige oder unflexible Kategorisierung von Ausgaben
-3. **Keine Automatisierung**: Manuelle Eingabe wiederkehrender Transaktionen
-4. **Fehlende Prognosen**: Keine Vorhersage zukünftiger Kontostände
-5. **Komplexe Mandantenverwaltung**: Schwierige Trennung verschiedener Haushalte oder Geschäftsbereiche
+### Kernlösung: Offline-First Finanzmanagement
+FinWise bietet eine vollständig funktionsfähige Finanzmanagement-App, die auch ohne Internetverbindung arbeitet und sich automatisch synchronisiert, sobald eine Verbindung verfügbar ist.
 
-### Lösungsansätze:
-- **Offline-First-Architektur** mit bidirektionaler Synchronisation
-- **Flexible Kategorien und Tags** für detaillierte Ausgabenanalyse
-- **Automatische Regeln** für wiederkehrende Transaktionen
-- **Kontoprognosen** basierend auf historischen Daten und geplanten Buchungen
-- **Multi-Tenant-Architektur** für saubere Datentrennung
+### Hauptmerkmale der Lösung
 
-## Wie soll es funktionieren?
+#### 1. Intelligente Automatisierung
+- **Regelbasierte Kategorisierung**: Automatische Zuordnung von Transaktionen basierend auf Empfänger, Betrag oder Beschreibung
+- **Wiederkehrende Buchungen**: Automatische Erstellung regelmäßiger Transaktionen (Miete, Gehalt, etc.)
+- **Smart-Import**: CSV-Import mit intelligenter Empfängererkennung und -zuordnung
 
-### Kernfunktionalitäten:
+#### 2. Offline-First Architektur
+- **Vollständige Offline-Funktionalität**: Alle Features funktionieren ohne Internetverbindung
+- **Automatische Synchronisation**: Nahtlose Datensynchronisation bei verfügbarer Verbindung
+- **Konfliktauflösung**: Last-Write-Wins Strategie für Datenkonflikt
 
-#### 1. Kontoverwaltung
-- Hinzufügen, Bearbeiten und Anzeigen von Konten verschiedener Typen (Giro, Spar, Kredit, Bargeld)
-- Gruppierung von Konten für bessere Organisation
-- Saldo-Tracking mit Kreditlimits und Offsets
+#### 3. Intuitive Benutzerführung
+- **Moderne UI**: Responsive Design mit DaisyUI und Tailwind CSS
+- **Klare Navigation**: Strukturierte Menüführung für alle Hauptfunktionen
+- **Visuelle Feedback**: Sofortige Rückmeldung über Sync-Status und Datenänderungen
 
-#### 2. Budget- und Kategorieverwaltung
-- Flexible Kategorienstruktur mit Gruppen
-- Budgetplanung pro Kategorie
-- Überwachung von geplanten vs. tatsächlichen Ausgaben
-- Kategorieübertragungen zwischen Budgets
+## Wie die App funktionieren soll
 
-#### 3. Transaktionsmanagement
-- Erfassung aller Ein- und Ausgaben
-- Automatische Kategorisierung durch Regeln
-- Import von CSV-Dateien
-- Verschiedene Transaktionstypen (Ausgaben, Einnahmen, Kontoübertragungen, Kategorieübertragungen)
+### Benutzerfluss: Neue Transaktion
+1. **Eingabe**: Benutzer gibt Transaktionsdetails ein (Betrag, Empfänger, Datum)
+2. **Automatisierung**: System schlägt Kategorie basierend auf Regeln vor
+3. **Speicherung**: Transaktion wird sofort in IndexedDB gespeichert
+4. **Sync-Queue**: Änderung wird zur Synchronisation vorgemerkt
+5. **Synchronisation**: Bei verfügbarer Verbindung automatische Übertragung zum Backend
 
-#### 4. Planungs- und Prognosefunktionen (✅ Vollständig implementiert)
-- **Regelbuchungen für wiederkehrende Transaktionen** mit komplexer Recurrence-Engine
-- **Kontoprognosen** basierend auf historischen Daten und Planungstransaktionen
-- **Verschiedene Wiederholungsmuster** (täglich, wöchentlich, monatlich, quartalsweise, jährlich)
-- **Weekend-Handling** mit intelligenter Datumsverschiebung
-- **Transfer-Planungen** mit automatischen Gegenbuchungen
-- **Auto-Execution** für fällige Planungstransaktionen
-- **Approximative Beträge und Bereiche** für flexible Planung
-- **Forecast-System** für automatische Prognoseberechnung
+### Benutzerfluss: Budget-Überwachung
+1. **Budget-Setup**: Benutzer definiert monatliche Budgets für Kategorien
+2. **Live-Tracking**: Ausgaben werden automatisch vom verfügbaren Budget abgezogen
+3. **Warnungen**: Visuelle Hinweise bei Budgetüberschreitungen
+4. **Prognosen**: Vorhersage der Kontostände basierend auf Ausgabenmustern
 
-#### 5. Automatisierung durch Regeln
-- Bedingungsbasierte Regeln für automatische Kategorisierung
-- Verschiedene Bedingungstypen (Konto, Empfänger, Betrag, Datum, Beschreibung)
-- Aktionen wie Kategorie setzen, Tags hinzufügen, Notizen setzen
+### Benutzerfluss: Multi-Tenant Verwaltung
+1. **Mandanten-Auswahl**: Benutzer wählt aktiven Mandanten (Haushalt/Unternehmen)
+2. **Datenisolation**: Vollständige Trennung der Daten zwischen Mandanten
+3. **Mandanten-Wechsel**: Nahtloser Wechsel zwischen verschiedenen Finanzbereichen
 
-#### 6. Offline-Funktionalität
-- Vollständige App-Funktionalität ohne Internetverbindung
-- Lokale Datenspeicherung in IndexedDB mit Dexie.js
-- Sync-Queue für Offline-Änderungen
-- Automatische Synchronisation bei Verbindung
+## Benutzererfahrung-Ziele
 
-## User Experience Ziele
+### Performance-Ziele
+- **Schnelle Reaktionszeiten**: < 100ms für lokale Operationen
+- **Effiziente Synchronisation**: Batch-Updates für bessere Performance
+- **Skalierbarkeit**: Unterstützung für tausende von Transaktionen
 
-### Benutzerfreundlichkeit:
-- **Intuitive Bedienung** mit modernem, responsivem Design
-- **Schnelle Dateneingabe** durch intelligente Vorschläge und Automatisierung
-- **Klare Visualisierung** von Finanzdaten durch Charts und Übersichten
-- **Flexible Navigation** zwischen verschiedenen Ansichten
+### Benutzerfreundlichkeit
+- **Intuitive Bedienung**: Selbsterklärende Benutzeroberfläche
+- **Minimaler Aufwand**: Automatisierung reduziert manuelle Eingaben
+- **Flexibilität**: Anpassbare Kategorien, Regeln und Budgets
 
-### Performance:
-- **Flüssige Bedienung** sowohl online als auch offline
-- **Schnelle Synchronisation** ohne Datenverlust
-- **Effiziente Datenverarbeitung** auch bei großen Datenmengen
-
-### Sicherheit:
-- **Sichere Authentifizierung** mit Token-basiertem System
-- **Datenschutz** durch Mandantentrennung
-- **Verschlüsselte Kommunikation** zwischen Frontend und Backend
-
-### Zuverlässigkeit:
-- **Robuste Synchronisation** mit Konfliktlösung (Last Write Wins) ✅ Implementiert
-- **Sync-Acknowledgment-System** mit ACK/NACK-Nachrichten ✅ Vollständig implementiert
-- **Datenintegrität** durch konsistente Validierung ✅ Implementiert
-- **Fehlerbehandlung** mit graceful Fallbacks und Retry-Mechanismen ✅ Implementiert
-
-## Zielgruppen
-
-### Primäre Zielgruppe:
-- **Privatpersonen** die ihre Haushaltsfinanzen aktiv verwalten möchten
-- **Technikaffine Nutzer** die Wert auf Offline-Funktionalität legen
-- **Detailorientierte Planer** die umfassende Kategorisierung und Analyse wünschen
-
-### Sekundäre Zielgruppe:
-- **Kleine Haushalte/WGs** die gemeinsame Finanzen verwalten
-- **Freiberufler** die private und geschäftliche Finanzen trennen möchten
-- **Finanzberater** die ihren Kunden ein Tool zur Verfügung stellen möchten
+### Zuverlässigkeit
+- **Datensicherheit**: Lokale Speicherung mit Backend-Backup
+- **Offline-Robustheit**: Vollständige Funktionalität ohne Internetverbindung
+- **Sync-Integrität**: Zuverlässige Datensynchronisation ohne Verluste
 
 ## Erfolgsmetriken
 
-### Technische Metriken:
-- **Sync-Zuverlässigkeit**: Erfolgsrate der bidirektionalen Synchronisation
-- **Offline-Performance**: App-Responsivität ohne Internetverbindung
-- **Datenintegrität**: Konsistenz zwischen Frontend und Backend
-- **Fehlerrate**: Anteil fehlgeschlagener Sync-Operationen
+### Technische Metriken
+- **Offline-Verfügbarkeit**: 100% der Kernfunktionen offline verfügbar
+- **Sync-Erfolgsrate**: > 99% erfolgreiche Synchronisationen
+- **Performance**: < 2s Ladezeit für 1000 Transaktionen
 
-### Benutzer-Metriken:
-- **Benutzerengagement**: Regelmäßige Nutzung der App (täglich/wöchentlich)
-- **Datenqualität**: Vollständigkeit und Genauigkeit der erfassten Transaktionen
-- **Offline-Nutzung**: Anteil der Nutzer, die die Offline-Funktionalität aktiv nutzen
-- **Automatisierung**: Anteil automatisch kategorisierter Transaktionen
-- **Budgeteinhaltung**: Verbesserung der Budgetdisziplin der Nutzer
+### Benutzermetriken
+- **Automatisierungsgrad**: > 80% der Transaktionen automatisch kategorisiert
+- **Benutzerengagement**: Regelmäßige Nutzung der Budget- und Planungsfunktionen
+- **Fehlerrate**: < 1% Datenverlust oder Synchronisationsfehler
 
-## Aktueller Implementierungsstand
+## Langfristige Vision
 
-### ✅ Vollständig implementiert:
-- **Account/AccountGroup-Management** mit bidirektionaler Synchronisation
-- **Multi-Tenant-Architektur** mit strikter Datentrennung
-- **Offline-First-Funktionalität** mit IndexedDB-Persistierung
-- **WebSocket-basierte Echtzeit-Updates**
-- **Last-Write-Wins Konfliktlösung**
-- **Planning-Funktionalität** mit komplexer Recurrence-Engine, Transfer-Handling und Auto-Execution
-- **Sync-Acknowledgment-System** mit ACK/NACK-Nachrichten für zuverlässige Queue-Verarbeitung
-- **Erweiterte Entitäts-Synchronisation** für Categories, Tags, Recipients, AutomationRules
+### Erweiterungsmöglichkeiten
+- **Mobile Apps**: Native iOS/Android Apps mit derselben Offline-First Architektur
+- **Erweiterte Analytics**: Detaillierte Ausgabenanalysen und Trends
+- **Integration**: Anbindung an Banken-APIs für automatischen Transaktionsimport
+- **Collaboration**: Erweiterte Multi-User-Funktionen für Haushalte und Teams
 
-### 🔄 In aktiver Entwicklung:
-- **Planning-Synchronisation** - Integration von PlanningTransactions in WebSocket-Service
-- **Transaction-Synchronisation** - Erweitern der bidirektionalen Synchronisation auf Transactions
-- **Performance-Optimierungen** - Batch-Operationen und Paginierung für große Datenmengen
-- **WebSocket-Reconnection-Optimierung** - Robuste Verbindungswiederherstellung
-
-### 📋 Geplant:
-- **Initial Data Load Optimierung** - Effizienter Bulk-Transfer für neue Clients
-- **CSV-Import** mit Sync-Integration
-- **Erweiterte Statistiken und Reporting**
-- **Performance-Monitoring** und Metriken-Dashboard
-- **Multi-User-Support** pro Mandant (langfristig)
-
-## Technische Erfolge
-
-### ✅ Problem 1: Inkonsistente Synchronisation (Vollständig gelöst)
-- **LWW-Konfliktlösung**: Last-Write-Wins basierend auf updated_at Timestamps
-- **Einheitliche Sync-Queue**: Alle Entitäten nutzen konsistente Sync-Patterns
-- **Robuste Offline/Online-Synchronisation**: Zuverlässige Datenübertragung
-
-### ✅ Problem 2: Fehlende Sync-Bestätigungen (Vollständig gelöst)
-- **ACK/NACK-System**: Vollständige WebSocket-basierte Bestätigungen
-- **Automatische Queue-Bereinigung**: Einträge werden nach ACK entfernt
-- **Retry-Mechanismen**: Exponential backoff bei NACK-Nachrichten
-- **Stuck-Processing-Recovery**: Automatisches Zurücksetzen hängender Einträge
-
-### ✅ Problem 3: Testing-Infrastruktur (Vollständig implementiert)
-- **26 Integration Tests**: Vollständige Validierung der Sync-Pipeline
-- **Mock-Architektur**: Isolierte Tests ohne Backend-Abhängigkeiten
-- **Performance-Validierung**: Latenz, Error-Recovery, Memory-Management
-
-## Nächste Meilensteine
-
-### Kurzfristig (1-2 Wochen):
-1. **Planning-WebSocket-Integration finalisieren** - Vollständige Integration in WebSocket-Service
-2. **Transaction-Synchronisation implementieren** - Kritisch für Kernfunktionalität
-3. **Performance-Optimierungen** - Paginierung und Batch-Operationen
-
-### Mittelfristig (1-2 Monate):
-1. **Initial Data Load optimieren** - Effizienter Bulk-Transfer
-2. **Monitoring implementieren** - Metriken für Sync-Performance
-3. **CSV-Import mit Sync-Integration** - Erweiterte Datenimport-Funktionalität
-
-### Langfristig (3-6 Monate):
-1. **Multi-User-Support** - Mehrere Benutzer pro Mandant
-2. **Produktionsreife** - Deployment-Pipeline und Monitoring
-3. **Erweiterte Features** - Advanced Analytics und Reporting
-
-## Architektonische Stärken
-
-### Offline-First Design:
-- **IndexedDB-Integration**: Vollständige lokale Persistierung mit Dexie.js
-- **Sync-Queue-System**: Zuverlässige Offline-Änderungsverfolgung
-- **Graceful Degradation**: App funktioniert vollständig ohne Internetverbindung
-
-### Skalierbare Architektur:
-- **Multi-Tenant-System**: Strikte Datentrennung zwischen Mandanten
-- **Event-Driven Sync**: WebSocket-basierte Echtzeit-Updates
-- **Modular aufgebaut**: Klare Trennung zwischen UI, Business Logic und Persistierung
-
-### Robuste Synchronisation:
-- **Last-Write-Wins**: Einfache aber effektive Konfliktlösung
-- **ACK/NACK-System**: Zuverlässige Bestätigung aller Sync-Operationen
-- **Retry-Mechanismen**: Exponential backoff verhindert Server-Überlastung
-
-## Qualitätssicherung
-
-### Testing-Strategie:
-- **Unit Tests**: Isolierte Tests für einzelne Komponenten
-- **Integration Tests**: End-to-End-Tests für kritische Sync-Szenarien
-- **Mock-Driven Development**: Vollständige Isolation für zuverlässige Tests
-- **Performance-Tests**: Validierung von Latenz und Memory-Management
-
-### Code-Qualität:
-- **TypeScript**: Strikte Typisierung für bessere Entwicklererfahrung
-- **Self-documenting Code**: Sprechende Methodennamen und klare Strukturen
-- **Konsistente Patterns**: Einheitliche Implementierung in allen Stores
-- **Umfassende Logging**: Detaillierte Logs für Debugging und Monitoring
+### Technische Evolution
+- **Cloud-Sync**: Optionale Cloud-Synchronisation für Geräte-übergreifende Nutzung
+- **AI-Features**: Intelligente Ausgabenvorhersagen und Budgetempfehlungen
+- **Advanced Reporting**: Umfangreiche Berichte und Exportfunktionen
