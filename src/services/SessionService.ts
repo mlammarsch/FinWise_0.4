@@ -19,10 +19,18 @@ export const SessionService = {
     router.beforeEach(async (to, _from, next) => {
       const session = useSessionStore();
 
+      debugLog('SessionService', 'setupGuards: Start', { currentUserId: session.currentUserId, currentTenantId: session.currentTenantId });
       if (!session.currentUserId) {
+        debugLog('SessionService', 'setupGuards: currentUserId nicht vorhanden, lade Session...');
         await session.loadSession();
+        debugLog('SessionService', 'setupGuards: Session geladen', { currentUserId: session.currentUserId, currentTenantId: session.currentTenantId });
       } else {
-        // Initialisiere Settings für angemeldeten Benutzer
+        debugLog('SessionService', 'setupGuards: currentUserId vorhanden, initialisiere Benutzereinstellungen...');
+      }
+
+      // Initialisiere Settings für angemeldeten Benutzer (nach dem Laden der Session)
+      if (session.currentUserId) {
+        debugLog('SessionService', 'setupGuards: Initialisiere Benutzereinstellungen nach Session-Laden...');
         await this.initializeUserSettings();
       }
 
@@ -36,12 +44,15 @@ export const SessionService = {
       }
 
       if (!session.currentTenantId) {
+        debugLog('SessionService', 'setupGuards: currentTenantId nicht vorhanden, prüfe Tenant-Auswahl...');
         const ok = TenantService.ensureTenantSelected();
         if (!ok) {
           if (!isTenantRoute) {
             debugLog('SessionService', 'redirect → /tenant-select', { target: to.path });
             return next({ path: '/tenant-select' });
           }
+        } else {
+          debugLog('SessionService', 'setupGuards: Tenant ausgewählt, aber currentTenantId noch nicht gesetzt. Dies sollte nicht passieren.');
         }
       }
 
@@ -100,20 +111,25 @@ export const SessionService = {
    */
   async initializeUserSettings() {
     try {
+      debugLog('SessionService', 'initializeUserSettings: Start');
       const settingsStore = useSettingsStore();
       await settingsStore.initializeForUser();
-      debugLog('SessionService', 'Settings für Benutzer initialisiert');
+      debugLog('SessionService', 'initializeUserSettings: Settings für Benutzer initialisiert');
 
       // Logo-Cache laden wenn Mandant bereits ausgewählt ist
       // WICHTIG: Warten bis accountStore.reset() abgeschlossen ist
       const sessionStore = useSessionStore();
+      debugLog('SessionService', 'initializeUserSettings: Prüfe auf currentTenantId für Logo-Preloading', { currentTenantId: sessionStore.currentTenantId });
       if (sessionStore.currentTenantId) {
         // Warte kurz, damit DataService.reloadTenantData() die Stores laden kann
+        debugLog('SessionService', 'initializeUserSettings: Warte 100ms für DataService.reloadTenantData()...');
         await new Promise(resolve => setTimeout(resolve, 100));
         await this.preloadLogosForTenant();
       }
+      debugLog('SessionService', 'initializeUserSettings: Ende');
     } catch (error) {
       errorLog('SessionService', 'Fehler beim Initialisieren der Settings', error);
+      debugLog('SessionService', 'initializeUserSettings: Fehlerende');
       // Graceful degradation - App funktioniert weiter mit Default-Settings
     }
   },

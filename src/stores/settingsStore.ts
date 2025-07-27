@@ -118,10 +118,15 @@ export const useSettingsStore = defineStore('settings', {
       const backendAvailable = await this.isBackendAvailable();
       const currentUser = currentSessionStoreForSave.currentUser;
 
-      debugLog('settingsStore', 'Backend-Verfügbarkeit und User-Status prüfen', {
+      debugLog('settingsStore', 'saveToStorage: Backend-Verfügbarkeit und User-Status prüfen', {
         backendAvailable,
         hasCurrentUser: !!currentUser,
-        currentUserId: currentUser?.id || 'nicht verfügbar'
+        currentUserId: currentUser?.id || 'nicht verfügbar',
+        sessionStoreState: {
+          currentUserId: currentSessionStoreForSave.currentUserId,
+          currentTenantId: currentSessionStoreForSave.currentTenantId,
+          hasCurrentUser: !!currentSessionStoreForSave.currentUser
+        }
       });
 
       if (backendAvailable && currentUser?.id) {
@@ -144,6 +149,45 @@ export const useSettingsStore = defineStore('settings', {
         debugLog('settingsStore', 'Backend-Sync übersprungen', {
           reason: !backendAvailable ? 'Backend nicht verfügbar' : 'Kein aktueller User'
         });
+
+        // Falls kein User verfügbar ist, versuche die Session und UserStore zu laden
+        if (backendAvailable && !currentUser?.id) {
+          debugLog('settingsStore', 'Versuche Session und UserStore aus IndexedDB zu laden');
+
+          // Erst Session laden
+          await currentSessionStoreForSave.loadSession();
+
+          // Dann UserStore laden, damit getUserById funktioniert
+          const { useUserStore } = await import('@/stores/userStore');
+          const userStore = useUserStore();
+          await userStore._loadUsersFromDb();
+
+          // Nach dem Laden beider Stores erneut prüfen
+          const reloadedUser = currentSessionStoreForSave.currentUser;
+          debugLog('settingsStore', 'Nach Session- und UserStore-Reload', {
+            hasUser: !!reloadedUser,
+            userId: reloadedUser?.id || 'nicht verfügbar',
+            currentUserId: currentSessionStoreForSave.currentUserId
+          });
+
+          if (reloadedUser?.id) {
+            debugLog('settingsStore', 'Session erfolgreich geladen, sende Settings an Backend');
+            try {
+              const payload: UserSettingsPayload = {
+                log_level: LogLevelToString[this.logLevel],
+                log_categories: [...this.enabledLogCategories],
+                history_retention_days: this.historyRetentionDays,
+                updated_at: new Date().toISOString()
+              };
+              await SettingsApiService.updateUserSettings(reloadedUser.id, payload);
+              infoLog('settingsStore', 'Settings erfolgreich an Backend gesendet nach Session-Reload');
+            } catch (error) {
+              errorLog('settingsStore', 'Fehler beim Senden an Backend nach Session-Reload', error);
+            }
+          } else {
+            debugLog('settingsStore', 'Auch nach Session- und UserStore-Reload kein User verfügbar');
+          }
+        }
       }
     },
 

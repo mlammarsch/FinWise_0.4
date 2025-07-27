@@ -21,7 +21,17 @@ const activeTab = ref("general");
 const settingsStore = useSettingsStore();
 const logLevel = computed({
   get: () => settingsStore.logLevel,
-  set: (value) => (settingsStore.logLevel = value),
+  set: (value) => {
+    debugLog('[settings]', 'LogLevel wird geändert', {
+      oldValue: settingsStore.logLevel,
+      newValue: value
+    });
+    settingsStore.logLevel = value;
+    // Explizit speichern nach Änderung
+    settingsStore.saveToStorage().catch(error => {
+      errorLog('[settings]', 'Fehler beim Speichern nach LogLevel-Änderung', error);
+    });
+  },
 });
 
 // Export-Funktionalität
