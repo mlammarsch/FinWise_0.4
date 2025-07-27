@@ -588,14 +588,14 @@ watch(
           <div class="mt-6">
             <h4 class="font-bold text-lg mb-2">Datenvorschau</h4>
             <div class="overflow-x-auto">
-              <table class="table table-zebra table-sm w-full">
+              <table class="table table-zebra table-sm w-full text-sm">
                 <thead>
                   <tr>
-                    <th>Datum</th>
-                    <th>Betrag</th>
-                    <th>Empfänger</th>
-                    <th>Kategorie</th>
-                    <th>Notizen</th>
+                    <th class="py-0">Datum</th>
+                    <th class="py-0">Betrag</th>
+                    <th class="py-0">Empfänger</th>
+                    <th class="py-0">Kategorie</th>
+                    <th class="py-0">Notizen</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -607,7 +607,7 @@ watch(
                     )"
                     :key="index"
                   >
-                    <td>
+                    <td class="py-0">
                       <div
                         :class="{
                           'text-success':
@@ -647,7 +647,7 @@ watch(
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td class="py-0">
                       <div
                         :class="{
                           'text-success':
@@ -687,7 +687,7 @@ watch(
                         </div>
                       </div>
                     </td>
-                    <td>
+                    <td class="py-0">
                       <div
                         :class="{
                           'text-success':
@@ -702,7 +702,7 @@ watch(
                         }}
                       </div>
                     </td>
-                    <td>
+                    <td class="py-0">
                       <div
                         :class="{
                           'text-success':
@@ -717,7 +717,7 @@ watch(
                         }}
                       </div>
                     </td>
-                    <td>
+                    <td class="py-0">
                       <div
                         :class="{
                           'text-success':
@@ -791,10 +791,10 @@ watch(
 
         <!-- Datenvorschau mit Bearbeitungsmöglichkeit -->
         <div class="relative max-h-[50vh] overflow-y-auto">
-          <table class="table table-zebra w-full table-fixed">
+          <table class="table table-zebra w-full table-fixed text-sm">
             <thead>
               <tr class="sticky top-0 z-10 bg-base-100">
-                <th class="w-4">
+                <th class="w-4 py-0">
                   <input
                     type="checkbox"
                     class="checkbox checkbox-sm"
@@ -808,13 +808,13 @@ watch(
                     "
                   />
                 </th>
-                <th class="w-24">Datum</th>
-                <th class="w-24">Betrag</th>
-                <th class="w-55">Empfänger</th>
-                <th class="">Kategorie</th>
-                <th class="w-auto">Notizen</th>
-                <th class="w-55">Tags</th>
-                <th class="w-22 text-center">Status</th>
+                <th class="w-24 py-0">Datum</th>
+                <th class="w-24 py-0">Betrag</th>
+                <th class="w-55 py-0">Empfänger</th>
+                <th class="py-0">Kategorie</th>
+                <th class="w-auto py-0">Notizen</th>
+                <th class="w-55 py-0">Tags</th>
+                <th class="w-22 text-center py-0">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -823,14 +823,14 @@ watch(
                 :key="index"
                 :class="{ 'opacity-50': !row._selected }"
               >
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <input
                     type="checkbox"
                     class="checkbox checkbox-sm"
                     v-model="row._selected"
                   />
                 </td>
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <div>
                     {{
                       formatDate(
@@ -841,7 +841,7 @@ watch(
                     }}
                   </div>
                 </td>
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <CurrencyDisplay
                     :amount="
                       parseAmount(row[csvImportService.mappedColumns.amount]) ||
@@ -849,7 +849,7 @@ watch(
                     "
                   />
                 </td>
-                <td class="w-[150px]">
+                <td class="w-[150px] py-0">
                   <div v-if="csvImportService.mappedColumns.recipient">
                     <div class="text-sm mb-1">
                       {{ row[csvImportService.mappedColumns.recipient] }}
@@ -874,7 +874,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-[150px]">
+                <td class="w-[150px] py-0">
                   <div v-if="csvImportService.mappedColumns.category">
                     <div class="text-sm mb-1">
                       {{ row[csvImportService.mappedColumns.category] }}
@@ -899,7 +899,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-auto">
+                <td class="w-auto py-0">
                   <div
                     v-if="csvImportService.mappedColumns.notes"
                     class="relative"
@@ -935,7 +935,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
                   <TagSearchableDropdown
                     :modelValue="transactionTags[index] || []"
@@ -945,7 +945,7 @@ watch(
                     @update:modelValue="(tags: string[]) => updateRowTags(index, tags)"
                   />
                 </td>
-                <td class="text-right">
+                <td class="text-right py-0">
                   <!-- Status für potenzielle Duplikate -->
                   <div
                     v-if="row._potentialMerge"
@@ -991,16 +991,16 @@ watch(
 
         <!-- Finale Review-Tabelle -->
         <div class="relative max-h-[50vh] overflow-y-auto">
-          <table class="table table-zebra w-full table-fixed">
+          <table class="table table-zebra w-full table-fixed text-sm">
             <thead>
               <tr class="sticky top-0 z-10 bg-base-100">
-                <th class="w-24">Datum</th>
-                <th class="w-24">Betrag</th>
-                <th class="w-55">Empfänger</th>
-                <th class="w-55">Kategorie</th>
-                <th class="w-auto">Notizen</th>
-                <th class="w-55">Tags</th>
-                <th class="w-24 text-left">Status</th>
+                <th class="w-24 py-0">Datum</th>
+                <th class="w-24 py-0">Betrag</th>
+                <th class="w-55 py-0">Empfänger</th>
+                <th class="w-55 py-0">Kategorie</th>
+                <th class="w-auto py-0">Notizen</th>
+                <th class="w-55 py-0">Tags</th>
+                <th class="w-24 text-left py-0">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -1009,7 +1009,7 @@ watch(
                 :key="index"
                 :class="{ 'opacity-50': !row._selected }"
               >
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   {{
                     formatDate(
                       csvImportService.parseDate(
@@ -1018,7 +1018,7 @@ watch(
                     )
                   }}
                 </td>
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <CurrencyDisplay
                     :amount="
                       parseAmount(row[csvImportService.mappedColumns.amount]) ||
@@ -1026,7 +1026,7 @@ watch(
                     "
                   />
                 </td>
-                <td class="w-[150px]">
+                <td class="w-[150px] py-0">
                   <!-- Nicht mehr editierbar -->
                   <div
                     v-if="row.recipientId"
@@ -1059,7 +1059,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-[150px]">
+                <td class="w-[150px] py-0">
                   <!-- Nicht mehr editierbar -->
                   <div
                     v-if="row.categoryId"
@@ -1092,7 +1092,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-auto">
+                <td class="w-auto py-0">
                   <!-- Klickbare Notizen -->
                   <div
                     v-if="csvImportService.mappedColumns.notes"
@@ -1129,7 +1129,7 @@ watch(
                     -
                   </div>
                 </td>
-                <td class="w-[100px]">
+                <td class="w-[100px] py-0">
                   <!-- Individuelle Tag-Auswahl pro Zeile -->
                   <TagSearchableDropdown
                     :modelValue="transactionTags[index] || []"
@@ -1139,7 +1139,7 @@ watch(
                     @update:modelValue="(tags: string[]) => updateRowTags(index, tags)"
                   />
                 </td>
-                <td class="w-[60px] text-center">
+                <td class="w-[60px] text-center py-0">
                   <!-- Status für potenzielle Duplikate -->
                   <div
                     v-if="row._potentialMerge"

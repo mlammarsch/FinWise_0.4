@@ -9,6 +9,9 @@ export default defineConfig({
     vue(),
     tailwindcss(),
   ],
+  server: {
+    open: false
+  },
   resolve: {
     alias: {
       '@': '/src',

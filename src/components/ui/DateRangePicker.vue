@@ -1,240 +1,570 @@
+<!-- Datei: src/components/ui/DateRangePicker.vue -->
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { Icon } from "@iconify/vue";
+import dayjs from "dayjs";
+import ButtonGroup from "./ButtonGroup.vue";
 
-/**
- * Pfad zur Komponente: components/ui/DateRangePicker.vue
- *
- * Erweiterter Datepicker für Zeiträume mit Shortcut-Auswahl und Zwei-Monats-Ansicht.
- *
- * Komponenten-Props:
- * - modelValue: { start: string; end: string } - Der aktuelle Datumsbereich.
- *
- * Emits:
- * - update:modelValue - Gibt den neuen Datumsbereich zurück.
- */
-const props = defineProps<{ modelValue: { start: string; end: string } }>();
-const emit = defineEmits(["update:modelValue"]);
+interface DateRange {
+  start: string;
+  end: string;
+}
 
+const props = defineProps<{
+  modelValue?: DateRange;
+}>();
+
+const emit = defineEmits<{
+  (e: "update:modelValue", value: DateRange): void;
+}>();
+
+// State
 const isOpen = ref(false);
-const selectedRange = ref({
-  start: props.modelValue?.start ?? "",
-  end: props.modelValue?.end ?? "",
-});
 const containerRef = ref<HTMLElement | null>(null);
+const dropdownRef = ref<HTMLElement | null>(null);
+const isDragging = ref(false);
+const dragStart = ref<string | null>(null);
+const hoverDate = ref<string | null>(null);
+const dropdownPosition = ref<"left" | "center" | "right">("left");
 
-const today = new Date();
-const todayString = new Date().toISOString().split("T")[0];
-const lastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+// Current displayed months (left = previous month, right = current month)
+const currentDate = ref(dayjs());
+const leftMonth = computed(() => currentDate.value.subtract(1, "month"));
+const rightMonth = computed(() => currentDate.value);
 
-// Funktion zur Berechnung des ersten und letzten Tages eines Monats
-const getFirstDayOfMonth = (date: Date) =>
-  new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split("T")[0];
+// Working range (for preview) and committed range (actual value)
+const workingRange = ref<DateRange>({
+  start: props.modelValue?.start || "",
+  end: props.modelValue?.end || "",
+});
 
-const predefinedRanges = [
-  {
-    label: "Heute",
-    range: {
-      start: todayString,
-      end: todayString,
-    },
-  },
-  {
-    label: "Letzte 7 Tage",
-    range: {
-      start: new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0],
-      end: todayString,
-    },
-  },
+const committedRange = ref<DateRange>({
+  start: props.modelValue?.start || "",
+  end: props.modelValue?.end || "",
+});
+
+// Shortcuts
+const shortcuts = [
   {
     label: "Letzte 30 Tage",
-    range: {
-      start: new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0],
-      end: todayString,
+    getValue: () => ({
+      start: dayjs().subtract(30, "day").format("YYYY-MM-DD"),
+      end: dayjs().format("YYYY-MM-DD"),
+    }),
+  },
+  {
+    label: "Letzte 60 Tage",
+    getValue: () => ({
+      start: dayjs().subtract(60, "day").format("YYYY-MM-DD"),
+      end: dayjs().format("YYYY-MM-DD"),
+    }),
+  },
+  {
+    label: "Dieser Monat",
+    getValue: () => ({
+      start: dayjs().startOf("month").format("YYYY-MM-DD"),
+      end: dayjs().endOf("month").format("YYYY-MM-DD"),
+    }),
+  },
+  {
+    label: "Letzter Monat",
+    getValue: () => ({
+      start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
+      end: dayjs().subtract(1, "month").endOf("month").format("YYYY-MM-DD"),
+    }),
+  },
+  {
+    label: "Dieses Quartal",
+    getValue: () => {
+      const currentMonth = dayjs().month();
+      const quarterStart = Math.floor(currentMonth / 3) * 3;
+      return {
+        start: dayjs()
+          .month(quarterStart)
+          .startOf("month")
+          .format("YYYY-MM-DD"),
+        end: dayjs()
+          .month(quarterStart + 2)
+          .endOf("month")
+          .format("YYYY-MM-DD"),
+      };
     },
   },
   {
-    label: "Letzter Monat bis heute",
-    range: {
-      start: getFirstDayOfMonth(lastMonth),
-      end: todayString,
-    },
+    label: "Dieses Jahr",
+    getValue: () => ({
+      start: dayjs().startOf("year").format("YYYY-MM-DD"),
+      end: dayjs().endOf("year").format("YYYY-MM-DD"),
+    }),
   },
   {
-    label: "Letzte 3 Monate",
-    range: {
-      start: getFirstDayOfMonth(
-        new Date(today.getFullYear(), today.getMonth() - 2, 1)
-      ),
-      end: todayString,
-    },
-  },
-  {
-    label: "Letzte 6 Monate",
-    range: {
-      start: getFirstDayOfMonth(
-        new Date(today.getFullYear(), today.getMonth() - 5, 1)
-      ),
-      end: todayString,
-    },
-  },
-  {
-    label: "Laufendes Jahr",
-    range: {
-      start: new Date(today.getFullYear(), 0, 1).toISOString().split("T")[0],
-      end: todayString,
-    },
+    label: "Letztes Jahr",
+    getValue: () => ({
+      start: dayjs().subtract(1, "year").startOf("year").format("YYYY-MM-DD"),
+      end: dayjs().subtract(1, "year").endOf("year").format("YYYY-MM-DD"),
+    }),
   },
 ];
 
-const setPredefinedRange = (preset: { start: string; end: string }) => {
-  selectedRange.value = { ...preset };
-  emit("update:modelValue", selectedRange.value);
+// Generate calendar days for a month
+const generateCalendarDays = (month: dayjs.Dayjs) => {
+  const startOfMonth = month.startOf("month");
+  const endOfMonth = month.endOf("month");
+  const startOfWeek = startOfMonth.startOf("week").add(1, "day"); // Monday start
+  const endOfWeek = endOfMonth.endOf("week").add(1, "day"); // Monday start
+
+  const days = [];
+  let current = startOfWeek;
+
+  while (current.isBefore(endOfWeek) || current.isSame(endOfWeek, "day")) {
+    days.push({
+      date: current.format("YYYY-MM-DD"),
+      day: current.date(),
+      isCurrentMonth: current.isSame(month, "month"),
+      isToday: current.isSame(dayjs(), "day"),
+      dayjs: current,
+    });
+    current = current.add(1, "day");
+  }
+
+  return days;
+};
+
+const leftCalendarDays = computed(() => generateCalendarDays(leftMonth.value));
+const rightCalendarDays = computed(() =>
+  generateCalendarDays(rightMonth.value)
+);
+
+// Navigation
+const navigateMonth = (direction: "prev" | "next") => {
+  if (direction === "prev") {
+    currentDate.value = currentDate.value.subtract(1, "month");
+  } else {
+    currentDate.value = currentDate.value.add(1, "month");
+  }
+};
+
+const navigateYear = (direction: "prev" | "next") => {
+  if (direction === "prev") {
+    currentDate.value = currentDate.value.subtract(1, "year");
+  } else {
+    currentDate.value = currentDate.value.add(1, "year");
+  }
+};
+
+// Date selection logic
+const handleDateClick = (dateStr: string) => {
+  if (!workingRange.value.start || workingRange.value.end) {
+    // Start new selection
+    workingRange.value = { start: dateStr, end: "" };
+    dragStart.value = dateStr;
+    isDragging.value = true;
+  } else {
+    // Complete selection
+    const start = dayjs(workingRange.value.start);
+    const end = dayjs(dateStr);
+
+    if (start.isAfter(end)) {
+      workingRange.value = { start: dateStr, end: workingRange.value.start };
+    } else {
+      workingRange.value.end = dateStr;
+    }
+
+    isDragging.value = false;
+    dragStart.value = null;
+    hoverDate.value = null;
+  }
+};
+
+const handleDateHover = (dateStr: string) => {
+  if (isDragging.value && workingRange.value.start) {
+    hoverDate.value = dateStr;
+  }
+};
+
+// Check if date is in range (improved for continuous range display)
+const isDateInRange = (dateStr: string) => {
+  if (!workingRange.value.start) return false;
+
+  const date = dayjs(dateStr);
+  const start = dayjs(workingRange.value.start);
+
+  if (workingRange.value.end) {
+    const end = dayjs(workingRange.value.end);
+    return date.isSameOrAfter(start, "day") && date.isSameOrBefore(end, "day");
+  } else if (isDragging.value && hoverDate.value) {
+    const hover = dayjs(hoverDate.value);
+    const rangeStart = start.isBefore(hover) ? start : hover;
+    const rangeEnd = start.isBefore(hover) ? hover : start;
+    return (
+      date.isSameOrAfter(rangeStart, "day") &&
+      date.isSameOrBefore(rangeEnd, "day")
+    );
+  }
+
+  return date.isSame(start, "day");
+};
+
+const isDateRangeStart = (dateStr: string) => {
+  if (!workingRange.value.start) return false;
+
+  if (workingRange.value.end) {
+    return dayjs(dateStr).isSame(workingRange.value.start, "day");
+  } else if (isDragging.value && hoverDate.value) {
+    const start = dayjs(workingRange.value.start);
+    const hover = dayjs(hoverDate.value);
+    const rangeStart = start.isBefore(hover) ? start : hover;
+    return dayjs(dateStr).isSame(rangeStart, "day");
+  }
+
+  return dayjs(dateStr).isSame(workingRange.value.start, "day");
+};
+
+const isDateRangeEnd = (dateStr: string) => {
+  if (!workingRange.value.start) return false;
+
+  if (workingRange.value.end) {
+    return dayjs(dateStr).isSame(workingRange.value.end, "day");
+  } else if (isDragging.value && hoverDate.value) {
+    const start = dayjs(workingRange.value.start);
+    const hover = dayjs(hoverDate.value);
+    const rangeEnd = start.isBefore(hover) ? hover : start;
+    return dayjs(dateStr).isSame(rangeEnd, "day");
+  }
+
+  return false;
+};
+
+// Shortcut selection - emit immediately
+const selectShortcut = (shortcut: (typeof shortcuts)[0]) => {
+  const range = shortcut.getValue();
+  workingRange.value = range;
+  committedRange.value = range;
+  emit("update:modelValue", range);
   isOpen.value = false;
 };
 
-const daysInMonth = (month: number, year: number) =>
-  new Date(year, month + 1, 0).getDate();
-
-const generateMonthData = (date: Date) => {
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const days = Array.from(
-    { length: daysInMonth(month, year) },
-    (_, i) => i + 1
-  );
-  return { month, year, days };
-};
-
-const lastMonthData = computed(() => generateMonthData(lastMonth));
-const currentMonthData = computed(() => generateMonthData(currentMonth));
-
-const selectDate = (year: number, month: number, day: number) => {
-  const dateString = new Date(year, month, day).toISOString().split("T")[0];
-
-  if (!selectedRange.value.start || selectedRange.value.end) {
-    selectedRange.value = { start: dateString, end: "" };
-  } else {
-    selectedRange.value.end = dateString;
-    if (selectedRange.value.start > selectedRange.value.end) {
-      [selectedRange.value.start, selectedRange.value.end] = [
-        selectedRange.value.end,
-        selectedRange.value.start,
-      ];
-    }
-  }
-
-  emit("update:modelValue", selectedRange.value);
-};
-
-const closeOnClickOutside = (event: Event) => {
-  if (
-    containerRef.value &&
-    !containerRef.value.contains(event.target as Node)
-  ) {
+// Confirm selection
+const confirmSelection = () => {
+  if (workingRange.value.start && workingRange.value.end) {
+    committedRange.value = { ...workingRange.value };
+    emit("update:modelValue", committedRange.value);
     isOpen.value = false;
   }
 };
 
-onMounted(() => document.addEventListener("click", closeOnClickOutside));
-onUnmounted(() => document.removeEventListener("click", closeOnClickOutside));
+// Cancel selection
+const cancelSelection = () => {
+  workingRange.value = { ...committedRange.value };
+  isDragging.value = false;
+  dragStart.value = null;
+  hoverDate.value = null;
+  isOpen.value = false;
+};
 
+// Calculate optimal dropdown position
+const calculateDropdownPosition = () => {
+  if (!containerRef.value || !dropdownRef.value) return;
+
+  const container = containerRef.value.getBoundingClientRect();
+  const dropdown = dropdownRef.value.getBoundingClientRect();
+  const viewport = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  };
+
+  // Check available space on each side
+  const spaceLeft = container.left;
+  const spaceRight = viewport.width - container.right;
+  const spaceCenter = Math.min(spaceLeft, spaceRight);
+
+  // Dropdown width is approximately 800px
+  const dropdownWidth = 800;
+
+  if (spaceRight >= dropdownWidth) {
+    dropdownPosition.value = "left";
+  } else if (spaceLeft >= dropdownWidth) {
+    dropdownPosition.value = "right";
+  } else if (spaceCenter >= dropdownWidth / 2) {
+    dropdownPosition.value = "center";
+  } else {
+    // Fallback to left if no good position
+    dropdownPosition.value = "left";
+  }
+};
+
+// Format display value (original range format)
+const displayValue = computed(() => {
+  if (committedRange.value.start && committedRange.value.end) {
+    const start = dayjs(committedRange.value.start);
+    const end = dayjs(committedRange.value.end);
+    return `${start.format("DD.MM.YYYY")} - ${end.format("DD.MM.YYYY")}`;
+  }
+  return "Zeitraum wählen";
+});
+
+// Close on outside click
+const handleClickOutside = (event: Event) => {
+  if (
+    containerRef.value &&
+    !containerRef.value.contains(event.target as Node)
+  ) {
+    cancelSelection();
+  }
+};
+
+// Watch for dropdown open/close to calculate position
+watch(isOpen, (newValue) => {
+  if (newValue) {
+    // Use nextTick to ensure DOM is updated
+    setTimeout(() => {
+      calculateDropdownPosition();
+    }, 0);
+  }
+});
+
+// Watch for prop changes
 watch(
   () => props.modelValue,
-  (newVal) => {
-    selectedRange.value = { ...newVal };
-  }
+  (newValue) => {
+    if (newValue) {
+      workingRange.value = { ...newValue };
+      committedRange.value = { ...newValue };
+    }
+  },
+  { deep: true }
 );
+
+onMounted(() => {
+  document.addEventListener("click", handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", handleClickOutside);
+});
+
+// Weekday labels
+const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 </script>
 
 <template>
   <div
-    class="relative w-60 max-w-4xl bg-base-100 border border-base-300"
+    class="relative"
     ref="containerRef"
   >
-    <!-- Button für den DatePicker -->
+    <!-- Trigger Button (MonthSelector style) -->
     <button
-      class="datepicker-button w-full"
       @click="isOpen = !isOpen"
+      class="btn btn-sm btn-outline rounded-full min-w-[200px] justify-between border border-base-300"
+      :class="{
+        'border-2 border-accent': committedRange.start && committedRange.end,
+      }"
     >
-      <span>{{ selectedRange.start }} ~ {{ selectedRange.end }}</span>
+      <span class="text-sm">{{ displayValue }}</span>
       <Icon
         icon="mdi:calendar-range"
-        class="text-lg text-gray-500"
+        class="text-base"
       />
     </button>
 
+    <!-- Dropdown -->
     <div
       v-if="isOpen"
-      class="absolute left-0 mt-2 bg-base-100 border border-base-200 rounded-md shadow-lg z-50 p-4 w-full"
+      ref="dropdownRef"
+      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 p-4 min-w-[800px]"
+      :class="{
+        'left-0': dropdownPosition === 'left',
+        'right-0': dropdownPosition === 'right',
+        'left-1/2 transform -translate-x-1/2': dropdownPosition === 'center',
+      }"
     >
-      <div class="grid grid-cols-4 gap-4">
+      <div class="flex gap-4">
         <!-- Shortcuts -->
-        <div class="col-span-1 bg-base-100 p-3 rounded-md">
-          <h4 class="text-sm font-semibold mb-2">Schnellauswahl</h4>
-          <ul class="space-y-2">
-            <li
-              v-for="preset in predefinedRanges"
-              :key="preset.label"
+        <div class="w-48 border-r border-base-300 pr-4">
+          <h3 class="font-semibold text-sm mb-3 text-base-content/70">
+            Schnellauswahl
+          </h3>
+          <div class="space-y-1">
+            <button
+              v-for="shortcut in shortcuts"
+              :key="shortcut.label"
+              @click="selectShortcut(shortcut)"
+              class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-base-200 transition-colors"
             >
-              <button
-                class="datepicker-shortcut w-full"
-                @click="setPredefinedRange(preset.range)"
-              >
-                {{ preset.label }}
-              </button>
-            </li>
-          </ul>
+              {{ shortcut.label }}
+            </button>
+          </div>
         </div>
 
-        <!-- Kalenderansicht -->
-        <div class="col-span-3 grid grid-cols-2 gap-4">
-          <div
-            v-for="calendar in [lastMonthData, currentMonthData]"
-            :key="calendar.month"
-            class="p-2 border rounded-md"
-          >
-            <h4 class="text-center font-medium text-sm mb-2">
-              {{
-                new Date(calendar.year, calendar.month).toLocaleDateString(
-                  "de-DE",
-                  {
-                    month: "long",
-                    year: "numeric",
-                  }
-                )
-              }}
-            </h4>
-            <div class="grid grid-cols-7 text-center text-xs font-semibold">
-              <span
-                v-for="day in ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So']"
-                :key="day"
-                >{{ day }}</span
+        <!-- Calendar -->
+        <div class="flex-1">
+          <!-- Navigation -->
+          <div class="flex items-center justify-between mb-4">
+            <button
+              @click="navigateMonth('prev')"
+              class="btn btn-ghost btn-sm btn-circle"
+            >
+              <Icon
+                icon="mdi:chevron-left"
+                class="text-lg"
+              />
+            </button>
+
+            <div class="flex items-center gap-4">
+              <button
+                @click="navigateYear('prev')"
+                class="btn btn-ghost btn-xs"
               >
+                <Icon
+                  icon="mdi:chevron-double-left"
+                  class="text-sm"
+                />
+              </button>
+
+              <span class="font-semibold text-lg">{{
+                currentDate.year()
+              }}</span>
+
+              <button
+                @click="navigateYear('next')"
+                class="btn btn-ghost btn-xs"
+              >
+                <Icon
+                  icon="mdi:chevron-double-right"
+                  class="text-sm"
+                />
+              </button>
             </div>
-            <div class="grid grid-cols-7 gap-1 mt-2">
-              <span
-                v-for="day in calendar.days"
-                :key="day"
-                class="datepicker-day"
-                :class="{
-                  'bg-primary text-white':
-                    selectedRange.start ===
-                    `${calendar.year}-${String(calendar.month + 1).padStart(
-                      2,
-                      '0'
-                    )}-${String(day).padStart(2, '0')}`,
-                  'bg-primary/20':
-                    selectedRange.end ===
-                    `${calendar.year}-${String(calendar.month + 1).padStart(
-                      2,
-                      '0'
-                    )}-${String(day).padStart(2, '0')}`,
-                }"
-                @click="selectDate(calendar.year, calendar.month, day)"
-              >
-                {{ day }}
-              </span>
+
+            <button
+              @click="navigateMonth('next')"
+              class="btn btn-ghost btn-sm btn-circle"
+            >
+              <Icon
+                icon="mdi:chevron-right"
+                class="text-lg"
+              />
+            </button>
+          </div>
+
+          <!-- Two Month View -->
+          <div class="grid grid-cols-2 gap-6">
+            <!-- Left Month -->
+            <div>
+              <h4 class="text-center font-medium mb-3">
+                {{ leftMonth.format("MMMM YYYY") }}
+              </h4>
+
+              <!-- Weekday Headers -->
+              <div class="grid grid-cols-7 gap-1 mb-2">
+                <div
+                  v-for="day in weekdays"
+                  :key="day"
+                  class="text-center text-xs font-medium text-base-content/60 py-1"
+                >
+                  {{ day }}
+                </div>
+              </div>
+
+              <!-- Calendar Days -->
+              <div class="grid grid-cols-7 gap-0">
+                <button
+                  v-for="dayData in leftCalendarDays"
+                  :key="dayData.date"
+                  @click="handleDateClick(dayData.date)"
+                  @mouseenter="handleDateHover(dayData.date)"
+                  class="aspect-square text-sm transition-all duration-150 relative"
+                  :class="{
+                    'text-base-content/30': !dayData.isCurrentMonth,
+                    'text-base-content': dayData.isCurrentMonth,
+                    'bg-primary text-primary-content rounded-l-md':
+                      isDateRangeStart(dayData.date),
+                    'bg-primary text-primary-content rounded-r-md':
+                      isDateRangeEnd(dayData.date),
+                    'bg-primary text-primary-content rounded-md':
+                      isDateRangeStart(dayData.date) &&
+                      isDateRangeEnd(dayData.date),
+                    'bg-base-300':
+                      isDateInRange(dayData.date) &&
+                      !isDateRangeStart(dayData.date) &&
+                      !isDateRangeEnd(dayData.date),
+                    'hover:bg-base-200 rounded-md':
+                      dayData.isCurrentMonth && !isDateInRange(dayData.date),
+                    'ring-2 ring-primary ring-offset-2': dayData.isToday,
+                    'cursor-pointer': dayData.isCurrentMonth,
+                    'cursor-not-allowed': !dayData.isCurrentMonth,
+                  }"
+                  :disabled="!dayData.isCurrentMonth"
+                >
+                  {{ dayData.day }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Right Month -->
+            <div>
+              <h4 class="text-center font-medium mb-3">
+                {{ rightMonth.format("MMMM YYYY") }}
+              </h4>
+
+              <!-- Weekday Headers -->
+              <div class="grid grid-cols-7 gap-1 mb-2">
+                <div
+                  v-for="day in weekdays"
+                  :key="day"
+                  class="text-center text-xs font-medium text-base-content/60 py-1"
+                >
+                  {{ day }}
+                </div>
+              </div>
+
+              <!-- Calendar Days -->
+              <div class="grid grid-cols-7 gap-0">
+                <button
+                  v-for="dayData in rightCalendarDays"
+                  :key="dayData.date"
+                  @click="handleDateClick(dayData.date)"
+                  @mouseenter="handleDateHover(dayData.date)"
+                  class="aspect-square text-sm transition-all duration-150 relative"
+                  :class="{
+                    'text-base-content/30': !dayData.isCurrentMonth,
+                    'text-base-content': dayData.isCurrentMonth,
+                    'bg-primary text-primary-content rounded-l-md':
+                      isDateRangeStart(dayData.date),
+                    'bg-primary text-primary-content rounded-r-md':
+                      isDateRangeEnd(dayData.date),
+                    'bg-primary text-primary-content rounded-md':
+                      isDateRangeStart(dayData.date) &&
+                      isDateRangeEnd(dayData.date),
+                    'bg-base-300':
+                      isDateInRange(dayData.date) &&
+                      !isDateRangeStart(dayData.date) &&
+                      !isDateRangeEnd(dayData.date),
+                    'hover:bg-base-200 rounded-md':
+                      dayData.isCurrentMonth && !isDateInRange(dayData.date),
+                    'ring-2 ring-primary ring-offset-2': dayData.isToday,
+                    'cursor-pointer': dayData.isCurrentMonth,
+                    'cursor-not-allowed': !dayData.isCurrentMonth,
+                  }"
+                  :disabled="!dayData.isCurrentMonth"
+                >
+                  {{ dayData.day }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="flex justify-end mt-4 pt-4 border-t border-base-300">
+            <div class="text-xs">
+              <ButtonGroup
+                left-label="Abbrechen"
+                right-label="Übernehmen"
+                left-color="btn-soft btn-sm"
+                right-color="btn-primary btn-sm"
+                @left-click="cancelSelection"
+                @right-click="confirmSelection"
+              />
             </div>
           </div>
         </div>
@@ -243,4 +573,57 @@ watch(
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+/* Calendar styling with continuous range blocks */
+
+/* Add small margin to all calendar buttons for spacing */
+.grid-cols-7 button {
+  margin: 1px;
+}
+
+/* Range middle days - no border radius, extend to fill gaps */
+.grid-cols-7
+  button.bg-base-300:not(.rounded-l-md):not(.rounded-r-md):not(.rounded-md) {
+  border-radius: 0 !important;
+  margin: 0 !important;
+}
+
+/* Range start styling - keep original classes working */
+.grid-cols-7 button.rounded-l-md {
+  margin: 0 0 0 1px !important;
+}
+
+/* Range end styling - keep original classes working */
+.grid-cols-7 button.rounded-r-md {
+  margin: 0 1px 0 0 !important;
+}
+
+/* Single day selection (start and end same day) - keep original classes working */
+.grid-cols-7 button.rounded-md {
+  margin: 1px !important;
+}
+
+/* Week boundaries for range middle days */
+.grid-cols-7 button.bg-primary\/40:nth-child(7n + 1):not(.rounded-l-md) {
+  border-top-left-radius: 0.375rem !important;
+  border-bottom-left-radius: 0.375rem !important;
+  margin-left: 1px !important;
+}
+
+.grid-cols-7 button.bg-primary\/40:nth-child(7n):not(.rounded-r-md) {
+  border-top-right-radius: 0.375rem !important;
+  border-bottom-right-radius: 0.375rem !important;
+  margin-right: 1px !important;
+}
+
+/* Special cases: range start/end at week boundaries */
+.grid-cols-7 button.rounded-l-md:nth-child(7n) {
+  border-radius: 0.375rem !important;
+  margin: 1px !important;
+}
+
+.grid-cols-7 button.rounded-r-md:nth-child(7n + 1) {
+  border-radius: 0.375rem !important;
+  margin: 1px !important;
+}
+</style>

@@ -24,7 +24,7 @@ import { AccountService } from "../services/AccountService";
 import { BalanceService } from "../services/BalanceService";
 import { Icon } from "@iconify/vue";
 import { debugLog } from "../utils/logger";
-import MonthSelector from "../components/ui/MonthSelector.vue";
+import DateRangePicker from "../components/ui/DateRangePicker.vue";
 import Muuri from "muuri";
 
 // Stores
@@ -505,8 +505,9 @@ const refreshGroupsLayout = () => {
         <div
           class="rounded-md bg-base-200/50 backdrop-blur-lg mb-6 flex justify-between p-2 items-center"
         >
-          <MonthSelector
-            @update-daterange="handleDateRangeUpdate"
+          <DateRangePicker
+            :model-value="dateRange"
+            @update:model-value="(range) => handleDateRangeUpdate(range)"
             class="mx-2"
           />
           <SearchGroup

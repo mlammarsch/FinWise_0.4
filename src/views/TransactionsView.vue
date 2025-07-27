@@ -14,7 +14,7 @@ import CategoryTransactionList from "../components/transaction/CategoryTransacti
 import TransactionDetailModal from "../components/transaction/TransactionDetailModal.vue";
 import TransactionForm from "../components/transaction/TransactionForm.vue";
 import PagingComponent from "../components/ui/PagingComponent.vue";
-import MonthSelector from "../components/ui/MonthSelector.vue";
+import DateRangePicker from "../components/ui/DateRangePicker.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import SearchableSelectLite from "../components/ui/SearchableSelectLite.vue";
 import BulkActionDropdown from "../components/ui/BulkActionDropdown.vue";
@@ -28,6 +28,7 @@ import { Transaction, TransactionType } from "../types";
 import { formatCurrency } from "../utils/formatters";
 import { debugLog, infoLog, errorLog, warnLog } from "../utils/logger";
 import { TransactionService } from "../services/TransactionService";
+import { Icon } from "@iconify/vue";
 
 const refreshKey = ref(0);
 
@@ -691,10 +692,12 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               <legend class="fieldset-legend text-center opacity-50">
                 Monatswahl
               </legend>
-              <MonthSelector
-                @update-daterange="handleDateRangeUpdate"
-                class="mx-2"
-              />
+              <div class="mx-2">
+                <DateRangePicker
+                  :model-value="dateRange"
+                  @update:model-value="(range) => handleDateRangeUpdate(range)"
+                />
+              </div>
             </fieldset>
             <fieldset class="fieldset pt-0">
               <legend class="fieldset-legend text-center opacity-50">
@@ -842,10 +845,12 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               <legend class="fieldset-legend text-center opacity-50">
                 Monatswahl
               </legend>
-              <MonthSelector
-                @update-daterange="handleDateRangeUpdate"
-                class="mx-2"
-              />
+              <div class="mx-2">
+                <DateRangePicker
+                  :model-value="dateRange"
+                  @update:model-value="(range) => handleDateRangeUpdate(range)"
+                />
+              </div>
             </fieldset>
             <fieldset class="fieldset pt-0">
               <legend class="fieldset-legend text-center opacity-50">
