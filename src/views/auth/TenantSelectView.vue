@@ -11,7 +11,9 @@ import { useRouter } from "vue-router";
 import { TenantService } from "../../services/TenantService";
 import { useSessionStore } from "../../stores/sessionStore";
 import { useWebSocketStore } from "../../stores/webSocketStore";
+import { useTenantStore } from "../../stores/tenantStore";
 import { BackendAvailabilityService } from "../../services/BackendAvailabilityService";
+import { DataImportExportService } from "../../services/DataImportExportService";
 import { debugLog, infoLog, errorLog, warnLog } from "../../utils/logger";
 import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
@@ -21,6 +23,7 @@ type Tenant = any; // Temporärer Workaround für den Typ
 const router = useRouter();
 const session = useSessionStore();
 const webSocketStore = useWebSocketStore();
+const tenantStore = useTenantStore();
 
 const newTenantName = ref("");
 const showCreate = ref(false);
@@ -30,6 +33,15 @@ const focusedTenantIndex = ref(-1);
 
 const showDeleteModal = ref(false);
 const deleteTargetId = ref<string | null>(null);
+
+// SQLite Import-Funktionalität
+const selectedSqliteFile = ref<File | null>(null);
+const sqliteImportTenantName = ref("");
+const showSqliteImport = ref(false);
+const isSqliteImporting = ref(false);
+const isWaitingForTenantSync = ref(false);
+const sqliteImportSuccess = ref(false);
+const sqliteImportError = ref<string | null>(null);
 
 const tenants = computed<Tenant[]>(() => TenantService.getOwnTenants()); // Expliziter Typ für computed
 const isButtonEnabled = computed(
@@ -212,6 +224,107 @@ async function deleteTenant() {
   deleteTargetId.value = null;
 }
 
+// SQLite Import Handler
+function handleSqliteFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+
+  if (file) {
+    selectedSqliteFile.value = file;
+    sqliteImportError.value = null;
+    debugLog("[TenantSelectView]", `SQLite-Datei ausgewählt: ${file.name}`);
+  }
+}
+
+function resetSqliteImportForm() {
+  const fileInput = document.querySelector(
+    'input[type="file"][accept=".sqlite,.db"]'
+  ) as HTMLInputElement;
+  if (fileInput) {
+    fileInput.value = "";
+  }
+  selectedSqliteFile.value = null;
+  sqliteImportTenantName.value = "";
+  sqliteImportError.value = null;
+  isWaitingForTenantSync.value = false;
+  showSqliteImport.value = false;
+}
+
+async function handleSqliteImport() {
+  if (
+    !selectedSqliteFile.value ||
+    !sqliteImportTenantName.value.trim() ||
+    isSqliteImporting.value
+  )
+    return;
+
+  try {
+    isSqliteImporting.value = true;
+    sqliteImportError.value = null;
+
+    debugLog(
+      "[TenantSelectView]",
+      `Starte SQLite-Import für neuen Mandanten: ${sqliteImportTenantName.value}`
+    );
+
+    await DataImportExportService.importTenantDatabase(
+      selectedSqliteFile.value,
+      sqliteImportTenantName.value.trim()
+    );
+
+    // Import erfolgreich, aber Backend braucht Zeit für Verarbeitung
+    isSqliteImporting.value = false;
+    isWaitingForTenantSync.value = true;
+
+    infoLog(
+      "[TenantSelectView]",
+      `SQLite-Import gestartet für Mandant: ${sqliteImportTenantName.value}. Warte 5 Sekunden auf Backend-Verarbeitung...`
+    );
+
+    // 5 Sekunden warten, damit das Backend die Datenbank verarbeiten kann
+    setTimeout(async () => {
+      try {
+        // Mandantenliste aktualisieren, nachdem das Backend Zeit hatte
+        await tenantStore.loadTenants();
+        debugLog(
+          "[TenantSelectView]",
+          "Mandantenliste nach SQLite-Import und 5s Wartezeit aktualisiert"
+        );
+
+        isWaitingForTenantSync.value = false;
+        sqliteImportSuccess.value = true;
+
+        infoLog(
+          "[TenantSelectView]",
+          `SQLite-Import erfolgreich abgeschlossen für Mandant: ${sqliteImportTenantName.value}`
+        );
+
+        // Formular vollständig zurücksetzen
+        resetSqliteImportForm();
+
+        setTimeout(() => {
+          sqliteImportSuccess.value = false;
+        }, 5000);
+      } catch (error) {
+        isWaitingForTenantSync.value = false;
+        sqliteImportError.value =
+          "Fehler beim Aktualisieren der Mandantenliste";
+        errorLog(
+          "[TenantSelectView]",
+          "Fehler beim Aktualisieren der Mandantenliste nach SQLite-Import",
+          error
+        );
+      }
+    }, 5000);
+  } catch (error) {
+    sqliteImportError.value =
+      error instanceof Error ? error.message : "Unbekannter Fehler beim Import";
+    errorLog("[TenantSelectView]", "Fehler beim SQLite-Import", error);
+  } finally {
+    isSqliteImporting.value = false;
+  }
+}
+
 async function logoutAndRedirect() {
   // als async markieren wegen await session.logout()
   infoLog("[TenantSelectView]", "logoutAndRedirect called");
@@ -293,7 +406,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen">
+  <div class="flex items-center justify-center min-h-screen py-2">
     <div class="card w-full max-w-md bg-base-100 border border-base-300 shadow">
       <div class="card-body space-y-4">
         <h2 class="text-xl font-bold text-center">Mandant wählen</h2>
@@ -388,6 +501,141 @@ onUnmounted(() => {
           >
             Anlegen & wechseln
           </button>
+        </div>
+
+        <div class="divider">oder</div>
+
+        <!-- SQLite Import Bereich -->
+        <div class="space-y-3">
+          <button
+            class="btn btn-outline w-full"
+            @click="showSqliteImport = !showSqliteImport"
+          >
+            <Icon
+              icon="mdi:database-import"
+              class="mr-2"
+            />
+            {{
+              showSqliteImport
+                ? "Import abbrechen"
+                : "SQLite-Datenbank importieren"
+            }}
+          </button>
+
+          <div
+            v-if="showSqliteImport"
+            class="space-y-3 p-4 border border-base-300 rounded-lg bg-base-50"
+          >
+            <div class="alert alert-info alert-soft">
+              <Icon
+                icon="mdi:information"
+                class="text-lg"
+              />
+              <div class="text-sm">
+                <strong>Hinweis:</strong> Diese Aktion erstellt einen neuen
+                Mandanten aus einer SQLite-Datenbank-Datei.
+              </div>
+            </div>
+
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text">SQLite-Datei auswählen</span>
+              </label>
+              <input
+                type="file"
+                accept=".sqlite,.db"
+                class="file-input file-input-bordered file-input-sm w-full"
+                @change="handleSqliteFileSelect"
+                :disabled="isSqliteImporting || isWaitingForTenantSync"
+              />
+            </div>
+
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text">Mandantenname</span>
+              </label>
+              <input
+                type="text"
+                v-model="sqliteImportTenantName"
+                placeholder="Name für den neuen Mandanten..."
+                class="input input-bordered input-sm w-full"
+                :disabled="isSqliteImporting || isWaitingForTenantSync"
+                autocomplete="off"
+              />
+            </div>
+
+            <button
+              class="btn btn-primary btn-sm w-full"
+              @click="handleSqliteImport"
+              :disabled="
+                !selectedSqliteFile ||
+                !sqliteImportTenantName.trim() ||
+                isSqliteImporting ||
+                isWaitingForTenantSync ||
+                !isButtonEnabled
+              "
+              :title="
+                !isButtonEnabled
+                  ? BackendAvailabilityService.getTooltipText('SQLite-Import')
+                  : ''
+              "
+            >
+              <Icon
+                v-if="!isSqliteImporting && !isWaitingForTenantSync"
+                icon="mdi:database-import"
+                class="mr-2"
+              />
+              <Icon
+                v-else
+                icon="mdi:loading"
+                class="mr-2 animate-spin"
+              />
+              {{
+                isSqliteImporting
+                  ? "Importiere..."
+                  : isWaitingForTenantSync
+                  ? "Verarbeite..."
+                  : "Mandanten importieren"
+              }}
+            </button>
+
+            <!-- Wartezeit-Anzeige -->
+            <div
+              v-if="isWaitingForTenantSync"
+              class="alert alert-info alert-soft"
+            >
+              <span class="loading loading-dots loading-md"></span>
+              <div class="text-sm">
+                <strong>Verarbeitung läuft...</strong> Das Backend verarbeitet
+                die Datenbank. Bitte warten Sie einen Moment.
+              </div>
+            </div>
+
+            <div
+              v-if="sqliteImportSuccess"
+              class="alert alert-success alert-soft"
+            >
+              <Icon
+                icon="mdi:check-circle"
+                class="text-lg"
+              />
+              <div class="text-sm">
+                <strong>Import erfolgreich!</strong> Der neue Mandant wurde
+                erstellt.
+              </div>
+            </div>
+
+            <div
+              v-if="sqliteImportError"
+              class="alert alert-error alert-soft"
+            >
+              <Icon
+                icon="mdi:alert-circle"
+                class="text-lg"
+              />
+              <span class="text-sm">{{ sqliteImportError }}</span>
+            </div>
+          </div>
         </div>
 
         <div class="text-center text-sm opacity-70 mt-4">
