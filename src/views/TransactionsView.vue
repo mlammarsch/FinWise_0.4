@@ -711,7 +711,6 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               </legend>
               <div class="mx-2">
                 <DateRangePicker
-                  :model-value="dateRange"
                   @update:model-value="(range) => handleDateRangeUpdate(range)"
                 />
               </div>
@@ -864,7 +863,6 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               </legend>
               <div class="mx-2">
                 <DateRangePicker
-                  :model-value="dateRange"
                   @update:model-value="(range) => handleDateRangeUpdate(range)"
                 />
               </div>

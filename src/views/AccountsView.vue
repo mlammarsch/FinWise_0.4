@@ -65,7 +65,7 @@ const searchQuery = computed({
 
 // DateRange
 const dateRange = ref({
-  start: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+  start: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)
     .toISOString()
     .split("T")[0],
   end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)
@@ -506,7 +506,6 @@ const refreshGroupsLayout = () => {
           class="rounded-md bg-base-200/50 backdrop-blur-lg mb-6 flex justify-between p-2 items-center"
         >
           <DateRangePicker
-            :model-value="dateRange"
             @update:model-value="(range) => handleDateRangeUpdate(range)"
             class="mx-2"
           />

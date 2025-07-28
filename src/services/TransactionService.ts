@@ -292,8 +292,8 @@ export const TransactionService = {
     }, false); // Keine Regeln auf ACCOUNTTRANSFER anwenden
 
     // Verlinken
-    this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
-    this.updateTransaction(toTx.id,   { counterTransactionId: fromTx.id });
+    await this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
+    await this.updateTransaction(toTx.id,   { counterTransactionId: fromTx.id });
 
     debugLog('[TransactionService]', 'addAccountTransfer completed', { fromTx, toTx });
 
@@ -307,6 +307,149 @@ export const TransactionService = {
     }
 
     return { fromTransaction: fromTx, toTransaction: toTx };
+  },
+
+  /**
+   * Aktualisiert einen Account Transfer und seine Gegenbuchung
+   * Ermöglicht Betragsänderungen und Richtungsumkehr
+   */
+  async updateAccountTransfer(
+    id: string,
+    updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
+  ): Promise<boolean> {
+    const txStore = useTransactionStore();
+    const accStore = useAccountStore();
+
+    const original = txStore.getTransactionById(id);
+    if (!original || original.type !== TransactionType.ACCOUNTTRANSFER) {
+      debugLog('[TransactionService]', 'updateAccountTransfer - Invalid transaction', { id, type: original?.type });
+      return false;
+    }
+
+    // Finde die Gegenbuchung
+    const counterTransaction = original.counterTransactionId
+      ? txStore.getTransactionById(original.counterTransactionId)
+      : null;
+
+    if (!counterTransaction) {
+      debugLog('[TransactionService]', 'updateAccountTransfer - Counter transaction not found', {
+        id,
+        counterTransactionId: original.counterTransactionId
+      });
+      return false;
+    }
+
+    debugLog('[TransactionService]', 'updateAccountTransfer - Processing', {
+      originalId: id,
+      counterId: counterTransaction.id,
+      originalAmount: original.amount,
+      newAmount: updates.amount,
+      originalAccount: original.accountId,
+      counterAccount: counterTransaction.accountId
+    });
+
+    // Berechne die neuen Beträge
+    const newAmount = updates.amount !== undefined ? updates.amount : original.amount;
+    const absNewAmount = Math.abs(newAmount);
+
+    // Bestimme die Richtung basierend auf dem Vorzeichen des neuen Betrags
+    const isReversed = (original.amount < 0 && newAmount > 0) || (original.amount > 0 && newAmount < 0);
+
+    // Bestimme Quell- und Zielkonto basierend auf der neuen Richtung
+    let fromAccountId: string, toAccountId: string;
+    let fromAmount: number, toAmount: number;
+
+    if (newAmount < 0) {
+      // Negative Transaktion: aktuelles Konto ist Quellkonto
+      fromAccountId = original.accountId;
+      toAccountId = counterTransaction.accountId;
+      fromAmount = -absNewAmount;
+      toAmount = absNewAmount;
+    } else {
+      // Positive Transaktion: aktuelles Konto ist Zielkonto
+      fromAccountId = counterTransaction.accountId;
+      toAccountId = original.accountId;
+      fromAmount = -absNewAmount;
+      toAmount = absNewAmount;
+    }
+
+    const fromName = accStore.getAccountById(fromAccountId)?.name ?? '';
+    const toName = accStore.getAccountById(toAccountId)?.name ?? '';
+
+    // Bereite die Updates vor
+    const dateUpdate = updates.date || original.date;
+    const valueDateUpdate = updates.valueDate || original.valueDate || dateUpdate;
+    const noteUpdate = updates.note !== undefined ? updates.note : original.note;
+    const recipientIdUpdate = updates.recipientId !== undefined ? updates.recipientId : original.recipientId;
+
+    // Update für die ursprüngliche Transaktion
+    const originalUpdates: Partial<Transaction> = {
+      amount: newAmount < 0 ? fromAmount : toAmount,
+      accountId: newAmount < 0 ? fromAccountId : toAccountId,
+      date: dateUpdate,
+      valueDate: valueDateUpdate,
+      note: noteUpdate,
+      recipientId: recipientIdUpdate,
+      payee: recipientIdUpdate
+        ? this.resolvePayeeFromRecipient(recipientIdUpdate)
+        : (newAmount < 0 ? `Transfer zu ${toName}` : `Transfer von ${fromName}`),
+      transferToAccountId: newAmount < 0 ? toAccountId : fromAccountId,
+    };
+
+    // Update für die Gegenbuchung
+    const counterUpdates: Partial<Transaction> = {
+      amount: newAmount < 0 ? toAmount : fromAmount,
+      accountId: newAmount < 0 ? toAccountId : fromAccountId,
+      date: dateUpdate,
+      valueDate: valueDateUpdate,
+      note: noteUpdate,
+      recipientId: recipientIdUpdate,
+      payee: recipientIdUpdate
+        ? this.resolvePayeeFromRecipient(recipientIdUpdate)
+        : (newAmount < 0 ? `Transfer von ${fromName}` : `Transfer zu ${toName}`),
+      transferToAccountId: newAmount < 0 ? fromAccountId : toAccountId,
+    };
+
+    debugLog('[TransactionService]', 'updateAccountTransfer - Applying updates', {
+      originalUpdates,
+      counterUpdates,
+      isReversed
+    });
+
+    // Führe die Updates durch
+    const originalSuccess = await txStore.updateTransaction(id, originalUpdates);
+    const counterSuccess = await txStore.updateTransaction(counterTransaction.id, counterUpdates);
+
+    if (!originalSuccess || !counterSuccess) {
+      errorLog('[TransactionService]', 'updateAccountTransfer - Failed to update transactions', {
+        originalSuccess,
+        counterSuccess
+      });
+      return false;
+    }
+
+    // Salden aktualisieren
+    BalanceService.calculateMonthlyBalances();
+
+    // Running Balance für beide betroffene Konten neu berechnen
+    if (!this._skipRunningBalanceRecalc) {
+      await BalanceService.recalculateRunningBalancesForAccount(fromAccountId);
+      await BalanceService.recalculateRunningBalancesForAccount(toAccountId);
+
+      BalanceService.triggerRunningBalanceRecalculation(fromAccountId, valueDateUpdate);
+      BalanceService.triggerRunningBalanceRecalculation(toAccountId, valueDateUpdate);
+    }
+
+    infoLog('[TransactionService]', 'updateAccountTransfer completed', {
+      originalId: id,
+      counterId: counterTransaction.id,
+      newAmount,
+      fromAccount: fromAccountId,
+      toAccount: toAccountId,
+      isReversed
+    });
+
+    return true;
   },
 
 /* -------------------- Kategorie‑zu‑Kategorie‑Transfer -------------------- */
@@ -355,8 +498,8 @@ export const TransactionService = {
     const newFromTx = await this.addTransaction(fromTx as Omit<Transaction, 'id' | 'runningBalance'>, false); // Keine Regeln auf CATEGORYTRANSFER anwenden
     const newToTx = await this.addTransaction(toTx as Omit<Transaction, 'id' | 'runningBalance'>, false); // Keine Regeln auf CATEGORYTRANSFER anwenden
 
-    this.updateTransaction(newFromTx.id, { counterTransactionId: newToTx.id });
-    this.updateTransaction(newToTx.id, { counterTransactionId: newFromTx.id });
+    await this.updateTransaction(newFromTx.id, { counterTransactionId: newToTx.id });
+    await this.updateTransaction(newToTx.id, { counterTransactionId: newFromTx.id });
 
     debugLog('[TransactionService]', 'addCategoryTransfer completed', { fromTransaction: newFromTx, toTransaction: newToTx });
 
@@ -368,7 +511,7 @@ export const TransactionService = {
     return { fromTransaction: newFromTx, toTransaction: newToTx };
   },
 
-  updateCategoryTransfer(
+  async updateCategoryTransfer(
     transactionId: string,
     gegentransactionId: string,
     fromCategoryId: string,
@@ -377,8 +520,65 @@ export const TransactionService = {
     date: string,
     note: string = '',
     recipientId?: string
-  ) {
+  ): Promise<boolean> {
+    const txStore = useTransactionStore();
     const categoryStore = useCategoryStore();
+
+    debugLog('[TransactionService]', 'updateCategoryTransfer started', {
+      transactionId,
+      gegentransactionId,
+      fromCategoryId,
+      toCategoryId,
+      amount,
+      date,
+      note,
+      recipientId
+    });
+
+    // Validierung der Eingabeparameter
+    if (!transactionId || !gegentransactionId) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Missing transaction IDs', {
+        transactionId,
+        gegentransactionId
+      });
+      return false;
+    }
+
+    if (!fromCategoryId || !toCategoryId) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Missing category IDs', {
+        fromCategoryId,
+        toCategoryId
+      });
+      return false;
+    }
+
+    if (amount <= 0) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Invalid amount', { amount });
+      return false;
+    }
+
+    // Prüfe ob beide Transaktionen existieren
+    const fromTransaction = txStore.getTransactionById(transactionId);
+    const toTransaction = txStore.getTransactionById(gegentransactionId);
+
+    if (!fromTransaction || !toTransaction) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Transactions not found', {
+        fromTransactionExists: !!fromTransaction,
+        toTransactionExists: !!toTransaction
+      });
+      return false;
+    }
+
+    // Prüfe ob es sich um Category Transfers handelt
+    if (fromTransaction.type !== TransactionType.CATEGORYTRANSFER ||
+        toTransaction.type !== TransactionType.CATEGORYTRANSFER) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Invalid transaction types', {
+        fromType: fromTransaction.type,
+        toType: toTransaction.type
+      });
+      return false;
+    }
+
     const fromCategoryName = categoryStore.getCategoryById(fromCategoryId)?.name ?? '';
     const toCategoryName = categoryStore.getCategoryById(toCategoryId)?.name ?? '';
     const normalizedDate = toDateOnlyString(date);
@@ -405,17 +605,41 @@ export const TransactionService = {
       recipientId
     };
 
-    this.updateTransaction(transactionId, updatedFromTx);
-    this.updateTransaction(gegentransactionId, updatedToTx);
+    try {
+      // Führe beide Updates durch
+      const fromUpdateSuccess = await this.updateTransaction(transactionId, updatedFromTx);
+      const toUpdateSuccess = await this.updateTransaction(gegentransactionId, updatedToTx);
 
-    debugLog('[TransactionService]', 'updateCategoryTransfer completed', { transactionId, gegentransactionId, updatedFromTx, updatedToTx });
+      if (!fromUpdateSuccess || !toUpdateSuccess) {
+        errorLog('[TransactionService]', 'updateCategoryTransfer - Failed to update transactions', {
+          fromUpdateSuccess,
+          toUpdateSuccess
+        });
+        return false;
+      }
 
-    // Salden aktualisieren
-    BalanceService.calculateMonthlyBalances();
+      debugLog('[TransactionService]', 'updateCategoryTransfer completed successfully', {
+        transactionId,
+        gegentransactionId,
+        updatedFromTx,
+        updatedToTx
+      });
 
-    // Running Balance Neuberechnung triggern (Category Transfers haben keine accountId, daher nicht nötig)
+      // Salden aktualisieren
+      BalanceService.calculateMonthlyBalances();
 
-    return true;
+      infoLog('[TransactionService]', 'Category transfer updated successfully', {
+        fromCategory: fromCategoryName,
+        toCategory: toCategoryName,
+        amount,
+        date: normalizedDate
+      });
+
+      return true;
+    } catch (error) {
+      errorLog('[TransactionService]', 'updateCategoryTransfer - Error during update', error);
+      return false;
+    }
   },
 
   getCategoryTransferOptions(
@@ -436,6 +660,140 @@ export const TransactionService = {
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+  },
+
+  /**
+   * Aktualisiert einen Category Transfer und seine Gegenbuchung
+   * Ermöglicht Betragsänderungen und Richtungsumkehr
+   */
+  async updateCategoryTransferAmount(
+    id: string,
+    updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
+  ): Promise<boolean> {
+    const txStore = useTransactionStore();
+    const catStore = useCategoryStore();
+
+    const original = txStore.getTransactionById(id);
+    if (!original || original.type !== TransactionType.CATEGORYTRANSFER) {
+      debugLog('[TransactionService]', 'updateCategoryTransferAmount - Invalid transaction', { id, type: original?.type });
+      return false;
+    }
+
+    // Finde die Gegenbuchung
+    const counterTransaction = original.counterTransactionId
+      ? txStore.getTransactionById(original.counterTransactionId)
+      : null;
+
+    if (!counterTransaction) {
+      debugLog('[TransactionService]', 'updateCategoryTransferAmount - Counter transaction not found', {
+        id,
+        counterTransactionId: original.counterTransactionId
+      });
+      return false;
+    }
+
+    debugLog('[TransactionService]', 'updateCategoryTransferAmount - Processing', {
+      originalId: id,
+      counterId: counterTransaction.id,
+      originalAmount: original.amount,
+      newAmount: updates.amount,
+      originalCategory: original.categoryId,
+      counterCategory: counterTransaction.categoryId
+    });
+
+    // Berechne die neuen Beträge
+    const newAmount = updates.amount !== undefined ? updates.amount : original.amount;
+    const absNewAmount = Math.abs(newAmount);
+
+    // Bestimme die Richtung basierend auf dem Vorzeichen des neuen Betrags
+    const isReversed = (original.amount < 0 && newAmount > 0) || (original.amount > 0 && newAmount < 0);
+
+    // Bestimme Quell- und Zielkategorie basierend auf der neuen Richtung
+    let fromCategoryId: string, toCategoryId: string;
+    let fromAmount: number, toAmount: number;
+
+    if (newAmount < 0) {
+      // Negative Transaktion: aktuelle Kategorie ist Quellkategorie
+      fromCategoryId = original.categoryId!;
+      toCategoryId = counterTransaction.categoryId!;
+      fromAmount = -absNewAmount;
+      toAmount = absNewAmount;
+    } else {
+      // Positive Transaktion: aktuelle Kategorie ist Zielkategorie
+      fromCategoryId = counterTransaction.categoryId!;
+      toCategoryId = original.categoryId!;
+      fromAmount = -absNewAmount;
+      toAmount = absNewAmount;
+    }
+
+    const fromName = catStore.getCategoryById(fromCategoryId)?.name ?? '';
+    const toName = catStore.getCategoryById(toCategoryId)?.name ?? '';
+
+    // Bereite die Updates vor
+    const dateUpdate = updates.date || original.date;
+    const valueDateUpdate = updates.valueDate || original.valueDate || dateUpdate;
+    const noteUpdate = updates.note !== undefined ? updates.note : original.note;
+    const recipientIdUpdate = updates.recipientId !== undefined ? updates.recipientId : original.recipientId;
+
+    // Update für die ursprüngliche Transaktion
+    const originalUpdates: Partial<Transaction> = {
+      amount: newAmount < 0 ? fromAmount : toAmount,
+      categoryId: newAmount < 0 ? fromCategoryId : toCategoryId,
+      date: dateUpdate,
+      valueDate: valueDateUpdate,
+      note: noteUpdate,
+      recipientId: recipientIdUpdate,
+      payee: recipientIdUpdate
+        ? this.resolvePayeeFromRecipient(recipientIdUpdate)
+        : (newAmount < 0 ? `Kategorientransfer zu ${toName}` : `Kategorientransfer von ${fromName}`),
+      toCategoryId: newAmount < 0 ? toCategoryId : fromCategoryId,
+    };
+
+    // Update für die Gegenbuchung
+    const counterUpdates: Partial<Transaction> = {
+      amount: newAmount < 0 ? toAmount : fromAmount,
+      categoryId: newAmount < 0 ? toCategoryId : fromCategoryId,
+      date: dateUpdate,
+      valueDate: valueDateUpdate,
+      note: noteUpdate,
+      recipientId: recipientIdUpdate,
+      payee: recipientIdUpdate
+        ? this.resolvePayeeFromRecipient(recipientIdUpdate)
+        : (newAmount < 0 ? `Kategorientransfer von ${fromName}` : `Kategorientransfer zu ${toName}`),
+      toCategoryId: newAmount < 0 ? fromCategoryId : toCategoryId,
+    };
+
+    debugLog('[TransactionService]', 'updateCategoryTransferAmount - Applying updates', {
+      originalUpdates,
+      counterUpdates,
+      isReversed
+    });
+
+    // Führe die Updates durch
+    const originalSuccess = await txStore.updateTransaction(id, originalUpdates);
+    const counterSuccess = await txStore.updateTransaction(counterTransaction.id, counterUpdates);
+
+    if (!originalSuccess || !counterSuccess) {
+      errorLog('[TransactionService]', 'updateCategoryTransferAmount - Failed to update transactions', {
+        originalSuccess,
+        counterSuccess
+      });
+      return false;
+    }
+
+    // Salden aktualisieren
+    BalanceService.calculateMonthlyBalances();
+
+    infoLog('[TransactionService]', 'updateCategoryTransferAmount completed', {
+      originalId: id,
+      counterId: counterTransaction.id,
+      newAmount,
+      fromCategory: fromCategoryId,
+      toCategory: toCategoryId,
+      isReversed
+    });
+
+    return true;
   },
 
 /* --------------------- Ausgleichs‑Buchung ------------------------ */
@@ -502,8 +860,67 @@ async updateTransaction(
     }
 
     const original = txStore.getTransactionById(id);
-    if (original) {
-      debugLog('[TransactionService]', `Aktualisiere Transaktion: ${original.description} (${original.amount}€) für Konto ${original.accountId}`);
+    if (!original) {
+      debugLog('[TransactionService]', `updateTransaction - Transaction not found: ${id}`);
+      return false;
+    }
+
+    debugLog('[TransactionService]', `Aktualisiere Transaktion: ${original.description} (${original.amount}€) für Konto ${original.accountId}`);
+
+    // ACCOUNTTRANSFER-spezifische Logik für Betragsänderungen
+    if (original.type === TransactionType.ACCOUNTTRANSFER && updates.amount !== undefined && updates.amount !== original.amount) {
+      return await this.updateAccountTransfer(id, updates);
+    }
+
+    // CATEGORYTRANSFER-spezifische Logik für Betragsänderungen
+    if (original.type === TransactionType.CATEGORYTRANSFER && updates.amount !== undefined && updates.amount !== original.amount) {
+      return await this.updateCategoryTransferAmount(id, updates);
+    }
+
+    // Für andere Updates bei ACCOUNTTRANSFER (ohne Betragsänderung) - normale Verarbeitung
+    if (original.type === TransactionType.ACCOUNTTRANSFER && original.counterTransactionId) {
+      // Synchronisiere bestimmte Felder mit der Gegenbuchung
+      const counterTransaction = txStore.getTransactionById(original.counterTransactionId);
+      if (counterTransaction) {
+        const counterUpdates: Partial<Transaction> = {};
+
+        // Synchronisiere Datum, Wertstellungsdatum und Notiz
+        if (updates.date !== undefined) counterUpdates.date = updates.date;
+        if (updates.valueDate !== undefined) counterUpdates.valueDate = updates.valueDate;
+        if (updates.note !== undefined) counterUpdates.note = updates.note;
+        if (updates.recipientId !== undefined) {
+          counterUpdates.recipientId = updates.recipientId;
+          counterUpdates.payee = this.resolvePayeeFromRecipient(updates.recipientId);
+        }
+
+        // Aktualisiere die Gegenbuchung, falls notwendig
+        if (Object.keys(counterUpdates).length > 0) {
+          await txStore.updateTransaction(original.counterTransactionId, counterUpdates);
+        }
+      }
+    }
+
+    // Für andere Updates bei CATEGORYTRANSFER (ohne Betragsänderung) - normale Verarbeitung
+    if (original.type === TransactionType.CATEGORYTRANSFER && original.counterTransactionId) {
+      // Synchronisiere bestimmte Felder mit der Gegenbuchung
+      const counterTransaction = txStore.getTransactionById(original.counterTransactionId);
+      if (counterTransaction) {
+        const counterUpdates: Partial<Transaction> = {};
+
+        // Synchronisiere Datum, Wertstellungsdatum und Notiz
+        if (updates.date !== undefined) counterUpdates.date = updates.date;
+        if (updates.valueDate !== undefined) counterUpdates.valueDate = updates.valueDate;
+        if (updates.note !== undefined) counterUpdates.note = updates.note;
+        if (updates.recipientId !== undefined) {
+          counterUpdates.recipientId = updates.recipientId;
+          counterUpdates.payee = this.resolvePayeeFromRecipient(updates.recipientId);
+        }
+
+        // Aktualisiere die Gegenbuchung, falls notwendig
+        if (Object.keys(counterUpdates).length > 0) {
+          await txStore.updateTransaction(original.counterTransactionId, counterUpdates);
+        }
+      }
     }
 
     // Datums­wechsel bei Einnahmen → Category‑Transfer umbuchen
@@ -524,7 +941,7 @@ async updateTransaction(
       const cat = catStore.getCategoryById(original.categoryId);
       if (cat?.isIncomeCategory) {
         // Rücktransfer (alte Buchung rückgängig machen)
-        this.addCategoryTransfer(
+        await this.addCategoryTransfer(
           available.id,
           original.categoryId,
           original.amount,
@@ -533,7 +950,7 @@ async updateTransaction(
         );
 
         // Neuer Transfer am neuen Datum
-        this.addCategoryTransfer(
+        await this.addCategoryTransfer(
           original.categoryId,
           available.id,
           original.amount,
@@ -857,7 +1274,7 @@ async updateTransaction(
         };
 
         // Transaktion aktualisieren
-        const success = this.updateTransaction(transactionId, updates);
+        const success = await this.updateTransaction(transactionId, updates);
         if (success) {
           updatedCount++;
           debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
@@ -1038,7 +1455,7 @@ async updateTransaction(
         }
 
         // Transaktion aktualisieren
-        const success = this.updateTransaction(transactionId, updates);
+        const success = await this.updateTransaction(transactionId, updates);
         if (success) {
           updatedCount++;
           debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
@@ -1173,7 +1590,7 @@ async updateTransaction(
         }
 
         // Transaktion aktualisieren
-        const success = this.updateTransaction(transactionId, updates);
+        const success = await this.updateTransaction(transactionId, updates);
         if (success) {
           updatedCount++;
           debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
@@ -1328,7 +1745,7 @@ async updateTransaction(
         };
 
         // Transaktion aktualisieren
-        const success = this.updateTransaction(transactionId, updates);
+        const success = await this.updateTransaction(transactionId, updates);
         if (success) {
           updatedCount++;
           debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {
@@ -2069,7 +2486,7 @@ async updateTransaction(
         };
 
         // Transaktion aktualisieren
-        const success = this.updateTransaction(transactionId, updates);
+        const success = await this.updateTransaction(transactionId, updates);
         if (success) {
           updatedCount++;
           debugLog('[TransactionService]', `Transaction ${transactionId} successfully updated`, {

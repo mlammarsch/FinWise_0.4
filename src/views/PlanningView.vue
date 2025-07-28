@@ -58,7 +58,7 @@ const itemsPerPage = ref<number | "all">(25);
 const itemsPerPageOptions = [10, 20, 25, 50, 100, "all"];
 
 const dateRange = ref<{ start: string; end: string }>({
-  start: dayjs().startOf("month").format("YYYY-MM-DD"),
+  start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
   end: dayjs().endOf("month").format("YYYY-MM-DD"),
 });
 
@@ -597,10 +597,7 @@ onMounted(() => {
             <label class="label">
               <span class="label-text opacity-50">Zeitraum</span>
             </label>
-            <DateRangePicker
-              :model-value="dateRange"
-              @update:model-value="handleDateRangeUpdate"
-            />
+            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
           </div>
           <div class="form-control">
             <label class="label">

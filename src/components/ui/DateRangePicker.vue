@@ -34,13 +34,23 @@ const rightMonth = computed(() => currentDate.value);
 
 // Working range (for preview) and committed range (actual value)
 const workingRange = ref<DateRange>({
-  start: props.modelValue?.start || "",
-  end: props.modelValue?.end || "",
+  start:
+    props.modelValue?.start ||
+    dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
+  end: props.modelValue?.end || dayjs().endOf("month").format("YYYY-MM-DD"),
 });
 
 const committedRange = ref<DateRange>({
-  start: props.modelValue?.start || "",
-  end: props.modelValue?.end || "",
+  start:
+    props.modelValue?.start ||
+    dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
+  end: props.modelValue?.end || dayjs().endOf("month").format("YYYY-MM-DD"),
+});
+
+// Default range: Letzte 2 Monate (Vormonat + aktueller Monat)
+const getDefaultRange = () => ({
+  start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
+  end: dayjs().endOf("month").format("YYYY-MM-DD"),
 });
 
 // Shortcuts
@@ -72,6 +82,10 @@ const shortcuts = [
       start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
       end: dayjs().subtract(1, "month").endOf("month").format("YYYY-MM-DD"),
     }),
+  },
+  {
+    label: "Letzte 2 Monate",
+    getValue: getDefaultRange,
   },
   {
     label: "Dieses Quartal",
@@ -337,6 +351,14 @@ watch(
 
 onMounted(() => {
   document.addEventListener("click", handleClickOutside);
+
+  // Set default range if no modelValue is provided
+  if (!props.modelValue?.start || !props.modelValue?.end) {
+    const defaultRange = getDefaultRange();
+    workingRange.value = defaultRange;
+    committedRange.value = defaultRange;
+    emit("update:modelValue", defaultRange);
+  }
 });
 
 onUnmounted(() => {

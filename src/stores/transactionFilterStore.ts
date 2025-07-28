@@ -8,6 +8,7 @@ import { useCategoryStore } from './categoryStore'
 import { useTagStore } from './tagStore'
 import { useRecipientStore } from './recipientStore'
 import { debugLog } from '@/utils/logger'
+import dayjs from 'dayjs'
 
 export const useTransactionFilterStore = defineStore('transactionFilter', () => {
   // Store-Referenzen
@@ -25,8 +26,8 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
   const selectedTagId = ref("");
   const selectedCategoryId = ref("");
   const dateRange = ref({
-    start: new Date().toISOString().split("T")[0],
-    end: new Date().toISOString().split("T")[0],
+    start: new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).toISOString().split("T")[0],
+    end: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split("T")[0],
   });
   const currentViewMode = ref<"account" | "category">("account");
 

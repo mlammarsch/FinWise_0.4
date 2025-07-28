@@ -43,10 +43,10 @@ const props = defineProps<{
 const emit = defineEmits(["edit", "delete", "sort-change"]);
 
 // Filterung der Transaktionen:
-// Bei CATEGORYTRANSFER werden nur Transaktionen mit nicht-negativem Betrag angezeigt.
+// ACCOUNTTRANSFER werden aus der Kategorien-Transaktionsliste ausgeblendet.
 const displayTransactions = computed(() => {
   let list = props.transactions.filter(
-    (tx) => tx.type !== TransactionType.CATEGORYTRANSFER || tx.amount >= 0
+    (tx) => tx.type !== TransactionType.ACCOUNTTRANSFER
   );
   if (props.searchTerm && props.searchTerm.trim() !== "") {
     const term = props.searchTerm.toLowerCase().trim();
