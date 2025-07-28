@@ -20,6 +20,7 @@ import SearchGroup from "@/components/ui/SearchGroup.vue";
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import PagingComponent from "@/components/ui/PagingComponent.vue";
+import { formatDate } from "@/utils/formatters";
 import { PlanningService } from "@/services/PlanningService";
 import { Icon } from "@iconify/vue";
 
@@ -37,9 +38,48 @@ const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
 const filteredPlannings = computed(() => {
+  // Erst Gegenbuchungen herausfiltern
+  const planningsWithoutCounterBookings =
+    planningStore.planningTransactions.filter((p) => {
+      // Eine Gegenbuchung erkennt man daran, dass:
+      // 1. Sie einen Namen mit "(Gegenbuchung)" hat
+      // 2. Oder sie bei Transfers einen positiven Betrag hat (während die Hauptbuchung negativ ist)
+
+      // Prüfung über den Namen - einfachste Methode
+      if (p.name && p.name.includes("(Gegenbuchung)")) {
+        return false; // Gegenbuchung ausblenden
+      }
+
+      // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
+      // ist die Gegenbuchung diejenige mit positivem Betrag
+      if (
+        p.counterPlanningTransactionId &&
+        (p.transactionType === TransactionType.ACCOUNTTRANSFER ||
+          p.transactionType === TransactionType.CATEGORYTRANSFER)
+      ) {
+        const counterPlanning = planningStore.planningTransactions.find(
+          (counter) => counter.id === p.counterPlanningTransactionId
+        );
+
+        // Wenn die Gegenbuchung existiert und diese Planung einen positiven Betrag hat,
+        // während die Gegenbuchung einen negativen Betrag hat, dann ist dies die Gegenbuchung
+        if (counterPlanning && p.amount > 0 && counterPlanning.amount < 0) {
+          return false; // Gegenbuchung ausblenden
+        }
+      }
+
+      return true; // Hauptbuchung oder normale Buchung anzeigen
+    });
+
+  // Nach Fälligkeitsdatum aufsteigend sortieren (älteste zuerst)
+  const sortedPlannings = planningsWithoutCounterBookings.sort((a, b) => {
+    return dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
+  });
+
   const term = searchQuery.value.trim().toLowerCase();
-  if (!term) return planningStore.planningTransactions;
-  return planningStore.planningTransactions.filter((p) => {
+  if (!term) return sortedPlannings;
+
+  return sortedPlannings.filter((p) => {
     const payee =
       recipientStore.getRecipientById(p.recipientId || "")?.name || "";
     const acc = accountStore.getAccountById(p.accountId)?.name || "";
@@ -77,11 +117,107 @@ function editPlanning(planning: PlanningTransaction) {
   showEditPlanningModal.value = true;
 }
 
-function savePlanning(data: any) {
+async function savePlanning(data: any) {
   if (selectedPlanning.value) {
-    PlanningService.updatePlanningTransaction(selectedPlanning.value.id, data);
+    // Hauptbuchung aktualisieren
+    await PlanningService.updatePlanningTransaction(
+      selectedPlanning.value.id,
+      data
+    );
+
+    // Bei Transfers auch die Gegenbuchung aktualisieren
+    if (
+      selectedPlanning.value.counterPlanningTransactionId &&
+      (selectedPlanning.value.transactionType ===
+        TransactionType.ACCOUNTTRANSFER ||
+        selectedPlanning.value.transactionType ===
+          TransactionType.CATEGORYTRANSFER)
+    ) {
+      const counterPlanning = planningStore.getPlanningTransactionById(
+        selectedPlanning.value.counterPlanningTransactionId
+      );
+      if (counterPlanning) {
+        // Gegenbuchung mit entsprechenden Daten aktualisieren
+        const counterData: any = {
+          name: data.name
+            ? `${data.name} (Gegenbuchung)`
+            : counterPlanning.name,
+          note: data.note !== undefined ? data.note : counterPlanning.note,
+          startDate:
+            data.startDate !== undefined
+              ? data.startDate
+              : counterPlanning.startDate,
+          valueDate:
+            data.valueDate !== undefined
+              ? data.valueDate
+              : counterPlanning.valueDate,
+          endDate:
+            data.endDate !== undefined ? data.endDate : counterPlanning.endDate,
+          recurrencePattern:
+            data.recurrencePattern !== undefined
+              ? data.recurrencePattern
+              : counterPlanning.recurrencePattern,
+          recurrenceEndType:
+            data.recurrenceEndType !== undefined
+              ? data.recurrenceEndType
+              : counterPlanning.recurrenceEndType,
+          recurrenceCount:
+            data.recurrenceCount !== undefined
+              ? data.recurrenceCount
+              : counterPlanning.recurrenceCount,
+          executionDay:
+            data.executionDay !== undefined
+              ? data.executionDay
+              : counterPlanning.executionDay,
+          weekendHandling:
+            data.weekendHandling !== undefined
+              ? data.weekendHandling
+              : counterPlanning.weekendHandling,
+          isActive:
+            data.isActive !== undefined
+              ? data.isActive
+              : counterPlanning.isActive,
+          forecastOnly:
+            data.forecastOnly !== undefined
+              ? data.forecastOnly
+              : counterPlanning.forecastOnly,
+          amountType:
+            data.amountType !== undefined
+              ? data.amountType
+              : counterPlanning.amountType,
+          approximateAmount:
+            data.approximateAmount !== undefined
+              ? data.approximateAmount
+              : counterPlanning.approximateAmount,
+          minAmount:
+            data.minAmount !== undefined
+              ? data.minAmount
+              : counterPlanning.minAmount,
+          maxAmount:
+            data.maxAmount !== undefined
+              ? data.maxAmount
+              : counterPlanning.maxAmount,
+          tagIds:
+            data.tagIds !== undefined ? data.tagIds : counterPlanning.tagIds,
+          autoExecute:
+            data.autoExecute !== undefined
+              ? data.autoExecute
+              : counterPlanning.autoExecute,
+        };
+
+        // Betrag für Gegenbuchung umkehren, falls geändert
+        if (data.amount !== undefined) {
+          counterData.amount = -data.amount;
+        }
+
+        await PlanningService.updatePlanningTransaction(
+          selectedPlanning.value.counterPlanningTransactionId,
+          counterData
+        );
+      }
+    }
   } else {
-    PlanningService.addPlanningTransaction(data);
+    await PlanningService.addPlanningTransaction(data);
   }
   showNewPlanningModal.value = false;
   showEditPlanningModal.value = false;
@@ -232,6 +368,44 @@ function getTargetName(planning: PlanningTransaction): string {
     return categoryStore.getCategoryById(planning.categoryId)?.name || "-";
   }
 }
+
+// Hilfsfunktion zur Prüfung, ob das Startdatum die erste Planbuchung einer Serie ist
+function isFirstOccurrenceOfSeries(planning: PlanningTransaction): boolean {
+  // Bei einmaligen Buchungen ist es immer die erste (und einzige)
+  if (planning.recurrencePattern === RecurrencePattern.ONCE) {
+    return true;
+  }
+
+  // Prüfen, ob das Startdatum heute oder in der Vergangenheit liegt
+  const today = dayjs().format("YYYY-MM-DD");
+  const startDate = dayjs(planning.startDate).format("YYYY-MM-DD");
+
+  // Wenn das Startdatum heute oder in der Vergangenheit liegt, ist es fällig
+  return dayjs(startDate).isSameOrBefore(dayjs(today));
+}
+
+// Funktion zur Anzeige des korrekten Labels für das Startdatum
+function getStartDateLabel(planning: PlanningTransaction): string {
+  return isFirstOccurrenceOfSeries(planning) ? "Fällig" : "geplant für";
+}
+
+// Hilfsfunktion für Wiederholungstyp-Icon
+function getRecurrenceIcon(planning: PlanningTransaction): string {
+  if (planning.recurrencePattern === RecurrencePattern.ONCE) {
+    return "mdi:repeat-once";
+  }
+  return "mdi:repeat-variant";
+}
+
+// Hilfsfunktion für Wiederholungstyp-Tooltip
+function getRecurrenceTooltip(planning: PlanningTransaction): string {
+  if (planning.recurrencePattern === RecurrencePattern.ONCE) {
+    return "Einzelbuchung";
+  }
+  return `Wiederholende Buchung: ${formatRecurrencePattern(
+    planning.recurrencePattern
+  )}`;
+}
 </script>
 
 <template>
@@ -280,7 +454,13 @@ function getTargetName(planning: PlanningTransaction): string {
               <th>Quelle</th>
               <th>Ziel</th>
               <th>Intervall</th>
-              <th>Start</th>
+              <th class="text-center">
+                <Icon
+                  icon="mdi:calendar-repeat-outline"
+                  class="text-lg"
+                />
+              </th>
+              <th>Fällig</th>
               <th class="text-right">Betrag</th>
               <th>Status</th>
               <th class="text-right">Aktionen</th>
@@ -313,7 +493,34 @@ function getTargetName(planning: PlanningTransaction): string {
               <td>{{ getSourceName(planning) }}</td>
               <td>{{ getTargetName(planning) }}</td>
               <td>{{ formatRecurrencePattern(planning.recurrencePattern) }}</td>
-              <td>{{ planning.startDate }}</td>
+              <td class="text-center">
+                <div
+                  class="tooltip"
+                  :data-tip="getRecurrenceTooltip(planning)"
+                >
+                  <Icon
+                    :icon="getRecurrenceIcon(planning)"
+                    class="text-xl text-base-content/70"
+                  />
+                </div>
+              </td>
+              <td>
+                <div class="flex flex-col">
+                  <span
+                    class="text-xs font-medium"
+                    :class="
+                      isFirstOccurrenceOfSeries(planning)
+                        ? 'text-warning'
+                        : 'text-base-content/70'
+                    "
+                  >
+                    {{ getStartDateLabel(planning) }}
+                  </span>
+                  <span class="text-sm">{{
+                    formatDate(planning.startDate)
+                  }}</span>
+                </div>
+              </td>
               <td class="text-right">
                 <CurrencyDisplay
                   :amount="planning.amount"
@@ -364,7 +571,7 @@ function getTargetName(planning: PlanningTransaction): string {
             </tr>
             <tr v-if="paginatedPlannings.length === 0">
               <td
-                colspan="10"
+                colspan="11"
                 class="text-center py-4"
               >
                 Keine geplanten Transaktionen vorhanden.
