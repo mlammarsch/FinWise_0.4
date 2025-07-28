@@ -844,6 +844,167 @@ export const TransactionService = {
 
 /* ------------------------- Update / Delete ----------------------- */
 
+  /**
+   * Löscht eine einzelne Transaktion ohne die Gegenbuchung zu beeinträchtigen
+   * Wird für die Transfer-Konvertierung verwendet
+   */
+  async deleteSingleTransaction(id: string): Promise<boolean> {
+    const txStore = useTransactionStore();
+    const catStore = useCategoryStore();
+
+    const tx = txStore.getTransactionById(id);
+    if (!tx) return false;
+
+    debugLog('[TransactionService]', `Lösche einzelne Transaktion: ${tx.description} (${tx.amount}€) vom ${tx.date} für Konto ${tx.accountId}`);
+
+    // Einnahme‑Löschung → Mittel zurück transferieren (nur wenn es keine Transfer-Konvertierung ist)
+    if (
+      tx.type === TransactionType.INCOME &&
+      tx.amount > 0 &&
+      tx.categoryId
+    ) {
+      const available = catStore.getAvailableFundsCategory();
+      if (!available) throw new Error("Kategorie 'Verfügbare Mittel' fehlt");
+
+      const cat = catStore.getCategoryById(tx.categoryId);
+      if (cat?.isIncomeCategory) {
+        await this.addCategoryTransfer(
+          available.id,
+          tx.categoryId,
+          tx.amount,
+          tx.date,
+          'Automatischer Transfer bei Löschung der Einnahme'
+        );
+      }
+    }
+
+    // Lösche nur diese eine Transaktion, NICHT die Gegenbuchung
+    const okPrimary = await txStore.deleteTransaction(id);
+    if (!okPrimary) return false;
+
+    // WICHTIG: MonthlyBalance-Cache invalidieren BEVOR Running Balance neu berechnet wird
+    debugLog('[TransactionService]', `Invalidiere MonthlyBalance-Cache nach Löschung von Transaktion ${id}`);
+    BalanceService.calculateMonthlyBalances();
+
+    // WICHTIG: Running Balance für betroffenes Konto neu berechnen
+    if (tx.accountId && !this._skipRunningBalanceRecalc) {
+      debugLog('[TransactionService]', `Triggere Running Balance Neuberechnung für Konto ${tx.accountId} nach Löschung von Transaktion ${id}`);
+
+      await BalanceService.recalculateRunningBalancesForAccount(tx.accountId);
+
+      infoLog('[TransactionService]', `Running Balance für Konto ${tx.accountId} nach Löschung neu berechnet`);
+    }
+
+    return true;
+  },
+
+  /**
+   * Konvertiert eine Transferbuchung zu einer normalen Expense/Income-Buchung
+   * Löscht die Gegenbuchung und konvertiert die ursprüngliche Transaktion
+   */
+  async convertTransferToNormalTransaction(
+    transactionId: string,
+    counterTransactionId: string,
+    newType: TransactionType.EXPENSE | TransactionType.INCOME,
+    updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
+  ): Promise<boolean> {
+    const txStore = useTransactionStore();
+
+    debugLog('[TransactionService]', 'convertTransferToNormalTransaction started', {
+      transactionId,
+      counterTransactionId,
+      newType,
+      updates
+    });
+
+    try {
+      // 1. Hole beide Transaktionen
+      const originalTx = txStore.getTransactionById(transactionId);
+      const counterTx = txStore.getTransactionById(counterTransactionId);
+
+      if (!originalTx || !counterTx) {
+        errorLog('[TransactionService]', 'convertTransferToNormalTransaction - Transactions not found', {
+          originalTxExists: !!originalTx,
+          counterTxExists: !!counterTx
+        });
+        return false;
+      }
+
+      // 2. Sammle betroffene Konten für Saldo-Neuberechnung
+      const affectedAccountIds = new Set<string>();
+      if (originalTx.accountId) affectedAccountIds.add(originalTx.accountId);
+      if (counterTx.accountId) affectedAccountIds.add(counterTx.accountId);
+
+      // 3. Konvertiere zuerst die ursprüngliche Transaktion (bevor wir die Gegenbuchung löschen)
+      const conversionUpdates: Partial<Transaction> = {
+        ...updates,
+        type: newType,
+        counterTransactionId: null,
+        transferToAccountId: undefined,
+        isCategoryTransfer: false,
+        // Stelle sicher, dass categoryId und andere Felder für normale Buchungen gesetzt sind
+        categoryId: updates.categoryId || undefined,
+        tagIds: updates.tagIds || [],
+        recipientId: updates.recipientId || undefined
+      };
+
+      debugLog('[TransactionService]', 'convertTransferToNormalTransaction - Converting original transaction', {
+        transactionId,
+        conversionUpdates
+      });
+
+      const updateSuccess = await txStore.updateTransaction(transactionId, conversionUpdates);
+      if (!updateSuccess) {
+        errorLog('[TransactionService]', 'convertTransferToNormalTransaction - Failed to update original transaction', {
+          transactionId,
+          conversionUpdates
+        });
+        return false;
+      }
+
+      // 4. Lösche nur die Gegenbuchung (mit der speziellen Methode, die keine Gegenbuchung löscht)
+      debugLog('[TransactionService]', 'convertTransferToNormalTransaction - Deleting counter transaction only', {
+        counterTransactionId
+      });
+
+      const counterDeleteSuccess = await this.deleteSingleTransaction(counterTransactionId);
+      if (!counterDeleteSuccess) {
+        errorLog('[TransactionService]', 'convertTransferToNormalTransaction - Failed to delete counter transaction', {
+          counterTransactionId
+        });
+        return false;
+      }
+
+      // 5. Salden für alle betroffenen Konten neu berechnen
+      BalanceService.calculateMonthlyBalances();
+
+      if (!this._skipRunningBalanceRecalc) {
+        for (const accountId of affectedAccountIds) {
+          await BalanceService.recalculateRunningBalancesForAccount(accountId);
+          BalanceService.triggerRunningBalanceRecalculation(accountId, updates.valueDate || updates.date || originalTx.date);
+        }
+      }
+
+      infoLog('[TransactionService]', 'convertTransferToNormalTransaction completed successfully', {
+        transactionId,
+        counterTransactionId,
+        newType,
+        affectedAccounts: Array.from(affectedAccountIds)
+      });
+
+      return true;
+
+    } catch (error) {
+      errorLog('[TransactionService]', 'convertTransferToNormalTransaction - Error during conversion', {
+        transactionId,
+        counterTransactionId,
+        newType,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    }
+  },
+
 async updateTransaction(
     id: string,
     updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
@@ -863,6 +1024,34 @@ async updateTransaction(
     if (!original) {
       debugLog('[TransactionService]', `updateTransaction - Transaction not found: ${id}`);
       return false;
+    }
+
+    // Prüfe auf Transfer-Konvertierung
+    if ((updates as any).isTransferConversion &&
+        (updates as any).originalCounterTransactionId &&
+        original.type === TransactionType.ACCOUNTTRANSFER &&
+        (updates.type === TransactionType.EXPENSE || updates.type === TransactionType.INCOME)) {
+
+      debugLog('[TransactionService]', 'Transfer-Konvertierung erkannt', {
+        transactionId: id,
+        originalType: original.type,
+        newType: updates.type,
+        counterTransactionId: (updates as any).originalCounterTransactionId
+      });
+
+      // Entferne die speziellen Flags aus den Updates
+      const cleanUpdates = { ...updates };
+      delete (cleanUpdates as any).isTransferConversion;
+      delete (cleanUpdates as any).originalCounterTransactionId;
+      delete (cleanUpdates as any).originalTransferToAccountId;
+
+      // Verwende die spezielle Konvertierungsmethode
+      return await this.convertTransferToNormalTransaction(
+        id,
+        (updates as any).originalCounterTransactionId,
+        updates.type as TransactionType.EXPENSE | TransactionType.INCOME,
+        cleanUpdates
+      );
     }
 
     debugLog('[TransactionService]', `Aktualisiere Transaktion: ${original.description} (${original.amount}€) für Konto ${original.accountId}`);

@@ -53,9 +53,7 @@ const showValidationAlert = ref(false);
 const amountInputRef = ref<InstanceType<typeof CurrencyInput> | null>(null);
 const formModalRef = ref<HTMLFormElement | null>(null);
 
-const locked = computed(
-  () => props.transaction && (props.transaction as any).counterTransactionId
-);
+const locked = computed(() => false); // Erlaube Typ-Änderungen für alle Transaktionen
 
 const recipients = computed(() =>
   Array.isArray(recipientStore.recipients) ? recipientStore.recipients : []
@@ -180,10 +178,31 @@ watch(amount, (newAmount) => {
     : transactionType.value;
 });
 
-watch(transactionType, (newType) => {
-  if (!locked.value && newType !== TransactionType.ACCOUNTTRANSFER) {
+watch(transactionType, (newType, oldType) => {
+  if (newType !== TransactionType.ACCOUNTTRANSFER) {
     toAccountId.value = "";
   }
+
+  // Behandle Typ-Änderung von ACCOUNTTRANSFER zu EXPENSE/INCOME
+  if (
+    oldType === TransactionType.ACCOUNTTRANSFER &&
+    (newType === TransactionType.EXPENSE ||
+      newType === TransactionType.INCOME) &&
+    props.transaction &&
+    (props.transaction as any).counterTransactionId
+  ) {
+    // Markiere, dass die Gegenbuchung gelöscht werden soll
+    debugLog(
+      "[TransactionForm]",
+      "Transfer wird zu normaler Buchung geändert",
+      {
+        oldType,
+        newType,
+        counterTransactionId: (props.transaction as any).counterTransactionId,
+      }
+    );
+  }
+
   if (newType === TransactionType.EXPENSE && amount.value > 0) {
     amount.value = -Math.abs(amount.value);
   } else if (newType === TransactionType.INCOME && amount.value < 0) {
@@ -332,7 +351,7 @@ const saveTransaction = () => {
       reconciled: reconciled.value,
     };
   } else {
-    return {
+    const payload = {
       date: currentDate,
       valueDate: currentValidValueDate,
       accountId: accountId.value,
@@ -348,6 +367,36 @@ const saveTransaction = () => {
       isReconciliation: false,
       runningBalance: 0,
     };
+
+    // Prüfe, ob es sich um eine Typ-Änderung von Transfer zu normaler Buchung handelt
+    if (
+      props.transaction &&
+      (props.transaction as any).type === TransactionType.ACCOUNTTRANSFER &&
+      (props.transaction as any).counterTransactionId &&
+      (transactionType.value === TransactionType.EXPENSE ||
+        transactionType.value === TransactionType.INCOME)
+    ) {
+      debugLog(
+        "[TransactionForm]",
+        "Transfer wird zu normaler Buchung konvertiert",
+        {
+          originalType: (props.transaction as any).type,
+          newType: transactionType.value,
+          counterTransactionId: (props.transaction as any).counterTransactionId,
+        }
+      );
+
+      // Füge spezielle Flags für die Verarbeitung hinzu
+      (payload as any).isTransferConversion = true;
+      (payload as any).originalCounterTransactionId = (
+        props.transaction as any
+      ).counterTransactionId;
+      (payload as any).originalTransferToAccountId = (
+        props.transaction as any
+      ).transferToAccountId;
+    }
+
+    return payload;
   }
 };
 
