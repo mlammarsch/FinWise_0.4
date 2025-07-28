@@ -711,15 +711,15 @@ export const PlanningService = {
       }
 
       // Bei Transfers: Überprüfen, ob wir eine Gegenbuchung sind
-      const isCounterBooking =
-        planning.counterPlanningTransactionId &&
-        (planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
-         planning.transactionType === TransactionType.CATEGORYTRANSFER);
+      // Gegenbuchungen erkennt man am Namen mit "(Gegenbuchung)" oder daran, dass sie eine counterPlanningTransactionId haben
+      // und die referenzierte Hauptbuchung ebenfalls auf diese Gegenbuchung verweist
+      const isCounterBooking = planning.name && planning.name.includes("(Gegenbuchung)");
 
       // Gegenbuchungen überspringen - werden mit Hauptbuchung verarbeitet
       if (isCounterBooking) {
         debugLog('PlanningService', 'executeAllDuePlanningTransactions - Überspringe Gegenbuchung', {
           planningId: planning.id,
+          name: planning.name,
           counterPlanningId: planning.counterPlanningTransactionId
         });
         continue;

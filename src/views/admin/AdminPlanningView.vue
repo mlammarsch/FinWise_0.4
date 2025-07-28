@@ -18,6 +18,8 @@ import {
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
+import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
+import InfoToast from "@/components/ui/InfoToast.vue";
 import { debugLog, infoLog, errorLog } from "@/utils/logger";
 import PagingComponent from "@/components/ui/PagingComponent.vue";
 import { formatDate } from "@/utils/formatters";
@@ -31,6 +33,7 @@ const recipientStore = useRecipientStore();
 
 const showNewPlanningModal = ref(false);
 const showEditPlanningModal = ref(false);
+const showExecuteConfirmation = ref(false);
 const selectedPlanning = ref<PlanningTransaction | null>(null);
 const searchQuery = ref("");
 const selectedAccountId = ref<string>("all");
@@ -38,6 +41,20 @@ const selectedCategoryId = ref<string>("all");
 
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
+
+// Für die Ausführungsbestätigung
+const pendingExecutionAnalysis = ref<{
+  expenses: number;
+  income: number;
+  accountTransfers: number;
+  categoryTransfers: number;
+  totalCount: number;
+} | null>(null);
+
+// Toast-System
+const toastMessage = ref("");
+const toastType = ref<"success" | "error" | "info" | "warning">("info");
+const showToast = ref(false);
 
 const filteredPlannings = computed(() => {
   let plannings = planningStore.planningTransactions;
@@ -345,9 +362,194 @@ async function togglePlanningStatus(planning: PlanningTransaction) {
 }
 
 // Button: Alle fälligen
-function executeAllDuePlannings() {
-  const count = PlanningService.executeAllDuePlanningTransactions();
-  alert(`${count} automatische Planungsbuchungen ausgeführt.`);
+async function executeAllDuePlannings() {
+  // Erst analysieren, was ausgeführt werden würde
+  const analysis = await analyzeDuePlannings();
+
+  if (analysis.totalCount === 0) {
+    alert("Keine fälligen Planungsbuchungen gefunden.");
+    return;
+  }
+
+  // ConfirmationModal anzeigen
+  showExecuteConfirmation.value = true;
+  pendingExecutionAnalysis.value = analysis;
+}
+
+// Analysiert fällige Planungen und kategorisiert sie
+async function analyzeDuePlannings() {
+  const planningStore = usePlanningStore();
+  const today = dayjs().startOf("day");
+
+  let expenses = 0;
+  let income = 0;
+  let accountTransfers = 0;
+  let categoryTransfers = 0;
+
+  const processedPlanningIds = new Set<string>();
+  const planningsToProcess = [...planningStore.planningTransactions];
+
+  for (const planning of planningsToProcess) {
+    if (processedPlanningIds.has(planning.id) || !planning.isActive) {
+      continue;
+    }
+
+    // Gegenbuchungen überspringen (erkennbar am Namen)
+    if (planning.name && planning.name.includes("(Gegenbuchung)")) {
+      continue;
+    }
+
+    // Fällige Termine ermitteln
+    const overdueOccurrences = PlanningService.calculateNextOccurrences(
+      planning,
+      planning.startDate,
+      today.format("YYYY-MM-DD")
+    );
+
+    if (overdueOccurrences.length > 0) {
+      for (const dateStr of overdueOccurrences) {
+        if (dayjs(dateStr).isSameOrBefore(today)) {
+          // Nach Transaktionstyp kategorisieren
+          switch (planning.transactionType) {
+            case TransactionType.EXPENSE:
+              expenses++;
+              break;
+            case TransactionType.INCOME:
+              income++;
+              break;
+            case TransactionType.ACCOUNTTRANSFER:
+              accountTransfers++;
+              break;
+            case TransactionType.CATEGORYTRANSFER:
+              categoryTransfers++;
+              break;
+          }
+
+          // Bei Transfers: Gegenbuchung als verarbeitet markieren
+          if (
+            (planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
+              planning.transactionType === TransactionType.CATEGORYTRANSFER) &&
+            planning.counterPlanningTransactionId
+          ) {
+            processedPlanningIds.add(planning.counterPlanningTransactionId);
+          }
+
+          processedPlanningIds.add(planning.id);
+        }
+      }
+    }
+  }
+
+  return {
+    expenses,
+    income,
+    accountTransfers,
+    categoryTransfers,
+    totalCount: expenses + income + accountTransfers + categoryTransfers,
+  };
+}
+
+// Toast-Funktion
+function showToastMessage(
+  message: string,
+  type: "success" | "error" | "info" | "warning" = "info"
+) {
+  toastMessage.value = message;
+  toastType.value = type;
+  showToast.value = true;
+}
+
+// Bestätigung der Ausführung
+async function confirmExecution() {
+  if (!pendingExecutionAnalysis.value) return;
+
+  try {
+    const count = await PlanningService.executeAllDuePlanningTransactions();
+    showExecuteConfirmation.value = false;
+    pendingExecutionAnalysis.value = null;
+
+    infoLog(
+      "AdminPlanningView",
+      `${count} automatische Planungsbuchungen erfolgreich ausgeführt`
+    );
+    showToastMessage(
+      `${count} automatische Planungsbuchungen erfolgreich ausgeführt.`,
+      "success"
+    );
+  } catch (error) {
+    errorLog(
+      "AdminPlanningView",
+      "Fehler beim Ausführen der Planungsbuchungen",
+      error
+    );
+    showToastMessage(
+      "Fehler beim Ausführen der Planungsbuchungen. Bitte prüfen Sie die Konsole für Details.",
+      "error"
+    );
+  }
+}
+
+// Abbruch der Ausführung
+function cancelExecution() {
+  showExecuteConfirmation.value = false;
+  pendingExecutionAnalysis.value = null;
+}
+
+// Erstellt die Bestätigungsnachricht
+function getConfirmationMessage(): string {
+  if (!pendingExecutionAnalysis.value) return "";
+
+  const analysis = pendingExecutionAnalysis.value;
+  const parts: string[] = [];
+
+  if (analysis.expenses > 0) {
+    parts.push(
+      `<div class="flex items-center mb-2"><span class="badge badge-error badge-sm mr-2">Ausgaben</span><span class="font-semibold">${
+        analysis.expenses
+      } Buchung${analysis.expenses === 1 ? "" : "en"}</span></div>`
+    );
+  }
+  if (analysis.income > 0) {
+    parts.push(
+      `<div class="flex items-center mb-2"><span class="badge badge-success badge-sm mr-2">Einnahmen</span><span class="font-semibold">${
+        analysis.income
+      } Buchung${analysis.income === 1 ? "" : "en"}</span></div>`
+    );
+  }
+  if (analysis.accountTransfers > 0) {
+    parts.push(
+      `<div class="flex items-center mb-2"><span class="badge badge-warning badge-sm mr-2">Kontotransfers</span><span class="font-semibold">${
+        analysis.accountTransfers
+      } Buchung${analysis.accountTransfers === 1 ? "" : "en"}</span></div>`
+    );
+  }
+  if (analysis.categoryTransfers > 0) {
+    parts.push(
+      `<div class="flex items-center mb-2"><span class="badge badge-info badge-sm mr-2">Kategorietransfers</span><span class="font-semibold">${
+        analysis.categoryTransfers
+      } Buchung${analysis.categoryTransfers === 1 ? "" : "en"}</span></div>`
+    );
+  }
+
+  if (parts.length === 0)
+    return "<p class='text-center text-base-content/70'>Keine fälligen Buchungen gefunden.</p>";
+
+  return `
+    <div class="space-y-3">
+      <p class="text-sm text-base-content/80 mb-4">Folgende fällige Planungsbuchungen werden ausgeführt:</p>
+      <div class="space-y-2">
+        ${parts.join("")}
+      </div>
+      <div class="divider my-4"></div>
+      <div class="text-center">
+        <span class="badge badge-primary badge-lg">
+          Insgesamt: ${analysis.totalCount} Buchung${
+    analysis.totalCount === 1 ? "" : "en"
+  }
+        </span>
+      </div>
+    </div>
+  `;
 }
 
 // Button: Play pro Planung - nur fällige ausführen!
@@ -716,4 +918,24 @@ onUnmounted(() => {
       @click="showEditPlanningModal = false"
     />
   </div>
+
+  <!-- Bestätigungsmodal für Ausführung aller fälligen Buchungen -->
+  <ConfirmationModal
+    v-if="showExecuteConfirmation && pendingExecutionAnalysis"
+    title="Fällige Planungsbuchungen ausführen"
+    :message="getConfirmationMessage()"
+    :use-html="true"
+    confirm-text="Ausführen"
+    cancel-text="Abbrechen"
+    @confirm="confirmExecution"
+    @cancel="cancelExecution"
+  />
+
+  <!-- Toast-System -->
+  <InfoToast
+    v-if="showToast"
+    :message="toastMessage"
+    :type="toastType"
+    @close="showToast = false"
+  />
 </template>

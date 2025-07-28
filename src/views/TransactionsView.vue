@@ -29,8 +29,36 @@ import { formatCurrency } from "../utils/formatters";
 import { debugLog, infoLog, errorLog, warnLog } from "../utils/logger";
 import { TransactionService } from "../services/TransactionService";
 import { Icon } from "@iconify/vue";
+import InfoToast from "../components/ui/InfoToast.vue";
 
 const refreshKey = ref(0);
+
+// Toast Management --------------------------------------------------------
+interface ToastMessage {
+  id: string;
+  message: string;
+  type: "success" | "error" | "info" | "warning";
+  duration?: number;
+}
+
+const activeToasts = ref<ToastMessage[]>([]);
+
+function showToast(
+  message: string,
+  type: ToastMessage["type"] = "info",
+  duration?: number
+) {
+  const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const toast: ToastMessage = { id, message, type, duration };
+  activeToasts.value.push(toast);
+}
+
+function removeToast(id: string) {
+  const index = activeToasts.value.findIndex((toast) => toast.id === id);
+  if (index > -1) {
+    activeToasts.value.splice(index, 1);
+  }
+}
 
 // Stores ------------------------------------------------------------------
 const transactionStore = useTransactionStore();
@@ -332,16 +360,22 @@ async function onBulkAssignAccountConfirm(accountId: string) {
         categoryTransactionListRef.value?.clearSelection();
       }
 
-      // Erfolgs-Toast anzeigen (falls Toast-System vorhanden)
-      // toast.success(`${result.updatedCount} Transaktionen erfolgreich zugewiesen`);
+      // Erfolgs-Toast anzeigen
+      showToast(
+        `${result.updatedCount} Transaktionen erfolgreich zugewiesen`,
+        "success"
+      );
     } else {
       errorLog("[TransactionsView]", "Fehler bei Bulk-Kontozuweisung", {
         errors: result.errors,
         updatedCount: result.updatedCount,
       });
 
-      // Fehler-Toast anzeigen (falls Toast-System vorhanden)
-      // toast.error(`Fehler bei Kontozuweisung: ${result.errors.join(', ')}`);
+      // Fehler-Toast anzeigen
+      showToast(
+        `Fehler bei Kontozuweisung: ${result.errors.join(", ")}`,
+        "error"
+      );
     }
   } catch (error) {
     errorLog(
@@ -353,8 +387,8 @@ async function onBulkAssignAccountConfirm(accountId: string) {
       }
     );
 
-    // Fehler-Toast anzeigen (falls Toast-System vorhanden)
-    // toast.error("Unerwarteter Fehler bei der Kontozuweisung");
+    // Fehler-Toast anzeigen
+    showToast("Unerwarteter Fehler bei der Kontozuweisung", "error");
   } finally {
     showBulkAssignAccountModal.value = false;
   }
@@ -472,16 +506,22 @@ async function onBulkAssignCategoryConfirm(
         categoryTransactionListRef.value?.clearSelection();
       }
 
-      // Optional: Zeige eine Erfolgsmeldung
-      // TODO: Implementiere Toast-Notification
+      // Erfolgs-Toast anzeigen
+      showToast(
+        `${result.updatedCount} Transaktionen erfolgreich aktualisiert`,
+        "success"
+      );
     } else {
       warnLog("[TransactionsView]", "Bulk-Kategorienzuweisung mit Fehlern", {
         updatedCount: result.updatedCount,
         errors: result.errors,
       });
 
-      // Optional: Zeige Fehlermeldung
-      // TODO: Implementiere Error-Notification mit Details
+      // Fehler-Toast anzeigen
+      showToast(
+        `Fehler bei Kategorienzuweisung: ${result.errors.join(", ")}`,
+        "error"
+      );
     }
   } catch (error) {
     errorLog("[TransactionsView]", "Fehler bei Bulk-Kategorienzuweisung", {
@@ -490,8 +530,8 @@ async function onBulkAssignCategoryConfirm(
       removeAll,
     });
 
-    // Optional: Zeige Fehlermeldung
-    // TODO: Implementiere Error-Notification
+    // Fehler-Toast anzeigen
+    showToast("Unerwarteter Fehler bei der Kategorienzuweisung", "error");
   } finally {
     showBulkAssignCategoryModal.value = false;
   }
@@ -544,16 +584,22 @@ async function onBulkAssignTagsConfirm(
         categoryTransactionListRef.value?.clearSelection();
       }
 
-      // Erfolgs-Toast anzeigen (falls Toast-System vorhanden)
-      // toast.success(`${result.updatedCount} Transaktionen erfolgreich aktualisiert`);
+      // Erfolgs-Toast anzeigen
+      showToast(
+        `${result.updatedCount} Transaktionen erfolgreich aktualisiert`,
+        "success"
+      );
     } else {
       errorLog("[TransactionsView]", "Fehler bei Bulk-Tag-Zuweisung", {
         errors: result.errors,
         updatedCount: result.updatedCount,
       });
 
-      // Fehler-Toast anzeigen (falls Toast-System vorhanden)
-      // toast.error(`Fehler bei Tag-Zuweisung: ${result.errors.join(', ')}`);
+      // Fehler-Toast anzeigen
+      showToast(
+        `Fehler bei Tag-Zuweisung: ${result.errors.join(", ")}`,
+        "error"
+      );
     }
   } catch (error) {
     errorLog(
@@ -566,8 +612,8 @@ async function onBulkAssignTagsConfirm(
       }
     );
 
-    // Fehler-Toast anzeigen (falls Toast-System vorhanden)
-    // toast.error("Unerwarteter Fehler bei der Tag-Zuweisung");
+    // Fehler-Toast anzeigen
+    showToast("Unerwarteter Fehler bei der Tag-Zuweisung", "error");
   } finally {
     showBulkAssignTagsModal.value = false;
   }
@@ -616,16 +662,22 @@ async function onBulkChangeDateConfirm(newDate: string) {
       // Refresh der Ansicht
       refreshKey.value++;
 
-      // Optional: Zeige eine Erfolgsmeldung
-      // TODO: Implementiere Toast-Notification
+      // Erfolgs-Toast anzeigen
+      showToast(
+        `${result.updatedCount} Transaktionen erfolgreich aktualisiert`,
+        "success"
+      );
     } else {
       warnLog("[TransactionsView]", "Bulk-Datumsänderung mit Fehlern", {
         updatedCount: result.updatedCount,
         errors: result.errors,
       });
 
-      // Optional: Zeige Fehlermeldung
-      // TODO: Implementiere Toast-Notification für Fehler
+      // Fehler-Toast anzeigen
+      showToast(
+        `Fehler bei Datumsänderung: ${result.errors.join(", ")}`,
+        "error"
+      );
     }
   } catch (error) {
     errorLog("[TransactionsView]", "Fehler bei Bulk-Datumsänderung", {
@@ -633,8 +685,8 @@ async function onBulkChangeDateConfirm(newDate: string) {
       newDate,
     });
 
-    // Optional: Zeige eine Fehlermeldung
-    // TODO: Implementiere Toast-Notification für kritische Fehler
+    // Fehler-Toast anzeigen
+    showToast("Unerwarteter Fehler bei der Datumsänderung", "error");
   } finally {
     showBulkChangeDateModal.value = false;
   }
@@ -650,16 +702,22 @@ async function onBulkDeleteConfirm(transactionIds: string[]) {
       debugLog("[TransactionsView]", "Bulk delete successful", {
         deletedCount: result.deletedCount,
       });
-      // Optional: Zeige eine Erfolgsmeldung
+      // Erfolgs-Toast anzeigen
+      showToast(
+        `${result.deletedCount} Transaktionen erfolgreich gelöscht`,
+        "success"
+      );
     } else {
       debugLog("[TransactionsView]", "Bulk delete partially failed", {
         result,
       });
-      // Optional: Zeige eine Fehlermeldung
+      // Fehler-Toast anzeigen
+      showToast("Fehler beim Löschen von Transaktionen", "error");
     }
   } catch (error) {
     console.error("Fehler beim Massenlöschen von Transaktionen:", error);
-    // Optional: Zeige eine Fehlermeldung
+    // Fehler-Toast anzeigen
+    showToast("Unerwarteter Fehler beim Löschen von Transaktionen", "error");
   } finally {
     showBulkDeleteModal.value = false;
     // Auswahl in den Listen zurücksetzen
@@ -1039,5 +1097,17 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
       @close="showBulkDeleteModal = false"
       @confirm="onBulkDeleteConfirm"
     />
+
+    <!-- Toast Notifications -->
+    <Teleport to="body">
+      <InfoToast
+        v-for="toast in activeToasts"
+        :key="toast.id"
+        :message="toast.message"
+        :type="toast.type"
+        :duration="toast.duration"
+        @close="removeToast(toast.id)"
+      />
+    </Teleport>
   </div>
 </template>

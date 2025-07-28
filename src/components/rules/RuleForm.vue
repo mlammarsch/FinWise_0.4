@@ -292,6 +292,37 @@ async function handleCreateRecipient(recipientData: { name: string }) {
   }
 }
 
+// Erstellt einen neuen Tag im Store
+async function handleCreateTag(tagData: { name: string; color?: string }) {
+  try {
+    debugLog("[RuleForm] handleCreateTag", tagData);
+    const newTag = await tagStore.addTag({
+      name: tagData.name,
+      color: tagData.color,
+    });
+    debugLog("[RuleForm] Neuer Tag erstellt", newTag);
+
+    // Für ADD_TAG Aktionen: Füge den neuen Tag zur bestehenden Auswahl hinzu
+    // Suche die erste ADD_TAG Aktion, die gerade bearbeitet wird
+    const currentAction = actions.value.find(
+      (action: RuleAction) => action.type === RuleActionType.ADD_TAG
+    );
+
+    if (currentAction && newTag) {
+      // Konvertiere den aktuellen Wert zu einem Array, füge den neuen Tag hinzu
+      const currentTags = currentAction.value
+        ? currentAction.value.split(",")
+        : [];
+      if (!currentTags.includes(newTag.id)) {
+        currentTags.push(newTag.id);
+        currentAction.value = currentTags.join(",");
+      }
+    }
+  } catch (error) {
+    errorLog("[RuleForm] Fehler beim Erstellen des Tags", error);
+  }
+}
+
 // Schließen des Test-Modals
 function closeTestResults() {
   testResults.show = false;
@@ -476,7 +507,7 @@ um später neue Regeln dazwischen einfügen zu können."
           :index="index"
           :can-remove="conditions.length > 1"
           @update:condition="
-            (updatedCondition) => (conditions[index] = updatedCondition)
+            (updatedCondition: RuleCondition) => (conditions[index] = updatedCondition)
           "
           @remove="removeCondition(index)"
         />
@@ -531,9 +562,13 @@ um später neue Regeln dazwischen einfügen zu können."
               <!-- Tag-Auswahl -->
               <TagSearchableDropdown
                 v-if="action.type === RuleActionType.ADD_TAG"
-                v-model="action.value"
+                :model-value="
+                  action.value ? action.value.split(',').filter(Boolean) : []
+                "
+                @update:model-value="(val: string[]) => action.value = val.join(',')"
                 :options="tags"
                 class="w-full"
+                @create="handleCreateTag"
               />
 
               <!-- Kategorie-Auswahl -->

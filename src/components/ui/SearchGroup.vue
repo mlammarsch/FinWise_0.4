@@ -11,6 +11,8 @@ import { Icon } from "@iconify/vue";
  * - btnLeftIcon?: string - Icon für den linken Button (optional)
  * - btnMiddle?: string - Label für den mittleren Button (optional)
  * - btnMiddleIcon?: string - Icon für den mittleren Button (optional)
+ * - btnMiddleRight?: string - Label für den mittleren rechten Button (optional)
+ * - btnMiddleRightIcon?: string - Icon für den mittleren rechten Button (optional)
  * - btnRight?: string - Label für den rechten Button (optional)
  * - btnRightIcon?: string - Icon für den rechten Button (optional)
  *
@@ -18,6 +20,7 @@ import { Icon } from "@iconify/vue";
  * - search: Löst eine Suche aus (bei Eingabe und Klick auf Lupe)
  * - btn-left-click: Wird ausgelöst, wenn der linke Button geklickt wird
  * - btn-middle-click: Wird ausgelöst, wenn der mittlere Button geklickt wird
+ * - btn-middle-right-click: Wird ausgelöst, wenn der mittlere rechte Button geklickt wird
  * - btn-right-click: Wird ausgelöst, wenn der rechte Button geklickt wird
  */
 
@@ -26,6 +29,8 @@ const props = defineProps({
   btnLeftIcon: String,
   btnMiddle: String,
   btnMiddleIcon: String,
+  btnMiddleRight: String,
+  btnMiddleRightIcon: String,
   btnRight: String,
   btnRightIcon: String,
 });
@@ -35,6 +40,7 @@ const emit = defineEmits([
   "search",
   "btn-left-click",
   "btn-middle-click",
+  "btn-middle-right-click",
   "btn-right-click",
 ]);
 
@@ -115,10 +121,24 @@ const selectAll = (e) => {
         {{ btnMiddle }}
       </button>
 
+      <!-- Mittlerer rechter Button (optional) -->
+      <button
+        v-if="btnMiddleRight"
+        class="btn join-item btn-sm btn-soft border border-base-300 flex items-center justify-center"
+        @click="$emit('btn-middle-right-click')"
+      >
+        <Icon
+          v-if="btnMiddleRightIcon"
+          :icon="btnMiddleRightIcon"
+          class="mr-2"
+        />
+        {{ btnMiddleRight }}
+      </button>
+
       <!-- Rechter Button (optional) -->
       <button
         v-if="btnRight"
-        class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300 flex items-center justify-center pr-5"
+        class="btn join-item btn-sm btn-soft border border-base-300 flex items-center justify-center rounded-r-full pr-5"
         @click="$emit('btn-right-click')"
       >
         <Icon
