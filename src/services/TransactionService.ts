@@ -1230,7 +1230,7 @@ async updateTransaction(
 
     // WICHTIG: MonthlyBalance-Cache invalidieren BEVOR Running Balance neu berechnet wird
     debugLog('[TransactionService]', `Invalidiere MonthlyBalance-Cache nach Löschung von Transaktion ${id}`);
-    BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateMonthlyBalances();
 
     // WICHTIG: Running Balance für betroffenes Konto neu berechnen
     if (tx.accountId && !this._skipRunningBalanceRecalc) {
@@ -1363,7 +1363,7 @@ async updateTransaction(
     });
 
     // 5. Balance-Neuberechnung nur einmal pro Konto
-    BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateMonthlyBalances();
 
     if (!this._skipRunningBalanceRecalc) {
       for (const accountId of affectedAccountIds) {

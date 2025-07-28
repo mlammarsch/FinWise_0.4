@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTransactionStore } from "@/stores/transactionStore";
 import { useAccountStore } from "@/stores/accountStore";
+import { useMonthlyBalanceStore } from "@/stores/monthlyBalanceStore";
 import { useThemeStore } from "@/stores/themeStore";
 import { BalanceService } from "@/services/BalanceService";
 import type { Transaction, Account } from "../../../types/index";
@@ -76,6 +77,7 @@ const getThemeColors = () => {
 
 const transactionStore = useTransactionStore();
 const accountStore = useAccountStore();
+const monthlyBalanceStore = useMonthlyBalanceStore();
 const themeStore = useThemeStore();
 
 // Formatierungsfunktion für kompakte Darstellung (3k€ statt 3.000,00€)
@@ -576,6 +578,15 @@ const updateChart = () => {
 // Watchers für Datenänderungen
 watch(
   chartData,
+  () => {
+    updateChart();
+  },
+  { deep: true }
+);
+
+// Watcher für MonthlyBalance-Änderungen
+watch(
+  () => monthlyBalanceStore.monthlyBalances,
   () => {
     updateChart();
   },
