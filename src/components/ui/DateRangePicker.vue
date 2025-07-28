@@ -371,7 +371,7 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
 <template>
   <div
-    class="relative"
+    class="relative z-[9999]"
     ref="containerRef"
   >
     <!-- Trigger Button (MonthSelector style) -->
@@ -393,7 +393,7 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
     <div
       v-if="isOpen"
       ref="dropdownRef"
-      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-50 p-4 min-w-[800px]"
+      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-[9999] p-4 min-w-[800px]"
       :class="{
         'left-0': dropdownPosition === 'left',
         'right-0': dropdownPosition === 'right',

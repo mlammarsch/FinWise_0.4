@@ -1176,6 +1176,52 @@ async updateTransaction(
       }
     }
 
+    /* Auto‑Transfer bei INCOME‑Kategoriewechsel von Ausgabe zu Einnahme --------------------------- */
+    if (
+      original &&
+      original.type === TransactionType.INCOME &&
+      original.amount > 0 &&
+      updates.categoryId !== undefined &&
+      updates.categoryId !== original.categoryId
+    ) {
+      const oldCategory = original.categoryId ? catStore.getCategoryById(original.categoryId) : null;
+      const newCategory = catStore.getCategoryById(updates.categoryId);
+
+      debugLog('[TransactionService]', 'Category change detected for INCOME transaction', {
+        transactionId: id,
+        oldCategoryId: original.categoryId,
+        newCategoryId: updates.categoryId,
+        oldCategoryIsIncome: oldCategory?.isIncomeCategory,
+        newCategoryIsIncome: newCategory?.isIncomeCategory
+      });
+
+      // Prüfe: War alte Kategorie eine Ausgabenkategorie und neue ist Einnahmenkategorie?
+      if (
+        oldCategory && !oldCategory.isIncomeCategory &&
+        newCategory && newCategory.isIncomeCategory
+      ) {
+        const available = catStore.getAvailableFundsCategory();
+        if (!available) throw new Error("Kategorie 'Verfügbare Mittel' fehlt");
+
+        debugLog('[TransactionService]', 'Executing Category Transfer for category change from expense to income', {
+          from: updates.categoryId,
+          to: available.id,
+          amount: original.amount,
+          date: updates.date ?? original.date
+        });
+
+        await this.addCategoryTransfer(
+          updates.categoryId,
+          available.id,
+          original.amount,
+          updates.date ?? original.date,
+          'Automatischer Transfer bei Kategoriewechsel von Ausgabe zu Einnahme'
+        );
+
+        infoLog('[TransactionService]', `Automatischer Kategorietransfer erstellt: ${original.amount}€ von ${newCategory.name} zu Verfügbare Mittel`);
+      }
+    }
+
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
 
