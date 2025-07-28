@@ -37,6 +37,7 @@ import { CategoryService } from "../../services/CategoryService";
 import { debugLog } from "../../utils/logger";
 import { BalanceService } from "../../services/BalanceService";
 import { TransactionService } from "../../services/TransactionService"; // Import hinzugefügt
+import { ReconciliationService } from "../../services/ReconciliationService";
 
 debugLog(
   "[CategoryTransactionList] TransactionService on setup:",
@@ -50,7 +51,12 @@ const props = defineProps<{
   searchTerm?: string;
 }>();
 
-const emit = defineEmits(["edit", "delete", "sort-change"]);
+const emit = defineEmits([
+  "edit",
+  "delete",
+  "sort-change",
+  "toggleReconciliation",
+]);
 
 // Lazy Loading State
 const visibleItemsCount = ref(25); // Initial number of items to show
@@ -168,6 +174,33 @@ function clearSelection() {
 
 defineExpose({ getSelectedTransactions, selectedIds, clearSelection });
 
+// Computed properties für Summenanzeige
+const selectedTransactions = computed(() => {
+  return allDisplayTransactions.value.filter((tx) =>
+    selectedIds.value.includes(tx.id)
+  );
+});
+
+const selectedTotalAmount = computed(() => {
+  return selectedTransactions.value.reduce((sum, tx) => sum + tx.amount, 0);
+});
+
+const selectedReconciledAmount = computed(() => {
+  return selectedTransactions.value
+    .filter((tx) => tx.reconciled)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+});
+
+const selectedUnreconciledAmount = computed(() => {
+  return selectedTransactions.value
+    .filter((tx) => !tx.reconciled)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+});
+
+const hasSelectedTransactions = computed(() => {
+  return selectedIds.value.length > 0;
+});
+
 // --- Modal Logic für Bearbeitung von Category Transfers ---
 const showTransferModal = ref(false);
 const modalData = ref<{
@@ -272,6 +305,12 @@ function getTransactionDescription(transaction: Transaction): string {
   }
 }
 
+// Reconciliation toggle function
+function toggleReconciliation(transaction: Transaction) {
+  ReconciliationService.toggleTransactionReconciled(transaction.id);
+  emit("toggleReconciliation", transaction);
+}
+
 // Lazy Loading Functions
 function loadMoreItems() {
   if (loadingMoreItems.value || !hasMoreItems.value) return;
@@ -348,6 +387,39 @@ watch(
 
 <template>
   <div>
+    <!-- Summenanzeige für markierte Buchungen -->
+    <div
+      v-if="hasSelectedTransactions"
+      class="mb-4 text-sm text-base-content/70"
+    >
+      <div class="flex flex-wrap gap-4">
+        <div class="flex items-center gap-2">
+          <span>Gesamt:</span>
+          <CurrencyDisplay
+            :amount="selectedTotalAmount"
+            :asInteger="false"
+            class="font-medium"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <span>Abgeglichen:</span>
+          <CurrencyDisplay
+            :amount="selectedReconciledAmount"
+            :asInteger="false"
+            class="font-medium text-success"
+          />
+        </div>
+        <div class="flex items-center gap-2">
+          <span>Unabgeglichen:</span>
+          <CurrencyDisplay
+            :amount="selectedUnreconciledAmount"
+            :asInteger="false"
+            class="font-medium text-warning"
+          />
+        </div>
+      </div>
+    </div>
+
     <div class="overflow-x-auto">
       <table class="table w-full table-zebra table-sm">
         <thead>
@@ -448,6 +520,13 @@ watch(
                 class="text-base"
               />
             </th>
+            <th class="text-center px-1">
+              <Icon
+                icon="mdi:check-circle-outline"
+                class="text-base"
+                title="Abgleich"
+              />
+            </th>
             <th class="text-right px-2">Aktionen</th>
           </tr>
         </thead>
@@ -505,6 +584,15 @@ watch(
                 </div>
               </template>
             </td>
+            <td class="text-center px-1">
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs rounded-full"
+                :checked="tx.reconciled || false"
+                @change="toggleReconciliation(tx)"
+                title="Abgeglichen"
+              />
+            </td>
             <td class="text-right px-2">
               <div class="flex justify-end space-x-1">
                 <button
@@ -532,7 +620,7 @@ watch(
           </tr>
           <tr v-if="displayTransactions.length === 0">
             <td
-              colspan="8"
+              colspan="9"
               class="text-center py-4 text-base-content/70"
             >
               Keine Transaktionen für die Filter gefunden.

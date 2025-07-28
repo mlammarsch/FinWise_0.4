@@ -294,6 +294,28 @@ function handleBulkChangeDate() {
   showBulkChangeDateModal.value = true;
 }
 
+function handleBulkSetReconciled() {
+  const selectedTransactions =
+    currentViewMode.value === "account"
+      ? transactionListRef.value?.getSelectedTransactions()
+      : categoryTransactionListRef.value?.getSelectedTransactions();
+
+  if (selectedTransactions && selectedTransactions.length > 0) {
+    onBulkSetReconciledConfirm(selectedTransactions);
+  }
+}
+
+function handleBulkRemoveReconciled() {
+  const selectedTransactions =
+    currentViewMode.value === "account"
+      ? transactionListRef.value?.getSelectedTransactions()
+      : categoryTransactionListRef.value?.getSelectedTransactions();
+
+  if (selectedTransactions && selectedTransactions.length > 0) {
+    onBulkRemoveReconciledConfirm(selectedTransactions);
+  }
+}
+
 function handleBulkDelete() {
   const selectedTransactions =
     currentViewMode.value === "account"
@@ -714,6 +736,104 @@ async function onBulkDeleteConfirm(transactionIds: string[]) {
   }
 }
 
+async function onBulkSetReconciledConfirm(selectedTransactions: Transaction[]) {
+  debugLog("[TransactionsView]", "onBulkSetReconciledConfirm", {
+    count: selectedTransactions.length,
+  });
+
+  try {
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+    const result = await TransactionService.bulkSetReconciled(transactionIds);
+
+    if (result.success) {
+      infoLog(
+        "[TransactionsView]",
+        `Bulk-Abgleich erfolgreich gesetzt: ${result.updatedCount} Transaktionen`
+      );
+      showToast(
+        `${result.updatedCount} Transaktionen als abgeglichen markiert`,
+        "success"
+      );
+    } else {
+      warnLog(
+        "[TransactionsView]",
+        `Bulk-Abgleich mit Fehlern: ${result.updatedCount} erfolgreich, ${result.errors.length} Fehler`
+      );
+      showToast(
+        `${result.updatedCount} erfolgreich, ${result.errors.length} Fehler`,
+        "warning"
+      );
+    }
+
+    // Auswahl zurücksetzen
+    if (currentViewMode.value === "account") {
+      transactionListRef.value?.clearSelection();
+    } else {
+      categoryTransactionListRef.value?.clearSelection();
+    }
+
+    refreshKey.value++;
+  } catch (error) {
+    errorLog(
+      "[TransactionsView]",
+      "Unerwarteter Fehler beim Bulk-Abgleich setzen",
+      error
+    );
+    showToast("Unerwarteter Fehler beim Setzen des Abgleichs", "error");
+  }
+}
+
+async function onBulkRemoveReconciledConfirm(
+  selectedTransactions: Transaction[]
+) {
+  debugLog("[TransactionsView]", "onBulkRemoveReconciledConfirm", {
+    count: selectedTransactions.length,
+  });
+
+  try {
+    const transactionIds = selectedTransactions.map((tx) => tx.id);
+    const result = await TransactionService.bulkRemoveReconciled(
+      transactionIds
+    );
+
+    if (result.success) {
+      infoLog(
+        "[TransactionsView]",
+        `Bulk-Abgleich erfolgreich entfernt: ${result.updatedCount} Transaktionen`
+      );
+      showToast(
+        `${result.updatedCount} Transaktionen als nicht abgeglichen markiert`,
+        "success"
+      );
+    } else {
+      warnLog(
+        "[TransactionsView]",
+        `Bulk-Abgleich-Entfernung mit Fehlern: ${result.updatedCount} erfolgreich, ${result.errors.length} Fehler`
+      );
+      showToast(
+        `${result.updatedCount} erfolgreich, ${result.errors.length} Fehler`,
+        "warning"
+      );
+    }
+
+    // Auswahl zurücksetzen
+    if (currentViewMode.value === "account") {
+      transactionListRef.value?.clearSelection();
+    } else {
+      categoryTransactionListRef.value?.clearSelection();
+    }
+
+    refreshKey.value++;
+  } catch (error) {
+    errorLog(
+      "[TransactionsView]",
+      "Unerwarteter Fehler beim Bulk-Abgleich entfernen",
+      error
+    );
+    showToast("Unerwarteter Fehler beim Entfernen des Abgleichs", "error");
+  }
+}
+
 // Keyboard Event Handler für ALT+n
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.altKey && event.key.toLowerCase() === "n") {
@@ -926,6 +1046,8 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               @assign-category="handleBulkAssignCategory"
               @assign-tags="handleBulkAssignTags"
               @change-date="handleBulkChangeDate"
+              @set-reconciled="handleBulkSetReconciled"
+              @remove-reconciled="handleBulkRemoveReconciled"
               @delete="handleBulkDelete"
             />
           </div>
@@ -1021,6 +1143,8 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               @assign-category="handleBulkAssignCategory"
               @assign-tags="handleBulkAssignTags"
               @change-date="handleBulkChangeDate"
+              @set-reconciled="handleBulkSetReconciled"
+              @remove-reconciled="handleBulkRemoveReconciled"
               @delete="handleBulkDelete"
             />
           </div>

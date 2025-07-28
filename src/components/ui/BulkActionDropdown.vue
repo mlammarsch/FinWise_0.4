@@ -14,6 +14,8 @@
  * - assign-category: Kategorienzuweisung
  * - assign-tags: Tags zuweisen
  * - change-date: Datum ändern
+ * - set-reconciled: Abgleich aktivieren
+ * - remove-reconciled: Abgleich entfernen
  * - delete: Löschen
  */
 import { ref, onMounted, onUnmounted } from "vue";
@@ -30,6 +32,8 @@ const emit = defineEmits([
   "assign-category",
   "assign-tags",
   "change-date",
+  "set-reconciled",
+  "remove-reconciled",
   "delete",
 ]);
 
@@ -186,6 +190,30 @@ onUnmounted(() => {
               class="text-lg"
             />
             Datum ändern
+          </a>
+        </li>
+
+        <li class="divider"></li>
+
+        <!-- Abgleich aktivieren -->
+        <li>
+          <a @click="handleAction('set-reconciled')">
+            <Icon
+              icon="mdi:check-circle"
+              class="text-lg"
+            />
+            Alle markierte abgleichen
+          </a>
+        </li>
+
+        <!-- Abgleich entfernen -->
+        <li>
+          <a @click="handleAction('remove-reconciled')">
+            <Icon
+              icon="mdi:close-circle"
+              class="text-lg"
+            />
+            Abgleich entfernen
           </a>
         </li>
 

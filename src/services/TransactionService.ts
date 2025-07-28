@@ -1167,10 +1167,11 @@ async updateTransaction(
       if (counterTransaction) {
         const counterUpdates: Partial<Transaction> = {};
 
-        // Synchronisiere Datum, Wertstellungsdatum und Notiz
+        // Synchronisiere Datum, Wertstellungsdatum, Notiz und Reconciliation-Status
         if (updates.date !== undefined) counterUpdates.date = updates.date;
         if (updates.valueDate !== undefined) counterUpdates.valueDate = updates.valueDate;
         if (updates.note !== undefined) counterUpdates.note = updates.note;
+        if (updates.reconciled !== undefined) counterUpdates.reconciled = updates.reconciled;
         if (updates.recipientId !== undefined) {
           counterUpdates.recipientId = updates.recipientId;
           counterUpdates.payee = this.resolvePayeeFromRecipient(updates.recipientId);
@@ -1190,10 +1191,11 @@ async updateTransaction(
       if (counterTransaction) {
         const counterUpdates: Partial<Transaction> = {};
 
-        // Synchronisiere Datum, Wertstellungsdatum und Notiz
+        // Synchronisiere Datum, Wertstellungsdatum, Notiz und Reconciliation-Status
         if (updates.date !== undefined) counterUpdates.date = updates.date;
         if (updates.valueDate !== undefined) counterUpdates.valueDate = updates.valueDate;
         if (updates.note !== undefined) counterUpdates.note = updates.note;
+        if (updates.reconciled !== undefined) counterUpdates.reconciled = updates.reconciled;
         if (updates.recipientId !== undefined) {
           counterUpdates.recipientId = updates.recipientId;
           counterUpdates.payee = this.resolvePayeeFromRecipient(updates.recipientId);
@@ -2866,6 +2868,174 @@ async updateTransaction(
       infoLog('[TransactionService]', `Bulk-Datumsänderung erfolgreich abgeschlossen: ${updatedCount} Transaktionen auf ${newDate} geändert`);
     } else {
       warnLog('[TransactionService]', `Bulk-Datumsänderung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
+  },
+
+  /**
+   * Bulk-Abgleich setzen für mehrere Transaktionen
+   */
+  async bulkSetReconciled(transactionIds: string[]): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    debugLog('[TransactionService]', 'bulkSetReconciled started', {
+      requestedCount: unique.length
+    });
+
+    // Sammle alle zu ändernden Transaktionen
+    const transactionsToUpdate = new Map<string, Transaction>();
+    const affectedAccountIds = new Set<string>();
+
+    // 1. Analysiere alle Transaktionen
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkSetReconciled - Transaction not found', { id });
+        continue;
+      }
+
+      // Nur Transaktionen aktualisieren, die noch nicht abgeglichen sind
+      if (!tx.reconciled) {
+        transactionsToUpdate.set(id, tx);
+        if (tx.accountId) {
+          affectedAccountIds.add(tx.accountId);
+        }
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkSetReconciled - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      affectedAccounts: Array.from(affectedAccountIds)
+    });
+
+    // 2. Batch-Mode aktivieren für Performance
+    this.startBatchMode();
+
+    let updatedCount = 0;
+    try {
+      // Aktualisiere alle Transaktionen in einem Batch
+      for (const [id, tx] of transactionsToUpdate) {
+        try {
+          await txStore.updateTransaction(id, { reconciled: true });
+          updatedCount++;
+        } catch (error) {
+          const errorMsg = `Fehler beim Setzen des Abgleichs für Transaktion ${id}: ${error}`;
+          errors.push(errorMsg);
+          errorLog('[TransactionService]', 'bulkSetReconciled - Update failed', { id, error });
+        }
+      }
+    } finally {
+      this.endBatchMode();
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkSetReconciled completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      affectedAccounts: Array.from(affectedAccountIds)
+    });
+
+    if (success) {
+      infoLog('[TransactionService]', `Bulk-Abgleich erfolgreich gesetzt: ${updatedCount} Transaktionen als abgeglichen markiert`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Abgleich mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
+    }
+
+    return { success, updatedCount, errors };
+  },
+
+  /**
+   * Bulk-Abgleich entfernen für mehrere Transaktionen
+   */
+  async bulkRemoveReconciled(transactionIds: string[]): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    const unique = [...new Set(transactionIds)];
+    const errors: string[] = [];
+
+    if (unique.length === 0) {
+      return { success: true, updatedCount: 0, errors: [] };
+    }
+
+    debugLog('[TransactionService]', 'bulkRemoveReconciled started', {
+      requestedCount: unique.length
+    });
+
+    // Sammle alle zu ändernden Transaktionen
+    const transactionsToUpdate = new Map<string, Transaction>();
+    const affectedAccountIds = new Set<string>();
+
+    // 1. Analysiere alle Transaktionen
+    for (const id of unique) {
+      const tx = txStore.getTransactionById(id);
+      if (!tx) {
+        const error = `Transaktion mit ID ${id} nicht gefunden`;
+        errors.push(error);
+        debugLog('[TransactionService]', 'bulkRemoveReconciled - Transaction not found', { id });
+        continue;
+      }
+
+      // Nur Transaktionen aktualisieren, die abgeglichen sind
+      if (tx.reconciled) {
+        transactionsToUpdate.set(id, tx);
+        if (tx.accountId) {
+          affectedAccountIds.add(tx.accountId);
+        }
+      }
+    }
+
+    debugLog('[TransactionService]', 'bulkRemoveReconciled - Analysis completed', {
+      transactionsToUpdate: transactionsToUpdate.size,
+      affectedAccounts: Array.from(affectedAccountIds)
+    });
+
+    // 2. Batch-Mode aktivieren für Performance
+    this.startBatchMode();
+
+    let updatedCount = 0;
+    try {
+      // Aktualisiere alle Transaktionen in einem Batch
+      for (const [id, tx] of transactionsToUpdate) {
+        try {
+          await txStore.updateTransaction(id, { reconciled: false });
+          updatedCount++;
+        } catch (error) {
+          const errorMsg = `Fehler beim Entfernen des Abgleichs für Transaktion ${id}: ${error}`;
+          errors.push(errorMsg);
+          errorLog('[TransactionService]', 'bulkRemoveReconciled - Update failed', { id, error });
+        }
+      }
+    } finally {
+      this.endBatchMode();
+    }
+
+    const success = errors.length === 0;
+
+    debugLog('[TransactionService]', 'bulkRemoveReconciled completed', {
+      requested: unique.length,
+      transactionsToUpdate: transactionsToUpdate.size,
+      updated: updatedCount,
+      errors: errors.length,
+      success,
+      affectedAccounts: Array.from(affectedAccountIds)
+    });
+
+    if (success) {
+      infoLog('[TransactionService]', `Bulk-Abgleich erfolgreich entfernt: ${updatedCount} Transaktionen als nicht abgeglichen markiert`);
+    } else {
+      warnLog('[TransactionService]', `Bulk-Abgleich-Entfernung mit Fehlern abgeschlossen: ${updatedCount} erfolgreich, ${errors.length} Fehler`, { errors });
     }
 
     return { success, updatedCount, errors };
