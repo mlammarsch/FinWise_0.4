@@ -152,6 +152,16 @@ export const TransactionService = {
 
     debugLog('[TransactionService]', 'addTransaction completed', added);
 
+    // WICHTIG: Running Balance für betroffenes Konto neu berechnen
+    if (added.accountId) {
+      debugLog('[TransactionService]', `Triggere Running Balance Neuberechnung für Konto ${added.accountId} nach Hinzufügen von Transaktion ${added.id}`);
+
+      const { BalanceService } = await import('@/services/BalanceService');
+      await BalanceService.recalculateRunningBalancesForAccount(added.accountId);
+
+      infoLog('[TransactionService]', `Running Balance für Konto ${added.accountId} nach Hinzufügen neu berechnet`);
+    }
+
     /* Automatischer Kategorie‑Transfer bei Einnahmen */
     debugLog('[TransactionService]', 'Category Transfer Check - Transaction', {
       type: added.type,
@@ -240,8 +250,10 @@ export const TransactionService = {
     const fromName = accStore.getAccountById(fromAccountId)?.name ?? '';
     const toName   = accStore.getAccountById(toAccountId)?.name ?? '';
     const dt       = toDateOnlyString(date);
-    const vdt      = toDateOnlyString(valueDate ?? date);
-    debugLog('[TransactionService]', 'addAccountTransfer - Calculated dates:', { date, valueDate, dt, vdt });
+    // Validierung der valueDate - falls null/undefined oder ungültig, verwende date
+    const validValueDate = valueDate && valueDate !== 'null' && valueDate !== 'undefined' ? valueDate : date;
+    const vdt      = toDateOnlyString(validValueDate);
+    debugLog('[TransactionService]', 'addAccountTransfer - Calculated dates:', { date, valueDate, validValueDate, dt, vdt });
     const abs      = Math.abs(amount);
 
     const base: Omit<Transaction, 'id' | 'runningBalance'> = {
@@ -474,10 +486,10 @@ export const TransactionService = {
 
 /* ------------------------- Update / Delete ----------------------- */
 
-updateTransaction(
+async updateTransaction(
     id: string,
     updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
-  ): boolean {
+  ): Promise<boolean> {
     const txStore = useTransactionStore();
     const catStore = useCategoryStore();
 
@@ -490,6 +502,9 @@ updateTransaction(
     }
 
     const original = txStore.getTransactionById(id);
+    if (original) {
+      debugLog('[TransactionService]', `Aktualisiere Transaktion: ${original.description} (${original.amount}€) für Konto ${original.accountId}`);
+    }
 
     // Datums­wechsel bei Einnahmen → Category‑Transfer umbuchen
     const originalMonthKey = original?.date?.substring(0, 7);
@@ -528,7 +543,7 @@ updateTransaction(
       }
     }
 
-    const ok = txStore.updateTransaction(id, updates);
+    const ok = await txStore.updateTransaction(id, updates);
     if (!ok) return false;
 
     /* Auto‑Transfer bei INCOME‑Diff (bestehend) --------------------------- */
@@ -544,7 +559,7 @@ updateTransaction(
 
         const cat = catStore.getCategoryById(original.categoryId);
         if (cat?.isIncomeCategory) {
-          this.addCategoryTransfer(
+          await this.addCategoryTransfer(
             diff > 0 ? original.categoryId : available.id,
             diff > 0 ? available.id : original.categoryId,
             Math.abs(diff),
@@ -558,21 +573,27 @@ updateTransaction(
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
 
-    // Running Balance Neuberechnung triggern
+    // WICHTIG: Running Balance für betroffenes Konto neu berechnen
     const updatedTx = txStore.getTransactionById(id);
     if (updatedTx && updatedTx.accountId && !this._skipRunningBalanceRecalc) {
-      BalanceService.triggerRunningBalanceRecalculation(updatedTx.accountId, updatedTx.valueDate || updatedTx.date);
+      debugLog('[TransactionService]', `Triggere Running Balance Neuberechnung für Konto ${updatedTx.accountId} nach Update von Transaktion ${id}`);
+
+      await BalanceService.recalculateRunningBalancesForAccount(updatedTx.accountId);
+
+      infoLog('[TransactionService]', `Running Balance für Konto ${updatedTx.accountId} nach Update neu berechnet`);
     }
 
     return true;
   },
 
-  deleteTransaction(id: string): boolean {
+  async deleteTransaction(id: string): Promise<boolean> {
     const txStore = useTransactionStore();
     const catStore = useCategoryStore();
 
     const tx = txStore.getTransactionById(id);
     if (!tx) return false;
+
+    debugLog('[TransactionService]', `Lösche Transaktion: ${tx.description} (${tx.amount}€) vom ${tx.date} für Konto ${tx.accountId}`);
 
     // Einnahme‑Löschung → Mittel zurück transferieren
     if (
@@ -585,7 +606,7 @@ updateTransaction(
 
       const cat = catStore.getCategoryById(tx.categoryId);
       if (cat?.isIncomeCategory) {
-        this.addCategoryTransfer(
+        await this.addCategoryTransfer(
           available.id,
           tx.categoryId,
           tx.amount,
@@ -595,18 +616,23 @@ updateTransaction(
       }
     }
 
-    const okPrimary = txStore.deleteTransaction(id);
+    const okPrimary = await txStore.deleteTransaction(id);
     if (!okPrimary) return false;
 
     if (tx.counterTransactionId)
-      txStore.deleteTransaction(tx.counterTransactionId);
+      await txStore.deleteTransaction(tx.counterTransactionId);
 
-    // Salden aktualisieren
+    // WICHTIG: MonthlyBalance-Cache invalidieren BEVOR Running Balance neu berechnet wird
+    debugLog('[TransactionService]', `Invalidiere MonthlyBalance-Cache nach Löschung von Transaktion ${id}`);
     BalanceService.calculateMonthlyBalances();
 
-    // Running Balance Neuberechnung triggern
+    // WICHTIG: Running Balance für betroffenes Konto neu berechnen
     if (tx.accountId && !this._skipRunningBalanceRecalc) {
-      BalanceService.triggerRunningBalanceRecalculation(tx.accountId, tx.valueDate || tx.date);
+      debugLog('[TransactionService]', `Triggere Running Balance Neuberechnung für Konto ${tx.accountId} nach Löschung von Transaktion ${id}`);
+
+      await BalanceService.recalculateRunningBalancesForAccount(tx.accountId);
+
+      infoLog('[TransactionService]', `Running Balance für Konto ${tx.accountId} nach Löschung neu berechnet`);
     }
 
     return true;

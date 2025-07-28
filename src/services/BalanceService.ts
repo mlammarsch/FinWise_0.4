@@ -718,7 +718,22 @@ export const BalanceService = {
       // Explizites fromDate - Saldo am Tag davor berechnen
       const dayBefore = new Date(fromDate);
       dayBefore.setDate(dayBefore.getDate() - 1);
-      runningBalance = this.getTodayBalance('account', accountId, dayBefore);
+
+      // WICHTIG: Verwende Fallback-Berechnung statt Cache, um veraltete MonthlyBalance-Daten zu vermeiden
+      const dateStr = toDateOnlyString(dayBefore);
+      const txsBeforeDate = txStore.transactions.filter(
+        tx => tx.accountId === accountId &&
+             tx.type !== TransactionType.CATEGORYTRANSFER &&
+             toDateOnlyString(tx.date) <= dateStr
+      );
+      runningBalance = txsBeforeDate.reduce((sum, tx) => sum + tx.amount, 0);
+
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Startsaldo aus aktuellen Transaktionen berechnet', {
+        accountId,
+        dayBefore: dateStr,
+        transactionsFound: txsBeforeDate.length,
+        calculatedBalance: runningBalance
+      });
     }
     // Rundung auf 2 Dezimalstellen für Startsaldo
     runningBalance = Math.round(runningBalance * 100) / 100;

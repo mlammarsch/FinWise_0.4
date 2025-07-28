@@ -129,6 +129,10 @@ export const useTransactionStore = defineStore('transaction', () => {
       updatedAt: tx.updatedAt || tx.updated_at || now,
     };
 
+    if (!fromSync) {
+      debugLog('transactionStore', `Füge neue Transaktion hinzu: ${transactionWithTimestamp.description} (${transactionWithTimestamp.amount}€) vom ${transactionWithTimestamp.date} für Konto ${transactionWithTimestamp.accountId}`);
+    }
+
     if (fromSync) {
       // Nutze die optimierte TenantDbService-Methode mit skipIfOlder=true
       const wasUpdated = await tenantDbService.addTransaction(transactionWithTimestamp, true);
@@ -269,6 +273,10 @@ export const useTransactionStore = defineStore('transaction', () => {
 
   async function deleteTransaction(id: string, fromSync = false): Promise<boolean> {
     const transactionToDelete = transactions.value.find(t => t.id === id);
+
+    if (transactionToDelete) {
+      debugLog('transactionStore', `Lösche Transaktion: ${transactionToDelete.description} (${transactionToDelete.amount}€) vom ${transactionToDelete.date} für Konto ${transactionToDelete.accountId}`);
+    }
 
     await tenantDbService.deleteTransaction(id);
     transactions.value = transactions.value.filter(t => t.id !== id);

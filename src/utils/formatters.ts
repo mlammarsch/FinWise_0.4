@@ -42,6 +42,18 @@ export function formatDateTime(dateString: string): string {
  */
 export function toDateOnlyString(input: string | Date): string {
   const date = typeof input === "string" ? new Date(input) : input;
+
+  // Prüfung auf ungültiges Datum
+  if (isNaN(date.getTime())) {
+    console.warn('[toDateOnlyString] Invalid date input:', input);
+    // Fallback auf aktuelles Datum
+    const fallbackDate = new Date();
+    const year = fallbackDate.getFullYear();
+    const month = `${fallbackDate.getMonth() + 1}`.padStart(2, "0");
+    const day = `${fallbackDate.getDate()}`.padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");

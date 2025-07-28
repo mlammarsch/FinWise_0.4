@@ -189,13 +189,30 @@ const createTransaction = () => {
 
 const handleSave = (payload: any) => {
   if (payload.type === TransactionType.ACCOUNTTRANSFER) {
-    TransactionService.addAccountTransfer(
-      payload.fromAccountId,
-      payload.toAccountId,
-      payload.amount,
-      payload.date,
-      payload.note
-    );
+    if (selectedTransaction.value) {
+      // EDIT: Bestehende Transaktion zu Account Transfer ändern
+      // Zuerst die ursprüngliche Transaktion löschen
+      TransactionService.deleteTransaction(selectedTransaction.value.id);
+      // Dann neuen Account Transfer erstellen
+      TransactionService.addAccountTransfer(
+        payload.fromAccountId,
+        payload.toAccountId,
+        payload.amount,
+        payload.date,
+        payload.valueDate,
+        payload.note
+      );
+    } else {
+      // CREATE: Neuen Account Transfer erstellen
+      TransactionService.addAccountTransfer(
+        payload.fromAccountId,
+        payload.toAccountId,
+        payload.amount,
+        payload.date,
+        payload.valueDate,
+        payload.note
+      );
+    }
   } else {
     const tx = {
       ...payload,

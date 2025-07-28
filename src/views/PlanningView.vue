@@ -23,7 +23,7 @@ import DetailedForecastChart from "@/components/ui/charts/DetailedForecastChart.
 import { PlanningTransaction, TransactionType } from "@/types";
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
-import MonthSelector from "@/components/ui/MonthSelector.vue";
+import DateRangePicker from "@/components/ui/DateRangePicker.vue";
 import PagingComponent from "@/components/ui/PagingComponent.vue";
 import { formatDate } from "@/utils/formatters";
 import { debugLog } from "@/utils/logger";
@@ -589,11 +589,19 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Filter & MonthSelector -->
+    <!-- Filter & DateRangePicker -->
     <div class="card bg-base-100 shadow-md border border-base-300 p-4">
       <div class="flex flex-wrap justify-between items-end gap-4">
         <div class="flex items-end gap-4">
-          <MonthSelector @update-daterange="handleDateRangeUpdate" />
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Zeitraum</span>
+            </label>
+            <DateRangePicker
+              :model-value="dateRange"
+              @update:model-value="handleDateRangeUpdate"
+            />
+          </div>
           <div class="form-control">
             <label class="label">
               <span class="label-text opacity-50">Konto</span>

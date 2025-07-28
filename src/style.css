@@ -94,7 +94,7 @@
   --color-base-200: #211f25;
   --color-base-300: #38353b;
   --color-base-content: #bdbcbd;
-  --color-info: #1cadca;
+  --color-info: #599EAB, /* #1cadca; Altfarbe */
   --color-info-content: #000b0f;
   --color-success: #76b279;
   --color-success-content: #050c05;
