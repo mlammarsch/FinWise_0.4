@@ -19,11 +19,13 @@ import { CategoryService } from "../../services/CategoryService"; // CategorySer
 import { Icon } from "@iconify/vue";
 
 const props = defineProps<{
-  transaction?: Transaction;
+  transaction?: Transaction | null;
   isEdit?: boolean;
   defaultAccountId?: string;
   initialAccountId?: string;
   initialTransactionType?: TransactionType;
+  initialCategoryId?: string;
+  initialTagIds?: string[];
 }>();
 
 const emit = defineEmits(["save", "cancel"]);
@@ -84,16 +86,19 @@ const filteredAccounts = computed(() =>
 );
 
 const focusModalAndAmount = () => {
-  nextTick(() => {
-    amountInputRef.value?.focus();
-    amountInputRef.value?.select();
-  });
+  // Verzögerung hinzufügen, damit das Modal vollständig sichtbar ist
+  setTimeout(() => {
+    if (amountInputRef.value) {
+      amountInputRef.value.focus();
+      amountInputRef.value.select();
+    }
+  }, 100);
 };
 
 onMounted(() => {
   recipientsLoaded.value = true;
 
-  if (props.transaction) {
+  if (props.transaction && props.transaction !== null) {
     // Bestehende Transaktion → Felder ausfüllen
     date.value = props.transaction.date;
     valueDate.value =
@@ -122,6 +127,8 @@ onMounted(() => {
       "";
     transactionType.value =
       props.initialTransactionType || TransactionType.EXPENSE;
+    categoryId.value = props.initialCategoryId || "";
+    tagIds.value = props.initialTagIds || [];
     reconciled.value = false;
     valueDate.value = date.value;
     valueDateManuallyChanged.value = false;

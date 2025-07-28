@@ -1,6 +1,6 @@
 <!-- Datei: src/views/TransactionsView.vue -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useTransactionStore } from "../stores/transactionStore";
 import { useTransactionFilterStore } from "../stores/transactionFilterStore";
 import { useReconciliationStore } from "../stores/reconciliationStore";
@@ -182,7 +182,20 @@ const editTransaction = (tx: Transaction) => {
   showTransactionDetailModal.value = false;
 };
 
+// Vorbelegungswerte für neue Transaktionen
+const prefilledAccountId = ref<string>("");
+const prefilledTransactionType = ref<TransactionType | undefined>(undefined);
+const prefilledCategoryId = ref<string>("");
+const prefilledTagIds = ref<string[]>([]);
+
 const createTransaction = () => {
+  // Aktuelle Filter als Vorbelegung übernehmen
+  prefilledAccountId.value = selectedAccountId.value || "";
+  prefilledTransactionType.value =
+    (selectedTransactionType.value as TransactionType) || undefined;
+  prefilledCategoryId.value = selectedCategoryId.value || "";
+  prefilledTagIds.value = selectedTagId.value ? [selectedTagId.value] : [];
+
   selectedTransaction.value = null;
   showTransactionFormModal.value = true;
 };
@@ -656,8 +669,26 @@ async function onBulkDeleteConfirm(transactionIds: string[]) {
   }
 }
 
+// Keyboard Event Handler für ALT+n
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.altKey && event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    createTransaction();
+  }
+};
+
 // Filter‑Persistenz
-onMounted(() => transactionFilterStore.loadFilters());
+onMounted(() => {
+  transactionFilterStore.loadFilters();
+  // Keyboard Event Listener hinzufügen
+  document.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  // Keyboard Event Listener entfernen
+  document.removeEventListener("keydown", handleKeydown);
+});
+
 watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
   transactionFilterStore.saveFilters()
 );
@@ -665,15 +696,20 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
 
 <template>
   <div class="space-y-6">
-    <SearchGroup
-      btnRight="Neue Transaktion"
-      btnRightIcon="mdi:plus"
-      @search="(query: string) => (searchQuery = query)"
-      @btn-right-click="createTransaction"
-    />
+    <!-- Überschrift -->
+    <div class="flex items-center justify-between items-center">
+      <h2 class="text-xl font-bold">Transaktionen</h2>
+
+      <SearchGroup
+        btnRight="Neue Transaktion"
+        btnRightIcon="mdi:plus"
+        @search="(query: string) => (searchQuery = query)"
+        @btn-right-click="createTransaction"
+      />
+    </div>
 
     <!-- Umschalter zwischen Tabs -->
-    <div class="tabs tabs-boxed mb-4">
+    <div class="tabs tabs-boxed bg-base-200 mb-4">
       <a
         class="tab"
         :class="{ 'tab-active': currentViewMode === 'account' }"
@@ -948,7 +984,11 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
       >
         <div class="modal-box overflow-visible relative w-full max-w-2xl">
           <TransactionForm
-            :transaction="selectedTransaction || undefined"
+            :transaction="selectedTransaction"
+            :initialAccountId="prefilledAccountId"
+            :initialTransactionType="prefilledTransactionType"
+            :initialCategoryId="prefilledCategoryId"
+            :initialTagIds="prefilledTagIds"
             @cancel="showTransactionFormModal = false"
             @save="handleSave"
           />

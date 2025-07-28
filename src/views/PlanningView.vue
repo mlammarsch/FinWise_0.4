@@ -4,7 +4,7 @@
  * Pfad zur Komponente: src/views/PlanningView.vue
  * Hauptansicht für Finanzplanung und Prognose.
  */
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import dayjs from "dayjs";
 import { Icon } from "@iconify/vue";
 import { useRoute, useRouter } from "vue-router";
@@ -46,6 +46,7 @@ const showEditPlanningModal = ref(false);
 const selectedPlanning = ref<PlanningTransaction | null>(null);
 const searchQuery = ref("");
 const selectedAccountId = ref("");
+const selectedCategoryId = ref("");
 const activeTab = ref<"upcoming" | "accounts" | "categories">("upcoming");
 
 // Detailansicht für Charts
@@ -98,15 +99,71 @@ const upcomingTransactionsInRange = computed(() => {
   return list.sort((a, b) => a.date.localeCompare(b.date));
 });
 
-// Suche & Konto‑Filter
+// Suche & Filter
 const filteredTransactions = computed(() => {
   let data = [...upcomingTransactionsInRange.value];
 
+  // Filter nach Konto
   if (selectedAccountId.value) {
-    data = data.filter(
-      (e) => e.transaction.accountId === selectedAccountId.value
-    );
+    data = data.filter((e) => {
+      const t = e.transaction;
+      // Hauptbuchung mit dem gewählten Konto
+      if (t.accountId === selectedAccountId.value) {
+        return true;
+      }
+      // Bei Kontotransfers: Zielkonto prüfen
+      if (
+        t.transactionType === TransactionType.ACCOUNTTRANSFER &&
+        t.transferToAccountId === selectedAccountId.value
+      ) {
+        return true;
+      }
+      return false;
+    });
   }
+
+  // Filter nach Kategorie
+  if (selectedCategoryId.value) {
+    data = data.filter((e) => {
+      const t = e.transaction;
+      // Hauptbuchung mit der gewählten Kategorie
+      if (t.categoryId === selectedCategoryId.value) {
+        return true;
+      }
+      // Bei Kategorietransfers: Zielkategorie prüfen
+      if (
+        t.transactionType === TransactionType.CATEGORYTRANSFER &&
+        t.transferToCategoryId === selectedCategoryId.value
+      ) {
+        return true;
+      }
+      return false;
+    });
+  }
+
+  // Gegenbuchungen IMMER herausfiltern (unabhängig von Filtern)
+  data = data.filter((e) => {
+    const t = e.transaction;
+    // Gegenbuchungen über Namen erkennen und ausblenden
+    if (t.name && t.name.includes("(Gegenbuchung)")) {
+      return false;
+    }
+    // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
+    // ist die Gegenbuchung diejenige mit positivem Betrag
+    if (
+      t.counterPlanningTransactionId &&
+      (t.transactionType === TransactionType.ACCOUNTTRANSFER ||
+        t.transactionType === TransactionType.CATEGORYTRANSFER)
+    ) {
+      const counterPlanning = planningStore.planningTransactions.find(
+        (counter) => counter.id === t.counterPlanningTransactionId
+      );
+      if (counterPlanning && t.amount > 0 && counterPlanning.amount < 0) {
+        return false; // Gegenbuchung ausblenden
+      }
+    }
+    return true;
+  });
 
   if (searchQuery.value.trim()) {
     const term = searchQuery.value.toLowerCase();
@@ -121,6 +178,11 @@ const filteredTransactions = computed(() => {
           false) ||
         (accountStore
           .getAccountById(t.accountId)
+          ?.name.toLowerCase()
+          .includes(term) ??
+          false) ||
+        (categoryStore
+          .getCategoryById(t.categoryId)
           ?.name.toLowerCase()
           .includes(term) ??
           false) ||
@@ -258,6 +320,7 @@ function getTargetName(planning: PlanningTransaction): string {
 // Hilfs‑Funktionen
 function clearFilters() {
   selectedAccountId.value = "";
+  selectedCategoryId.value = "";
   searchQuery.value = "";
   currentPage.value = 1;
 }
@@ -512,8 +575,19 @@ function updateForecasts() {
   alert("Prognosen und monatliche Saldi wurden aktualisiert.");
 }
 
+// Keyboard Event Handler für ALT+n
+function handleKeydown(event: KeyboardEvent) {
+  if (event.altKey && event.key.toLowerCase() === "n") {
+    event.preventDefault();
+    createPlanning();
+  }
+}
+
 // Auto‑Execute Check bei Mount
 onMounted(() => {
+  // Keyboard Event Listener hinzufügen
+  document.addEventListener("keydown", handleKeydown);
+
   BalanceService.calculateMonthlyBalances();
 
   // Prognosebuchungen für zukünftige Zeiträume aktualisieren
@@ -552,93 +626,25 @@ onMounted(() => {
     if (run) executeAutomaticTransactions();
   }
 });
+
+// Cleanup bei Unmount
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+});
 </script>
 
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex justify-between items-center">
+    <div class="flex items-center justify-between">
       <h2 class="text-xl font-bold">Finanzplanung und Prognose</h2>
-      <div class="flex items-center gap-3">
-        <div
-          class="text-sm opacity-70"
-          v-if="lastUpdateDate"
-        >
-          Prognosen aktualisiert am: {{ formatDate(lastUpdateDate) }}
-        </div>
-        <button
-          class="btn btn-outline"
-          @click="updateForecasts"
-        >
-          <Icon
-            icon="mdi:refresh"
-            class="mr-2"
-          />
-          Prognosen aktualisieren
-        </button>
-        <button
-          class="btn btn-outline"
-          @click="executeAutomaticTransactions"
-        >
-          <Icon
-            icon="mdi:play-circle"
-            class="mr-2"
-          />
-          Auto-Ausführen
-        </button>
-      </div>
-    </div>
 
-    <!-- Filter & DateRangePicker -->
-    <div class="card bg-base-100 shadow-md border border-base-300 p-4">
-      <div class="flex flex-wrap justify-between items-end gap-4">
-        <div class="flex items-end gap-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Zeitraum</span>
-            </label>
-            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Konto</span>
-            </label>
-            <select
-              v-model="selectedAccountId"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                selectedAccountId
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle Konten</option>
-              <option
-                v-for="acc in accountStore.activeAccounts"
-                :key="acc.id"
-                :value="acc.id"
-              >
-                {{ acc.name }}
-              </option>
-            </select>
-          </div>
-          <button
-            class="btn btn-sm btn-ghost btn-circle self-end"
-            @click="clearFilters"
-          >
-            <Icon
-              icon="mdi:filter-off"
-              class="text-xl"
-            />
-          </button>
-        </div>
-        <SearchGroup
-          btn-right="Neue Planung"
-          btn-right-icon="mdi:plus"
-          @btn-right-click="createPlanning"
-          @search="(q: string) => (searchQuery = q)"
-        />
-      </div>
+      <SearchGroup
+        btn-right="Neue Planung"
+        btn-right-icon="mdi:plus"
+        @btn-right-click="createPlanning"
+        @search="(q: string) => (searchQuery = q)"
+      />
     </div>
 
     <!-- Tabs -->
@@ -683,6 +689,78 @@ onMounted(() => {
       v-if="activeTab === 'upcoming'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
+      <!-- Filter & DateRangePicker -->
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
+        <div class="flex flex-wrap items-end gap-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Zeitraum</span>
+            </label>
+            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Konto</span>
+            </label>
+            <select
+              v-model="selectedAccountId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedAccountId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Konten</option>
+              <option
+                v-for="acc in accountStore.activeAccounts"
+                :key="acc.id"
+                :value="acc.id"
+              >
+                {{ acc.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Kategorie</span>
+            </label>
+            <select
+              v-model="selectedCategoryId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedCategoryId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Kategorien</option>
+              <option
+                v-for="cat in categoryStore.activeCategories"
+                :key="cat.id"
+                :value="cat.id"
+              >
+                {{ cat.name }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div class="flex items-end gap-2">
+          <button
+            class="btn btn-sm btn-ghost btn-circle self-end"
+            @click="clearFilters"
+          >
+            <Icon
+              icon="mdi:filter-off"
+              class="text-xl"
+            />
+          </button>
+        </div>
+      </div>
+
+      <div class="divider px-5 m-0" />
+
       <div class="overflow-x-auto">
         <table class="table w-full">
           <thead>
@@ -824,52 +902,121 @@ onMounted(() => {
     <!-- Account forecast -->
     <div
       v-if="activeTab === 'accounts'"
-      class="space-y-4"
+      class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <!-- Account Badges -->
-      <div class="card bg-base-100 shadow-md border border-base-300 p-4">
-        <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div
-            v-for="account in accountStore.activeAccounts"
-            :key="account.id"
-            class="badge badge-lg cursor-pointer"
-            :class="
-              selectedAccountForDetail === account.id
-                ? 'badge-accent'
-                : 'badge-outline'
-            "
-            @click="
-              selectedAccountForDetail === account.id
-                ? hideAccountDetail()
-                : showAccountDetail(account.id)
-            "
-          >
-            {{ account.name }}
+      <!-- Filter & DateRangePicker -->
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
+        <div class="flex flex-wrap items-end gap-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Zeitraum</span>
+            </label>
+            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Konto</span>
+            </label>
+            <select
+              v-model="selectedAccountId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedAccountId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Konten</option>
+              <option
+                v-for="acc in accountStore.activeAccounts"
+                :key="acc.id"
+                :value="acc.id"
+              >
+                {{ acc.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Kategorie</span>
+            </label>
+            <select
+              v-model="selectedCategoryId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedCategoryId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Kategorien</option>
+              <option
+                v-for="cat in categoryStore.activeCategories"
+                :key="cat.id"
+                :value="cat.id"
+              >
+                {{ cat.name }}
+              </option>
+            </select>
           </div>
         </div>
 
-        <!-- Chart - DetailedForecastChart wenn Konto ausgewählt, sonst ForecastChart -->
-        <DetailedForecastChart
-          v-if="selectedAccountForDetail"
-          :selected-id="selectedAccountForDetail"
-          :start-date="dateRange.start"
-          type="accounts"
-        />
-        <ForecastChart
-          v-else
-          :start-date="dateRange.start"
-          :filtered-account-id="selectedAccountId"
-          :selected-account-for-detail="selectedAccountForDetail"
-          type="accounts"
-        />
+        <div class="flex items-end gap-2">
+          <button
+            class="btn btn-sm btn-ghost btn-circle self-end"
+            @click="clearFilters"
+          >
+            <Icon
+              icon="mdi:filter-off"
+              class="text-xl"
+            />
+          </button>
+        </div>
       </div>
 
-      <!-- Detaillierte Prognose für ausgewähltes Account -->
-      <div
+      <div class="divider px-5 m-0" />
+
+      <!-- Account Badges -->
+      <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
+      <div class="flex flex-wrap gap-4 mb-4">
+        <div
+          v-for="account in accountStore.activeAccounts"
+          :key="account.id"
+          class="badge badge-lg cursor-pointer"
+          :class="
+            selectedAccountForDetail === account.id
+              ? 'badge-accent'
+              : 'badge-outline'
+          "
+          @click="
+            selectedAccountForDetail === account.id
+              ? hideAccountDetail()
+              : showAccountDetail(account.id)
+          "
+        >
+          {{ account.name }}
+        </div>
+      </div>
+
+      <!-- Chart - DetailedForecastChart wenn Konto ausgewählt, sonst ForecastChart -->
+      <DetailedForecastChart
         v-if="selectedAccountForDetail"
-        class="card bg-base-100 shadow-md border border-base-300 p-4"
-      >
+        :selected-id="selectedAccountForDetail"
+        :start-date="dateRange.start"
+        type="accounts"
+      />
+      <ForecastChart
+        v-else
+        :start-date="dateRange.start"
+        :filtered-account-id="selectedAccountId"
+        :selected-account-for-detail="selectedAccountForDetail"
+        type="accounts"
+      />
+
+      <!-- Detaillierte Prognose für ausgewähltes Account -->
+      <div v-if="selectedAccountForDetail">
+        <div class="divider px-5 m-0" />
+
         <h4 class="text-lg font-semibold mb-4">
           Detaillierte Prognose für
           {{ accountStore.getAccountById(selectedAccountForDetail)?.name }}
@@ -950,58 +1097,127 @@ onMounted(() => {
     <!-- Category forecast -->
     <div
       v-if="activeTab === 'categories'"
-      class="space-y-4"
+      class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <!-- Category Badges -->
-      <div class="card bg-base-100 shadow-md border border-base-300 p-4">
-        <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
-        <div class="flex flex-wrap gap-4 mb-4">
-          <div
-            v-for="category in categoryStore.activeCategories"
-            :key="category.id"
-            class="badge badge-lg cursor-pointer transition-all duration-200"
-            :class="
-              selectedCategoryForDetail === category.id
-                ? 'badge-accent text-accent-content'
-                : 'badge-outline hover:badge-secondary'
-            "
-            @click="
-              selectedCategoryForDetail === category.id
-                ? hideCategoryDetail()
-                : showCategoryDetail(category.id)
-            "
-          >
-            <Icon
-              v-if="category.icon"
-              :icon="category.icon"
-              class="mr-1 text-sm"
-            />
-            {{ category.name }}
+      <!-- Filter & DateRangePicker -->
+      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
+        <div class="flex flex-wrap items-end gap-4">
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Zeitraum</span>
+            </label>
+            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Konto</span>
+            </label>
+            <select
+              v-model="selectedAccountId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedAccountId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Konten</option>
+              <option
+                v-for="acc in accountStore.activeAccounts"
+                :key="acc.id"
+                :value="acc.id"
+              >
+                {{ acc.name }}
+              </option>
+            </select>
+          </div>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text opacity-50">Kategorie</span>
+            </label>
+            <select
+              v-model="selectedCategoryId"
+              class="select select-sm select-bordered rounded-full"
+              :class="
+                selectedCategoryId
+                  ? 'border-2 border-accent'
+                  : 'border border-base-300'
+              "
+            >
+              <option value="">Alle Kategorien</option>
+              <option
+                v-for="cat in categoryStore.activeCategories"
+                :key="cat.id"
+                :value="cat.id"
+              >
+                {{ cat.name }}
+              </option>
+            </select>
           </div>
         </div>
 
-        <!-- Chart - DetailedForecastChart wenn Kategorie ausgewählt, sonst ForecastChart -->
-        <DetailedForecastChart
-          v-if="selectedCategoryForDetail"
-          :selected-id="selectedCategoryForDetail"
-          :start-date="dateRange.start"
-          type="categories"
-        />
-        <ForecastChart
-          v-else
-          :start-date="dateRange.start"
-          :selected-category-for-detail="selectedCategoryForDetail"
-          type="categories"
-          @show-category-detail="showCategoryDetail"
-          @hide-category-detail="hideCategoryDetail"
-        />
+        <div class="flex items-end gap-2">
+          <button
+            class="btn btn-sm btn-ghost btn-circle self-end"
+            @click="clearFilters"
+          >
+            <Icon
+              icon="mdi:filter-off"
+              class="text-xl"
+            />
+          </button>
+        </div>
       </div>
 
-      <!-- Detaillierte Prognose für ausgewählte Kategorie -->
-      <div
+      <div class="divider px-5 m-0" />
+
+      <!-- Category Badges -->
+      <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
+      <div class="flex flex-wrap gap-4 mb-4">
+        <div
+          v-for="category in categoryStore.activeCategories"
+          :key="category.id"
+          class="badge badge-lg cursor-pointer transition-all duration-200"
+          :class="
+            selectedCategoryForDetail === category.id
+              ? 'badge-accent text-accent-content'
+              : 'badge-outline hover:badge-secondary'
+          "
+          @click="
+            selectedCategoryForDetail === category.id
+              ? hideCategoryDetail()
+              : showCategoryDetail(category.id)
+          "
+        >
+          <Icon
+            v-if="category.icon"
+            :icon="category.icon"
+            class="mr-1 text-sm"
+          />
+          {{ category.name }}
+        </div>
+      </div>
+
+      <!-- Chart - DetailedForecastChart wenn Kategorie ausgewählt, sonst ForecastChart -->
+      <DetailedForecastChart
         v-if="selectedCategoryForDetail"
-        class="card bg-base-100 shadow-md border border-base-300 p-4"
-      >
+        :selected-id="selectedCategoryForDetail"
+        :start-date="dateRange.start"
+        type="categories"
+      />
+      <ForecastChart
+        v-else
+        :start-date="dateRange.start"
+        :selected-category-for-detail="selectedCategoryForDetail"
+        type="categories"
+        @show-category-detail="showCategoryDetail"
+        @hide-category-detail="hideCategoryDetail"
+      />
+
+      <!-- Detaillierte Prognose für ausgewählte Kategorie -->
+      <div v-if="selectedCategoryForDetail">
+        <div class="divider px-5 m-0" />
+
         <h4 class="text-lg font-semibold mb-4">
           Detaillierte Prognose für
           {{ categoryStore.getCategoryById(selectedCategoryForDetail)?.name }}

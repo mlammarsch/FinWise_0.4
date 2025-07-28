@@ -4,7 +4,7 @@
  * Pfad zur Komponente: src/views/admin/AdminPlanningView.vue
  * Administrative Verwaltung von Planungstransaktionen.
  */
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import dayjs from "dayjs";
 import { usePlanningStore } from "@/stores/planningStore";
 import { useAccountStore } from "@/stores/accountStore";
@@ -33,49 +33,125 @@ const showNewPlanningModal = ref(false);
 const showEditPlanningModal = ref(false);
 const selectedPlanning = ref<PlanningTransaction | null>(null);
 const searchQuery = ref("");
+const selectedAccountId = ref<string>("all");
+const selectedCategoryId = ref<string>("all");
 
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
 const filteredPlannings = computed(() => {
-  // Erst Gegenbuchungen herausfiltern
-  const planningsWithoutCounterBookings =
-    planningStore.planningTransactions.filter((p) => {
-      // Eine Gegenbuchung erkennt man daran, dass:
-      // 1. Sie einen Namen mit "(Gegenbuchung)" hat
-      // 2. Oder sie bei Transfers einen positiven Betrag hat (während die Hauptbuchung negativ ist)
+  let plannings = planningStore.planningTransactions;
 
-      // Prüfung über den Namen - einfachste Methode
-      if (p.name && p.name.includes("(Gegenbuchung)")) {
-        return false; // Gegenbuchung ausblenden
+  // Filter nach Konto anwenden
+  if (selectedAccountId.value !== "all") {
+    plannings = plannings.filter((p) => {
+      // Hauptbuchung mit dem gewählten Konto
+      if (p.accountId === selectedAccountId.value) {
+        return true;
       }
-
-      // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
-      // ist die Gegenbuchung diejenige mit positivem Betrag
+      // Bei Kontotransfers: Zielkonto prüfen
+      if (
+        p.transactionType === TransactionType.ACCOUNTTRANSFER &&
+        p.transferToAccountId === selectedAccountId.value
+      ) {
+        return true;
+      }
+      // Gegenbuchung anzeigen, wenn die Hauptbuchung das gewählte Konto betrifft
       if (
         p.counterPlanningTransactionId &&
-        (p.transactionType === TransactionType.ACCOUNTTRANSFER ||
-          p.transactionType === TransactionType.CATEGORYTRANSFER)
+        p.name &&
+        p.name.includes("(Gegenbuchung)")
       ) {
-        const counterPlanning = planningStore.planningTransactions.find(
-          (counter) => counter.id === p.counterPlanningTransactionId
+        const mainPlanning = planningStore.planningTransactions.find(
+          (main) => main.id === p.counterPlanningTransactionId
         );
-
-        // Wenn die Gegenbuchung existiert und diese Planung einen positiven Betrag hat,
-        // während die Gegenbuchung einen negativen Betrag hat, dann ist dies die Gegenbuchung
-        if (counterPlanning && p.amount > 0 && counterPlanning.amount < 0) {
-          return false; // Gegenbuchung ausblenden
+        if (
+          mainPlanning &&
+          (mainPlanning.accountId === selectedAccountId.value ||
+            mainPlanning.transferToAccountId === selectedAccountId.value)
+        ) {
+          return true;
         }
       }
-
-      return true; // Hauptbuchung oder normale Buchung anzeigen
+      return false;
     });
+  }
+
+  // Filter nach Kategorie anwenden
+  if (selectedCategoryId.value !== "all") {
+    plannings = plannings.filter((p) => {
+      // Hauptbuchung mit der gewählten Kategorie
+      if (p.categoryId === selectedCategoryId.value) {
+        return true;
+      }
+      // Bei Kategorietransfers: Zielkategorie prüfen
+      if (
+        p.transactionType === TransactionType.CATEGORYTRANSFER &&
+        p.transferToCategoryId === selectedCategoryId.value
+      ) {
+        return true;
+      }
+      // Gegenbuchung anzeigen, wenn die Hauptbuchung die gewählte Kategorie betrifft
+      if (
+        p.counterPlanningTransactionId &&
+        p.name &&
+        p.name.includes("(Gegenbuchung)")
+      ) {
+        const mainPlanning = planningStore.planningTransactions.find(
+          (main) => main.id === p.counterPlanningTransactionId
+        );
+        if (
+          mainPlanning &&
+          (mainPlanning.categoryId === selectedCategoryId.value ||
+            mainPlanning.transferToCategoryId === selectedCategoryId.value)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }
+
+  // Gegenbuchungen herausfiltern (außer wenn durch Filter explizit gewünscht)
+  const planningsWithoutCounterBookings = plannings.filter((p) => {
+    // Wenn ein Filter aktiv ist, wurden die relevanten Gegenbuchungen bereits oben eingeschlossen
+    if (
+      selectedAccountId.value !== "all" ||
+      selectedCategoryId.value !== "all"
+    ) {
+      return true; // Alle bereits gefilterten Planungen beibehalten
+    }
+
+    // Ohne aktive Filter: Gegenbuchungen ausblenden
+    if (p.name && p.name.includes("(Gegenbuchung)")) {
+      return false;
+    }
+
+    // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
+    // ist die Gegenbuchung diejenige mit positivem Betrag
+    if (
+      p.counterPlanningTransactionId &&
+      (p.transactionType === TransactionType.ACCOUNTTRANSFER ||
+        p.transactionType === TransactionType.CATEGORYTRANSFER)
+    ) {
+      const counterPlanning = planningStore.planningTransactions.find(
+        (counter) => counter.id === p.counterPlanningTransactionId
+      );
+
+      if (counterPlanning && p.amount > 0 && counterPlanning.amount < 0) {
+        return false; // Gegenbuchung ausblenden
+      }
+    }
+
+    return true;
+  });
 
   // Nach Fälligkeitsdatum aufsteigend sortieren (älteste zuerst)
   const sortedPlannings = planningsWithoutCounterBookings.sort((a, b) => {
     return dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
   });
 
+  // Suchfilter anwenden
   const term = searchQuery.value.trim().toLowerCase();
   if (!term) return sortedPlannings;
 
@@ -83,10 +159,12 @@ const filteredPlannings = computed(() => {
     const payee =
       recipientStore.getRecipientById(p.recipientId || "")?.name || "";
     const acc = accountStore.getAccountById(p.accountId)?.name || "";
+    const cat = categoryStore.getCategoryById(p.categoryId)?.name || "";
     return (
       p.name.toLowerCase().includes(term) ||
       payee.toLowerCase().includes(term) ||
       acc.toLowerCase().includes(term) ||
+      cat.toLowerCase().includes(term) ||
       String(p.amount).includes(term)
     );
   });
@@ -406,6 +484,36 @@ function getRecurrenceTooltip(planning: PlanningTransaction): string {
     planning.recurrencePattern
   )}`;
 }
+
+// Hotkey-Handler für STRG-N
+function handleKeydown(event: KeyboardEvent) {
+  if (event.altKey && event.key === "n") {
+    event.preventDefault();
+    createPlanning();
+  }
+}
+
+// Event-Handler für ButtonGroup
+function handleSearchInput(query: string) {
+  searchQuery.value = query;
+}
+
+function handleExecuteAllDue() {
+  executeAllDuePlannings();
+}
+
+function handleCreatePlanning() {
+  createPlanning();
+}
+
+// Lifecycle-Hooks für Hotkey-Listener
+onMounted(() => {
+  document.addEventListener("keydown", handleKeydown);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("keydown", handleKeydown);
+});
 </script>
 
 <template>
@@ -414,33 +522,16 @@ function getRecurrenceTooltip(planning: PlanningTransaction): string {
     class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
   >
     <h2 class="text-xl font-bold flex-shrink-0">Planungsverwaltung</h2>
-    <div class="flex justify-end w-full md:w-auto mt-2 md:mt-0">
-      <div class="join">
-        <button
-          class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
-          @click="executeAllDuePlannings"
-        >
-          <Icon
-            icon="mdi:play-circle"
-            class="mr-2 text-base"
-          />
-          Alle fälligen ausführen
-        </button>
-        <button
-          class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
-          @click="createPlanning"
-        >
-          <Icon
-            icon="mdi:plus"
-            class="mr-2 text-base"
-          />
-          Neue Planung
-        </button>
-      </div>
-    </div>
+    <SearchGroup
+      btnMiddle="Alle fälligen ausführen"
+      btnMiddleIcon="mdi:play-circle"
+      btnRight="Neue Planung"
+      btnRightIcon="mdi:plus"
+      @search="handleSearchInput"
+      @btn-middle-click="handleExecuteAllDue"
+      @btn-right-click="handleCreatePlanning"
+    />
   </div>
-
-  <SearchGroup @search="(q) => (searchQuery = q)" />
 
   <div class="card bg-base-100 shadow-md border border-base-300 w-full mt-6">
     <div class="card-body">

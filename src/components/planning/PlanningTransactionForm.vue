@@ -63,6 +63,8 @@ const ruleStore = useRuleStore();
 
 // Formular-Refs
 const planningFormRef = ref<HTMLFormElement | null>(null);
+const nameInputRef = ref<HTMLInputElement | null>(null);
+const amountInputRef = ref<InstanceType<typeof CurrencyInput> | null>(null);
 
 // Grundlegende Informationen
 const name = ref("");
@@ -196,6 +198,22 @@ onMounted(() => {
   updateDateDescription();
   calculateUpcomingDatesWrapper();
   formAttempted.value = false;
+
+  // Fokus-Verhalten nach dem Laden der Daten mit Verzögerung für Modal-Sichtbarkeit
+  setTimeout(() => {
+    if (props.isEdit && props.transaction) {
+      // Bei Edit: Fokus auf Betragsfeld und Inhalt markieren
+      if (amountInputRef.value) {
+        amountInputRef.value.focus();
+        amountInputRef.value.select();
+      }
+    } else {
+      // Bei Create: Fokus auf Name-Feld
+      if (nameInputRef.value) {
+        nameInputRef.value.focus();
+      }
+    }
+  }, 150);
 });
 
 // Watchers (Datum, Typ, Betr, Transfers)
@@ -756,6 +774,7 @@ function saveRuleAndCloseModal(ruleData: any) {
               </legend>
               <div class="form-control">
                 <input
+                  ref="nameInputRef"
                   type="text"
                   v-model="name"
                   class="input input-bordered"
@@ -793,6 +812,7 @@ function saveRuleAndCloseModal(ruleData: any) {
                 <div class="flex flex-col space-y-3">
                   <div class="input-group flex items-center gap-2">
                     <CurrencyInput
+                      ref="amountInputRef"
                       v-model="amount"
                       :class="{
                         'input-error': formAttempted && !isAmountValid,
