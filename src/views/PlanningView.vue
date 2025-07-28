@@ -26,7 +26,6 @@ import SearchGroup from "@/components/ui/SearchGroup.vue";
 import DateRangePicker from "@/components/ui/DateRangePicker.vue";
 import ConfirmationModal from "@/components/ui/ConfirmationModal.vue";
 import InfoToast from "@/components/ui/InfoToast.vue";
-import PagingComponent from "@/components/ui/PagingComponent.vue";
 import { formatDate } from "@/utils/formatters";
 import { debugLog } from "@/utils/logger";
 import { PlanningService } from "@/services/PlanningService";
@@ -73,10 +72,7 @@ const selectedCategoryForDetail = ref("");
 // DateRangePicker reference for navigation
 const dateRangePickerRef = ref<any>(null);
 
-// Pagination / Zeitraum
-const currentPage = ref(1);
-const itemsPerPage = ref<number | "all">(25);
-const itemsPerPageOptions = [10, 20, 25, 50, 100, "all"];
+// Zeitraum
 
 const dateRange = ref<{ start: string; end: string }>({
   start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
@@ -221,16 +217,6 @@ const filteredTransactions = computed(() => {
   return data;
 });
 
-// Pagination
-const paginatedTransactions = computed(() => {
-  if (itemsPerPage.value === "all") return filteredTransactions.value;
-  const start = (currentPage.value - 1) * Number(itemsPerPage.value);
-  return filteredTransactions.value.slice(
-    start,
-    start + Number(itemsPerPage.value)
-  );
-});
-
 // CRUD‑Aktionen
 function createPlanning() {
   selectedPlanning.value = null;
@@ -349,7 +335,6 @@ function clearFilters() {
   selectedAccountId.value = "";
   selectedCategoryId.value = "";
   searchQuery.value = "";
-  currentPage.value = 1;
 }
 
 // Chart-Detail-Funktionen
@@ -1013,7 +998,7 @@ onUnmounted(() => {
           </thead>
           <tbody>
             <tr
-              v-for="e in paginatedTransactions"
+              v-for="e in filteredTransactions"
               :key="`${e.transaction.id}-${e.date}`"
             >
               <td>{{ formatDate(e.date) }}</td>
@@ -1112,7 +1097,7 @@ onUnmounted(() => {
                 </div>
               </td>
             </tr>
-            <tr v-if="paginatedTransactions.length === 0">
+            <tr v-if="filteredTransactions.length === 0">
               <td
                 colspan="8"
                 class="text-center py-4"
@@ -1123,16 +1108,6 @@ onUnmounted(() => {
           </tbody>
         </table>
       </div>
-      <PagingComponent
-        v-model:currentPage="currentPage"
-        v-model:itemsPerPage="itemsPerPage"
-        :totalPages="
-          itemsPerPage === 'all'
-            ? 1
-            : Math.ceil(filteredTransactions.length / Number(itemsPerPage))
-        "
-        :itemsPerPageOptions="itemsPerPageOptions"
-      />
     </div>
 
     <!-- Account forecast -->

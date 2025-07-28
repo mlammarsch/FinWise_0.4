@@ -17,7 +17,16 @@
  * - sort-change: Anforderung zur Änderung der Sortierung
  * - toggleReconciliation: Umschalten des Abgleich-Status
  */
-import { defineProps, defineEmits, ref, computed, defineExpose } from "vue";
+import {
+  defineProps,
+  defineEmits,
+  ref,
+  computed,
+  defineExpose,
+  onMounted,
+  onUnmounted,
+  nextTick,
+} from "vue";
 import { Transaction, TransactionType } from "../../types";
 import { useAccountStore } from "../../stores/accountStore";
 import { useCategoryStore } from "../../stores/categoryStore";
@@ -48,6 +57,13 @@ const accountStore = useAccountStore();
 const categoryStore = useCategoryStore();
 const tagStore = useTagStore();
 const recipientStore = useRecipientStore();
+
+// Lazy Loading State
+const visibleItemsCount = ref(25); // Initial number of items to show
+const itemsPerLoad = 25; // Number of items to load when scrolling
+const loadingMoreItems = ref(false);
+const sentinelRef = ref<HTMLElement | null>(null);
+const intersectionObserver = ref<IntersectionObserver | null>(null);
 
 // Confirmation Modal State
 const showDeleteConfirmation = ref(false);
@@ -87,7 +103,7 @@ const displayTransactions = computed(() => {
 });
 
 // Sortierte Transaktionen mit korrekter date, createdAt Sortierung für Running Balance
-const sortedDisplayTransactions = computed(() => {
+const allSortedDisplayTransactions = computed(() => {
   const transactions = [...displayTransactions.value];
 
   // Nur bei Datumssortierung die spezielle Sortierung anwenden
@@ -119,14 +135,26 @@ const sortedDisplayTransactions = computed(() => {
   return transactions;
 });
 
+// Lazy Loading: Nur die sichtbaren Transaktionen anzeigen
+const sortedDisplayTransactions = computed(() => {
+  return allSortedDisplayTransactions.value.slice(0, visibleItemsCount.value);
+});
+
+// Check if there are more items to load
+const hasMoreItems = computed(() => {
+  return visibleItemsCount.value < allSortedDisplayTransactions.value.length;
+});
+
 // --- Auswahl-Logik ---
 const selectedIds = ref<string[]>([]);
 const lastSelectedIndex = ref<number | null>(null);
 const currentPageIds = computed(() =>
   sortedDisplayTransactions.value.map((tx) => tx.id)
 );
-const allSelected = computed(() =>
-  currentPageIds.value.every((id) => selectedIds.value.includes(id))
+const allSelected = computed(
+  () =>
+    currentPageIds.value.length > 0 &&
+    currentPageIds.value.every((id) => selectedIds.value.includes(id))
 );
 
 function handleHeaderCheckboxChange(event: Event) {
@@ -171,7 +199,7 @@ function handleCheckboxClick(
 }
 
 function getSelectedTransactions(): Transaction[] {
-  return sortedDisplayTransactions.value.filter((tx) =>
+  return allSortedDisplayTransactions.value.filter((tx) =>
     selectedIds.value.includes(tx.id)
   );
 }
@@ -214,6 +242,80 @@ function getTransactionDescription(transaction: Transaction): string {
 
   return `${date} - ${recipient} (${amount} €)`;
 }
+
+// Lazy Loading Functions
+function loadMoreItems() {
+  if (loadingMoreItems.value || !hasMoreItems.value) return;
+
+  loadingMoreItems.value = true;
+
+  // Simulate loading delay for better UX
+  setTimeout(() => {
+    visibleItemsCount.value = Math.min(
+      visibleItemsCount.value + itemsPerLoad,
+      allSortedDisplayTransactions.value.length
+    );
+    loadingMoreItems.value = false;
+  }, 100);
+}
+
+function setupIntersectionObserver() {
+  if (!sentinelRef.value) return;
+
+  intersectionObserver.value = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (entry.isIntersecting && hasMoreItems.value) {
+        loadMoreItems();
+      }
+    },
+    {
+      root: null,
+      rootMargin: "100px",
+      threshold: 0.1,
+    }
+  );
+
+  intersectionObserver.value.observe(sentinelRef.value);
+}
+
+function resetLazyLoading() {
+  visibleItemsCount.value = itemsPerLoad;
+}
+
+// Watch for changes in transactions to reset lazy loading
+function handleTransactionsChange() {
+  resetLazyLoading();
+  nextTick(() => {
+    if (intersectionObserver.value) {
+      intersectionObserver.value.disconnect();
+    }
+    setupIntersectionObserver();
+  });
+}
+
+// Lifecycle hooks
+onMounted(() => {
+  nextTick(() => {
+    setupIntersectionObserver();
+  });
+});
+
+onUnmounted(() => {
+  if (intersectionObserver.value) {
+    intersectionObserver.value.disconnect();
+  }
+});
+
+// Watch for prop changes that should reset lazy loading
+import { watch } from "vue";
+watch(
+  () => [props.transactions, props.sortKey, props.sortOrder, props.searchTerm],
+  () => {
+    handleTransactionsChange();
+  },
+  { deep: true }
+);
 </script>
 
 <template>
@@ -424,6 +526,37 @@ function getTransactionDescription(transaction: Transaction): string {
         </tr>
       </tbody>
     </table>
+
+    <!-- Loading indicator and sentinel for infinite scroll -->
+    <div
+      v-if="hasMoreItems"
+      class="flex justify-center py-4"
+    >
+      <div
+        v-if="loadingMoreItems"
+        class="flex items-center space-x-2"
+      >
+        <span class="loading loading-spinner loading-sm"></span>
+        <span class="text-sm opacity-70">Lade weitere Transaktionen...</span>
+      </div>
+      <!-- Sentinel element for intersection observer -->
+      <div
+        ref="sentinelRef"
+        class="h-1 w-full"
+      ></div>
+    </div>
+
+    <!-- End of list indicator -->
+    <div
+      v-else-if="allSortedDisplayTransactions.length > 0"
+      class="flex justify-center py-4"
+    >
+      <span class="text-sm opacity-50"
+        >Alle Transaktionen geladen ({{
+          allSortedDisplayTransactions.length
+        }})</span
+      >
+    </div>
   </div>
 
   <!-- Delete Confirmation Modal -->

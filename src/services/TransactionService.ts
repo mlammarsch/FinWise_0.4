@@ -83,6 +83,65 @@ export const TransactionService = {
     return fallbackPayee || '';
   },
 
+  /**
+   * Automatische Zuweisung der "Verfügbare Mittel" Kategorie für Transaktionen ohne Kategorisierung
+   * Ausnahmen: Reconciliation-Buchungen und bewusste Kategorie-Entfernungen
+   */
+  assignDefaultCategoryIfNeeded(
+    txData: any,
+    isReconciliation: boolean = false,
+    isIntentionalCategoryRemoval: boolean = false
+  ): any {
+    // Ausnahmen: Reconciliation-Buchungen oder bewusste Kategorie-Entfernungen
+    if (isReconciliation || isIntentionalCategoryRemoval) {
+      debugLog('[TransactionService]', 'assignDefaultCategoryIfNeeded - Skipped due to exception', {
+        isReconciliation,
+        isIntentionalCategoryRemoval,
+        transactionType: txData.type
+      });
+      return txData;
+    }
+
+    // Prüfe ob Transaktion bereits eine Kategorie hat
+    if (txData.categoryId) {
+      debugLog('[TransactionService]', 'assignDefaultCategoryIfNeeded - Transaction already has category', {
+        categoryId: txData.categoryId,
+        transactionType: txData.type
+      });
+      return txData;
+    }
+
+    // Ausnahme für CATEGORYTRANSFER und ACCOUNTTRANSFER - diese brauchen keine automatische Kategorie
+    if (txData.type === TransactionType.CATEGORYTRANSFER || txData.type === TransactionType.ACCOUNTTRANSFER) {
+      debugLog('[TransactionService]', 'assignDefaultCategoryIfNeeded - Skipped for transfer type', {
+        transactionType: txData.type
+      });
+      return txData;
+    }
+
+    const catStore = useCategoryStore();
+    const availableFundsCategory = catStore.getAvailableFundsCategory();
+
+    if (!availableFundsCategory) {
+      warnLog('[TransactionService]', 'assignDefaultCategoryIfNeeded - "Verfügbare Mittel" Kategorie nicht gefunden');
+      return txData;
+    }
+
+    // Weise "Verfügbare Mittel" Kategorie zu
+    const updatedTxData = {
+      ...txData,
+      categoryId: availableFundsCategory.id
+    };
+
+    infoLog('[TransactionService]', 'assignDefaultCategoryIfNeeded - Automatische Kategorienzuweisung', {
+      transactionType: txData.type,
+      assignedCategoryId: availableFundsCategory.id,
+      categoryName: availableFundsCategory.name
+    });
+
+    return updatedTxData;
+  },
+
 /* ------------------------------------------------------------------ */
 /* --------------------------- Write APIs --------------------------- */
 /* ------------------------------------------------------------------ */
@@ -103,25 +162,32 @@ export const TransactionService = {
     // Leite payee aus recipientId ab, falls vorhanden
     const resolvedPayee = this.resolvePayeeFromRecipient(txData.recipientId, txData.payee);
 
+    // Automatische Kategorienzuweisung für Transaktionen ohne Kategorisierung
+    const txDataWithDefaultCategory = this.assignDefaultCategoryIfNeeded(
+      txData,
+      txData.isReconciliation || false,
+      false // Bei neuen Transaktionen ist es nie eine bewusste Kategorie-Entfernung
+    );
+
     let transactionDataForStore: ExtendedTransaction = {
-      // Übernehme alle Felder von txData (Omit<Transaction, 'id' | 'runningBalance'>)
-      ...txData,
+      // Übernehme alle Felder von txDataWithDefaultCategory (mit potentieller automatischer Kategorie)
+      ...txDataWithDefaultCategory,
       // Setze die Pflichtfelder von ExtendedTransaction oder Felder mit strengeren Typen
       id: uuidv4(),
-      date: toDateOnlyString(txData.date),
-      valueDate: txData.valueDate ? toDateOnlyString(txData.valueDate) : toDateOnlyString(txData.date),
+      date: toDateOnlyString(txDataWithDefaultCategory.date),
+      valueDate: txDataWithDefaultCategory.valueDate ? toDateOnlyString(txDataWithDefaultCategory.valueDate) : toDateOnlyString(txDataWithDefaultCategory.date),
       runningBalance: 0, // Pflicht in ExtendedTransaction
       payee: resolvedPayee, // Verwende den aus recipientId abgeleiteten payee
-      description: txData.description || '', // description ist in Transaction Pflicht
-      tagIds: txData.tagIds || [], // tagIds ist in Transaction Pflicht
+      description: txDataWithDefaultCategory.description || '', // description ist in Transaction Pflicht
+      tagIds: txDataWithDefaultCategory.tagIds || [], // tagIds ist in Transaction Pflicht
       // Stelle sicher, dass optionale Felder, die in ExtendedTransaction string | null sind, korrekt behandelt werden
-      counterTransactionId: txData.counterTransactionId === undefined ? null : txData.counterTransactionId,
-      planningTransactionId: txData.planningTransactionId === undefined ? null : txData.planningTransactionId,
+      counterTransactionId: txDataWithDefaultCategory.counterTransactionId === undefined ? null : txDataWithDefaultCategory.counterTransactionId,
+      planningTransactionId: txDataWithDefaultCategory.planningTransactionId === undefined ? null : txDataWithDefaultCategory.planningTransactionId,
       // Stelle sicher, dass optionale Felder, die in ExtendedTransaction boolean sind, korrekt behandelt werden
-      isReconciliation: txData.isReconciliation === undefined ? false : txData.isReconciliation,
+      isReconciliation: txDataWithDefaultCategory.isReconciliation === undefined ? false : txDataWithDefaultCategory.isReconciliation,
       // updated_at wird im Store gesetzt.
       // Andere Felder wie type, accountId, categoryId, amount, note, isCategoryTransfer, transferToAccountId, reconciled, toCategoryId
-      // werden von ...txData übernommen und sollten mit Transaction und somit ExtendedTransaction kompatibel sein.
+      // werden von ...txDataWithDefaultCategory übernommen und sollten mit Transaction und somit ExtendedTransaction kompatibel sein.
     };
     debugLog('[TransactionService]', 'addTransaction - transactionDataForStore prepared:', transactionDataForStore);
 
@@ -1024,6 +1090,34 @@ async updateTransaction(
     if (!original) {
       debugLog('[TransactionService]', `updateTransaction - Transaction not found: ${id}`);
       return false;
+    }
+
+    // Prüfe auf bewusste Kategorie-Entfernung vs. automatische Zuweisung
+    let isIntentionalCategoryRemoval = false;
+    if (updates.categoryId === undefined && original.categoryId) {
+      // Kategorie wird explizit auf undefined gesetzt - das ist eine bewusste Entfernung
+      isIntentionalCategoryRemoval = true;
+      debugLog('[TransactionService]', 'updateTransaction - Intentional category removal detected', {
+        transactionId: id,
+        originalCategoryId: original.categoryId
+      });
+    } else if (!updates.categoryId && !original.categoryId) {
+      // Weder Update noch Original haben eine Kategorie - automatische Zuweisung prüfen
+      const updatedTxData = { ...original, ...updates };
+      const txDataWithDefaultCategory = this.assignDefaultCategoryIfNeeded(
+        updatedTxData,
+        updatedTxData.isReconciliation || false,
+        false
+      );
+
+      // Wenn eine Kategorie automatisch zugewiesen wurde, füge sie zu den Updates hinzu
+      if (txDataWithDefaultCategory.categoryId && !updates.categoryId) {
+        updates.categoryId = txDataWithDefaultCategory.categoryId;
+        debugLog('[TransactionService]', 'updateTransaction - Automatic category assignment applied', {
+          transactionId: id,
+          assignedCategoryId: txDataWithDefaultCategory.categoryId
+        });
+      }
     }
 
     // Prüfe auf Transfer-Konvertierung

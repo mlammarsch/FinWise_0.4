@@ -13,7 +13,6 @@ import TransactionList from "../components/transaction/TransactionList.vue";
 import CategoryTransactionList from "../components/transaction/CategoryTransactionList.vue";
 import TransactionDetailModal from "../components/transaction/TransactionDetailModal.vue";
 import TransactionForm from "../components/transaction/TransactionForm.vue";
-import PagingComponent from "../components/ui/PagingComponent.vue";
 import DateRangePicker from "../components/ui/DateRangePicker.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import SearchableSelectLite from "../components/ui/SearchableSelectLite.vue";
@@ -109,9 +108,6 @@ const currentViewMode = computed({
 });
 
 const selectedTransaction = ref<Transaction | null>(null);
-const currentPage = ref(1);
-const itemsPerPage = ref<number | "all">(25);
-const itemsPerPageOptions = [10, 20, 25, 50, 100, "all"];
 
 const searchQuery = computed({
   get: () => searchStore.globalSearchQuery,
@@ -184,29 +180,10 @@ const sortedCategoryTransactions = computed(
 
 function sortBy(key: keyof Transaction) {
   transactionFilterStore.setSortKey(key);
-  currentPage.value = 1;
 }
 function handleSortChange(key: keyof Transaction) {
   sortBy(key);
 }
-
-// Pagination helpers
-const paginatedTransactions = computed(() => {
-  if (itemsPerPage.value === "all") return sortedTransactions.value;
-  const start = (currentPage.value - 1) * Number(itemsPerPage.value);
-  return sortedTransactions.value.slice(
-    start,
-    start + Number(itemsPerPage.value)
-  );
-});
-const paginatedCategoryTransactions = computed(() => {
-  if (itemsPerPage.value === "all") return sortedCategoryTransactions.value;
-  const start = (currentPage.value - 1) * Number(itemsPerPage.value);
-  return sortedCategoryTransactions.value.slice(
-    start,
-    start + Number(itemsPerPage.value)
-  );
-});
 
 // Aktionen ---------------------------------------------------------------
 const viewTransaction = (tx: Transaction) => {
@@ -957,7 +934,7 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         <div class="card-body py-0 px-1">
           <TransactionList
             ref="transactionListRef"
-            :transactions="paginatedTransactions"
+            :transactions="sortedTransactions"
             :show-account="true"
             :sort-key="sortKey"
             :sort-order="sortOrder"
@@ -966,16 +943,6 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
             @edit="editTransaction"
             @delete="deleteTransaction"
             @toggleReconciliation="toggleTransactionReconciled"
-          />
-          <PagingComponent
-            v-model:currentPage="currentPage"
-            v-model:itemsPerPage="itemsPerPage"
-            :totalPages="
-              itemsPerPage === 'all'
-                ? 1
-                : Math.ceil(sortedTransactions.length / Number(itemsPerPage))
-            "
-            :itemsPerPageOptions="itemsPerPageOptions"
           />
         </div>
       </div>
@@ -1062,25 +1029,13 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
         <div class="card-body py-0 px-1">
           <CategoryTransactionList
             ref="categoryTransactionListRef"
-            :transactions="paginatedCategoryTransactions"
+            :transactions="sortedCategoryTransactions"
             :sort-key="sortKey"
             :sort-order="sortOrder"
             :search-term="searchQuery"
             @sort-change="handleSortChange"
             @edit="editTransaction"
             @delete="deleteTransaction"
-          />
-          <PagingComponent
-            v-model:currentPage="currentPage"
-            v-model:itemsPerPage="itemsPerPage"
-            :totalPages="
-              itemsPerPage === 'all'
-                ? 1
-                : Math.ceil(
-                    sortedCategoryTransactions.length / Number(itemsPerPage)
-                  )
-            "
-            :itemsPerPageOptions="itemsPerPageOptions"
           />
         </div>
       </div>
