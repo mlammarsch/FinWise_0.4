@@ -16,6 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: DateRange): void;
+  (e: "navigate-month", direction: "prev" | "next"): void;
 }>();
 
 // State
@@ -120,25 +121,56 @@ const shortcuts = [
   },
 ];
 
-// Generate calendar days for a month
+// Generate calendar days for a month (only current month days)
 const generateCalendarDays = (month: dayjs.Dayjs) => {
   const startOfMonth = month.startOf("month");
   const endOfMonth = month.endOf("month");
   const startOfWeek = startOfMonth.startOf("week").add(1, "day"); // Monday start
-  const endOfWeek = endOfMonth.endOf("week").add(1, "day"); // Monday start
 
   const days = [];
-  let current = startOfWeek;
+  let emptyIndex = 0;
 
-  while (current.isBefore(endOfWeek) || current.isSame(endOfWeek, "day")) {
+  // Add empty cells for days before month start
+  let current = startOfWeek;
+  while (current.isBefore(startOfMonth, "day")) {
+    days.push({
+      date: "",
+      day: "",
+      isCurrentMonth: false,
+      isToday: false,
+      dayjs: null,
+      isEmpty: true,
+      emptyKey: `empty-before-${month.format("YYYY-MM")}-${emptyIndex++}`,
+    });
+    current = current.add(1, "day");
+  }
+
+  // Add actual month days
+  current = startOfMonth;
+  while (current.isSameOrBefore(endOfMonth, "day")) {
     days.push({
       date: current.format("YYYY-MM-DD"),
       day: current.date(),
-      isCurrentMonth: current.isSame(month, "month"),
+      isCurrentMonth: true,
       isToday: current.isSame(dayjs(), "day"),
       dayjs: current,
+      isEmpty: false,
+      emptyKey: null,
     });
     current = current.add(1, "day");
+  }
+
+  // Add empty cells to complete the grid (6 weeks = 42 cells)
+  while (days.length < 42) {
+    days.push({
+      date: "",
+      day: "",
+      isCurrentMonth: false,
+      isToday: false,
+      dayjs: null,
+      isEmpty: true,
+      emptyKey: `empty-after-${month.format("YYYY-MM")}-${emptyIndex++}`,
+    });
   }
 
   return days;
@@ -367,6 +399,38 @@ onUnmounted(() => {
 
 // Weekday labels
 const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+// Navigation methods for external chevron buttons
+const navigateRangeByMonth = (direction: "prev" | "next") => {
+  const currentStart = dayjs(committedRange.value.start);
+  const currentEnd = dayjs(committedRange.value.end);
+
+  let newStart: dayjs.Dayjs;
+  let newEnd: dayjs.Dayjs;
+
+  if (direction === "prev") {
+    newStart = currentStart.subtract(1, "month");
+    newEnd = currentEnd.subtract(1, "month");
+  } else {
+    newStart = currentStart.add(1, "month");
+    newEnd = currentEnd.add(1, "month");
+  }
+
+  const newRange = {
+    start: newStart.format("YYYY-MM-DD"),
+    end: newEnd.format("YYYY-MM-DD"),
+  };
+
+  workingRange.value = newRange;
+  committedRange.value = newRange;
+  emit("update:modelValue", newRange);
+  emit("navigate-month", direction);
+};
+
+// Expose navigation method for parent components
+defineExpose({
+  navigateRangeByMonth,
+});
 </script>
 
 <template>
@@ -393,25 +457,25 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
     <div
       v-if="isOpen"
       ref="dropdownRef"
-      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-[9999] p-4 min-w-[800px]"
+      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-[9999] p-3 min-w-[750px]"
       :class="{
         'left-0': dropdownPosition === 'left',
         'right-0': dropdownPosition === 'right',
         'left-1/2 transform -translate-x-1/2': dropdownPosition === 'center',
       }"
     >
-      <div class="flex gap-4">
+      <div class="flex gap-3">
         <!-- Shortcuts -->
-        <div class="w-48 border-r border-base-300 pr-4">
-          <h3 class="font-semibold text-sm mb-3 text-base-content/70">
+        <div class="w-44 border-r border-base-300 pr-3">
+          <h3 class="font-semibold text-sm mb-2 text-base-content/70">
             Schnellauswahl
           </h3>
-          <div class="space-y-1">
+          <div class="space-y-0.5">
             <button
               v-for="shortcut in shortcuts"
               :key="shortcut.label"
               @click="selectShortcut(shortcut)"
-              class="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-base-200 transition-colors"
+              class="w-full text-left px-2 py-1.5 text-sm rounded-md hover:bg-base-200 transition-colors"
             >
               {{ shortcut.label }}
             </button>
@@ -421,7 +485,7 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
         <!-- Calendar -->
         <div class="flex-1">
           <!-- Navigation -->
-          <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center justify-between mb-3">
             <button
               @click="navigateMonth('prev')"
               class="btn btn-ghost btn-sm btn-circle"
@@ -470,19 +534,19 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
           </div>
 
           <!-- Two Month View -->
-          <div class="grid grid-cols-2 gap-6">
+          <div class="grid grid-cols-2 gap-4">
             <!-- Left Month -->
             <div>
-              <h4 class="text-center font-medium mb-3">
+              <h4 class="text-center font-medium mb-2">
                 {{ leftMonth.format("MMMM YYYY") }}
               </h4>
 
               <!-- Weekday Headers -->
-              <div class="grid grid-cols-7 gap-1 mb-2">
+              <div class="grid grid-cols-7 gap-0 mb-1">
                 <div
                   v-for="day in weekdays"
                   :key="day"
-                  class="text-center text-xs font-medium text-base-content/60 py-1"
+                  class="text-center text-xs font-medium text-base-content/60 py-1 h-6"
                 >
                   {{ day }}
                 </div>
@@ -492,31 +556,39 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
               <div class="grid grid-cols-7 gap-0">
                 <button
                   v-for="dayData in leftCalendarDays"
-                  :key="dayData.date"
-                  @click="handleDateClick(dayData.date)"
-                  @mouseenter="handleDateHover(dayData.date)"
-                  class="aspect-square text-sm transition-all duration-150 relative"
+                  :key="dayData.date || dayData.emptyKey || 'fallback'"
+                  @click="!dayData.isEmpty && handleDateClick(dayData.date)"
+                  @mouseenter="
+                    !dayData.isEmpty && handleDateHover(dayData.date)
+                  "
+                  class="w-10 h-8 text-sm transition-all duration-150 relative flex items-center justify-center"
                   :class="{
-                    'text-base-content/30': !dayData.isCurrentMonth,
-                    'text-base-content': dayData.isCurrentMonth,
+                    invisible: dayData.isEmpty,
+                    'text-base-content':
+                      dayData.isCurrentMonth && !dayData.isEmpty,
                     'bg-primary text-primary-content rounded-l-md':
-                      isDateRangeStart(dayData.date),
+                      !dayData.isEmpty && isDateRangeStart(dayData.date),
                     'bg-primary text-primary-content rounded-r-md':
-                      isDateRangeEnd(dayData.date),
+                      !dayData.isEmpty && isDateRangeEnd(dayData.date),
                     'bg-primary text-primary-content rounded-md':
+                      !dayData.isEmpty &&
                       isDateRangeStart(dayData.date) &&
                       isDateRangeEnd(dayData.date),
                     'bg-base-300':
+                      !dayData.isEmpty &&
                       isDateInRange(dayData.date) &&
                       !isDateRangeStart(dayData.date) &&
                       !isDateRangeEnd(dayData.date),
                     'hover:bg-base-200 rounded-md':
-                      dayData.isCurrentMonth && !isDateInRange(dayData.date),
-                    'ring-2 ring-primary ring-offset-2': dayData.isToday,
-                    'cursor-pointer': dayData.isCurrentMonth,
-                    'cursor-not-allowed': !dayData.isCurrentMonth,
+                      !dayData.isEmpty &&
+                      dayData.isCurrentMonth &&
+                      !isDateInRange(dayData.date),
+                    'ring-2 ring-primary ring-offset-1':
+                      !dayData.isEmpty && dayData.isToday,
+                    'cursor-pointer':
+                      !dayData.isEmpty && dayData.isCurrentMonth,
                   }"
-                  :disabled="!dayData.isCurrentMonth"
+                  :disabled="dayData.isEmpty || !dayData.isCurrentMonth"
                 >
                   {{ dayData.day }}
                 </button>
@@ -525,16 +597,16 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
             <!-- Right Month -->
             <div>
-              <h4 class="text-center font-medium mb-3">
+              <h4 class="text-center font-medium mb-2">
                 {{ rightMonth.format("MMMM YYYY") }}
               </h4>
 
               <!-- Weekday Headers -->
-              <div class="grid grid-cols-7 gap-1 mb-2">
+              <div class="grid grid-cols-7 gap-0 mb-1">
                 <div
                   v-for="day in weekdays"
                   :key="day"
-                  class="text-center text-xs font-medium text-base-content/60 py-1"
+                  class="text-center text-xs font-medium text-base-content/60 py-1 h-6"
                 >
                   {{ day }}
                 </div>
@@ -544,31 +616,39 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
               <div class="grid grid-cols-7 gap-0">
                 <button
                   v-for="dayData in rightCalendarDays"
-                  :key="dayData.date"
-                  @click="handleDateClick(dayData.date)"
-                  @mouseenter="handleDateHover(dayData.date)"
-                  class="aspect-square text-sm transition-all duration-150 relative"
+                  :key="dayData.date || dayData.emptyKey || 'fallback'"
+                  @click="!dayData.isEmpty && handleDateClick(dayData.date)"
+                  @mouseenter="
+                    !dayData.isEmpty && handleDateHover(dayData.date)
+                  "
+                  class="w-10 h-8 text-sm transition-all duration-150 relative flex items-center justify-center"
                   :class="{
-                    'text-base-content/30': !dayData.isCurrentMonth,
-                    'text-base-content': dayData.isCurrentMonth,
+                    invisible: dayData.isEmpty,
+                    'text-base-content':
+                      dayData.isCurrentMonth && !dayData.isEmpty,
                     'bg-primary text-primary-content rounded-l-md':
-                      isDateRangeStart(dayData.date),
+                      !dayData.isEmpty && isDateRangeStart(dayData.date),
                     'bg-primary text-primary-content rounded-r-md':
-                      isDateRangeEnd(dayData.date),
+                      !dayData.isEmpty && isDateRangeEnd(dayData.date),
                     'bg-primary text-primary-content rounded-md':
+                      !dayData.isEmpty &&
                       isDateRangeStart(dayData.date) &&
                       isDateRangeEnd(dayData.date),
                     'bg-base-300':
+                      !dayData.isEmpty &&
                       isDateInRange(dayData.date) &&
                       !isDateRangeStart(dayData.date) &&
                       !isDateRangeEnd(dayData.date),
                     'hover:bg-base-200 rounded-md':
-                      dayData.isCurrentMonth && !isDateInRange(dayData.date),
-                    'ring-2 ring-primary ring-offset-2': dayData.isToday,
-                    'cursor-pointer': dayData.isCurrentMonth,
-                    'cursor-not-allowed': !dayData.isCurrentMonth,
+                      !dayData.isEmpty &&
+                      dayData.isCurrentMonth &&
+                      !isDateInRange(dayData.date),
+                    'ring-2 ring-primary ring-offset-1':
+                      !dayData.isEmpty && dayData.isToday,
+                    'cursor-pointer':
+                      !dayData.isEmpty && dayData.isCurrentMonth,
                   }"
-                  :disabled="!dayData.isCurrentMonth"
+                  :disabled="dayData.isEmpty || !dayData.isCurrentMonth"
                 >
                   {{ dayData.day }}
                 </button>
@@ -577,7 +657,7 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
           </div>
 
           <!-- Action Buttons -->
-          <div class="flex justify-end mt-4 pt-4 border-t border-base-300">
+          <div class="flex justify-end mt-3 pt-3 border-t border-base-300">
             <div class="text-xs">
               <ButtonGroup
                 left-label="Abbrechen"
@@ -598,54 +678,77 @@ const weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 <style scoped>
 /* Calendar styling with continuous range blocks */
 
-/* Add small margin to all calendar buttons for spacing */
-.grid-cols-7 button {
-  margin: 1px;
+/* Calendar container - fixed height to prevent jumping */
+.calendar-container {
+  min-height: 240px; /* 6 rows * 32px + headers + margins */
 }
 
-/* Range middle days - no border radius, extend to fill gaps */
-.grid-cols-7
-  button.bg-base-300:not(.rounded-l-md):not(.rounded-r-md):not(.rounded-md) {
-  border-radius: 0 !important;
-  margin: 0 !important;
+/* Calendar grid - ensure consistent spacing */
+.calendar-grid {
+  gap: 0;
 }
 
-/* Range start styling - keep original classes working */
-.grid-cols-7 button.rounded-l-md {
-  margin: 0 0 0 1px !important;
+/* Base calendar day styling */
+.calendar-day {
+  width: 100%;
+  min-width: 32px;
+  margin: 0;
 }
 
-/* Range end styling - keep original classes working */
-.grid-cols-7 button.rounded-r-md {
-  margin: 0 1px 0 0 !important;
+/* Hover styling for non-range days */
+.hover-day {
+  border-radius: 0.375rem;
 }
 
-/* Single day selection (start and end same day) - keep original classes working */
-.grid-cols-7 button.rounded-md {
-  margin: 1px !important;
+/* Range styling - seamless connection using negative margins */
+.range-start {
+  border-radius: 0.375rem 0 0 0.375rem;
+  margin-right: -1px;
+  position: relative;
+  z-index: 1;
 }
 
-/* Week boundaries for range middle days */
-.grid-cols-7 button.bg-primary\/40:nth-child(7n + 1):not(.rounded-l-md) {
-  border-top-left-radius: 0.375rem !important;
-  border-bottom-left-radius: 0.375rem !important;
-  margin-left: 1px !important;
+.range-end {
+  border-radius: 0 0.375rem 0.375rem 0;
+  margin-left: -1px;
+  position: relative;
+  z-index: 1;
 }
 
-.grid-cols-7 button.bg-primary\/40:nth-child(7n):not(.rounded-r-md) {
-  border-top-right-radius: 0.375rem !important;
-  border-bottom-right-radius: 0.375rem !important;
-  margin-right: 1px !important;
+.range-single {
+  border-radius: 0.375rem;
+}
+
+.range-middle {
+  border-radius: 0;
+  margin-left: -1px;
+  margin-right: -1px;
+  position: relative;
+  z-index: 0;
+}
+
+/* First range-middle in a row shouldn't have left margin */
+.range-middle:nth-child(7n + 1) {
+  margin-left: 0;
+  border-top-left-radius: 0.375rem;
+  border-bottom-left-radius: 0.375rem;
+}
+
+/* Last range-middle in a row shouldn't have right margin */
+.range-middle:nth-child(7n) {
+  margin-right: 0;
+  border-top-right-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
 }
 
 /* Special cases: range start/end at week boundaries */
-.grid-cols-7 button.rounded-l-md:nth-child(7n) {
-  border-radius: 0.375rem !important;
-  margin: 1px !important;
+.range-start:nth-child(7n) {
+  border-radius: 0.375rem;
+  margin-right: 0;
 }
 
-.grid-cols-7 button.rounded-r-md:nth-child(7n + 1) {
-  border-radius: 0.375rem !important;
-  margin: 1px !important;
+.range-end:nth-child(7n + 1) {
+  border-radius: 0.375rem;
+  margin-left: 0;
 }
 </style>

@@ -51,6 +51,9 @@ const selectedTransaction = ref<any>(null);
 const grid = ref<HTMLElement | null>(null);
 let muuri: Muuri | null = null;
 
+// DateRangePicker reference for navigation
+const dateRangePickerRef = ref<any>(null);
+
 //Computed
 const accountGroups = computed(() =>
   [...accountStore.accountGroups].sort((a, b) => a.sortOrder - b.sortOrder)
@@ -364,6 +367,13 @@ const handleDateRangeUpdate = (payload: { start: string; end: string }) => {
   debugLog("[AccountView]", "Date range updated", payload); // Correct debugLog call
 };
 
+// Navigation methods for chevron buttons
+function navigateMonth(direction: "prev" | "next") {
+  if (dateRangePickerRef.value) {
+    dateRangePickerRef.value.navigateRangeByMonth(direction);
+  }
+}
+
 const createTransaction = () => {
   selectedTransaction.value = null;
   showTransactionFormModal.value = true;
@@ -505,10 +515,33 @@ const refreshGroupsLayout = () => {
         <div
           class="rounded-md bg-base-200/50 backdrop-blur-lg mb-6 flex justify-between p-2 items-center"
         >
-          <DateRangePicker
-            @update:model-value="(range) => handleDateRangeUpdate(range)"
-            class="mx-2"
-          />
+          <div class="flex items-center gap-1">
+            <button
+              class="btn btn-ghost btn-sm btn-circle"
+              @click="navigateMonth('prev')"
+              title="Vorheriger Monat"
+            >
+              <Icon
+                icon="mdi:chevron-left"
+                class="text-lg"
+              />
+            </button>
+            <DateRangePicker
+              ref="dateRangePickerRef"
+              @update:model-value="(range) => handleDateRangeUpdate(range)"
+              class="mx-2"
+            />
+            <button
+              class="btn btn-ghost btn-sm btn-circle"
+              @click="navigateMonth('next')"
+              title="Nächster Monat"
+            >
+              <Icon
+                icon="mdi:chevron-right"
+                class="text-lg"
+              />
+            </button>
+          </div>
           <SearchGroup
             btnRight="Neue Transaktion"
             btnRightIcon="mdi:plus"

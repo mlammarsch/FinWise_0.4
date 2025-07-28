@@ -70,6 +70,9 @@ const showToast = ref(false);
 const selectedAccountForDetail = ref("");
 const selectedCategoryForDetail = ref("");
 
+// DateRangePicker reference for navigation
+const dateRangePickerRef = ref<any>(null);
+
 // Pagination / Zeitraum
 const currentPage = ref(1);
 const itemsPerPage = ref<number | "all">(25);
@@ -90,6 +93,13 @@ const lastUpdateDate = computed(() => {
 function handleDateRangeUpdate(payload: { start: string; end: string }) {
   dateRange.value = payload;
   debugLog("[PlanningView] Date range updated", payload);
+}
+
+// Navigation methods for chevron buttons
+function navigateMonth(direction: "prev" | "next") {
+  if (dateRangePickerRef.value) {
+    dateRangePickerRef.value.navigateRangeByMonth(direction);
+  }
 }
 
 /**
@@ -897,7 +907,32 @@ onUnmounted(() => {
             <label class="label">
               <span class="label-text opacity-50">Zeitraum</span>
             </label>
-            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+            <div class="flex items-center gap-1">
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('prev')"
+                title="Vorheriger Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-left"
+                  class="text-lg"
+                />
+              </button>
+              <DateRangePicker
+                ref="dateRangePickerRef"
+                @update:model-value="handleDateRangeUpdate"
+              />
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('next')"
+                title="Nächster Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-right"
+                  class="text-lg"
+                />
+              </button>
+            </div>
           </div>
           <div class="form-control">
             <label class="label">
@@ -1112,7 +1147,32 @@ onUnmounted(() => {
             <label class="label">
               <span class="label-text opacity-50">Zeitraum</span>
             </label>
-            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+            <div class="flex items-center gap-1">
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('prev')"
+                title="Vorheriger Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-left"
+                  class="text-lg"
+                />
+              </button>
+              <DateRangePicker
+                ref="dateRangePickerRef"
+                @update:model-value="handleDateRangeUpdate"
+              />
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('next')"
+                title="Nächster Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-right"
+                  class="text-lg"
+                />
+              </button>
+            </div>
           </div>
           <div class="form-control">
             <label class="label">
@@ -1307,7 +1367,32 @@ onUnmounted(() => {
             <label class="label">
               <span class="label-text opacity-50">Zeitraum</span>
             </label>
-            <DateRangePicker @update:model-value="handleDateRangeUpdate" />
+            <div class="flex items-center gap-1">
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('prev')"
+                title="Vorheriger Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-left"
+                  class="text-lg"
+                />
+              </button>
+              <DateRangePicker
+                ref="dateRangePickerRef"
+                @update:model-value="handleDateRangeUpdate"
+              />
+              <button
+                class="btn btn-ghost btn-sm btn-circle"
+                @click="navigateMonth('next')"
+                title="Nächster Monat"
+              >
+                <Icon
+                  icon="mdi:chevron-right"
+                  class="text-lg"
+                />
+              </button>
+            </div>
           </div>
           <div class="form-control">
             <label class="label">

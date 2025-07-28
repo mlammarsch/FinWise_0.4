@@ -80,6 +80,9 @@ const categoryTransactionListRef = ref<InstanceType<
   typeof CategoryTransactionList
 > | null>(null);
 
+// DateRangePicker reference for navigation
+const dateRangePickerRef = ref<any>(null);
+
 // Bulk Actions ----------------------------------------------------------------
 const showBulkAssignAccountModal = ref(false);
 const showBulkChangeRecipientModal = ref(false);
@@ -122,6 +125,13 @@ const dateRange = computed({
 function handleDateRangeUpdate(p: { start: string; end: string }) {
   transactionFilterStore.updateDateRange(p.start, p.end);
   refreshKey.value++;
+}
+
+// Navigation methods for chevron buttons
+function navigateMonth(direction: "prev" | "next") {
+  if (dateRangePickerRef.value) {
+    dateRangePickerRef.value.navigateRangeByMonth(direction);
+  }
 }
 
 // Einzel‑Filter
@@ -803,10 +813,35 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               <legend class="fieldset-legend text-center opacity-50">
                 Monatswahl
               </legend>
-              <div class="mx-2">
-                <DateRangePicker
-                  @update:model-value="(range) => handleDateRangeUpdate(range)"
-                />
+              <div class="flex items-center gap-1">
+                <button
+                  class="btn btn-ghost btn-sm btn-circle"
+                  @click="navigateMonth('prev')"
+                  title="Vorheriger Monat"
+                >
+                  <Icon
+                    icon="mdi:chevron-left"
+                    class="text-lg"
+                  />
+                </button>
+                <div class="mx-2">
+                  <DateRangePicker
+                    ref="dateRangePickerRef"
+                    @update:model-value="
+                      (range) => handleDateRangeUpdate(range)
+                    "
+                  />
+                </div>
+                <button
+                  class="btn btn-ghost btn-sm btn-circle"
+                  @click="navigateMonth('next')"
+                  title="Nächster Monat"
+                >
+                  <Icon
+                    icon="mdi:chevron-right"
+                    class="text-lg"
+                  />
+                </button>
               </div>
             </fieldset>
             <fieldset class="fieldset pt-0">
@@ -955,10 +990,35 @@ watch([selectedTagId, selectedCategoryId, currentViewMode], () =>
               <legend class="fieldset-legend text-center opacity-50">
                 Monatswahl
               </legend>
-              <div class="mx-2">
-                <DateRangePicker
-                  @update:model-value="(range) => handleDateRangeUpdate(range)"
-                />
+              <div class="flex items-center gap-1">
+                <button
+                  class="btn btn-ghost btn-sm btn-circle"
+                  @click="navigateMonth('prev')"
+                  title="Vorheriger Monat"
+                >
+                  <Icon
+                    icon="mdi:chevron-left"
+                    class="text-lg"
+                  />
+                </button>
+                <div class="mx-2">
+                  <DateRangePicker
+                    ref="dateRangePickerRef"
+                    @update:model-value="
+                      (range) => handleDateRangeUpdate(range)
+                    "
+                  />
+                </div>
+                <button
+                  class="btn btn-ghost btn-sm btn-circle"
+                  @click="navigateMonth('next')"
+                  title="Nächster Monat"
+                >
+                  <Icon
+                    icon="mdi:chevron-right"
+                    class="text-lg"
+                  />
+                </button>
               </div>
             </fieldset>
             <fieldset class="fieldset pt-0">
