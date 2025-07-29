@@ -40,11 +40,6 @@ const adminRoutes = [
     icon: "mdi:person-edit",
   },
   {
-    path: "/admin/planning",
-    name: "Planungen",
-    icon: "mdi:calendar-edit",
-  },
-  {
     path: "/admin/rules",
     name: "Regeln",
     icon: "mdi:lightning-bolt",

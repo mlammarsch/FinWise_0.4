@@ -723,7 +723,7 @@ onUnmounted(() => {
   <div
     class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
   >
-    <h2 class="text-xl font-bold flex-shrink-0">Planungsverwaltung</h2>
+    <h2 class="text-xl font-bold flex-shrink-0">Planungsverwaltung und Regelbuchungen</h2>
     <SearchGroup
       btnMiddle="Alle fälligen ausführen"
       btnMiddleIcon="mdi:play-circle"
