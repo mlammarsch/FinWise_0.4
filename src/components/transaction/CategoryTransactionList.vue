@@ -65,6 +65,12 @@ const loadingMoreItems = ref(false);
 const sentinelRef = ref<HTMLElement | null>(null);
 const intersectionObserver = ref<IntersectionObserver | null>(null);
 
+// Dynamic height calculation
+const containerRef = ref<HTMLElement | null>(null);
+const summaryRef = ref<HTMLElement | null>(null);
+const containerHeight = ref('600px');
+const resizeObserver = ref<ResizeObserver | null>(null);
+
 // Filterung der Transaktionen:
 // ACCOUNTTRANSFER werden aus der Kategorien-Transaktionsliste ausgeblendet.
 const allDisplayTransactions = computed(() => {
@@ -330,6 +336,9 @@ function loadMoreItems() {
 function setupIntersectionObserver() {
   if (!sentinelRef.value) return;
 
+  // Finde den scrollbaren Container mit fester Höhe
+  const scrollContainer = sentinelRef.value.closest('.overflow-y-auto');
+
   intersectionObserver.value = new IntersectionObserver(
     (entries) => {
       const entry = entries[0];
@@ -338,8 +347,8 @@ function setupIntersectionObserver() {
       }
     },
     {
-      root: null,
-      rootMargin: "100px",
+      root: scrollContainer, // Verwende den scrollbaren Container als root
+      rootMargin: "50px", // Reduziert für bessere Performance im Container
       threshold: 0.1,
     }
   );
@@ -349,6 +358,44 @@ function setupIntersectionObserver() {
 
 function resetLazyLoading() {
   visibleItemsCount.value = itemsPerLoad;
+}
+
+// Dynamic height calculation functions
+function calculateContainerHeight() {
+  if (!containerRef.value) return;
+
+  const viewportHeight = window.innerHeight;
+  const containerRect = containerRef.value.getBoundingClientRect();
+  const summaryHeight = summaryRef.value?.offsetHeight || 0;
+
+  // Berechne verfügbare Höhe: Viewport - Container-Top-Position - Padding/Margin (ca. 100px)
+  const availableHeight = viewportHeight - containerRect.top - summaryHeight - 100;
+
+  // Mindesthöhe von 400px, maximale Höhe von 80% des Viewports
+  const minHeight = 400;
+  const maxHeight = viewportHeight * 0.8;
+
+  const calculatedHeight = Math.max(minHeight, Math.min(availableHeight, maxHeight));
+  containerHeight.value = `${calculatedHeight}px`;
+}
+
+function setupResizeObserver() {
+  if (typeof ResizeObserver === 'undefined') return;
+
+  resizeObserver.value = new ResizeObserver(() => {
+    calculateContainerHeight();
+  });
+
+  if (containerRef.value) {
+    resizeObserver.value.observe(containerRef.value);
+  }
+}
+
+function cleanupResizeObserver() {
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect();
+    resizeObserver.value = null;
+  }
 }
 
 // Watch for changes in transactions to reset lazy loading
@@ -365,7 +412,12 @@ function handleTransactionsChange() {
 // Lifecycle hooks
 onMounted(() => {
   nextTick(() => {
+    calculateContainerHeight();
     setupIntersectionObserver();
+    setupResizeObserver();
+
+    // Listen to window resize events
+    window.addEventListener('resize', calculateContainerHeight);
   });
 });
 
@@ -373,6 +425,8 @@ onUnmounted(() => {
   if (intersectionObserver.value) {
     intersectionObserver.value.disconnect();
   }
+  cleanupResizeObserver();
+  window.removeEventListener('resize', calculateContainerHeight);
 });
 
 // Watch for prop changes that should reset lazy loading
@@ -386,11 +440,12 @@ watch(
 </script>
 
 <template>
-  <div>
-    <!-- Summenanzeige für markierte Buchungen -->
+  <div ref="containerRef" class="flex flex-col">
+    <!-- Sticky Summenanzeige für markierte Buchungen -->
     <div
+      ref="summaryRef"
       v-if="hasSelectedTransactions"
-      class="mb-4 text-sm text-base-content/70"
+      class="bg-base-100 border-b border-base-300 mb-4 pb-4 text-sm text-base-content/70"
     >
       <div class="flex flex-wrap gap-4">
         <div class="flex items-center gap-2">
@@ -420,11 +475,17 @@ watch(
       </div>
     </div>
 
-    <div class="overflow-x-auto">
-      <table class="table w-full table-zebra table-sm">
-        <thead>
+    <!-- Container für Tabelle mit dynamischer Höhe und eigenem Scrolling -->
+    <div
+      :style="{ height: containerHeight }"
+      class="overflow-hidden"
+    >
+      <div class="h-full overflow-x-auto overflow-y-auto">
+        <table class="table w-full table-zebra table-sm">
+          <!-- Sticky Header -->
+          <thead class="sticky top-0 z-20 bg-base-100 shadow-sm">
           <tr>
-            <th class="w-5 px-1">
+            <th class="w-5 px-1 bg-base-100">
               <input
                 type="checkbox"
                 class="checkbox checkbox-sm"
@@ -434,7 +495,7 @@ watch(
             </th>
             <th
               @click="$emit('sort-change', 'date')"
-              class="cursor-pointer px-2"
+              class="cursor-pointer px-2 bg-base-100"
             >
               <div class="flex items-center">
                 Datum
@@ -449,7 +510,7 @@ watch(
             </th>
             <th
               @click="$emit('sort-change', 'valueDate')"
-              class="cursor-pointer px-2"
+              class="cursor-pointer px-2 bg-base-100"
             >
               <div class="flex items-center">
                 Wertstellung
@@ -464,7 +525,7 @@ watch(
             </th>
             <th
               @click="$emit('sort-change', 'toCategoryId')"
-              class="cursor-pointer px-2"
+              class="cursor-pointer px-2 bg-base-100"
             >
               <div class="flex items-center">
                 <div class="flex items-center">
@@ -485,7 +546,7 @@ watch(
             </th>
             <th
               @click="$emit('sort-change', 'categoryId')"
-              class="cursor-pointer px-2"
+              class="cursor-pointer px-2 bg-base-100"
             >
               <div class="flex items-center">
                 Empfänger Kategorie
@@ -500,7 +561,7 @@ watch(
             </th>
 
             <th
-              class="text-right cursor-pointer px-2"
+              class="text-right cursor-pointer px-2 bg-base-100"
               @click="$emit('sort-change', 'amount')"
             >
               <div class="flex items-center justify-end">
@@ -514,20 +575,20 @@ watch(
                 />
               </div>
             </th>
-            <th class="text-center cursor-pointer px-1">
+            <th class="text-center cursor-pointer px-1 bg-base-100">
               <Icon
                 icon="mdi:note-text-outline"
                 class="text-base"
               />
             </th>
-            <th class="text-center px-1">
+            <th class="text-center px-1 bg-base-100">
               <Icon
                 icon="mdi:check-circle-outline"
                 class="text-base"
                 title="Abgleich"
               />
             </th>
-            <th class="text-right px-2">Aktionen</th>
+            <th class="text-right px-2 bg-base-100">Aktionen</th>
           </tr>
         </thead>
         <tbody>
@@ -658,8 +719,10 @@ watch(
             allDisplayTransactions.length
           }})</span
         >
+        </div>
       </div>
     </div>
+
     <CategoryTransferModal
       v-if="showTransferModal && modalData"
       mode="edit"

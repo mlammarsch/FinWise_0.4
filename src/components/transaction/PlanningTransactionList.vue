@@ -55,6 +55,11 @@ const loadingMoreItems = ref(false);
 const sentinelRef = ref<HTMLElement | null>(null);
 const intersectionObserver = ref<IntersectionObserver | null>(null);
 
+// Dynamic height calculation
+const containerRef = ref<HTMLElement | null>(null);
+const containerHeight = ref('600px');
+const resizeObserver = ref<ResizeObserver | null>(null);
+
 // Filterung der Transaktionen
 const displayTransactions = computed(() => {
   let filtered = [...props.planningTransactions];
@@ -204,6 +209,9 @@ function loadMoreItems() {
 function setupIntersectionObserver() {
   if (!sentinelRef.value) return;
 
+  // Finde den scrollbaren Container mit fester Höhe
+  const scrollContainer = sentinelRef.value.closest('.overflow-y-auto');
+
   intersectionObserver.value = new IntersectionObserver(
     (entries) => {
       const entry = entries[0];
@@ -212,8 +220,8 @@ function setupIntersectionObserver() {
       }
     },
     {
-      root: null,
-      rootMargin: "100px",
+      root: scrollContainer, // Verwende den scrollbaren Container als root
+      rootMargin: "50px", // Reduziert für bessere Performance im Container
       threshold: 0.1,
     }
   );
@@ -223,6 +231,43 @@ function setupIntersectionObserver() {
 
 function resetLazyLoading() {
   visibleItemsCount.value = itemsPerLoad;
+}
+
+// Dynamic height calculation functions
+function calculateContainerHeight() {
+  if (!containerRef.value) return;
+
+  const viewportHeight = window.innerHeight;
+  const containerRect = containerRef.value.getBoundingClientRect();
+
+  // Berechne verfügbare Höhe: Viewport - Container-Top-Position - Padding/Margin (ca. 100px)
+  const availableHeight = viewportHeight - containerRect.top - 100;
+
+  // Mindesthöhe von 400px, maximale Höhe von 80% des Viewports
+  const minHeight = 400;
+  const maxHeight = viewportHeight * 0.8;
+
+  const calculatedHeight = Math.max(minHeight, Math.min(availableHeight, maxHeight));
+  containerHeight.value = `${calculatedHeight}px`;
+}
+
+function setupResizeObserver() {
+  if (typeof ResizeObserver === 'undefined') return;
+
+  resizeObserver.value = new ResizeObserver(() => {
+    calculateContainerHeight();
+  });
+
+  if (containerRef.value) {
+    resizeObserver.value.observe(containerRef.value);
+  }
+}
+
+function cleanupResizeObserver() {
+  if (resizeObserver.value) {
+    resizeObserver.value.disconnect();
+    resizeObserver.value = null;
+  }
 }
 
 // Watch for changes in transactions to reset lazy loading
@@ -239,7 +284,12 @@ function handleTransactionsChange() {
 // Lifecycle hooks
 onMounted(() => {
   nextTick(() => {
+    calculateContainerHeight();
     setupIntersectionObserver();
+    setupResizeObserver();
+
+    // Listen to window resize events
+    window.addEventListener('resize', calculateContainerHeight);
   });
 });
 
@@ -247,6 +297,8 @@ onUnmounted(() => {
   if (intersectionObserver.value) {
     intersectionObserver.value.disconnect();
   }
+  cleanupResizeObserver();
+  window.removeEventListener('resize', calculateContainerHeight);
 });
 
 // Watch for prop changes that should reset lazy loading
@@ -260,20 +312,25 @@ watch(
 </script>
 
 <template>
-  <div class="overflow-x-auto">
-    <table
-      class="table table-sm w-full"
+  <div ref="containerRef" class="flex flex-col">
+    <!-- Container für Tabelle mit dynamischer Höhe und eigenem Scrolling -->
+    <div
+      :style="{ height: containerHeight }"
+      class="overflow-hidden"
     >
-      <thead>
+      <div class="h-full overflow-x-auto overflow-y-auto">
+        <table class="table table-sm w-full">
+          <!-- Sticky Header -->
+          <thead class="sticky top-0 z-20 bg-base-100 shadow-sm">
         <tr class="text-xs">
-          <th class="py-1">Datum</th>
-          <th class="py-1">Typ</th>
-          <th class="py-1">Name</th>
-          <th class="py-1">Empfänger</th>
-          <th class="py-1">Quelle</th>
-          <th class="py-1">Ziel</th>
-          <th class="py-1 text-right">Betrag</th>
-          <th class="py-1 text-right">Aktionen</th>
+          <th class="py-1 bg-base-100">Datum</th>
+          <th class="py-1 bg-base-100">Typ</th>
+          <th class="py-1 bg-base-100">Name</th>
+          <th class="py-1 bg-base-100">Empfänger</th>
+          <th class="py-1 bg-base-100">Quelle</th>
+          <th class="py-1 bg-base-100">Ziel</th>
+          <th class="py-1 text-right bg-base-100">Betrag</th>
+          <th class="py-1 text-right bg-base-100">Aktionen</th>
         </tr>
       </thead>
       <tbody>
@@ -425,6 +482,8 @@ watch(
           displayTransactions.length
         }})</span
       >
+      </div>
+      </div>
     </div>
   </div>
 </template>
