@@ -10,6 +10,7 @@ import { usePlanningStore } from "../stores/planningStore";
 import { TransactionService } from "../services/TransactionService";
 import { BalanceService } from "../services/BalanceService";
 import { PlanningService } from "../services/PlanningService";
+import { BudgetService } from "../services/BudgetService";
 import { TransactionType, PlanningTransaction } from "../types";
 import { formatCurrency, formatDate } from "../utils/formatters";
 import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
@@ -28,6 +29,10 @@ const planningStore = usePlanningStore();
 const currentDate = dayjs();
 const startDate = ref(currentDate.subtract(30, "day").format("YYYY-MM-DD"));
 const endDate = ref(currentDate.format("YYYY-MM-DD"));
+
+// MTD (Month-to-Date) Zeitraum für Top-Ausgaben
+const currentMonthStart = dayjs().startOf('month');
+const currentMonthEnd = dayjs().endOf('month');
 
 // Anzahl der anzuzeigenden Transaktionen
 const transactionLimit = ref(5);
@@ -96,6 +101,43 @@ const incomeSummary = computed(() => {
     endDate.value
   );
 });
+
+// Neue Top-Ausgaben mit Budget-Daten für aktuellen Monat (MTD)
+const topExpensesWithBudget = computed(() => {
+  const monthStart = currentMonthStart.toDate();
+  const monthEnd = currentMonthEnd.toDate();
+
+  // Hole alle Ausgaben-Kategorien (keine Einnahmen)
+  const expenseCategories = categoryStore.categories.filter(cat =>
+    cat.isActive &&
+    !cat.isIncomeCategory &&
+    cat.name !== 'Verfügbare Mittel' &&
+    !cat.parentCategoryId // Nur Root-Kategorien
+  );
+
+  const categoryData = expenseCategories.map(category => {
+    const budgetData = BudgetService.getAggregatedMonthlyBudgetData(
+      category.id,
+      monthStart,
+      monthEnd
+    );
+
+    return {
+      categoryId: category.id,
+      name: category.name,
+      spent: Math.abs(budgetData.spent), // Positive Darstellung für Ausgaben
+      budgeted: Math.abs(budgetData.budgeted), // Budget als positiver Wert
+      available: budgetData.saldo,
+      budgetData
+    };
+  })
+  .filter(item => item.spent > 0 || item.budgeted > 0) // Nur Kategorien mit Aktivität oder Budget
+  .sort((a, b) => b.spent - a.spent) // Nach tatsächlichen Ausgaben sortieren
+  .slice(0, 5); // Top 5
+
+  return categoryData;
+});
+
 const topExpenses = computed(() =>
   statisticsStore.getCategoryExpenses(startDate.value, endDate.value, 5)
 );
@@ -274,6 +316,54 @@ const setTransactionLimit = (limit: number) => {
 // Funktionen für Planungslimit-Buttons
 const setPlanningLimit = (limit: number) => {
   planningLimit.value = limit;
+};
+
+// Hilfsfunktionen für Budget-Balken-Visualisierung
+const getExpenseBarColor = (spent: number, budgeted: number): string => {
+  if (budgeted === 0) {
+    // Kein Budget definiert - verwende neutrale Farbe
+    return 'bg-base-content opacity-60';
+  }
+
+  const percentage = (spent / budgeted) * 100;
+
+  if (percentage <= 90) {
+    // Grün bis 90% des Budgets
+    return 'bg-success';
+  } else if (percentage <= 100) {
+    // Warning zwischen 90% und 100%
+    return 'bg-warning';
+  } else {
+    // Rot bei Budgetüberschreitung
+    return 'bg-error';
+  }
+};
+
+const getExpenseBarWidth = (spent: number, budgeted: number): number => {
+  if (budgeted === 0) {
+    // Kein Budget - zeige 100% der Ausgaben
+    return 100;
+  }
+
+  if (spent <= budgeted) {
+    // Ausgaben innerhalb des Budgets - zeige Prozentsatz des Budgets
+    return (spent / budgeted) * 100;
+  } else {
+    // Budgetüberschreitung - zeige 100% (volle Breite)
+    return 100;
+  }
+};
+
+const getBudgetMarkerPosition = (spent: number, budgeted: number): number => {
+  if (budgeted === 0) return 0;
+
+  if (spent <= budgeted) {
+    // Budget-Marker bei 100% der Balkenbreite wenn innerhalb des Budgets
+    return 100;
+  } else {
+    // Bei Budgetüberschreitung: Budget-Marker zeigt die Budget-Position relativ zu den Ausgaben
+    return (budgeted / spent) * 100;
+  }
 };
 
 // Fällige Transaktionen für Auto-Ausführen
@@ -871,36 +961,11 @@ onMounted(() => {
           class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
         >
           <div class="card-body">
-            <h3 class="card-title text-lg mb-4">Top-Ausgaben</h3>
-            <div v-if="topExpenses.length > 0">
-              <div
-                v-for="expense in topExpenses"
-                :key="expense.categoryId"
-                class="mb-3"
-              >
-                <div class="flex justify-between items-center mb-1">
-                  <span>{{ expense.name }}</span>
-                  <span>
-                    <CurrencyDisplay
-                      :amount="expense.amount"
-                      :asInteger="true"
-                    />
-                  </span>
-                </div>
-                <progress
-                  class="progress progress-error w-full"
-                  :value="expense.amount"
-                  :max="topExpenses[0].amount"
-                ></progress>
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h3 class="card-title text-lg">Top-Ausgaben</h3>
+                <p class="text-sm opacity-60">Aktueller Monat (MTD)</p>
               </div>
-            </div>
-            <div
-              v-else
-              class="text-center py-4"
-            >
-              <p class="text-sm italic">Keine Ausgaben im Zeitraum</p>
-            </div>
-            <div class="card-actions justify-end mt-2">
               <button
                 class="btn btn-sm btn-ghost"
                 @click="navigateToBudgets"
@@ -911,6 +976,97 @@ onMounted(() => {
                   data-icon="mdi:chevron-right"
                 ></span>
               </button>
+            </div>
+
+            <div v-if="topExpensesWithBudget.length > 0" class="space-y-4">
+              <div
+                v-for="expense in topExpensesWithBudget"
+                :key="expense.categoryId"
+                class="relative"
+              >
+                <!-- Kategorie-Name und Beträge -->
+                <div class="flex justify-between items-center mb-2">
+                  <span class="font-medium">{{ expense.name }}</span>
+                  <div class="text-right">
+                    <div class="text-sm font-semibold">
+                      <CurrencyDisplay
+                        :amount="expense.spent"
+                        :asInteger="true"
+                      />
+                    </div>
+                    <div v-if="expense.budgeted > 0" class="text-xs opacity-60">
+                      Budget: <CurrencyDisplay
+                        :amount="expense.budgeted"
+                        :asInteger="true"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Budget-Balken mit Marker -->
+                <div class="relative">
+                  <!-- Haupt-Balken -->
+                  <div class="w-full bg-base-300 rounded-full h-3 relative overflow-hidden">
+                    <!-- Ausgaben-Balken -->
+                    <div
+                      :class="[
+                        'h-full rounded-full transition-all duration-300',
+                        getExpenseBarColor(expense.spent, expense.budgeted)
+                      ]"
+                      :style="{
+                        width: getExpenseBarWidth(expense.spent, expense.budgeted) + '%'
+                      }"
+                    ></div>
+                  </div>
+
+                  <!-- Budget-Marker (Chevron) -->
+                  <div
+                    v-if="expense.budgeted > 0"
+                    class="absolute top-0 transform -translate-x-1/2"
+                    :style="{
+                      left: getBudgetMarkerPosition(expense.spent, expense.budgeted) + '%'
+                    }"
+                  >
+                    <!-- Chevron nach unten zeigend -->
+                    <div class="flex flex-col items-center">
+                      <div class="text-xs font-medium mb-1 bg-base-100 px-1 rounded shadow-sm">
+                        <CurrencyDisplay
+                          :amount="expense.budgeted"
+                          :asInteger="true"
+                        />
+                      </div>
+                      <div class="w-0 h-0 border-l-2 border-r-2 border-t-4 border-l-transparent border-r-transparent border-t-base-content opacity-70"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Fortschritts-Info -->
+                <div class="flex justify-between text-xs opacity-60 mt-1">
+                  <span>
+                    {{ expense.budgeted > 0 ? Math.round((expense.spent / expense.budgeted) * 100) : 0 }}%
+                    {{ expense.budgeted > 0 ? 'vom Budget' : 'ausgegeben' }}
+                  </span>
+                  <span v-if="expense.budgeted > 0 && expense.spent > expense.budgeted" class="text-error">
+                    +<CurrencyDisplay
+                      :amount="expense.spent - expense.budgeted"
+                      :asInteger="true"
+                    /> über Budget
+                  </span>
+                  <span v-else-if="expense.budgeted > 0" class="text-success">
+                    <CurrencyDisplay
+                      :amount="expense.budgeted - expense.spent"
+                      :asInteger="true"
+                    /> verfügbar
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-else
+              class="text-center py-4"
+            >
+              <p class="text-sm italic opacity-60">Keine Ausgaben im aktuellen Monat</p>
             </div>
           </div>
         </div>
