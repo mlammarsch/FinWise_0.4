@@ -291,9 +291,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
     } catch (err) {
       debugLog("CSVImportService", "CSV Parse Error", JSON.stringify(err));
       csvParseStatus.value = "error";
-      error.value = `Fehler beim Parsen der CSV-Datei: ${
-        err instanceof Error ? err.message : "Unbekannter Fehler"
-      }`;
+      error.value = `Fehler beim Parsen der CSV-Datei: ${err instanceof Error ? err.message : "Unbekannter Fehler"
+        }`;
       return false;
     }
   }
@@ -699,157 +698,157 @@ export const useCSVImportService = defineStore('csvImportService', () => {
   /**
  * Wendet eine manuelle Empfänger-Auswahl auf Zeilen mit exakt übereinstimmendem Wert an
  */
-function applyRecipientToSimilarRows(row: ImportRow, recipientId: string) {
-  if (!mappedColumns.value.recipient || !row) {
+  function applyRecipientToSimilarRows(row: ImportRow, recipientId: string) {
+    if (!mappedColumns.value.recipient || !row) {
+      debugLog(
+        "CSVImportService",
+        "Abbruch: Keine Empfängerspalte oder ungültige Zeile",
+        JSON.stringify({ recipientId })
+      );
+      return;
+    }
+
+    // Den ursprünglichen Wert in dieser Zeile ermitteln
+    const originalValue = row[mappedColumns.value.recipient];
+    if (!originalValue) {
+      debugLog(
+        "CSVImportService",
+        "Abbruch: Kein Wert in der Empfängerspalte gefunden"
+      );
+      return;
+    }
+
+    // Empfängernamen aus dem Store abrufen
+    const recipientName = recipientId
+      ? (recipientStore.getRecipientById(recipientId)?.name || 'Unbekannter Empfänger')
+      : 'Kein Empfänger';
+
     debugLog(
       "CSVImportService",
-      "Abbruch: Keine Empfängerspalte oder ungültige Zeile",
-      JSON.stringify({ recipientId })
+      `Wende Empfänger an: ${recipientId} (${recipientName}) auf CSV-Namen: "${originalValue}"`,
+      JSON.stringify({ originalValue, recipientId, recipientName })
     );
-    return;
-  }
 
-  // Den ursprünglichen Wert in dieser Zeile ermitteln
-  const originalValue = row[mappedColumns.value.recipient];
-  if (!originalValue) {
-    debugLog(
-      "CSVImportService",
-      "Abbruch: Kein Wert in der Empfängerspalte gefunden"
-    );
-    return;
-  }
+    // Zähler für tatsächlich geänderte Zeilen
+    let changedRowsCount = 0;
+    let debugChangedRows: { index: number, csvValue: string }[] = [];
 
-  // Empfängernamen aus dem Store abrufen
-  const recipientName = recipientId
-    ? (recipientStore.getRecipientById(recipientId)?.name || 'Unbekannter Empfänger')
-    : 'Kein Empfänger';
+    // Alle Zeilen mit exakt dem gleichen Empfängerwert finden und aktualisieren
+    allParsedData.value.forEach((otherRow, index) => {
+      const otherValue = otherRow[mappedColumns.value.recipient];
 
-  debugLog(
-    "CSVImportService",
-    `Wende Empfänger an: ${recipientId} (${recipientName}) auf CSV-Namen: "${originalValue}"`,
-    JSON.stringify({ originalValue, recipientId, recipientName })
-  );
-
-  // Zähler für tatsächlich geänderte Zeilen
-  let changedRowsCount = 0;
-  let debugChangedRows: { index: number, csvValue: string }[] = [];
-
-  // Alle Zeilen mit exakt dem gleichen Empfängerwert finden und aktualisieren
-  allParsedData.value.forEach((otherRow, index) => {
-    const otherValue = otherRow[mappedColumns.value.recipient];
-
-    // Strikte Prüfung auf exakte Übereinstimmung des Empfängernamens
-    if (otherValue === originalValue &&
+      // Strikte Prüfung auf exakte Übereinstimmung des Empfängernamens
+      if (otherValue === originalValue &&
         typeof otherValue === typeof originalValue &&
         String(otherValue).trim() === String(originalValue).trim()) {
 
-      debugLog(
-        "CSVImportService",
-        `Setze Empfänger ${recipientId} (${recipientName}) für Zeile mit CSV-Wert "${otherValue}"`,
-        JSON.stringify({
-          originalIndex: otherRow._originalIndex,
+        debugLog(
+          "CSVImportService",
+          `Setze Empfänger ${recipientId} (${recipientName}) für Zeile mit CSV-Wert "${otherValue}"`,
+          JSON.stringify({
+            originalIndex: otherRow._originalIndex,
+            csvValue: otherValue
+          })
+        );
+
+        otherRow.recipientId = recipientId;
+        changedRowsCount++;
+        debugChangedRows.push({
+          index: otherRow._originalIndex,
           csvValue: otherValue
-        })
-      );
+        });
+      }
+    });
 
-      otherRow.recipientId = recipientId;
-      changedRowsCount++;
-      debugChangedRows.push({
-        index: otherRow._originalIndex,
-        csvValue: otherValue
-      });
-    }
-  });
-
-  infoLog(
-    "CSVImportService",
-    `Empfänger-Zuordnung abgeschlossen: ${changedRowsCount} Zeilen aktualisiert`,
-    JSON.stringify({
-      recipientId,
-      recipientName,
-      originalValue,
-      changedRowsCount,
-      changedRows: debugChangedRows
-    })
-  );
-}
+    infoLog(
+      "CSVImportService",
+      `Empfänger-Zuordnung abgeschlossen: ${changedRowsCount} Zeilen aktualisiert`,
+      JSON.stringify({
+        recipientId,
+        recipientName,
+        originalValue,
+        changedRowsCount,
+        changedRows: debugChangedRows
+      })
+    );
+  }
   /**
  * Wendet eine manuelle Kategorie-Auswahl auf Zeilen mit exakt übereinstimmendem Wert an
  */
-function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
-  if (!mappedColumns.value.category || !row) {
+  function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
+    if (!mappedColumns.value.category || !row) {
+      debugLog(
+        "CSVImportService",
+        "Abbruch: Keine Kategoriespalte oder ungültige Zeile",
+        JSON.stringify({ categoryId })
+      );
+      return;
+    }
+
+    // Den ursprünglichen Wert in dieser Zeile ermitteln
+    const originalValue = row[mappedColumns.value.category];
+    if (!originalValue) {
+      debugLog(
+        "CSVImportService",
+        "Abbruch: Kein Wert in der Kategoriespalte gefunden"
+      );
+      return;
+    }
+
+    // Kategorienamen aus dem Store abrufen
+    const categoryName = categoryId
+      ? (categoryStore.getCategoryById(categoryId)?.name || 'Unbekannte Kategorie')
+      : 'Keine Kategorie';
+
     debugLog(
       "CSVImportService",
-      "Abbruch: Keine Kategoriespalte oder ungültige Zeile",
-      JSON.stringify({ categoryId })
+      `Wende Kategorie an: ${categoryId} (${categoryName}) auf CSV-Namen: "${originalValue}"`,
+      JSON.stringify({ originalValue, categoryId, categoryName })
     );
-    return;
-  }
 
-  // Den ursprünglichen Wert in dieser Zeile ermitteln
-  const originalValue = row[mappedColumns.value.category];
-  if (!originalValue) {
-    debugLog(
-      "CSVImportService",
-      "Abbruch: Kein Wert in der Kategoriespalte gefunden"
-    );
-    return;
-  }
+    // Zähler für tatsächlich geänderte Zeilen
+    let changedRowsCount = 0;
+    let debugChangedRows: { index: number, csvValue: string }[] = [];
 
-  // Kategorienamen aus dem Store abrufen
-  const categoryName = categoryId
-    ? (categoryStore.getCategoryById(categoryId)?.name || 'Unbekannte Kategorie')
-    : 'Keine Kategorie';
+    // Alle Zeilen mit exakt dem gleichen Kategoriewert finden und aktualisieren
+    allParsedData.value.forEach((otherRow, index) => {
+      const otherValue = otherRow[mappedColumns.value.category];
 
-  debugLog(
-    "CSVImportService",
-    `Wende Kategorie an: ${categoryId} (${categoryName}) auf CSV-Namen: "${originalValue}"`,
-    JSON.stringify({ originalValue, categoryId, categoryName })
-  );
-
-  // Zähler für tatsächlich geänderte Zeilen
-  let changedRowsCount = 0;
-  let debugChangedRows: { index: number, csvValue: string }[] = [];
-
-  // Alle Zeilen mit exakt dem gleichen Kategoriewert finden und aktualisieren
-  allParsedData.value.forEach((otherRow, index) => {
-    const otherValue = otherRow[mappedColumns.value.category];
-
-    // Strikte Prüfung auf exakte Übereinstimmung des Kategorienamens
-    if (otherValue === originalValue &&
+      // Strikte Prüfung auf exakte Übereinstimmung des Kategorienamens
+      if (otherValue === originalValue &&
         typeof otherValue === typeof originalValue &&
         String(otherValue).trim() === String(originalValue).trim()) {
 
-      debugLog(
-        "CSVImportService",
-        `Setze Kategorie ${categoryId} (${categoryName}) für Zeile mit CSV-Wert "${otherValue}"`,
-        JSON.stringify({
-          originalIndex: otherRow._originalIndex,
+        debugLog(
+          "CSVImportService",
+          `Setze Kategorie ${categoryId} (${categoryName}) für Zeile mit CSV-Wert "${otherValue}"`,
+          JSON.stringify({
+            originalIndex: otherRow._originalIndex,
+            csvValue: otherValue
+          })
+        );
+
+        otherRow.categoryId = categoryId;
+        changedRowsCount++;
+        debugChangedRows.push({
+          index: otherRow._originalIndex,
           csvValue: otherValue
-        })
-      );
+        });
+      }
+    });
 
-      otherRow.categoryId = categoryId;
-      changedRowsCount++;
-      debugChangedRows.push({
-        index: otherRow._originalIndex,
-        csvValue: otherValue
-      });
-    }
-  });
-
-  infoLog(
-    "CSVImportService",
-    `Kategorie-Zuordnung abgeschlossen: ${changedRowsCount} Zeilen aktualisiert`,
-    JSON.stringify({
-      categoryId,
-      categoryName,
-      originalValue,
-      changedRowsCount,
-      changedRows: debugChangedRows
-    })
-  );
-}
+    infoLog(
+      "CSVImportService",
+      `Kategorie-Zuordnung abgeschlossen: ${changedRowsCount} Zeilen aktualisiert`,
+      JSON.stringify({
+        categoryId,
+        categoryName,
+        originalValue,
+        changedRowsCount,
+        changedRows: debugChangedRows
+      })
+    );
+  }
 
   /**
    * Bereite Daten für den Import vor
@@ -1163,15 +1162,19 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
       // Sequenzielle Neuberechnung für alle betroffenen Konten
       for (const accountId of affectedAccountIds) {
         try {
-          // Verwende das älteste Importdatum für optimierte Neuberechnung
-          await BalanceService.recalculateRunningBalancesForAccount(accountId, oldestImportDate);
-          debugLog('CSVImportService', `Running Balance für Konto ${accountId} neu berechnet`, {
+          // Verwende optimierte Queue-basierte Berechnung für bessere Performance
+          BalanceService.enqueueRunningBalanceRecalculation(accountId, oldestImportDate?.toISOString().split('T')[0]);
+          debugLog('CSVImportService', `Konto ${accountId} zur Running Balance Queue hinzugefügt`, {
             fromDate: oldestImportDate?.toISOString().split('T')[0] || 'alle Transaktionen'
           });
         } catch (error) {
           warnLog('CSVImportService', `Fehler bei Running Balance Berechnung für Konto ${accountId}`, error);
         }
       }
+
+      // Erzwinge sofortige Verarbeitung der Running Balance Queue für CSV-Import
+      infoLog('CSVImportService', 'Erzwinge sofortige Running Balance Verarbeitung...');
+      await BalanceService.forceProcessRunningBalanceQueue();
 
       infoLog('CSVImportService', 'Running Balance Neuberechnung abgeschlossen', {
         affectedAccounts: affectedAccountIds.length,
@@ -1288,9 +1291,8 @@ function applyCategoryToSimilarRows(row: ImportRow, categoryId: string) {
 
       errorLog("CSVImportService", "Import Error", errorDetails);
       importStatus.value = "error";
-      error.value = `Fehler beim Import: ${
-        err instanceof Error ? err.message : "Unbekannter Fehler"
-      }`;
+      error.value = `Fehler beim Import: ${err instanceof Error ? err.message : "Unbekannter Fehler"
+        }`;
       throw err;
     }
   }

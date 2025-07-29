@@ -2,10 +2,10 @@
 // Zentrale Drehscheibe für alle Transaktionen, Transfers & Reconcile‑Buchungen.
 
 import { useTransactionStore } from '@/stores/transactionStore';
-import { useAccountStore }     from '@/stores/accountStore';
-import { useCategoryStore }    from '@/stores/categoryStore';
-import { useRecipientStore }   from '@/stores/recipientStore';
-import { useTagStore }         from '@/stores/tagStore';
+import { useAccountStore } from '@/stores/accountStore';
+import { useCategoryStore } from '@/stores/categoryStore';
+import { useRecipientStore } from '@/stores/recipientStore';
+import { useTagStore } from '@/stores/tagStore';
 import { Transaction, TransactionType } from '@/types';
 // ExtendedTransaction muss importiert werden, wenn es als Typ verwendet wird
 import { type ExtendedTransaction } from '@/stores/transactionStore'; // Korrekter Importpfad und `type` Keyword
@@ -49,9 +49,9 @@ export const TransactionService = {
     return this._isBatchMode;
   },
 
-/* ------------------------------------------------------------------ */
-/* --------------------------- Read APIs ---------------------------- */
-/* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /* --------------------------- Read APIs ---------------------------- */
+  /* ------------------------------------------------------------------ */
   getAllTransactions(): Transaction[] {
     return useTransactionStore().transactions;
   },
@@ -65,9 +65,9 @@ export const TransactionService = {
     return tx;
   },
 
-/* ------------------------------------------------------------------ */
-/* --------------------------- Helper Functions -------------------- */
-/* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /* --------------------------- Helper Functions -------------------- */
+  /* ------------------------------------------------------------------ */
 
   /**
    * Leitet payee-Wert aus recipientId ab oder verwendet den übergebenen payee-Wert
@@ -142,9 +142,9 @@ export const TransactionService = {
     return updatedTxData;
   },
 
-/* ------------------------------------------------------------------ */
-/* --------------------------- Write APIs --------------------------- */
-/* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /* --------------------------- Write APIs --------------------------- */
+  /* ------------------------------------------------------------------ */
 
   async addTransaction(txData: Omit<Transaction, 'id' | 'runningBalance'>, applyRules: boolean = true): Promise<Transaction> {
     const txStore = useTransactionStore();
@@ -219,13 +219,14 @@ export const TransactionService = {
     debugLog('[TransactionService]', 'addTransaction completed', added);
 
     // WICHTIG: Running Balance für betroffenes Konto neu berechnen
+    // Verwende optimierte Queue-basierte Berechnung
     if (added.accountId) {
-      debugLog('[TransactionService]', `Triggere Running Balance Neuberechnung für Konto ${added.accountId} nach Hinzufügen von Transaktion ${added.id}`);
+      debugLog('[TransactionService]', `Füge Konto ${added.accountId} zur Running Balance Queue hinzu nach Transaktion ${added.id}`);
 
       const { BalanceService } = await import('@/services/BalanceService');
-      await BalanceService.recalculateRunningBalancesForAccount(added.accountId);
+      BalanceService.enqueueRunningBalanceRecalculation(added.accountId, added.valueDate || added.date);
 
-      infoLog('[TransactionService]', `Running Balance für Konto ${added.accountId} nach Hinzufügen neu berechnet`);
+      debugLog('[TransactionService]', `Konto ${added.accountId} zur Running Balance Queue hinzugefügt`);
     }
 
     /* Automatischer Kategorie‑Transfer bei Einnahmen */
@@ -288,15 +289,15 @@ export const TransactionService = {
     // Salden aktualisieren
     BalanceService.calculateMonthlyBalances();
 
-    // Running Balance Neuberechnung triggern (außer wenn deaktiviert, z.B. während CSV-Import)
-    if (added.accountId && !this._skipRunningBalanceRecalc) {
-      BalanceService.triggerRunningBalanceRecalculation(added.accountId, added.valueDate || added.date);
-    }
+    // ENTFERNT: Redundanter Running Balance Aufruf
+    // Die Berechnung erfolgt bereits oben über enqueueRunningBalanceRecalculation
+    // Dieser doppelte Aufruf war die Ursache der Performance-Probleme
+    // (Kommentar: Running Balance wird bereits oben in der optimierten Queue verarbeitet)
 
     return added;
   },
 
-/* -------------------- Konto‑zu‑Konto‑Transfer -------------------- */
+  /* -------------------- Konto‑zu‑Konto‑Transfer -------------------- */
 
   async addAccountTransfer(
     fromAccountId: string,
@@ -314,13 +315,13 @@ export const TransactionService = {
     const accStore = useAccountStore();
 
     const fromName = accStore.getAccountById(fromAccountId)?.name ?? '';
-    const toName   = accStore.getAccountById(toAccountId)?.name ?? '';
-    const dt       = toDateOnlyString(date);
+    const toName = accStore.getAccountById(toAccountId)?.name ?? '';
+    const dt = toDateOnlyString(date);
     // Validierung der valueDate - falls null/undefined oder ungültig, verwende date
     const validValueDate = valueDate && valueDate !== 'null' && valueDate !== 'undefined' ? valueDate : date;
-    const vdt      = toDateOnlyString(validValueDate);
+    const vdt = toDateOnlyString(validValueDate);
     debugLog('[TransactionService]', 'addAccountTransfer - Calculated dates:', { date, valueDate, validValueDate, dt, vdt });
-    const abs      = Math.abs(amount);
+    const abs = Math.abs(amount);
 
     const base: Omit<Transaction, 'id' | 'runningBalance'> = {
       type: TransactionType.ACCOUNTTRANSFER,
@@ -359,7 +360,7 @@ export const TransactionService = {
 
     // Verlinken
     await this.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
-    await this.updateTransaction(toTx.id,   { counterTransactionId: fromTx.id });
+    await this.updateTransaction(toTx.id, { counterTransactionId: fromTx.id });
 
     debugLog('[TransactionService]', 'addAccountTransfer completed', { fromTx, toTx });
 
@@ -518,7 +519,7 @@ export const TransactionService = {
     return true;
   },
 
-/* -------------------- Kategorie‑zu‑Kategorie‑Transfer -------------------- */
+  /* -------------------- Kategorie‑zu‑Kategorie‑Transfer -------------------- */
 
   async addCategoryTransfer(
     fromCategoryId: string,
@@ -637,7 +638,7 @@ export const TransactionService = {
 
     // Prüfe ob es sich um Category Transfers handelt
     if (fromTransaction.type !== TransactionType.CATEGORYTRANSFER ||
-        toTransaction.type !== TransactionType.CATEGORYTRANSFER) {
+      toTransaction.type !== TransactionType.CATEGORYTRANSFER) {
       errorLog('[TransactionService]', 'updateCategoryTransfer - Invalid transaction types', {
         fromType: fromTransaction.type,
         toType: toTransaction.type
@@ -862,7 +863,7 @@ export const TransactionService = {
     return true;
   },
 
-/* --------------------- Ausgleichs‑Buchung ------------------------ */
+  /* --------------------- Ausgleichs‑Buchung ------------------------ */
 
   async addReconcileTransaction(
     accountId: string,
@@ -908,7 +909,7 @@ export const TransactionService = {
     return tx;
   },
 
-/* ------------------------- Update / Delete ----------------------- */
+  /* ------------------------- Update / Delete ----------------------- */
 
   /**
    * Löscht eine einzelne Transaktion ohne die Gegenbuchung zu beeinträchtigen
@@ -1071,7 +1072,7 @@ export const TransactionService = {
     }
   },
 
-async updateTransaction(
+  async updateTransaction(
     id: string,
     updates: Partial<Omit<Transaction, 'id' | 'runningBalance'>>
   ): Promise<boolean> {
@@ -1122,9 +1123,9 @@ async updateTransaction(
 
     // Prüfe auf Transfer-Konvertierung
     if ((updates as any).isTransferConversion &&
-        (updates as any).originalCounterTransactionId &&
-        original.type === TransactionType.ACCOUNTTRANSFER &&
-        (updates.type === TransactionType.EXPENSE || updates.type === TransactionType.INCOME)) {
+      (updates as any).originalCounterTransactionId &&
+      original.type === TransactionType.ACCOUNTTRANSFER &&
+      (updates.type === TransactionType.EXPENSE || updates.type === TransactionType.INCOME)) {
 
       debugLog('[TransactionService]', 'Transfer-Konvertierung erkannt', {
         transactionId: id,
@@ -2532,9 +2533,9 @@ async updateTransaction(
     }
   },
 
-/* ------------------------------------------------------------------ */
-/* ---------------------- Recipient Validation APIs ---------------- */
-/* ------------------------------------------------------------------ */
+  /* ------------------------------------------------------------------ */
+  /* ---------------------- Recipient Validation APIs ---------------- */
+  /* ------------------------------------------------------------------ */
 
   /**
    * Validiert die Löschung von Recipients durch Prüfung auf aktive Referenzen in Transactions

@@ -10,6 +10,114 @@ import { PlanningService } from './PlanningService';
 import { debugLog } from '@/utils/logger';
 import dayjs from 'dayjs';
 
+/**
+ * Optimierte Running Balance Queue für Batch-Verarbeitung
+ * Sammelt Account-Updates und verarbeitet sie in Batches mit Debouncing
+ */
+class RunningBalanceQueue {
+  private pendingAccounts = new Set<string>();
+  private accountDates = new Map<string, string>();
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private isProcessing = false;
+  private readonly DEBOUNCE_DELAY = 100; // 100ms Debounce
+
+  /**
+   * Fügt einen Account zur Batch-Verarbeitung hinzu
+   */
+  enqueueAccount(accountId: string, transactionDate?: string): void {
+    this.pendingAccounts.add(accountId);
+
+    // Speichere das früheste Datum für optimierte Berechnung
+    if (transactionDate) {
+      const existingDate = this.accountDates.get(accountId);
+      if (!existingDate || transactionDate < existingDate) {
+        this.accountDates.set(accountId, transactionDate);
+      }
+    }
+
+    this.scheduleProcessing();
+  }
+
+  /**
+   * Plant die Batch-Verarbeitung mit Debouncing
+   */
+  private scheduleProcessing(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+
+    this.debounceTimer = setTimeout(() => {
+      this.processBatch();
+    }, this.DEBOUNCE_DELAY);
+  }
+
+  /**
+   * Verarbeitet alle gesammelten Accounts in einem optimierten Batch
+   */
+  private async processBatch(): Promise<void> {
+    if (this.isProcessing || this.pendingAccounts.size === 0) {
+      return;
+    }
+
+    this.isProcessing = true;
+    const accountsToProcess = Array.from(this.pendingAccounts);
+    const datesToProcess = new Map(this.accountDates);
+
+    // Queues leeren
+    this.pendingAccounts.clear();
+    this.accountDates.clear();
+
+    debugLog('BalanceService', 'RunningBalanceQueue - Batch-Verarbeitung gestartet', {
+      accountCount: accountsToProcess.length,
+      accounts: accountsToProcess
+    });
+
+    try {
+      // Sequenzielle Verarbeitung aller Accounts
+      for (const accountId of accountsToProcess) {
+        const fromDate = datesToProcess.get(accountId);
+        const startDate = fromDate ? new Date(fromDate) : undefined;
+
+        // Einen Tag früher beginnen für korrekte Berechnung
+        if (startDate) {
+          startDate.setDate(startDate.getDate() - 1);
+        }
+
+        await BalanceService.recalculateRunningBalancesForAccount(accountId, startDate);
+      }
+
+      debugLog('BalanceService', 'RunningBalanceQueue - Batch-Verarbeitung abgeschlossen', {
+        processedAccounts: accountsToProcess.length
+      });
+    } catch (error) {
+      debugLog('BalanceService', 'RunningBalanceQueue - Fehler bei Batch-Verarbeitung', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  /**
+   * Prüft ob gerade eine Batch-Verarbeitung läuft
+   */
+  isCurrentlyProcessing(): boolean {
+    return this.isProcessing;
+  }
+
+  /**
+   * Erzwingt sofortige Verarbeitung (für Tests oder kritische Operationen)
+   */
+  async forceProcess(): Promise<void> {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    await this.processBatch();
+  }
+}
+
+// Globale Queue-Instanz
+const runningBalanceQueue = new RunningBalanceQueue();
+
 export type EntityType = 'account' | 'category';
 
 export interface RunningBalance {
@@ -132,24 +240,24 @@ export const BalanceService = {
     }
   },
 
-    /**
-   * Berechnet die Bilanz für einen bestimmten Monat
-   */
+  /**
+ * Berechnet die Bilanz für einen bestimmten Monat
+ */
   calculateBalanceForMonth(year: number, month: number): Omit<MonthlyBalance, 'year' | 'month'> {
     const startDate = new Date(year, month, 1);
-    const endDate   = new Date(year, month + 1, 0);
+    const endDate = new Date(year, month + 1, 0);
     const startDateStr = toDateOnlyString(startDate);
-    const endDateStr   = toDateOnlyString(endDate);
+    const endDateStr = toDateOnlyString(endDate);
 
-    const transactionStore    = useTransactionStore();
-    const accountStore        = useAccountStore();
-    const categoryStore       = useCategoryStore();
-    const planningStore       = usePlanningStore();
-    const mbStore             = useMonthlyBalanceStore();
+    const transactionStore = useTransactionStore();
+    const accountStore = useAccountStore();
+    const categoryStore = useCategoryStore();
+    const planningStore = usePlanningStore();
+    const mbStore = useMonthlyBalanceStore();
 
     // 1. Transaktionen bis zum Monatsende finden
     const txsUntilEnd = transactionStore.transactions.filter(tx =>
-      toDateOnlyString(tx.date)      <= endDateStr
+      toDateOnlyString(tx.date) <= endDateStr
     );
     const categoryTxsUntilEnd = transactionStore.transactions.filter(tx =>
       toDateOnlyString(tx.valueDate) <= endDateStr
@@ -172,17 +280,17 @@ export const BalanceService = {
     });
 
     // 4. Projizierte Salden = aktuelle Salden
-    const projectedAccountBalances  = { ...accountBalances };
+    const projectedAccountBalances = { ...accountBalances };
     const projectedCategoryBalances = { ...categoryBalances };
 
     // 5. Vormonatswerte holen (oder Null-Fallback)
     const prevMonth = month === 0 ? 11 : month - 1;
-    const prevYear  = month === 0 ? year - 1  : year;
+    const prevYear = month === 0 ? year - 1 : year;
     const prevMb = mbStore.getMonthlyBalance(prevYear, prevMonth) || {
-      accountBalances:          {} as Record<string, number>,
-      categoryBalances:         {} as Record<string, number>,
+      accountBalances: {} as Record<string, number>,
+      categoryBalances: {} as Record<string, number>,
       projectedAccountBalances: {} as Record<string, number>,
-      projectedCategoryBalances:{} as Record<string, number>
+      projectedCategoryBalances: {} as Record<string, number>
     };
 
     // 6. Kategorie-Projektion
@@ -196,9 +304,9 @@ export const BalanceService = {
           return sum + pt.amount * occ;
         }, 0);
 
-      const prevRaw  = prevMb.categoryBalances[cat.id]           ?? 0;
+      const prevRaw = prevMb.categoryBalances[cat.id] ?? 0;
       const prevProj = prevMb.projectedCategoryBalances[cat.id] ?? 0;
-      const currentRaw = categoryBalances[cat.id]                ?? 0;
+      const currentRaw = categoryBalances[cat.id] ?? 0;
 
       projectedCategoryBalances[cat.id] =
         prevProj + (currentRaw - prevRaw) + plannedAmount;
@@ -220,9 +328,9 @@ export const BalanceService = {
             return sum + pt.amount * occ;
           }, 0);
 
-        const prevRaw  = prevMb.accountBalances[accId]           ?? 0;
+        const prevRaw = prevMb.accountBalances[accId] ?? 0;
         const prevProj = prevMb.projectedAccountBalances[accId] ?? 0;
-        const currentRaw = accountBalances[accId]               ?? 0;
+        const currentRaw = accountBalances[accId] ?? 0;
 
         projectedAccountBalances[accId] =
           prevProj + (currentRaw - prevRaw) + plannedAmount;
@@ -269,8 +377,8 @@ export const BalanceService = {
       // Für Konten: Nach date filtern, CATEGORYTRANSFER ausschließen
       const txs = txStore.transactions.filter(
         tx => tx.accountId === id &&
-             tx.type !== TransactionType.CATEGORYTRANSFER &&
-             toDateOnlyString(tx.date) <= dateStr
+          tx.type !== TransactionType.CATEGORYTRANSFER &&
+          toDateOnlyString(tx.date) <= dateStr
       );
       return txs.reduce((sum, tx) => sum + tx.amount, 0);
     } else {
@@ -335,9 +443,9 @@ export const BalanceService = {
     const transactions = txStore.transactions.filter(tx => {
       const txDate = toDateOnlyString(entityType === 'account' ? tx.date : tx.valueDate);
       return txDate >= startStr && txDate <= endStr &&
-             (entityType === 'account'
-               ? tx.accountId === id && tx.type !== TransactionType.CATEGORYTRANSFER
-               : tx.categoryId === id);
+        (entityType === 'account'
+          ? tx.accountId === id && tx.type !== TransactionType.CATEGORYTRANSFER
+          : tx.categoryId === id);
     });
 
     // 2. Transaktionen nach dem richtigen Datum sortieren
@@ -723,8 +831,8 @@ export const BalanceService = {
       const dateStr = toDateOnlyString(dayBefore);
       const txsBeforeDate = txStore.transactions.filter(
         tx => tx.accountId === accountId &&
-             tx.type !== TransactionType.CATEGORYTRANSFER &&
-             toDateOnlyString(tx.date) <= dateStr
+          tx.type !== TransactionType.CATEGORYTRANSFER &&
+          toDateOnlyString(tx.date) <= dateStr
       );
       runningBalance = txsBeforeDate.reduce((sum, tx) => sum + tx.amount, 0);
 
@@ -800,39 +908,129 @@ export const BalanceService = {
   },
 
   /**
-   * Batch-Update für running balances im TransactionStore
+   * HOCHOPTIMIERTE Batch-Update für running balances
+   * Aktualisiert ALLE Running Balances in einem einzigen Vorgang ohne einzelne Store-Updates
    */
   async batchUpdateRunningBalances(updates: { id: string; runningBalance: number }[]): Promise<void> {
-    const txStore = useTransactionStore();
-
-    for (const update of updates) {
-      await txStore.updateTransaction(update.id, {
-        runningBalance: update.runningBalance
-      }, false); // fromSync = false, da lokale Berechnung
+    if (updates.length === 0) {
+      return;
     }
 
-    debugLog('BalanceService', 'batchUpdateRunningBalances - Abgeschlossen', {
+    const txStore = useTransactionStore();
+
+    debugLog('BalanceService', 'batchUpdateRunningBalances - HOCHOPTIMIERT Start', {
+      updateCount: updates.length
+    });
+
+    // Aktiviere Batch-Modus für Performance-Optimierung
+    txStore.startBatchUpdate();
+
+    try {
+      // KRITISCH: Alle Updates direkt im Store-Array vornehmen (ohne einzelne updateTransaction Aufrufe)
+      const updateMap = new Map(updates.map(u => [u.id, u.runningBalance]));
+
+      // Direkte Manipulation des Store-Arrays für maximale Performance
+      for (let i = 0; i < txStore.transactions.length; i++) {
+        const transaction = txStore.transactions[i];
+        const newRunningBalance = updateMap.get(transaction.id);
+
+        if (newRunningBalance !== undefined) {
+          // Direkte Zuweisung ohne Store-Methoden für maximale Performance
+          txStore.transactions[i] = {
+            ...transaction,
+            runningBalance: newRunningBalance,
+            updated_at: new Date().toISOString()
+          };
+        }
+      }
+
+      // Batch-Update in IndexedDB (alle auf einmal)
+      await this.batchUpdateRunningBalancesInDB(updates);
+
+      debugLog('BalanceService', 'batchUpdateRunningBalances - HOCHOPTIMIERT Alle Updates verarbeitet', {
+        updatedCount: updates.length
+      });
+
+    } finally {
+      // Batch-Modus beenden und finale UI-Updates triggern
+      txStore.endBatchUpdate();
+    }
+
+    debugLog('BalanceService', 'batchUpdateRunningBalances - HOCHOPTIMIERT Abgeschlossen', {
       updatedCount: updates.length
     });
   },
 
   /**
-   * Trigger für automatische Running Balance Neuberechnung nach Transaktionsänderungen
-   * Wird von TransactionService nach CRUD-Operationen aufgerufen
+   * Batch-Update direkt in IndexedDB für maximale Performance
+   */
+  async batchUpdateRunningBalancesInDB(updates: { id: string; runningBalance: number }[]): Promise<void> {
+    const { TenantDbService } = await import('@/services/TenantDbService');
+    const tenantDbService = new TenantDbService();
+
+    try {
+      // Alle Updates in einer einzigen IndexedDB-Transaktion
+      const updatePromises = updates.map(async (update) => {
+        const transaction = await tenantDbService.getTransactionById(update.id);
+        if (transaction) {
+          const updatedTransaction = {
+            ...transaction,
+            runningBalance: update.runningBalance,
+            updated_at: new Date().toISOString()
+          };
+          return tenantDbService.updateTransaction(updatedTransaction);
+        }
+      });
+
+      await Promise.all(updatePromises);
+
+      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Alle DB-Updates abgeschlossen', {
+        updatedCount: updates.length
+      });
+
+    } catch (error) {
+      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Fehler', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Neue optimierte Methode: Ersetzt triggerRunningBalanceRecalculation
+   * Verwendet Queue-System für Batch-Verarbeitung mit Debouncing
+   */
+  enqueueRunningBalanceRecalculation(accountId: string, changedTransactionDate?: string): void {
+    debugLog('BalanceService', 'enqueueRunningBalanceRecalculation', {
+      accountId,
+      changedTransactionDate
+    });
+
+    // Füge Account zur optimierten Queue hinzu
+    runningBalanceQueue.enqueueAccount(accountId, changedTransactionDate);
+  },
+
+  /**
+   * Legacy-Methode für Rückwärtskompatibilität
+   * @deprecated Verwende stattdessen enqueueRunningBalanceRecalculation
    */
   async triggerRunningBalanceRecalculation(accountId: string, changedTransactionDate?: string): Promise<void> {
-    debugLog('BalanceService', 'triggerRunningBalanceRecalculation', { accountId, changedTransactionDate });
+    debugLog('BalanceService', 'triggerRunningBalanceRecalculation (deprecated)', { accountId, changedTransactionDate });
 
-    // Asynchrone Neuberechnung - nur ab dem Datum der geänderten Transaktion
-    // da nur Transaktionen ab diesem Datum betroffen sind
-    setTimeout(async () => {
-      try {
-        // fromDate aus changedTransactionDate ableiten, falls vorhanden
-        const fromDate = changedTransactionDate ? new Date(changedTransactionDate) : undefined;
-        await this.recalculateRunningBalancesForAccount(accountId, fromDate);
-      } catch (error) {
-        debugLog('BalanceService', 'Fehler bei triggerRunningBalanceRecalculation', error);
-      }
-    }, 0);
+    // Leite an neue optimierte Methode weiter
+    this.enqueueRunningBalanceRecalculation(accountId, changedTransactionDate);
+  },
+
+  /**
+   * Erzwingt sofortige Verarbeitung der Queue (für Tests oder kritische Operationen)
+   */
+  async forceProcessRunningBalanceQueue(): Promise<void> {
+    debugLog('BalanceService', 'forceProcessRunningBalanceQueue - Erzwinge sofortige Verarbeitung');
+    await runningBalanceQueue.forceProcess();
+  },
+
+  /**
+   * Prüft ob gerade Running Balance Berechnungen laufen
+   */
+  isRunningBalanceProcessing(): boolean {
+    return runningBalanceQueue.isCurrentlyProcessing();
   }
 };
