@@ -15,6 +15,7 @@ import { usePlanningStore } from "../stores/planningStore";
 import { useMonthlyBalanceStore } from "../stores/monthlyBalanceStore";
 import TransactionList from "../components/transaction/TransactionList.vue";
 import CategoryTransactionList from "../components/transaction/CategoryTransactionList.vue";
+import PlanningTransactionList from "../components/transaction/PlanningTransactionList.vue";
 import TransactionDetailModal from "../components/transaction/TransactionDetailModal.vue";
 import TransactionForm from "../components/transaction/TransactionForm.vue";
 import DateRangePicker from "../components/ui/DateRangePicker.vue";
@@ -1704,13 +1705,14 @@ watch(activeTab, (newTab) => {
       v-else-if="activeTab === 'upcoming'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <!-- Filter & DateRangePicker -->
-      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
-        <div class="flex flex-wrap items-end gap-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Zeitraum</span>
-            </label>
+      <div
+        class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+      >
+        <div class="flex flex-wrap items-end gap-3">
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Monatswahl
+            </legend>
             <div class="flex items-center gap-1">
               <button
                 class="btn btn-ghost btn-sm btn-circle"
@@ -1722,10 +1724,12 @@ watch(activeTab, (newTab) => {
                   class="text-lg"
                 />
               </button>
-              <DateRangePicker
-                ref="dateRangePickerRef"
-                @update:model-value="handlePlanningDateRangeUpdate"
-              />
+              <div class="mx-2">
+                <DateRangePicker
+                  ref="dateRangePickerRef"
+                  @update:model-value="handlePlanningDateRangeUpdate"
+                />
+              </div>
               <button
                 class="btn btn-ghost btn-sm btn-circle"
                 @click="navigateMonth('next')"
@@ -1737,11 +1741,11 @@ watch(activeTab, (newTab) => {
                 />
               </button>
             </div>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Konto</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Konto
+            </legend>
             <select
               v-model="planningSelectedAccountId"
               class="select select-sm select-bordered rounded-full"
@@ -1760,11 +1764,11 @@ watch(activeTab, (newTab) => {
                 {{ acc.name }}
               </option>
             </select>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Kategorie</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Kategorie
+            </legend>
             <select
               v-model="planningSelectedCategoryId"
               class="select select-sm select-bordered rounded-full"
@@ -1783,12 +1787,12 @@ watch(activeTab, (newTab) => {
                 {{ cat.name }}
               </option>
             </select>
-          </div>
+          </fieldset>
         </div>
 
         <div class="flex items-end gap-2">
           <button
-            class="btn btn-sm btn-ghost btn-circle self-end"
+            class="btn btn-sm btn-ghost btn-circle self-end mb-1"
             @click="clearFilters"
           >
             <Icon
@@ -1798,145 +1802,17 @@ watch(activeTab, (newTab) => {
           </button>
         </div>
       </div>
-
       <div class="divider px-5 m-0" />
-
-      <div class="overflow-x-auto">
-        <table
-          :key="`upcoming-table-${activeTab}`"
-          class="table table-sm w-full"
-        >
-          <thead>
-            <tr class="text-xs">
-              <th class="py-1">Datum</th>
-              <th class="py-1">Typ</th>
-              <th class="py-1">Name</th>
-              <th class="py-1">Empfänger</th>
-              <th class="py-1">Quelle</th>
-              <th class="py-1">Ziel</th>
-              <th class="py-1 text-right">Betrag</th>
-              <th class="py-1 text-right">Aktionen</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(e, index) in filteredPlanningTransactions"
-              :key="`${e.transaction.id}-${e.date}`"
-              :class="index % 2 === 0 ? 'bg-base-100' : 'bg-base-200'"
-              class="text-sm hover:bg-base-300"
-            >
-              <td class="py-1">{{ formatDate(e.date) }}</td>
-              <td class="py-1 text-center">
-                <div
-                  class="tooltip tooltip-primary"
-                  :data-tip="
-                    getTransactionTypeLabel(
-                      e.transaction.transactionType || TransactionType.EXPENSE
-                    )
-                  "
-                >
-                  <Icon
-                    :icon="
-                      getTransactionTypeIcon(
-                        e.transaction.transactionType || TransactionType.EXPENSE
-                      )
-                    "
-                    :class="
-                      getTransactionTypeClass(
-                        e.transaction.transactionType || TransactionType.EXPENSE
-                      )
-                    "
-                    class="text-lg"
-                  />
-                </div>
-              </td>
-              <td class="py-1">{{ e.transaction.name }}</td>
-              <td class="py-1">
-                {{
-                  recipientStore.getRecipientById(
-                    e.transaction.recipientId || ""
-                  )?.name || "-"
-                }}
-              </td>
-              <td class="py-1">{{ getSourceName(e.transaction) }}</td>
-              <td class="py-1">{{ getTargetName(e.transaction) }}</td>
-              <td class="py-1 text-right">
-                <CurrencyDisplay
-                  :amount="e.transaction.amount"
-                  :show-zero="true"
-                />
-              </td>
-              <td class="py-1 text-right">
-                <div class="flex justify-end space-x-1">
-                  <div
-                    class="tooltip tooltip-success"
-                    data-tip="Planungstransaktion ausführen"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
-                      @click="executePlanning(e.transaction.id, e.date)"
-                    >
-                      <Icon
-                        icon="mdi:play"
-                        class="text-sm text-success"
-                      />
-                    </button>
-                  </div>
-                  <div
-                    class="tooltip tooltip-warning"
-                    data-tip="Planungstransaktion überspringen"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
-                      @click="skipPlanning(e.transaction.id, e.date)"
-                    >
-                      <Icon
-                        icon="mdi:skip-next"
-                        class="text-sm text-warning"
-                      />
-                    </button>
-                  </div>
-                  <div
-                    class="tooltip tooltip-info"
-                    data-tip="Planungstransaktion bearbeiten"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none"
-                      @click="editPlanning(e.transaction)"
-                    >
-                      <Icon
-                        icon="mdi:pencil"
-                        class="text-sm"
-                      />
-                    </button>
-                  </div>
-                  <div
-                    class="tooltip tooltip-error"
-                    data-tip="Planungstransaktion löschen"
-                  >
-                    <button
-                      class="btn btn-ghost btn-xs border-none text-error/75"
-                      @click="deletePlanning(e.transaction)"
-                    >
-                      <Icon
-                        icon="mdi:trash-can"
-                        class="text-sm"
-                      />
-                    </button>
-                  </div>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="filteredPlanningTransactions.length === 0">
-              <td
-                colspan="8"
-                class="text-center py-4"
-              >
-                Keine anstehenden Transaktionen im ausgewählten Zeitraum.
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="card-body py-0 px-1">
+        <PlanningTransactionList
+          :key="`planning-list-${activeTab}`"
+          :planning-transactions="filteredPlanningTransactions"
+          :search-term="planningSearchQuery"
+          @execute="executePlanning"
+          @skip="skipPlanning"
+          @edit="editPlanning"
+          @delete="deletePlanning"
+        />
       </div>
     </div>
 
@@ -1945,13 +1821,14 @@ watch(activeTab, (newTab) => {
       v-else-if="activeTab === 'accounts'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <!-- Filter & DateRangePicker -->
-      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
-        <div class="flex flex-wrap items-end gap-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Zeitraum</span>
-            </label>
+      <div
+        class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+      >
+        <div class="flex flex-wrap items-end gap-3">
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Monatswahl
+            </legend>
             <div class="flex items-center gap-1">
               <button
                 class="btn btn-ghost btn-sm btn-circle"
@@ -1963,10 +1840,12 @@ watch(activeTab, (newTab) => {
                   class="text-lg"
                 />
               </button>
-              <DateRangePicker
-                ref="dateRangePickerRef"
-                @update:model-value="handlePlanningDateRangeUpdate"
-              />
+              <div class="mx-2">
+                <DateRangePicker
+                  ref="dateRangePickerRef"
+                  @update:model-value="handlePlanningDateRangeUpdate"
+                />
+              </div>
               <button
                 class="btn btn-ghost btn-sm btn-circle"
                 @click="navigateMonth('next')"
@@ -1978,11 +1857,11 @@ watch(activeTab, (newTab) => {
                 />
               </button>
             </div>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Konto</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Konto
+            </legend>
             <select
               v-model="planningSelectedAccountId"
               class="select select-sm select-bordered rounded-full"
@@ -2001,11 +1880,11 @@ watch(activeTab, (newTab) => {
                 {{ acc.name }}
               </option>
             </select>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Kategorie</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Kategorie
+            </legend>
             <select
               v-model="planningSelectedCategoryId"
               class="select select-sm select-bordered rounded-full"
@@ -2024,12 +1903,12 @@ watch(activeTab, (newTab) => {
                 {{ cat.name }}
               </option>
             </select>
-          </div>
+          </fieldset>
         </div>
 
         <div class="flex items-end gap-2">
           <button
-            class="btn btn-sm btn-ghost btn-circle self-end"
+            class="btn btn-sm btn-ghost btn-circle self-end mb-1"
             @click="clearFilters"
           >
             <Icon
@@ -2039,7 +1918,6 @@ watch(activeTab, (newTab) => {
           </button>
         </div>
       </div>
-
       <div class="divider px-5 m-0" />
 
       <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
@@ -2057,13 +1935,14 @@ watch(activeTab, (newTab) => {
       v-else-if="activeTab === 'categories'"
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
-      <!-- Filter & DateRangePicker -->
-      <div class="flex flex-wrap justify-between items-end gap-4 mb-4">
-        <div class="flex flex-wrap items-end gap-4">
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Zeitraum</span>
-            </label>
+      <div
+        class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+      >
+        <div class="flex flex-wrap items-end gap-3">
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Monatswahl
+            </legend>
             <div class="flex items-center gap-1">
               <button
                 class="btn btn-ghost btn-sm btn-circle"
@@ -2075,10 +1954,12 @@ watch(activeTab, (newTab) => {
                   class="text-lg"
                 />
               </button>
-              <DateRangePicker
-                ref="dateRangePickerRef"
-                @update:model-value="handlePlanningDateRangeUpdate"
-              />
+              <div class="mx-2">
+                <DateRangePicker
+                  ref="dateRangePickerRef"
+                  @update:model-value="handlePlanningDateRangeUpdate"
+                />
+              </div>
               <button
                 class="btn btn-ghost btn-sm btn-circle"
                 @click="navigateMonth('next')"
@@ -2090,11 +1971,11 @@ watch(activeTab, (newTab) => {
                 />
               </button>
             </div>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Konto</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Konto
+            </legend>
             <select
               v-model="planningSelectedAccountId"
               class="select select-sm select-bordered rounded-full"
@@ -2113,11 +1994,11 @@ watch(activeTab, (newTab) => {
                 {{ acc.name }}
               </option>
             </select>
-          </div>
-          <div class="form-control">
-            <label class="label">
-              <span class="label-text opacity-50">Kategorie</span>
-            </label>
+          </fieldset>
+          <fieldset class="fieldset pt-0">
+            <legend class="fieldset-legend text-center opacity-50">
+              Kategorie
+            </legend>
             <select
               v-model="planningSelectedCategoryId"
               class="select select-sm select-bordered rounded-full"
@@ -2136,12 +2017,12 @@ watch(activeTab, (newTab) => {
                 {{ cat.name }}
               </option>
             </select>
-          </div>
+          </fieldset>
         </div>
 
         <div class="flex items-end gap-2">
           <button
-            class="btn btn-sm btn-ghost btn-circle self-end"
+            class="btn btn-sm btn-ghost btn-circle self-end mb-1"
             @click="clearFilters"
           >
             <Icon
@@ -2151,7 +2032,6 @@ watch(activeTab, (newTab) => {
           </button>
         </div>
       </div>
-
       <div class="divider px-5 m-0" />
 
       <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
