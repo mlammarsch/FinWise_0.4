@@ -513,14 +513,14 @@ async function reinitializeMuuriGrids() {
   <div class="container mx-auto p-6">
     <div class="mb-6">
       <h1 class="text-3xl font-bold text-center mb-2">Kategorien Drag & Drop Test</h1>
-      <div class="w-full h-1 bg-gradient-to-r from-blue-400 via-orange-400 to-green-400 rounded"></div>
+
     </div>
 
     <!-- Drag Container wie im Kanban -->
     <div ref="dragContainer" class="drag-container"></div>
 
     <!-- Muuri Container für Kategoriegruppen (BudgetCategoryColumn2 Design) -->
-    <div class="muuri-container bg-base-100 rounded-lg p-4">
+    <div class="muuri-container bg-base-100 p-4">
       <!-- Kategoriegruppen (sortiert nach Typ und sortOrder) -->
       <div
         v-for="(group, index) in sortedCategoryGroups"
@@ -541,7 +541,7 @@ async function reinitializeMuuriGrids() {
 
         <div class="category-group-row border-t border-b border-base-300">
           <!-- Kategoriegruppen-Header -->
-          <div class="group-header flex items-center p-3 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+          <div class="group-header flex items-center p-1 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
             <!-- Drag Handle für Gruppe -->
             <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
               <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
@@ -591,7 +591,7 @@ async function reinitializeMuuriGrids() {
                 :data-category-id="category.id"
                 :data-group-id="group.id"
               >
-                <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
+                <div class="flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
                   <!-- Erweiterte Drag-Area (Handle + Name) -->
                   <div class="category-drag-area flex items-center flex-grow">
                     <!-- Drag Handle für Kategorie -->
@@ -606,7 +606,7 @@ async function reinitializeMuuriGrids() {
 
                     <!-- Kategoriename (auch draggable) -->
                     <div class="flex-grow category-name-drag">
-                      <span class="text-sm text-base-content">{{ category.name }}</span>
+                      <span class="text-xs text-base-content">{{ category.name }}</span>
                     </div>
                   </div>
 
@@ -615,7 +615,6 @@ async function reinitializeMuuriGrids() {
                     <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
                     <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
                     <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
-                    <div v-if="category.isActive && !category.isHidden && !category.isSavingsGoal" class="w-2 h-2 bg-success rounded-full" title="Aktiv"></div>
                   </div>
                 </div>
               </div>
@@ -652,7 +651,7 @@ async function reinitializeMuuriGrids() {
 .group-wrapper {
   position: absolute;
   display: block;
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 0 0;
   z-index: 1;
   width: 100%;
 }
@@ -668,10 +667,10 @@ async function reinitializeMuuriGrids() {
 
 /* CategoryGroupRow2 Design */
 .category-group-row {
-  border-radius: 0.5rem;
+  border-radius: 0rem;
   overflow: hidden;
   background: hsl(var(--b1));
-  margin-bottom: 0.5rem;
+  margin-bottom: 0rem;
 }
 
 .group-header {
