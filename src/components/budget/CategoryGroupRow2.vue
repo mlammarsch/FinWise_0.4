@@ -24,8 +24,11 @@ const isExpanded = computed({
   }
 });
 
+const emit = defineEmits(['toggle']);
+
 function toggleExpanded() {
   isExpanded.value = !isExpanded.value;
+  emit('toggle');
 }
 
 // Untergeordnete Kategorien für jede Hauptkategorie
@@ -73,8 +76,9 @@ function getChildCategories(parentId: string): Category[] {
       <div
         v-for="category in categories"
         :key="category.id"
-        class="category-item"
+        class="category-item muuri-item"
         :data-category-id="category.id"
+        :data-group-id="group.id"
       >
         <!-- Hauptkategorie -->
         <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-200 hover:bg-base-100 cursor-pointer">
@@ -105,8 +109,9 @@ function getChildCategories(parentId: string): Category[] {
         <div
           v-for="childCategory in getChildCategories(category.id)"
           :key="childCategory.id"
-          class="flex items-center p-2 pl-12 bg-base-25 border-b border-base-200 hover:bg-base-50 cursor-pointer"
+          class="flex items-center p-2 pl-12 bg-base-25 border-b border-base-200 hover:bg-base-50 cursor-pointer muuri-item"
           :data-category-id="childCategory.id"
+          :data-group-id="group.id"
         >
           <!-- Drag Handle für Unterkategorie -->
           <div class="drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">

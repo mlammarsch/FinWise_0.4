@@ -14,6 +14,8 @@ const categoryStore = useCategoryStore();
 const expenseGrid = ref<Muuri | null>(null);
 const incomeGrid = ref<Muuri | null>(null);
 
+const grids = computed(() => [expenseGrid.value, incomeGrid.value].filter(g => g));
+
 // Computed Properties für Kategoriegruppen
 const expenseGroups = computed(() => {
   return categoryStore.categoryGroups.filter((group: CategoryGroup) => !group.isIncomeGroup)
@@ -59,6 +61,7 @@ function initializeMuuri() {
         items: '.muuri-item',
         dragEnabled: true,
         dragHandle: '.drag-handle',
+        dragSort: () => [expenseGrid.value, incomeGrid.value].filter(g => g) as Muuri[],
         dragSortPredicate: {
           threshold: 50,
           action: 'move'
@@ -88,6 +91,7 @@ function initializeMuuri() {
         items: '.muuri-item',
         dragEnabled: true,
         dragHandle: '.drag-handle',
+        dragSort: () => [expenseGrid.value, incomeGrid.value].filter(g => g) as Muuri[],
         dragSortPredicate: {
           threshold: 50,
           action: 'move'
@@ -143,7 +147,6 @@ function handleDragEnd(item: any, event: any, isIncomeGroup: boolean) {
       // Kategorie wurde verschoben
       handleCategoryDrop(categoryId, item, isIncomeGroup);
     } else if (groupId) {
-      // Kategoriegruppe wurde verschoben
       handleGroupDrop(groupId, item, isIncomeGroup);
     }
   } catch (error) {
@@ -153,74 +156,77 @@ function handleDragEnd(item: any, event: any, isIncomeGroup: boolean) {
 
 // Kategorie-Drop-Handler
 async function handleCategoryDrop(categoryId: string, item: any, isIncomeGroup: boolean) {
-  try {
-    const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-    if (!grid) return;
+  const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
+  if (!grid) return;
 
+  try {
     const items = grid.getItems();
     const currentIndex = items.indexOf(item);
-
-    // Neue sortOrder berechnen
     const newSortOrder = currentIndex;
 
-    // Kategorie aktualisieren
     const success = await CategoryService.updateCategory(categoryId, {
-      sortOrder: newSortOrder
+      sortOrder: newSortOrder,
     });
 
     if (success) {
-      debugLog('BudgetCategoryColumn2', 'Category drop handled successfully', {
+      debugLog("BudgetCategoryColumn2", "Category drop handled successfully", {
         categoryId,
         newSortOrder,
-        isIncomeGroup
+        isIncomeGroup,
       });
-    } else {
-      // Rollback bei Fehler
+      grid.refreshItems();
       grid.layout();
-      errorLog('BudgetCategoryColumn2', 'Failed to update category sort order', { categoryId });
+    } else {
+      errorLog("BudgetCategoryColumn2", "Failed to update category sort order", { categoryId });
+      grid.layout();
     }
   } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Error in handleCategoryDrop', error);
-    // Rollback bei Fehler
-    const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-    if (grid) grid.layout();
+    errorLog("BudgetCategoryColumn2", "Error in handleCategoryDrop", error);
+    grid.layout();
   }
 }
 
 // Kategoriegruppen-Drop-Handler
 async function handleGroupDrop(groupId: string, item: any, isIncomeGroup: boolean) {
-  try {
-    const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-    if (!grid) return;
+  const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
+  if (!grid) return;
 
+  try {
     const items = grid.getItems();
     const currentIndex = items.indexOf(item);
-
-    // Neue sortOrder berechnen
     const newSortOrder = currentIndex;
 
-    // Kategoriegruppe aktualisieren
     const success = await CategoryService.updateCategoryGroup(groupId, {
-      sortOrder: newSortOrder
+      sortOrder: newSortOrder,
     });
 
     if (success) {
-      debugLog('BudgetCategoryColumn2', 'Group drop handled successfully', {
+      debugLog("BudgetCategoryColumn2", "Group drop handled successfully", {
         groupId,
         newSortOrder,
-        isIncomeGroup
+        isIncomeGroup,
       });
-    } else {
-      // Rollback bei Fehler
+      grid.refreshItems();
       grid.layout();
-      errorLog('BudgetCategoryColumn2', 'Failed to update group sort order', { groupId });
+    } else {
+      errorLog("BudgetCategoryColumn2", "Failed to update group sort order", { groupId });
+      grid.layout();
     }
   } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Error in handleGroupDrop', error);
-    // Rollback bei Fehler
-    const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-    if (grid) grid.layout();
+    errorLog("BudgetCategoryColumn2", "Error in handleGroupDrop", error);
+    grid.layout();
   }
+}
+
+function refreshGrids() {
+  nextTick(() => {
+    grids.value.forEach(grid => {
+      if (grid) {
+        grid.refreshItems();
+        grid.layout(true);
+      }
+    });
+  });
 }
 </script>
 
@@ -243,6 +249,7 @@ async function handleGroupDrop(groupId: string, item: any, isIncomeGroup: boolea
           :categories="categoriesByGroup[group.id] || []"
           class="muuri-item"
           :data-group-id="group.id"
+          @toggle="refreshGrids"
         />
       </div>
     </div>
@@ -264,6 +271,7 @@ async function handleGroupDrop(groupId: string, item: any, isIncomeGroup: boolea
           :categories="categoriesByGroup[group.id] || []"
           class="muuri-item"
           :data-group-id="group.id"
+          @toggle="refreshGrids"
         />
       </div>
     </div>

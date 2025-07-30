@@ -3,7 +3,6 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useCategoryStore } from "../stores/categoryStore";
 import { useTransactionStore } from "../stores/transactionStore";
-import BudgetMonthCard from "../components/budget/BudgetMonthCard.vue";
 import BudgetMonthHeaderCard from "../components/budget/BudgetMonthHeaderCard.vue";
 import BudgetCategoryColumn2 from "../components/budget/BudgetCategoryColumn2.vue";
 import PagingYearComponent from "../components/ui/PagingYearComponent.vue";
@@ -187,21 +186,7 @@ const availableByMonth = computed(() => {
         >
           <BudgetCategoryColumn2 />
         </div>
-        <!-- Monats-Spalten -->
-        <div
-          v-for="month in months"
-          :key="month.key"
-          :style="{
-            flex: '0 0 calc(100% / ' + totalColumns + ')',
-            minWidth: 'calc(100% / ' + totalColumns + ')'
-          }"
-          class="flex flex-col"
-        >
-          <BudgetMonthCard
-            :month="month"
-            :categories="categories"
-          />
-        </div>
+        <!-- Monats-Spalten (entfernt für Fokus auf Header und Kategorie) -->
       </div>
     </div>
   </div>
