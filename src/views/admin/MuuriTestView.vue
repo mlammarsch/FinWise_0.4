@@ -7,6 +7,16 @@ const dragContainer = ref<HTMLElement>();
 const metaGrid = ref<Muuri | null>(null);
 const subGrids = ref<Muuri[]>([]);
 
+// Expand/Collapse State für jede Gruppe
+const expandedGroups = ref<Record<string, boolean>>({
+  ausgaben: true,
+  ruecklagen: true,
+  hobby: true
+});
+
+// Auto-Expand Timer für Drag-Over
+const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
+
 // Test-Daten basierend auf dem Bild
 const categoryGroups = [
   {
@@ -115,6 +125,14 @@ function initializeGrids() {
         if (metaGrid.value) {
           metaGrid.value.refreshItems().layout();
         }
+      })
+      .on('dragStart', function (item: any) {
+        // Auto-Expand bei Drag-Over über eingeklappte Gruppen
+        setupAutoExpand();
+      })
+      .on('dragEnd', function () {
+        // Auto-Expand Timer aufräumen
+        clearAutoExpandTimer();
       });
 
       subGrids.value.push(grid);
@@ -195,6 +213,67 @@ function destroyGrids() {
     console.error('Failed to destroy Muuri grids', error);
   }
 }
+
+// Expand/Collapse Funktionen
+function toggleGroup(groupId: string) {
+  expandedGroups.value[groupId] = !expandedGroups.value[groupId];
+
+  // Layout nach Zustandsänderung aktualisieren
+  nextTick(() => {
+    updateLayoutAfterToggle();
+  });
+}
+
+function updateLayoutAfterToggle() {
+  // Alle Sub-Grids refreshen
+  subGrids.value.forEach(grid => {
+    if (grid) {
+      grid.refreshItems();
+      grid.layout(true);
+    }
+  });
+
+  // Meta-Grid refreshen
+  if (metaGrid.value) {
+    metaGrid.value.refreshItems();
+    metaGrid.value.layout(true);
+  }
+}
+
+// Auto-Expand bei Drag-Over
+function setupAutoExpand() {
+  // Event Listener für Drag-Over auf Gruppen-Header
+  document.addEventListener('dragover', handleDragOverGroup);
+}
+
+function handleDragOverGroup(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  const groupHeader = target.closest('.group-header');
+
+  if (groupHeader) {
+    const groupWrapper = groupHeader.closest('.group-wrapper');
+    const groupId = groupWrapper?.getAttribute('data-group-id');
+
+    if (groupId && !expandedGroups.value[groupId]) {
+      // Timer für Auto-Expand setzen (1 Sekunde Verzögerung)
+      clearAutoExpandTimer();
+      autoExpandTimer.value = setTimeout(() => {
+        expandedGroups.value[groupId] = true;
+        nextTick(() => {
+          updateLayoutAfterToggle();
+        });
+      }, 1000);
+    }
+  }
+}
+
+function clearAutoExpandTimer() {
+  if (autoExpandTimer.value) {
+    clearTimeout(autoExpandTimer.value);
+    autoExpandTimer.value = null;
+  }
+  document.removeEventListener('dragover', handleDragOverGroup);
+}
 </script>
 
 <template>
@@ -224,13 +303,26 @@ function destroyGrids() {
               <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
             </div>
 
+            <!-- Expand/Collapse Chevron -->
+            <div
+              class="flex-shrink-0 mr-3 cursor-pointer hover:bg-base-200 rounded-full p-2 transition-colors"
+              @click.stop="toggleGroup(group.id)"
+              title="Gruppe ein-/ausklappen"
+            >
+              <Icon
+                :icon="expandedGroups[group.id] ? 'mdi:chevron-down' : 'mdi:chevron-right'"
+                class="w-5 h-5 text-base-content transition-transform duration-200"
+                :class="{ 'rotate-90': !expandedGroups[group.id] }"
+              />
+            </div>
+
             <!-- Gruppen-Icon -->
             <div class="flex-shrink-0 mr-2">
               <Icon :icon="group.icon" :class="`w-4 h-4 ${group.color}`" />
             </div>
 
             <!-- Gruppenname -->
-            <div class="flex-grow">
+            <div class="flex-grow" @click.stop="toggleGroup(group.id)">
               <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
             </div>
 
@@ -240,8 +332,12 @@ function destroyGrids() {
             </div>
           </div>
 
-          <!-- Kategorien-Liste -->
-          <div class="categories-list">
+          <!-- Kategorien-Liste (mit Expand/Collapse) -->
+          <div
+            v-show="expandedGroups[group.id]"
+            class="categories-list"
+            :class="{ 'collapsed': !expandedGroups[group.id] }"
+          >
             <div class="categories-content">
               <!-- Kategorien -->
               <div
@@ -331,6 +427,13 @@ function destroyGrids() {
   min-height: 50px;
   max-height: 400px;
   overflow-y: auto;
+  transition: all 0.3s ease;
+}
+
+.categories-list.collapsed {
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
 }
 
 .categories-content {
@@ -396,6 +499,17 @@ function destroyGrids() {
 .group-header:hover {
   background: linear-gradient(to right, hsl(var(--b2)), hsl(var(--b3)));
   transition: background 0.2s ease;
+}
+
+/* Auto-Expand Highlight */
+.group-header.drag-over-expand {
+  background: linear-gradient(to right, hsl(var(--p) / 0.1), hsl(var(--p) / 0.2));
+  border: 2px dashed hsl(var(--p));
+}
+
+/* Chevron Animation */
+.group-header .transition-transform {
+  transition: transform 0.2s ease;
 }
 
 /* Custom Tailwind-Klassen für bessere Abstufungen */
