@@ -4,7 +4,7 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useCategoryStore } from "../stores/categoryStore";
 import { useTransactionStore } from "../stores/transactionStore";
 import BudgetMonthHeaderCard from "../components/budget/BudgetMonthHeaderCard.vue";
-import BudgetCategoryColumn2 from "../components/budget/BudgetCategoryColumn2.vue";
+import BudgetCategoryColumn3 from "../components/budget/BudgetCategoryColumn3.vue";
 import PagingYearComponent from "../components/ui/PagingYearComponent.vue";
 import { Icon } from "@iconify/vue";
 import { toDateOnlyString } from "../utils/formatters";
@@ -165,7 +165,7 @@ const availableByMonth = computed(() => {
           }"
           class="flex flex-col sticky left-0 z-10 bg-base-100 border-r border-base-300"
         >
-          <BudgetCategoryColumn2 />
+          <BudgetCategoryColumn3 />
         </div>
         <!-- Monats-Spalten (entfernt für Fokus auf Header und Kategorie) -->
       </div>
