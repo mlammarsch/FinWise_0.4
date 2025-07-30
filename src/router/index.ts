@@ -23,6 +23,7 @@ import AdminTagsView from '@/views/admin/AdminTagsView.vue';
 import AdminRecipientsView from '@/views/admin/AdminRecipientsView.vue';
 import AdminRulesView from '@/views/admin/AdminRulesView.vue';
 import AdminTenantsView from '@/views/admin/AdminTenantsView.vue'; // neu
+import MuuriTestView from '@/views/admin/MuuriTestView.vue';
 
 const routes: RouteRecordRaw[] = [
   /* ---------- Auth ---------- */
@@ -47,6 +48,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/admin/recipients', name: 'admin-recipients', component: AdminRecipientsView, meta: { title: 'Empfänger verwalten' } },
   { path: '/admin/rules', name: 'admin-rules', component: AdminRulesView, meta: { title: 'Regeln verwalten' } },
   { path: '/admin/tenants', name: 'admin-tenants', component: AdminTenantsView, meta: { title: 'Mandanten verwalten' } },
+  { path: '/admin/muuri-test', name: 'admin-muuri-test', component: MuuriTestView, meta: { title: 'Muuri Test' } },
 
   /* ---------- Fallback ---------- */
   { path: '/:pathMatch(.*)*', redirect: '/' },

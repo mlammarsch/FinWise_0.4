@@ -11,6 +11,9 @@ import { usePlanningStore } from "../../stores/planningStore";
 import { useRuleStore } from "../../stores/ruleStore";
 import { useStatisticsStore } from "../../stores/statisticsStore";
 import { useThemeStore } from "../../stores/themeStore";
+import { useUserStore } from "../../stores/userStore";
+import { useSessionStore } from "../../stores/sessionStore";
+import { seedData, clearData } from "../../mock/seed_kaputt";
 
 const emit = defineEmits(["closeMenu"]);
 
@@ -50,6 +53,7 @@ const adminRoutes = [
     name: "Mandanten",
     icon: "mdi:office-building-cog",
   }, // <-- neu
+  { path: "/admin/muuri-test", name: "Muuri Test", icon: "mdi:grid" },
   { path: "/settings", name: "Einstellungen", icon: "mdi:cog" },
 ];
 
@@ -94,6 +98,8 @@ function handleItemClick() {
 
 function clearAndReseedData() {
   if (confirm("Möchtest Du wirklich alle Daten löschen und neu laden?")) {
+    const sessionStore = useSessionStore();
+
     const stores = [
       useAccountStore(),
       useCategoryStore(),
@@ -109,7 +115,12 @@ function clearAndReseedData() {
       if (typeof store.reset === "function") store.reset();
     });
     clearData();
-    seedData();
+
+    // Get current user and tenant IDs
+    const userId = sessionStore.currentUser?.id || 'demo-user';
+    const tenantId = sessionStore.currentTenantId || 'demo-tenant';
+
+    seedData(userId, tenantId);
     router.push("/");
   }
 }
