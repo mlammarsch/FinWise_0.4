@@ -1,5 +1,5 @@
-// tailwind.config.ts
-import type { Config } from "tailwindcss";
+// tailwind.config.js
+import daisyui from "daisyui";
 
 export default {
   content: [
@@ -14,5 +14,15 @@ export default {
   theme: {
     extend: {},
   },
-  plugins: [],
-} satisfies Config;
+  plugins: [daisyui],
+  daisyui: {
+    themes: ["light", "dark"],
+    darkTheme: "dark",
+    base: true,
+    styled: true,
+    utils: true,
+    prefix: "",
+    logs: true,
+    themeRoot: ":root",
+  },
+};
