@@ -588,7 +588,7 @@ export class TenantDbService {
     }
   }
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{ accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[] }> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue.
      * Wird verwendet um zu vermeiden, dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
@@ -761,7 +761,7 @@ export class TenantDbService {
       if (skipIfOlder && transaction.updated_at) {
         const existingTransaction = await this.db.transactions.get(transaction.id);
         if (existingTransaction && existingTransaction.updated_at &&
-            new Date(existingTransaction.updated_at) >= new Date(transaction.updated_at)) {
+          new Date(existingTransaction.updated_at) >= new Date(transaction.updated_at)) {
           // Lokale Transaktion ist neuer oder gleich - keine DB-Operation nötig
           return false;
         }

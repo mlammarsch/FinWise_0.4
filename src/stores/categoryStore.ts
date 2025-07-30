@@ -81,7 +81,7 @@ export const useCategoryStore = defineStore('category', () => {
     if (fromSync) {
       const localCategory = await tenantDbService.getCategoryById(categoryWithTimestamp.id);
       if (localCategory && localCategory.updated_at && categoryWithTimestamp.updated_at &&
-          new Date(localCategory.updated_at) >= new Date(categoryWithTimestamp.updated_at)) {
+        new Date(localCategory.updated_at) >= new Date(categoryWithTimestamp.updated_at)) {
         infoLog('categoryStore', `addCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localCategory;
       }
@@ -139,7 +139,7 @@ export const useCategoryStore = defineStore('category', () => {
       }
 
       if (localCategory.updated_at && categoryUpdatesWithTimestamp.updated_at &&
-          new Date(localCategory.updated_at) >= new Date(categoryUpdatesWithTimestamp.updated_at)) {
+        new Date(localCategory.updated_at) >= new Date(categoryUpdatesWithTimestamp.updated_at)) {
         infoLog('categoryStore', `updateCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -230,7 +230,7 @@ export const useCategoryStore = defineStore('category', () => {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localGroup = await tenantDbService.getCategoryGroupById(categoryGroupWithTimestamp.id);
       if (localGroup && localGroup.updated_at && categoryGroupWithTimestamp.updated_at &&
-          new Date(localGroup.updated_at) >= new Date(categoryGroupWithTimestamp.updated_at)) {
+        new Date(localGroup.updated_at) >= new Date(categoryGroupWithTimestamp.updated_at)) {
         infoLog('categoryStore', `addCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localGroup;
       }
@@ -285,7 +285,7 @@ export const useCategoryStore = defineStore('category', () => {
       }
 
       if (localGroup.updated_at && categoryGroupUpdatesWithTimestamp.updated_at &&
-          new Date(localGroup.updated_at) >= new Date(categoryGroupUpdatesWithTimestamp.updated_at)) {
+        new Date(localGroup.updated_at) >= new Date(categoryGroupUpdatesWithTimestamp.updated_at)) {
         infoLog('categoryStore', `updateCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }

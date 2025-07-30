@@ -4,6 +4,7 @@ import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
 import { CategoryService } from '../../services/CategoryService';
 import type { CategoryGroup, Category } from '../../types';
+import { debugLog, errorLog } from '../../utils/logger';
 
 const dragContainer = ref<HTMLElement>();
 const metaGrid = ref<Muuri | null>(null);
@@ -19,34 +20,37 @@ const expandedGroups = ref<Record<string, boolean>>({});
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 
-// Sortierte Kategoriegruppen nach sortOrder
+// Debouncing für Sort Order Updates
+const sortOrderUpdateTimer = ref<NodeJS.Timeout | null>(null);
+const SORT_ORDER_DEBOUNCE_DELAY = 500; // 500ms Debounce
+
+// Sortierte Kategoriegruppen nach Typ und sortOrder (Ausgaben zuerst, dann Einnahmen)
 const sortedCategoryGroups = computed(() => {
-  return categoryGroups.value
-    .slice()
-    .sort((a: CategoryGroup, b: CategoryGroup) => a.sortOrder - b.sortOrder);
+  const groups = categoryGroups.value.slice();
+
+  // Trennung nach Typ
+  const expenseGroups = groups.filter(g => !g.isIncomeGroup).sort((a, b) => a.sortOrder - b.sortOrder);
+  const incomeGroups = groups.filter(g => g.isIncomeGroup).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return [...expenseGroups, ...incomeGroups];
 });
+
+// Hilfsfunktion um zu prüfen, ob eine Trennzeile vor einer Gruppe angezeigt werden soll
+const shouldShowSeparator = (group: CategoryGroup, index: number) => {
+  if (index === 0) return false;
+  const groups = sortedCategoryGroups.value;
+  const prevGroup = groups[index - 1];
+  // Trennzeile zwischen Ausgaben und Einnahmen
+  return !prevGroup.isIncomeGroup && group.isIncomeGroup;
+};
 
 // Icon-Mapping für Kategoriegruppen (einheitliches Ordnersymbol)
 function getGroupIcon(group: CategoryGroup): string {
   return 'mdi:folder-outline';
 }
 
-// Farb-Mapping für Kategoriegruppen
+// Icon-Farbe für Kategoriegruppen (einheitlich in base-content)
 function getGroupColor(group: CategoryGroup): string {
-  if (group.isIncomeGroup) {
-    return 'text-success';
-  }
-  // Fallback-Farben basierend auf Namen
-  const name = group.name.toLowerCase();
-  if (name.includes('ausgaben') || name.includes('expense')) {
-    return 'text-error';
-  }
-  if (name.includes('rücklagen') || name.includes('savings')) {
-    return 'text-warning';
-  }
-  if (name.includes('hobby') || name.includes('freizeit')) {
-    return 'text-info';
-  }
   return 'text-base-content';
 }
 
@@ -73,6 +77,13 @@ onMounted(async () => {
 
 onUnmounted(() => {
   destroyGrids();
+  // Timer aufräumen
+  if (sortOrderUpdateTimer.value) {
+    clearTimeout(sortOrderUpdateTimer.value);
+  }
+  if (autoExpandTimer.value) {
+    clearTimeout(autoExpandTimer.value);
+  }
 });
 
 function initializeGrids() {
@@ -134,9 +145,11 @@ function initializeGrids() {
         // Auto-Expand bei Drag-Over über eingeklappte Gruppen
         setupAutoExpand();
       })
-      .on('dragEnd', function () {
+      .on('dragEnd', function (item: any) {
         // Auto-Expand Timer aufräumen
         clearAutoExpandTimer();
+        // Sort Order Update mit Debouncing
+        handleCategoryDragEnd(item);
       });
 
       subGrids.value.push(grid);
@@ -191,6 +204,10 @@ function initializeGrids() {
       if (grid) {
         grid.refreshItems([item]);
       }
+    })
+    .on('dragEnd', function (item: any) {
+      // Sort Order Update für CategoryGroups mit Debouncing
+      handleCategoryGroupDragEnd(item);
     });
 
     console.log('Muuri grids initialized successfully');
@@ -278,6 +295,218 @@ function clearAutoExpandTimer() {
   }
   document.removeEventListener('dragover', handleDragOverGroup);
 }
+
+// Drag & Drop Persistierung für Kategorien
+function handleCategoryDragEnd(item: any) {
+  // Debouncing: Vorherigen Timer löschen
+  if (sortOrderUpdateTimer.value) {
+    clearTimeout(sortOrderUpdateTimer.value);
+  }
+
+  sortOrderUpdateTimer.value = setTimeout(async () => {
+    try {
+      const draggedElement = item.getElement();
+      const categoryId = draggedElement.getAttribute('data-category-id');
+      const newGroupId = draggedElement.getAttribute('data-group-id');
+
+      if (!categoryId) {
+        errorLog('MuuriTestView', 'handleCategoryDragEnd - Category ID not found');
+        return;
+      }
+
+      // Bestimme die neue Gruppe basierend auf dem Container
+      const container = draggedElement.closest('.categories-content');
+      const groupWrapper = container?.closest('.group-wrapper');
+      const actualGroupId = groupWrapper?.getAttribute('data-group-id');
+
+      if (!actualGroupId) {
+        errorLog('MuuriTestView', 'handleCategoryDragEnd - Group ID not found');
+        return;
+      }
+
+      // Hole die neue Reihenfolge direkt vom Muuri-Grid statt vom DOM
+      const targetGrid = subGrids.value.find(grid => {
+        const gridElement = grid.getElement();
+        return gridElement.closest('.group-wrapper')?.getAttribute('data-group-id') === actualGroupId;
+      });
+
+      if (!targetGrid) {
+        errorLog('MuuriTestView', 'handleCategoryDragEnd - Target grid not found', { actualGroupId });
+        return;
+      }
+
+      // Hole die Items in der aktuellen Muuri-Reihenfolge
+      const items = targetGrid.getItems();
+      const newOrder: string[] = [];
+
+      items.forEach((item: any) => {
+        const element = item.getElement();
+        const id = element.getAttribute('data-category-id');
+        if (id) newOrder.push(id);
+      });
+
+      debugLog('MuuriTestView', 'handleCategoryDragEnd', {
+        categoryId,
+        actualGroupId,
+        newOrder,
+        itemsCount: items.length,
+        draggedItemPosition: newOrder.indexOf(categoryId)
+      });
+
+      // Berechne Sort Order Updates
+      const sortOrderUpdates = CategoryService.calculateCategorySortOrder(actualGroupId, newOrder);
+
+      // Einzelne Updates durchführen
+      const success = await CategoryService.updateCategoriesWithSortOrder(sortOrderUpdates);
+
+      if (success) {
+        debugLog('MuuriTestView', 'handleCategoryDragEnd - Sort order updated successfully');
+        // UI-Refresh nach erfolgreichem Update
+        await reinitializeMuuriGrids();
+      } else {
+        errorLog('MuuriTestView', 'handleCategoryDragEnd - Failed to update sort order');
+      }
+
+    } catch (error) {
+      errorLog('MuuriTestView', 'handleCategoryDragEnd - Error updating sort order', error);
+    }
+  }, SORT_ORDER_DEBOUNCE_DELAY);
+}
+
+// Drag & Drop Persistierung für CategoryGroups
+function handleCategoryGroupDragEnd(item: any) {
+  // Debouncing: Vorherigen Timer löschen
+  if (sortOrderUpdateTimer.value) {
+    clearTimeout(sortOrderUpdateTimer.value);
+  }
+
+  sortOrderUpdateTimer.value = setTimeout(async () => {
+    try {
+      const draggedElement = item.getElement();
+      const groupId = draggedElement.getAttribute('data-group-id');
+
+      if (!groupId) {
+        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Group ID not found');
+        return;
+      }
+
+      // Hole die neue Reihenfolge direkt vom Meta-Grid
+      if (!metaGrid.value) {
+        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Meta grid not found');
+        return;
+      }
+
+      const items = metaGrid.value.getItems();
+      const allGroupsInOrder: string[] = [];
+      const expenseGroups: string[] = [];
+      const incomeGroups: string[] = [];
+
+      items.forEach((item: any) => {
+        const element = item.getElement();
+        const id = element.getAttribute('data-group-id');
+        if (!id) return;
+
+        allGroupsInOrder.push(id);
+
+        // Bestimme ob es eine Einnahmen- oder Ausgabengruppe ist
+        const group = categoryGroups.value.find(g => g.id === id);
+        if (group?.isIncomeGroup) {
+          incomeGroups.push(id);
+        } else {
+          expenseGroups.push(id);
+        }
+      });
+
+      debugLog('MuuriTestView', 'handleCategoryGroupDragEnd', {
+        groupId,
+        allGroupsInOrder,
+        expenseGroups,
+        incomeGroups,
+        draggedGroupPosition: allGroupsInOrder.indexOf(groupId),
+        draggedGroupType: categoryGroups.value.find(g => g.id === groupId)?.isIncomeGroup ? 'income' : 'expense'
+      });
+
+      // Berechne Sort Order Updates für beide Typen separat
+      const expenseUpdates = CategoryService.calculateCategoryGroupSortOrder(expenseGroups, false);
+      const incomeUpdates = CategoryService.calculateCategoryGroupSortOrder(incomeGroups, true);
+
+      // Kombiniere alle Updates
+      const allUpdates = [...expenseUpdates, ...incomeUpdates];
+
+      // Einzelne Updates durchführen
+      const success = await CategoryService.updateCategoryGroupsWithSortOrder(allUpdates);
+
+      if (success) {
+        debugLog('MuuriTestView', 'handleCategoryGroupDragEnd - Sort order updated successfully');
+        // UI-Refresh nach erfolgreichem Update
+        await reinitializeMuuriGrids();
+      } else {
+        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Failed to update sort order');
+      }
+
+    } catch (error) {
+      errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Error updating sort order', error);
+    }
+  }, SORT_ORDER_DEBOUNCE_DELAY);
+}
+
+// UI-Refresh-Funktionen
+async function refreshMuuriGrids() {
+  try {
+    debugLog('MuuriTestView', 'refreshMuuriGrids - Starting UI refresh');
+
+    // Warte kurz, damit die reaktiven Updates von Vue durchgeführt werden
+    await nextTick();
+
+    // Alle Sub-Grids refreshen und neu layouten
+    subGrids.value.forEach((grid, index) => {
+      if (grid) {
+        try {
+          grid.refreshItems();
+          grid.layout(true); // force layout
+          debugLog('MuuriTestView', `refreshMuuriGrids - Sub-grid ${index} refreshed`);
+        } catch (error) {
+          errorLog('MuuriTestView', `refreshMuuriGrids - Error refreshing sub-grid ${index}`, error);
+        }
+      }
+    });
+
+    // Meta-Grid refreshen und neu layouten
+    if (metaGrid.value) {
+      try {
+        metaGrid.value.refreshItems();
+        metaGrid.value.layout(true); // force layout
+        debugLog('MuuriTestView', 'refreshMuuriGrids - Meta-grid refreshed');
+      } catch (error) {
+        errorLog('MuuriTestView', 'refreshMuuriGrids - Error refreshing meta-grid', error);
+      }
+    }
+
+    debugLog('MuuriTestView', 'refreshMuuriGrids - UI refresh completed');
+  } catch (error) {
+    errorLog('MuuriTestView', 'refreshMuuriGrids - Error during UI refresh', error);
+  }
+}
+
+// Alternative: Vollständige Neuinitialisierung der Grids (falls nötig)
+async function reinitializeMuuriGrids() {
+  try {
+    debugLog('MuuriTestView', 'reinitializeMuuriGrids - Starting grid reinitialization');
+
+    // Grids zerstören
+    destroyGrids();
+
+    // Warten auf Vue-Updates
+    await nextTick();
+
+    // Grids neu initialisieren
+    initializeGrids();
+
+    debugLog('MuuriTestView', 'reinitializeMuuriGrids - Grid reinitialization completed');
+  } catch (error) {
+    errorLog('MuuriTestView', 'reinitializeMuuriGrids - Error during grid reinitialization', error);
+  }
+}
 </script>
 
 <template>
@@ -292,14 +521,25 @@ function clearAutoExpandTimer() {
 
     <!-- Muuri Container für Kategoriegruppen (BudgetCategoryColumn2 Design) -->
     <div class="muuri-container bg-base-100 rounded-lg p-4">
-      <!-- Kategoriegruppen (sortiert nach sortOrder) -->
+      <!-- Kategoriegruppen (sortiert nach Typ und sortOrder) -->
       <div
-        v-for="group in sortedCategoryGroups"
+        v-for="(group, index) in sortedCategoryGroups"
         :key="group.id"
         class="group-wrapper"
         :data-group-id="group.id"
       >
-        <div class="category-group-row">
+        <!-- Trennzeile zwischen Ausgaben und Einnahmen -->
+        <div v-if="shouldShowSeparator(group, index)" class="type-separator mb-4 mt-2">
+          <div class="flex items-center">
+            <div class="flex-grow h-px bg-base-300"></div>
+            <div class="px-4 text-sm font-medium text-base-content/60 bg-base-100">
+              Einnahmen
+            </div>
+            <div class="flex-grow h-px bg-base-300"></div>
+          </div>
+        </div>
+
+        <div class="category-group-row border-t border-b border-base-300">
           <!-- Kategoriegruppen-Header -->
           <div class="group-header flex items-center p-3 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
             <!-- Drag Handle für Gruppe -->
@@ -314,7 +554,7 @@ function clearAutoExpandTimer() {
               title="Gruppe ein-/ausklappen"
             >
               <Icon
-                icon="mdi:chevron-down"
+                icon="mdi:chevron-up"
                 class="w-5 h-5 text-base-content transition-transform duration-300 ease-in-out"
                 :class="{ 'rotate-180': !expandedGroups[group.id] }"
               />
@@ -351,7 +591,7 @@ function clearAutoExpandTimer() {
                 :data-category-id="category.id"
                 :data-group-id="group.id"
               >
-                <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-200 hover:bg-base-100 cursor-pointer">
+                <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
                   <!-- Erweiterte Drag-Area (Handle + Name) -->
                   <div class="category-drag-area flex items-center flex-grow">
                     <!-- Drag Handle für Kategorie -->
@@ -428,10 +668,10 @@ function clearAutoExpandTimer() {
 
 /* CategoryGroupRow2 Design */
 .category-group-row {
-  border: 1px solid hsl(var(--bc) / 0.2);
   border-radius: 0.5rem;
   overflow: hidden;
   background: hsl(var(--b1));
+  margin-bottom: 0.5rem;
 }
 
 .group-header {
@@ -566,5 +806,11 @@ function clearAutoExpandTimer() {
 /* Custom Tailwind-Klassen für bessere Abstufungen */
 .bg-base-25 {
   background-color: color-mix(in srgb, hsl(var(--b1)) 75%, hsl(var(--b2)) 25%);
+}
+
+/* Trennzeile Styling */
+.type-separator {
+  position: relative;
+  z-index: 10;
 }
 </style>

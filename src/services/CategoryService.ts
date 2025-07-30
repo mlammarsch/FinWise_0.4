@@ -154,7 +154,7 @@ export const CategoryService = {
         id: uuidv4(),
         isIncomeCategory: category.isIncomeCategory ?? isIncome,
         sortOrder: category.sortOrder ?? categoryStore.categories.length,
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       };
 
       // Verwende die Store-Methode für die Persistierung
@@ -198,7 +198,7 @@ export const CategoryService = {
         ...existingCategory,
         ...updates,
         id,
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       };
 
       const success = await categoryStore.updateCategory(updatedCategory);
@@ -258,7 +258,7 @@ export const CategoryService = {
       const newCategoryGroup: CategoryGroup = {
         ...data,
         id: uuidv4(),
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       };
 
       const addedGroup = await categoryStore.addCategoryGroup(newCategoryGroup);
@@ -292,7 +292,7 @@ export const CategoryService = {
         ...existingGroup,
         ...updates,
         id,
-        updated_at: new Date().toISOString()
+        updatedAt: new Date().toISOString()
       };
 
       const success = await categoryStore.updateCategoryGroup(updatedGroup);
@@ -404,5 +404,204 @@ export const CategoryService = {
     const categoryStore = useCategoryStore();
     const category = categoryStore.findCategoryById(id);
     return category?.name || 'Unbekannte Kategorie';
+  },
+
+  /* ----------------------------------------------- Sort Order-Update-Methoden für Drag & Drop */
+
+  /**
+   * Update für Kategorien mit Sort Order-Berechnung (einzelne Updates)
+   */
+  async updateCategoriesWithSortOrder(categoryUpdates: Array<{ id: string, sortOrder: number, categoryGroupId?: string }>): Promise<boolean> {
+    try {
+      const categoryStore = useCategoryStore();
+      let successCount = 0;
+
+      debugLog("CategoryService", "updateCategoriesWithSortOrder - Starting updates", {
+        totalUpdates: categoryUpdates.length,
+        updates: categoryUpdates
+      });
+
+      for (const update of categoryUpdates) {
+        const existingCategory = categoryStore.findCategoryById(update.id);
+        if (!existingCategory) {
+          errorLog("CategoryService", `updateCategoriesWithSortOrder - Category ${update.id} not found`);
+          continue;
+        }
+
+        debugLog("CategoryService", `updateCategoriesWithSortOrder - Before update ${update.id}`, {
+          existingSortOrder: existingCategory.sortOrder,
+          existingGroupId: existingCategory.categoryGroupId,
+          newSortOrder: update.sortOrder,
+          newGroupId: update.categoryGroupId || existingCategory.categoryGroupId
+        });
+
+        const updatedCategory: Category = {
+          ...existingCategory,
+          sortOrder: update.sortOrder,
+          categoryGroupId: update.categoryGroupId || existingCategory.categoryGroupId,
+          updatedAt: new Date().toISOString()
+        };
+
+        // Einzelnes Update durchführen
+        const success = await categoryStore.updateCategory(updatedCategory);
+        if (success) {
+          successCount++;
+          debugLog("CategoryService", `updateCategoriesWithSortOrder - Successfully updated ${update.id}`, {
+            finalSortOrder: updatedCategory.sortOrder,
+            finalGroupId: updatedCategory.categoryGroupId
+          });
+        } else {
+          errorLog("CategoryService", `updateCategoriesWithSortOrder - Failed to update category ${update.id}`);
+        }
+      }
+
+      if (successCount === 0) {
+        errorLog("CategoryService", "updateCategoriesWithSortOrder - No categories were updated successfully");
+        return false;
+      }
+
+      debugLog("CategoryService", "updateCategoriesWithSortOrder - Completed", {
+        successCount,
+        totalUpdates: categoryUpdates.length,
+        successRate: `${successCount}/${categoryUpdates.length}`
+      });
+      return true;
+    } catch (error) {
+      errorLog("CategoryService", "updateCategoriesWithSortOrder - Failed to update categories", error);
+      return false;
+    }
+  },
+
+  /**
+   * Update für CategoryGroups mit Sort Order-Berechnung (einzelne Updates)
+   */
+  async updateCategoryGroupsWithSortOrder(groupUpdates: Array<{ id: string, sortOrder: number }>): Promise<boolean> {
+    try {
+      const categoryStore = useCategoryStore();
+      let successCount = 0;
+
+      debugLog("CategoryService", "updateCategoryGroupsWithSortOrder - Starting updates", {
+        totalUpdates: groupUpdates.length,
+        updates: groupUpdates
+      });
+
+      for (const update of groupUpdates) {
+        const existingGroup = categoryStore.categoryGroups.find(g => g.id === update.id);
+        if (!existingGroup) {
+          errorLog("CategoryService", `updateCategoryGroupsWithSortOrder - CategoryGroup ${update.id} not found`);
+          continue;
+        }
+
+        debugLog("CategoryService", `updateCategoryGroupsWithSortOrder - Before update ${update.id}`, {
+          existingSortOrder: existingGroup.sortOrder,
+          existingIsIncomeGroup: existingGroup.isIncomeGroup,
+          newSortOrder: update.sortOrder
+        });
+
+        const updatedGroup: CategoryGroup = {
+          ...existingGroup,
+          sortOrder: update.sortOrder,
+          updatedAt: new Date().toISOString()
+        };
+
+        // Einzelnes Update durchführen
+        const success = await categoryStore.updateCategoryGroup(updatedGroup);
+        if (success) {
+          successCount++;
+          debugLog("CategoryService", `updateCategoryGroupsWithSortOrder - Successfully updated ${update.id}`, {
+            finalSortOrder: updatedGroup.sortOrder,
+            isIncomeGroup: updatedGroup.isIncomeGroup
+          });
+        } else {
+          errorLog("CategoryService", `updateCategoryGroupsWithSortOrder - Failed to update group ${update.id}`);
+        }
+      }
+
+      if (successCount === 0) {
+        errorLog("CategoryService", "updateCategoryGroupsWithSortOrder - No groups were updated successfully");
+        return false;
+      }
+
+      debugLog("CategoryService", "updateCategoryGroupsWithSortOrder - Completed", {
+        successCount,
+        totalUpdates: groupUpdates.length,
+        successRate: `${successCount}/${groupUpdates.length}`
+      });
+      return true;
+    } catch (error) {
+      errorLog("CategoryService", "updateCategoryGroupsWithSortOrder - Failed to update category groups", error);
+      return false;
+    }
+  },
+
+  /**
+   * Berechnet neue Sort Order für Kategorien innerhalb einer Gruppe
+   */
+  calculateCategorySortOrder(groupId: string, newOrder: string[]): Array<{ id: string, sortOrder: number, categoryGroupId: string }> {
+    const updates: Array<{ id: string, sortOrder: number, categoryGroupId: string }> = [];
+
+    // Detailliertes Logging für Debugging
+    debugLog("CategoryService", "calculateCategorySortOrder - Input", {
+      groupId,
+      newOrder,
+      orderLength: newOrder.length
+    });
+
+    newOrder.forEach((categoryId, index) => {
+      const update = {
+        id: categoryId,
+        sortOrder: index,
+        categoryGroupId: groupId
+      };
+      updates.push(update);
+
+      debugLog("CategoryService", `calculateCategorySortOrder - Category ${categoryId}`, {
+        originalIndex: index,
+        newSortOrder: index,
+        categoryGroupId: groupId
+      });
+    });
+
+    debugLog("CategoryService", "calculateCategorySortOrder - Result", {
+      groupId,
+      totalUpdates: updates.length,
+      updates
+    });
+    return updates;
+  },
+
+  /**
+   * Berechnet neue Sort Order für CategoryGroups (getrennt für Einnahmen/Ausgaben)
+   */
+  calculateCategoryGroupSortOrder(newOrder: string[], isIncomeGroups: boolean): Array<{ id: string, sortOrder: number }> {
+    const updates: Array<{ id: string, sortOrder: number }> = [];
+
+    // Detailliertes Logging für Debugging
+    debugLog("CategoryService", "calculateCategoryGroupSortOrder - Input", {
+      newOrder,
+      isIncomeGroups,
+      orderLength: newOrder.length
+    });
+
+    newOrder.forEach((groupId, index) => {
+      const update = {
+        id: groupId,
+        sortOrder: index
+      };
+      updates.push(update);
+
+      debugLog("CategoryService", `calculateCategoryGroupSortOrder - Group ${groupId}`, {
+        originalIndex: index,
+        newSortOrder: index,
+        isIncomeGroup: isIncomeGroups
+      });
+    });
+
+    debugLog("CategoryService", "calculateCategoryGroupSortOrder - Result", {
+      isIncomeGroups,
+      totalUpdates: updates.length,
+      updates
+    });
+    return updates;
   }
 };
