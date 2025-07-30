@@ -475,23 +475,10 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header -->
-            <div class="group-header flex items-center p-1 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header flex items-center py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Drag Handle für Gruppe -->
               <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                 <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
-              </div>
-
-              <!-- Expand/Collapse Chevron -->
-              <div
-                class="flex-shrink-0 mr-3 cursor-pointer hover:bg-base-200 rounded-full p-2 transition-colors"
-                @click.stop="toggleGroup(group.id)"
-                title="Gruppe ein-/ausklappen"
-              >
-                <Icon
-                  icon="mdi:chevron-up"
-                  class="w-5 h-5 text-base-content transition-transform duration-300 ease-in-out"
-                  :class="{ 'rotate-180': !expandedGroups[group.id] }"
-                />
               </div>
 
               <!-- Gruppen-Icon -->
@@ -571,23 +558,10 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header -->
-            <div class="group-header flex items-center p-1 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header flex items-center py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Drag Handle für Gruppe -->
               <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                 <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
-              </div>
-
-              <!-- Expand/Collapse Chevron -->
-              <div
-                class="flex-shrink-0 mr-3 cursor-pointer hover:bg-base-200 rounded-full p-2 transition-colors"
-                @click.stop="toggleGroup(group.id)"
-                title="Gruppe ein-/ausklappen"
-              >
-                <Icon
-                  icon="mdi:chevron-up"
-                  class="w-5 h-5 text-base-content transition-transform duration-300 ease-in-out"
-                  :class="{ 'rotate-180': !expandedGroups[group.id] }"
-                />
               </div>
 
               <!-- Gruppen-Icon -->
