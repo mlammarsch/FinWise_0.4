@@ -10,11 +10,15 @@ import { debugLog, errorLog } from '../../utils/logger';
 
 const categoryStore = useCategoryStore();
 
-// Muuri-Instanzen
-const expenseGrid = ref<Muuri | null>(null);
-const incomeGrid = ref<Muuri | null>(null);
+// Meta-Grids für Kategoriegruppen
+const expenseMetaGrid = ref<Muuri | null>(null);
+const incomeMetaGrid = ref<Muuri | null>(null);
 
-const grids = computed(() => [expenseGrid.value, incomeGrid.value].filter(g => g));
+// Sub-Grids für Kategorien innerhalb der Gruppen
+const expenseSubGrids = ref<Muuri[]>([]);
+const incomeSubGrids = ref<Muuri[]>([]);
+
+const allSubGrids = computed(() => [...expenseSubGrids.value, ...incomeSubGrids.value]);
 
 // Computed Properties für Kategoriegruppen
 const expenseGroups = computed(() => {
@@ -54,14 +58,13 @@ onUnmounted(() => {
 
 function initializeMuuri() {
   try {
-    // Expense Grid initialisieren
+    // Expense Meta-Grid initialisieren
     const expenseContainer = document.getElementById('expense-categories');
     if (expenseContainer) {
-      expenseGrid.value = new Muuri(expenseContainer, {
-        items: '.muuri-item',
+      expenseMetaGrid.value = new Muuri(expenseContainer, {
+        items: '.group-wrapper',
         dragEnabled: true,
-        dragHandle: '.drag-handle',
-        dragSort: () => [expenseGrid.value, incomeGrid.value].filter(g => g) as Muuri[],
+        dragHandle: '.group-drag-handle',
         dragSortPredicate: {
           threshold: 50,
           action: 'move'
@@ -79,19 +82,18 @@ function initializeMuuri() {
         }
       });
 
-      expenseGrid.value.on('dragEnd', (item, event) => {
-        handleDragEnd(item, event, false); // false = Ausgaben
+      expenseMetaGrid.value.on('dragEnd', (item: any, event: any) => {
+        handleGroupDragEnd(item, event, false); // false = Ausgaben
       });
     }
 
-    // Income Grid initialisieren
+    // Income Meta-Grid initialisieren
     const incomeContainer = document.getElementById('income-categories');
     if (incomeContainer) {
-      incomeGrid.value = new Muuri(incomeContainer, {
-        items: '.muuri-item',
+      incomeMetaGrid.value = new Muuri(incomeContainer, {
+        items: '.group-wrapper',
         dragEnabled: true,
-        dragHandle: '.drag-handle',
-        dragSort: () => [expenseGrid.value, incomeGrid.value].filter(g => g) as Muuri[],
+        dragHandle: '.group-drag-handle',
         dragSortPredicate: {
           threshold: 50,
           action: 'move'
@@ -109,26 +111,36 @@ function initializeMuuri() {
         }
       });
 
-      incomeGrid.value.on('dragEnd', (item, event) => {
-        handleDragEnd(item, event, true); // true = Einnahmen
+      incomeMetaGrid.value.on('dragEnd', (item: any, event: any) => {
+        handleGroupDragEnd(item, event, true); // true = Einnahmen
       });
     }
 
-    debugLog('BudgetCategoryColumn2', 'Muuri grids initialized successfully');
+    debugLog('BudgetCategoryColumn2', 'Muuri meta-grids initialized successfully');
   } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Failed to initialize Muuri grids', error);
+    errorLog('BudgetCategoryColumn2', 'Failed to initialize Muuri meta-grids', error);
   }
 }
 
 function destroyMuuri() {
   try {
-    if (expenseGrid.value) {
-      expenseGrid.value.destroy();
-      expenseGrid.value = null;
+    // Sub-Grids zerstören
+    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach(grid => {
+      if (grid) {
+        grid.destroy();
+      }
+    });
+    expenseSubGrids.value = [];
+    incomeSubGrids.value = [];
+
+    // Meta-Grids zerstören
+    if (expenseMetaGrid.value) {
+      expenseMetaGrid.value.destroy();
+      expenseMetaGrid.value = null;
     }
-    if (incomeGrid.value) {
-      incomeGrid.value.destroy();
-      incomeGrid.value = null;
+    if (incomeMetaGrid.value) {
+      incomeMetaGrid.value.destroy();
+      incomeMetaGrid.value = null;
     }
     debugLog('BudgetCategoryColumn2', 'Muuri grids destroyed');
   } catch (error) {
@@ -136,91 +148,71 @@ function destroyMuuri() {
   }
 }
 
-// Drag End Event Handler
-function handleDragEnd(item: any, event: any, isIncomeGroup: boolean) {
+// Sub-Grid Ready Handler
+function handleSubGridReady(subGrid: Muuri, isIncomeGroup: boolean) {
+  if (isIncomeGroup) {
+    if (!incomeSubGrids.value.includes(subGrid)) {
+      incomeSubGrids.value.push(subGrid);
+    }
+  } else {
+    if (!expenseSubGrids.value.includes(subGrid)) {
+      expenseSubGrids.value.push(subGrid);
+    }
+  }
+
+  debugLog('BudgetCategoryColumn2', `Sub-grid registered for ${isIncomeGroup ? 'income' : 'expense'} group`);
+}
+
+// Group Drag End Event Handler
+async function handleGroupDragEnd(item: any, event: any, isIncomeGroup: boolean) {
   try {
     const element = item.getElement();
     const groupId = element.getAttribute('data-group-id');
-    const categoryId = element.getAttribute('data-category-id');
 
-    if (categoryId) {
-      // Kategorie wurde verschoben
-      handleCategoryDrop(categoryId, item, isIncomeGroup);
-    } else if (groupId) {
-      handleGroupDrop(groupId, item, isIncomeGroup);
-    }
-  } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Error in handleDragEnd', error);
-  }
-}
+    if (groupId) {
+      const metaGrid = isIncomeGroup ? incomeMetaGrid.value : expenseMetaGrid.value;
+      if (!metaGrid) return;
 
-// Kategorie-Drop-Handler
-async function handleCategoryDrop(categoryId: string, item: any, isIncomeGroup: boolean) {
-  const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-  if (!grid) return;
+      const items = metaGrid.getItems();
+      const currentIndex = items.indexOf(item);
+      const newSortOrder = currentIndex;
 
-  try {
-    const items = grid.getItems();
-    const currentIndex = items.indexOf(item);
-    const newSortOrder = currentIndex;
-
-    const success = await CategoryService.updateCategory(categoryId, {
-      sortOrder: newSortOrder,
-    });
-
-    if (success) {
-      debugLog("BudgetCategoryColumn2", "Category drop handled successfully", {
-        categoryId,
-        newSortOrder,
-        isIncomeGroup,
+      const success = await CategoryService.updateCategoryGroup(groupId, {
+        sortOrder: newSortOrder,
       });
-      grid.refreshItems();
-      grid.layout();
-    } else {
-      errorLog("BudgetCategoryColumn2", "Failed to update category sort order", { categoryId });
-      grid.layout();
+
+      if (success) {
+        debugLog("BudgetCategoryColumn2", "Group drop handled successfully", {
+          groupId,
+          newSortOrder,
+          isIncomeGroup,
+        });
+        metaGrid.refreshItems();
+        metaGrid.layout();
+      } else {
+        errorLog("BudgetCategoryColumn2", "Failed to update group sort order", { groupId });
+        metaGrid.layout();
+      }
     }
   } catch (error) {
-    errorLog("BudgetCategoryColumn2", "Error in handleCategoryDrop", error);
-    grid.layout();
-  }
-}
-
-// Kategoriegruppen-Drop-Handler
-async function handleGroupDrop(groupId: string, item: any, isIncomeGroup: boolean) {
-  const grid = isIncomeGroup ? incomeGrid.value : expenseGrid.value;
-  if (!grid) return;
-
-  try {
-    const items = grid.getItems();
-    const currentIndex = items.indexOf(item);
-    const newSortOrder = currentIndex;
-
-    const success = await CategoryService.updateCategoryGroup(groupId, {
-      sortOrder: newSortOrder,
-    });
-
-    if (success) {
-      debugLog("BudgetCategoryColumn2", "Group drop handled successfully", {
-        groupId,
-        newSortOrder,
-        isIncomeGroup,
-      });
-      grid.refreshItems();
-      grid.layout();
-    } else {
-      errorLog("BudgetCategoryColumn2", "Failed to update group sort order", { groupId });
-      grid.layout();
-    }
-  } catch (error) {
-    errorLog("BudgetCategoryColumn2", "Error in handleGroupDrop", error);
-    grid.layout();
+    errorLog('BudgetCategoryColumn2', 'Error in handleGroupDragEnd', error);
   }
 }
 
 function refreshGrids() {
   nextTick(() => {
-    grids.value.forEach(grid => {
+    // Meta-Grids refreshen
+    if (expenseMetaGrid.value) {
+      expenseMetaGrid.value.refreshItems();
+      expenseMetaGrid.value.layout(true);
+    }
+    if (incomeMetaGrid.value) {
+      incomeMetaGrid.value.refreshItems();
+      incomeMetaGrid.value.layout(true);
+    }
+
+    // Sub-Grids refreshen
+    allSubGrids.value.forEach(grid => {
       if (grid) {
         grid.refreshItems();
         grid.layout(true);
@@ -247,9 +239,10 @@ function refreshGrids() {
           :key="group.id"
           :group="group"
           :categories="categoriesByGroup[group.id] || []"
-          class="muuri-item"
+          :subGrids="allSubGrids"
+          class="group-wrapper"
           :data-group-id="group.id"
-          @toggle="refreshGrids"
+          @subGridReady="(subGrid) => handleSubGridReady(subGrid, false)"
         />
       </div>
     </div>
@@ -269,9 +262,10 @@ function refreshGrids() {
           :key="group.id"
           :group="group"
           :categories="categoriesByGroup[group.id] || []"
-          class="muuri-item"
+          :subGrids="allSubGrids"
+          class="group-wrapper"
           :data-group-id="group.id"
-          @toggle="refreshGrids"
+          @subGridReady="(subGrid) => handleSubGridReady(subGrid, true)"
         />
       </div>
     </div>
@@ -293,7 +287,7 @@ function refreshGrids() {
   min-height: 100px;
 }
 
-.muuri-item {
+.group-wrapper {
   position: absolute;
   display: block;
   margin: 0;
@@ -301,15 +295,18 @@ function refreshGrids() {
   width: 100%;
 }
 
-.muuri-item.muuri-item-dragging {
+.group-wrapper.muuri-item-dragging {
   z-index: 3;
+  transform: rotate(2deg) !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2) !important;
 }
 
-.muuri-item.muuri-item-releasing {
+.group-wrapper.muuri-item-releasing {
   z-index: 2;
+  transform: rotate(0deg) !important;
 }
 
-.muuri-item.muuri-item-hidden {
+.group-wrapper.muuri-item-hidden {
   z-index: 0;
 }
 </style>

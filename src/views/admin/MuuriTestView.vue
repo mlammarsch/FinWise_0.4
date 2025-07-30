@@ -1,151 +1,198 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, nextTick } from 'vue';
+import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
 
-const metaGridContainer = ref<HTMLElement>();
+const dragContainer = ref<HTMLElement>();
+const metaGrid = ref<Muuri | null>(null);
 const subGrids = ref<Muuri[]>([]);
-const metaGrid = ref<Muuri>();
 
-const columns = [
-  { id: 'todo', title: 'to do', color: 'bg-pink-500' },
-  { id: 'working', title: 'working', color: 'bg-blue-500' },
-  { id: 'done', title: 'done', color: 'bg-green-500' }
+// Test-Daten basierend auf dem Bild
+const categoryGroups = [
+  {
+    id: 'ausgaben',
+    name: 'Ausgaben',
+    icon: 'mdi:trending-down',
+    color: 'text-error',
+    categories: [
+      { id: 'dsl40', name: 'DSL 40' },
+      { id: 'arag', name: 'ARAG (Rechtsschutz)' },
+      { id: 'garten', name: '[Anl] Garten' },
+      { id: 'musik', name: '[Anl] Musik' },
+      { id: 'wohnbedarf', name: '[Anl] Wohnbedarf' },
+      { id: 'dsl42', name: 'DSL 42' },
+      { id: 'brille', name: '[RL] Brille' }
+    ]
+  },
+  {
+    id: 'ruecklagen',
+    name: 'Rücklagen',
+    icon: 'mdi:piggy-bank',
+    color: 'text-warning',
+    categories: [
+      { id: 'bullsparer', name: '[RL] Bullsparer' },
+      { id: 'zahnpflege', name: '[RL] Zahnpflege' },
+      { id: 'kompensation', name: '[RL] Kompensation 13.' },
+      { id: 'pv-anlage', name: '[RL] PV-Anlage (Wartung)' },
+      { id: 'benzin', name: '[RL] Benzin/Treibstoff' },
+      { id: 'steuer', name: '[RL] EK Steuer' },
+      { id: 'urlaub', name: '[RL] Urlaub' }
+    ]
+  },
+  {
+    id: 'hobby',
+    name: 'Hobby und Freizeit',
+    icon: 'mdi:gamepad-variant',
+    color: 'text-info',
+    categories: [
+      { id: 'gaming', name: 'Gaming Equipment' },
+      { id: 'sport', name: 'Sport & Fitness' },
+      { id: 'reisen', name: 'Reisen & Ausflüge' }
+    ]
+  }
 ];
 
-const items = [
-  // To Do Items
-  { id: 1, text: 'Karte 1-1', column: 'todo' },
-  { id: 2, text: 'Karte 1-2', column: 'todo' },
-  { id: 3, text: 'Karte 1-3', column: 'todo' },
-  { id: 4, text: 'Karte 1-4', column: 'todo' },
-
-  // Working Items
-  { id: 5, text: 'Karte 2-1', column: 'working' },
-  { id: 6, text: 'Karte 2-2', column: 'working' },
-  { id: 7, text: 'Karte 2-3', column: 'working' },
-  { id: 8, text: 'Karte 2-4', column: 'working' },
-
-  // Done Items
-  { id: 9, text: 'Karte 3-1', column: 'done' },
-  { id: 10, text: 'Karte 3-2', column: 'done' },
-  { id: 11, text: 'Karte 3-3', column: 'done' },
-  { id: 12, text: 'Karte 3-4', column: 'done' }
-];
-
-onMounted(() => {
+onMounted(async () => {
+  await nextTick();
   initializeGrids();
 });
 
 onUnmounted(() => {
-  // Cleanup grids
-  subGrids.value.forEach(grid => grid.destroy());
-  if (metaGrid.value) {
-    metaGrid.value.destroy();
-  }
+  destroyGrids();
 });
 
 function initializeGrids() {
-  // Step 1: Initialize Sub-Grids first (critical for proper hierarchy)
-  const subGridElements = document.querySelectorAll('.sub-grid-content') as NodeListOf<HTMLElement>;
+  try {
+    // Sub-Grids für Kategorien mit korrekter Kanban-Logik
+    const subGridElements = document.querySelectorAll('.categories-content') as NodeListOf<HTMLElement>;
 
-  subGridElements.forEach(el => {
-    const grid = new Muuri(el, {
-      items: '.item',
-      dragEnabled: true,
-      dragContainer: document.body, // Items follow mouse cursor
-      dragSort: function () {
-        // Return all sub-grids to enable cross-grid dragging
-        return subGrids.value;
-      },
-      dragPlaceholder: {
-        enabled: true,
-        createElement: function(item) {
-          // Create empty div for cleaner placeholder
-          return document.createElement('div');
-        }
-      },
-      dragRelease: {
-        duration: 400,
-        easing: 'ease',
-        useDragContainer: true
-      },
-      layout: {
-        fillGaps: false,
-        horizontal: false,
-        alignRight: false,
-        alignBottom: false,
-        rounding: false
-      },
-      layoutDuration: 300,
-      layoutEasing: 'ease'
-    });
-
-    // Event handlers for cross-grid communication and layout synchronization
-    grid.on('send', function(data) {
-      console.log(`Item sent from grid to another grid`);
-      // Force layout update for both source and target grids
-      setTimeout(() => {
-        // Update the source grid (this grid) layout
-        grid.layout();
-        // Update meta-grid layout to adjust column positions
-        if (metaGrid.value) {
-          metaGrid.value.layout();
-        }
-      }, 50);
-    });
-
-    grid.on('receive', function(data) {
-      console.log(`Item received in grid from another grid`);
-      // Force layout update for both source and target grids
-      setTimeout(() => {
-        // Update the target grid (this grid) layout
-        grid.layout();
-        // Update meta-grid layout to adjust column positions
-        if (metaGrid.value) {
-          metaGrid.value.layout();
-        }
-      }, 50);
-    });
-
-    // Additional layout synchronization on drag end
-    grid.on('dragEnd', function(item) {
-      setTimeout(() => {
-        // Refresh all grid layouts to ensure proper sizing
-        subGrids.value.forEach(subGrid => {
-          if (subGrid !== grid) {
-            subGrid.layout();
+    subGridElements.forEach(el => {
+      const grid = new Muuri(el, {
+        items: '.category-item',
+        dragEnabled: true,
+        dragHandle: '.category-drag-handle',
+        dragContainer: dragContainer.value,
+        dragSort: function () {
+          return subGrids.value;
+        },
+        // Kanban-CSS-Properties für korrektes Dragging
+        dragCssProps: {
+          touchAction: 'auto',
+          userSelect: 'none',
+          userDrag: 'none',
+          tapHighlightColor: 'rgba(0, 0, 0, 0)',
+          touchCallout: 'none',
+          contentZooming: 'none'
+        },
+        dragAutoScroll: {
+          targets: (item: any) => {
+            return [
+              { element: window, priority: 0 },
+              { element: item.getGrid().getElement().parentNode, priority: 1 },
+            ];
           }
-        });
-        if (metaGrid.value) {
-          metaGrid.value.layout();
+        },
+      })
+      .on('dragInit', function (item: any) {
+        const element = item.getElement();
+        if (element) {
+          element.style.width = item.getWidth() + 'px';
+          element.style.height = item.getHeight() + 'px';
         }
-      }, 100);
+      })
+      .on('dragReleaseEnd', function (item: any) {
+        const element = item.getElement();
+        const grid = item.getGrid();
+        if (element) {
+          element.style.width = '';
+          element.style.height = '';
+        }
+        if (grid) {
+          grid.refreshItems([item]);
+        }
+      })
+      .on('layoutStart', function () {
+        if (metaGrid.value) {
+          metaGrid.value.refreshItems().layout();
+        }
+      });
+
+      subGrids.value.push(grid);
     });
 
-    subGrids.value.push(grid);
-  });
-
-  // Step 2: Initialize Meta-Grid after Sub-Grids
-  if (metaGridContainer.value) {
-    metaGrid.value = new Muuri(metaGridContainer.value, {
-      items: '.sub-grid-wrapper',
+    // Meta-Grid für Kategoriegruppen (mit gleicher Kanban-Logik)
+    metaGrid.value = new Muuri('.muuri-container', {
+      items: '.group-wrapper',
       dragEnabled: true,
-      dragHandle: '.sub-grid-header', // Only drag by header to avoid conflicts
+      dragHandle: '.group-drag-handle',
+      dragContainer: dragContainer.value,
+      // Gleiche CSS Properties wie bei den Kategorien
+      dragCssProps: {
+        touchAction: 'auto',
+        userSelect: 'none',
+        userDrag: 'none',
+        tapHighlightColor: 'rgba(0, 0, 0, 0)',
+        touchCallout: 'none',
+        contentZooming: 'none'
+      },
+      dragAutoScroll: {
+        targets: (item: any) => {
+          return [
+            { element: window, priority: 0 },
+            { element: item.getGrid().getElement().parentNode, priority: 1 },
+          ];
+        }
+      },
       layout: {
         fillGaps: false,
         horizontal: false,
         alignRight: false,
-        alignBottom: false,
-        rounding: false
+        alignBottom: false
       },
       layoutDuration: 300,
       layoutEasing: 'ease'
+    })
+    .on('dragInit', function (item: any) {
+      const element = item.getElement();
+      if (element) {
+        element.style.width = item.getWidth() + 'px';
+        element.style.height = item.getHeight() + 'px';
+      }
+    })
+    .on('dragReleaseEnd', function (item: any) {
+      const element = item.getElement();
+      const grid = item.getGrid();
+      if (element) {
+        element.style.width = '';
+        element.style.height = '';
+      }
+      if (grid) {
+        grid.refreshItems([item]);
+      }
     });
 
-    console.log('Muuri grids initialized:', {
-      metaGrid: metaGrid.value,
-      subGrids: subGrids.value.length
+    console.log('Muuri grids initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Muuri grids', error);
+  }
+}
+
+function destroyGrids() {
+  try {
+    subGrids.value.forEach(grid => {
+      if (grid) {
+        grid.destroy();
+      }
     });
+    subGrids.value = [];
+
+    if (metaGrid.value) {
+      metaGrid.value.destroy();
+      metaGrid.value = null;
+    }
+    console.log('Muuri grids destroyed');
+  } catch (error) {
+    console.error('Failed to destroy Muuri grids', error);
   }
 }
 </script>
@@ -153,41 +200,74 @@ function initializeGrids() {
 <template>
   <div class="container mx-auto p-6">
     <div class="mb-6">
-      <h1 class="text-3xl font-bold text-center mb-2 text-pink-500">KANBAN DEMO</h1>
-      <div class="w-full h-1 bg-gradient-to-r from-pink-400 via-blue-400 to-green-400 rounded"></div>
+      <h1 class="text-3xl font-bold text-center mb-2">Kategorien Drag & Drop Test</h1>
+      <div class="w-full h-1 bg-gradient-to-r from-blue-400 via-orange-400 to-green-400 rounded"></div>
     </div>
 
-    <!-- Meta-Grid Container -->
-    <div
-      ref="metaGridContainer"
-      class="meta-grid p-4 bg-gradient-to-br from-pink-100 via-blue-100 to-green-100 rounded-lg border-4 border-green-400"
-    >
-      <!-- Sub-Grid Wrappers (Items of Meta-Grid) -->
-      <div
-        v-for="column in columns"
-        :key="column.id"
-        class="sub-grid-wrapper"
-      >
-        <!-- Sub-Grid Header (Drag Handle for Meta-Grid) -->
-        <div
-          class="sub-grid-header"
-          :class="column.color"
-        >
-          <span>{{ column.title }}</span>
-          <span class="text-2xl">+</span>
-        </div>
+    <!-- Drag Container wie im Kanban -->
+    <div ref="dragContainer" class="drag-container"></div>
 
-        <!-- Sub-Grid Content Container -->
-        <div class="sub-grid-content">
-          <!-- Items within Sub-Grid -->
-          <div
-            v-for="item in items.filter(i => i.column === column.id)"
-            :key="item.id"
-            class="item"
-            :data-id="item.id"
-          >
-            <div class="item-content">
-              {{ item.text }}
+    <!-- Muuri Container für Kategoriegruppen (BudgetCategoryColumn2 Design) -->
+    <div class="muuri-container bg-base-100 rounded-lg p-4">
+      <!-- Kategoriegruppen -->
+      <div
+        v-for="group in categoryGroups"
+        :key="group.id"
+        class="group-wrapper"
+        :data-group-id="group.id"
+      >
+        <div class="category-group-row">
+          <!-- Kategoriegruppen-Header -->
+          <div class="group-header flex items-center p-3 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+            <!-- Drag Handle für Gruppe -->
+            <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+              <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+            </div>
+
+            <!-- Gruppen-Icon -->
+            <div class="flex-shrink-0 mr-2">
+              <Icon :icon="group.icon" :class="`w-4 h-4 ${group.color}`" />
+            </div>
+
+            <!-- Gruppenname -->
+            <div class="flex-grow">
+              <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
+            </div>
+
+            <!-- Gruppenstatus-Indikator -->
+            <div class="flex-shrink-0 text-xs text-base-content/60">
+              {{ group.categories.length }} {{ group.categories.length === 1 ? 'Kategorie' : 'Kategorien' }}
+            </div>
+          </div>
+
+          <!-- Kategorien-Liste -->
+          <div class="categories-list">
+            <div class="categories-content">
+              <!-- Kategorien -->
+              <div
+                v-for="category in group.categories"
+                :key="category.id"
+                class="category-item"
+                :data-category-id="category.id"
+                :data-group-id="group.id"
+              >
+                <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-200 hover:bg-base-100 cursor-pointer">
+                  <!-- Drag Handle für Kategorie -->
+                  <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                    <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                  </div>
+
+                  <!-- Kategoriename -->
+                  <div class="flex-grow">
+                    <span class="text-sm text-base-content">{{ category.name }}</span>
+                  </div>
+
+                  <!-- Kategorie-Status-Indikatoren -->
+                  <div class="flex-shrink-0 flex items-center space-x-1">
+                    <div class="w-2 h-2 bg-success rounded-full" title="Aktiv"></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -195,114 +275,116 @@ function initializeGrids() {
     </div>
 
     <div class="mt-6 text-center text-gray-600">
-      <p class="mb-2">🎯 Drag column headers to reorder columns</p>
-      <p class="mb-2">📦 Drag items within columns or between columns</p>
-      <p>📱 All columns are arranged vertically as requested</p>
+      <p class="mb-2">🎯 Drag group headers to reorder groups</p>
+      <p class="mb-2">📦 Drag categories within groups or between groups</p>
+      <p>📱 Elements follow mouse cursor smoothly</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Meta-Grid Styling */
-.meta-grid {
+/* Drag Container wie im Kanban */
+.drag-container {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+}
+
+/* Muuri Container */
+.muuri-container {
   position: relative;
+  min-height: 100px;
 }
 
-/* Sub-Grid Wrapper Styling (Items of Meta-Grid) */
-.sub-grid-wrapper {
-  display: block;
+.group-wrapper {
   position: absolute;
-  width: calc(100% - 2rem);
-  margin: 1rem;
-  margin-bottom: 2rem; /* More space between columns */
-  padding: 0;
-  border: 2px solid #ddd;
-  background: #f9f9f9;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-/* Sub-Grid Header (Drag Handle for Meta-Grid) */
-.sub-grid-header {
-  padding: 12px 16px;
-  color: white;
-  font-weight: bold;
-  text-xl: true;
-  cursor: move;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  user-select: none;
-}
-
-.sub-grid-header:hover {
-  transform: translateY(-2px);
-  transition: transform 0.2s ease;
-}
-
-/* Sub-Grid Content Container */
-.sub-grid-content {
-  position: relative;
-  min-height: 200px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.5);
-  border-top: 2px dashed #aaa;
-}
-
-/* Items within Sub-Grids */
-.item {
   display: block;
-  position: absolute;
-  width: calc(100% - 1rem);
-  margin: 0.25rem; /* Tighter spacing between cards */
+  margin: 0 0 0.5rem 0;
   z-index: 1;
-  background: white;
-  border: 2px solid #ffd700;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  cursor: grab;
-  transition: box-shadow 0.2s ease;
-}
-
-.item:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-.item-content {
-  position: relative;
   width: 100%;
-  height: 100%;
-  padding: 12px;
-  color: #333;
-  font-weight: 500;
-  text-align: left;
 }
 
-/* Muuri-specific classes for visual feedback */
-.item.muuri-item-dragging {
-  z-index: 1000 !important;
-  cursor: grabbing !important;
-  transform: scale(1.05) rotate(3deg) !important;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3) !important;
-  transition: none !important; /* No transition during drag for smooth following */
-  pointer-events: none !important; /* Prevent interference with drag detection */
+.group-wrapper.muuri-item-dragging {
+  z-index: 9999 !important;
+  cursor: move !important;
 }
 
-.item.muuri-item-releasing {
-  z-index: 2 !important;
-  transform: scale(1) rotate(0deg) !important;
-  transition: transform 400ms ease, box-shadow 400ms ease !important;
-  pointer-events: auto !important;
+.group-wrapper.muuri-item-releasing {
+  z-index: 9998 !important;
 }
 
-.item.muuri-item-hidden {
+/* CategoryGroupRow2 Design */
+.category-group-row {
+  border: 1px solid hsl(var(--bc) / 0.2);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background: hsl(var(--b1));
+}
+
+.group-header {
+  background: linear-gradient(to right, hsl(var(--b1)), hsl(var(--b2)));
+}
+
+.categories-list {
+  position: relative;
+  min-height: 50px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.categories-content {
+  position: relative;
+  min-height: 100%;
+}
+
+.category-item {
+  position: absolute;
+  display: block;
+  width: 100%;
+  margin: 0;
+  z-index: 1;
+}
+
+.category-item:last-child .flex:last-child {
+  border-bottom: none;
+}
+
+/* Drag Handle Styles */
+.group-drag-handle,
+.category-drag-handle {
+  cursor: grab;
+  transition: opacity 0.2s ease;
+}
+
+.group-drag-handle:active,
+.category-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Hover-Effekte */
+.group-header:hover .group-drag-handle,
+.category-item:hover .category-drag-handle {
+  opacity: 1;
+}
+
+/* Muuri Drag States für Kategorien (wie im Kanban) */
+.category-item.muuri-item-dragging {
+  z-index: 9999 !important;
+  cursor: move !important;
+}
+
+.category-item.muuri-item-releasing {
+  z-index: 9998 !important;
+}
+
+.category-item.muuri-item-hidden {
   z-index: 0 !important;
-  opacity: 0 !important;
 }
 
-/* Placeholder styling for the "free space" effect */
+/* Placeholder styling */
 .muuri-item-placeholder {
-  margin: 0.25rem !important; /* Must match item margin */
+  margin: 0 !important;
   background-color: #add8e6 !important;
   border: 1px dashed #007bff !important;
   opacity: 0.7 !important;
@@ -310,24 +392,14 @@ function initializeGrids() {
   pointer-events: none !important;
 }
 
-/* Ensure dragged items in body container are properly styled */
-body > .item.muuri-item-dragging {
-  position: fixed !important;
-  z-index: 9999 !important;
-  pointer-events: none !important;
-  transform: scale(1.05) rotate(3deg) !important;
-  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4) !important;
+/* Drag-Over Effekt für Gruppen-Header */
+.group-header:hover {
+  background: linear-gradient(to right, hsl(var(--b2)), hsl(var(--b3)));
+  transition: background 0.2s ease;
 }
 
-/* Meta-Grid item dragging */
-.sub-grid-wrapper.muuri-item-dragging {
-  z-index: 3;
-  transform: rotate(2deg) !important;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2) !important;
-}
-
-.sub-grid-wrapper.muuri-item-releasing {
-  z-index: 2;
-  transform: rotate(0deg) !important;
+/* Custom Tailwind-Klassen für bessere Abstufungen */
+.bg-base-25 {
+  background-color: color-mix(in srgb, hsl(var(--b1)) 75%, hsl(var(--b2)) 25%);
 }
 </style>

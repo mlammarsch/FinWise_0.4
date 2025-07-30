@@ -78,16 +78,6 @@ const categories = computed(() => {
 
 const totalColumns = computed(() => months.value.length + 1);
 
-// Nutzt den zentralen Expanded-State aus dem CategoryStore
-const expanded = categoryStore.expandedCategories;
-
-function toggleAll() {
-  if (expanded.size > 0) {
-    categoryStore.collapseAllCategories();
-  } else {
-    categoryStore.expandAllCategories();
-  }
-}
 
 const availableByMonth = computed(() => {
   return months.value.map((month) => {
@@ -141,18 +131,9 @@ const availableByMonth = computed(() => {
           :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
           class="flex flex-col justify-end"
         >
-          <!-- Toggle-Control bereits im Header integriert -->
-          <div
-            class="text-sm flex items-center cursor-pointer"
-            @click="toggleAll"
-          >
-            <Icon
-              :icon="expanded.size > 0 ? 'mdi:chevron-up' : 'mdi:chevron-down'"
-              class="text-md mr-1"
-            />
-            <span>{{
-              expanded.size > 0 ? "alle einklappen" : "alle ausklappen"
-            }}</span>
+          <!-- Platzhalter für zukünftige Header-Elemente -->
+          <div class="text-sm text-base-content/60">
+            Kategorien
           </div>
         </div>
         <div
