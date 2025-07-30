@@ -1,68 +1,72 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, nextTick } from 'vue';
+import { onMounted, onUnmounted, ref, nextTick, computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
+import { CategoryService } from '../../services/CategoryService';
+import type { CategoryGroup, Category } from '../../types';
 
 const dragContainer = ref<HTMLElement>();
 const metaGrid = ref<Muuri | null>(null);
 const subGrids = ref<Muuri[]>([]);
 
-// Expand/Collapse State für jede Gruppe
-const expandedGroups = ref<Record<string, boolean>>({
-  ausgaben: true,
-  ruecklagen: true,
-  hobby: true
-});
+// Reale Daten aus CategoryService
+const categoryGroups = CategoryService.getCategoryGroups();
+const categoriesByGroup = CategoryService.getCategoriesByGroup();
+
+// Expand/Collapse State für jede Gruppe (dynamisch basierend auf echten Daten)
+const expandedGroups = ref<Record<string, boolean>>({});
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 
-// Test-Daten basierend auf dem Bild
-const categoryGroups = [
-  {
-    id: 'ausgaben',
-    name: 'Ausgaben',
-    icon: 'mdi:trending-down',
-    color: 'text-error',
-    categories: [
-      { id: 'dsl40', name: 'DSL 40' },
-      { id: 'arag', name: 'ARAG (Rechtsschutz)' },
-      { id: 'garten', name: '[Anl] Garten' },
-      { id: 'musik', name: '[Anl] Musik' },
-      { id: 'wohnbedarf', name: '[Anl] Wohnbedarf' },
-      { id: 'dsl42', name: 'DSL 42' },
-      { id: 'brille', name: '[RL] Brille' }
-    ]
-  },
-  {
-    id: 'ruecklagen',
-    name: 'Rücklagen',
-    icon: 'mdi:piggy-bank',
-    color: 'text-warning',
-    categories: [
-      { id: 'bullsparer', name: '[RL] Bullsparer' },
-      { id: 'zahnpflege', name: '[RL] Zahnpflege' },
-      { id: 'kompensation', name: '[RL] Kompensation 13.' },
-      { id: 'pv-anlage', name: '[RL] PV-Anlage (Wartung)' },
-      { id: 'benzin', name: '[RL] Benzin/Treibstoff' },
-      { id: 'steuer', name: '[RL] EK Steuer' },
-      { id: 'urlaub', name: '[RL] Urlaub' }
-    ]
-  },
-  {
-    id: 'hobby',
-    name: 'Hobby und Freizeit',
-    icon: 'mdi:gamepad-variant',
-    color: 'text-info',
-    categories: [
-      { id: 'gaming', name: 'Gaming Equipment' },
-      { id: 'sport', name: 'Sport & Fitness' },
-      { id: 'reisen', name: 'Reisen & Ausflüge' }
-    ]
+// Sortierte Kategoriegruppen nach sortOrder
+const sortedCategoryGroups = computed(() => {
+  return categoryGroups.value
+    .slice()
+    .sort((a: CategoryGroup, b: CategoryGroup) => a.sortOrder - b.sortOrder);
+});
+
+// Icon-Mapping für Kategoriegruppen (einheitliches Ordnersymbol)
+function getGroupIcon(group: CategoryGroup): string {
+  return 'mdi:folder-outline';
+}
+
+// Farb-Mapping für Kategoriegruppen
+function getGroupColor(group: CategoryGroup): string {
+  if (group.isIncomeGroup) {
+    return 'text-success';
   }
-];
+  // Fallback-Farben basierend auf Namen
+  const name = group.name.toLowerCase();
+  if (name.includes('ausgaben') || name.includes('expense')) {
+    return 'text-error';
+  }
+  if (name.includes('rücklagen') || name.includes('savings')) {
+    return 'text-warning';
+  }
+  if (name.includes('hobby') || name.includes('freizeit')) {
+    return 'text-info';
+  }
+  return 'text-base-content';
+}
+
+// Kategorien für eine Gruppe (sortiert nach sortOrder)
+function getCategoriesForGroup(groupId: string): Category[] {
+  const categories = categoriesByGroup.value[groupId] || [];
+  return categories
+    .slice()
+    .sort((a: Category, b: Category) => a.sortOrder - b.sortOrder);
+}
 
 onMounted(async () => {
+  // Kategorien laden
+  await CategoryService.loadCategories();
+
+  // Expand-State für alle Gruppen initialisieren
+  for (const group of categoryGroups.value) {
+    expandedGroups.value[group.id] = true;
+  }
+
   await nextTick();
   initializeGrids();
 });
@@ -80,7 +84,7 @@ function initializeGrids() {
       const grid = new Muuri(el, {
         items: '.category-item',
         dragEnabled: true,
-        dragHandle: '.category-drag-handle',
+        dragHandle: '.category-drag-area',
         dragContainer: dragContainer.value,
         dragSort: function () {
           return subGrids.value;
@@ -288,9 +292,9 @@ function clearAutoExpandTimer() {
 
     <!-- Muuri Container für Kategoriegruppen (BudgetCategoryColumn2 Design) -->
     <div class="muuri-container bg-base-100 rounded-lg p-4">
-      <!-- Kategoriegruppen -->
+      <!-- Kategoriegruppen (sortiert nach sortOrder) -->
       <div
-        v-for="group in categoryGroups"
+        v-for="group in sortedCategoryGroups"
         :key="group.id"
         class="group-wrapper"
         :data-group-id="group.id"
@@ -310,15 +314,15 @@ function clearAutoExpandTimer() {
               title="Gruppe ein-/ausklappen"
             >
               <Icon
-                :icon="expandedGroups[group.id] ? 'mdi:chevron-down' : 'mdi:chevron-right'"
-                class="w-5 h-5 text-base-content transition-transform duration-200"
-                :class="{ 'rotate-90': !expandedGroups[group.id] }"
+                icon="mdi:chevron-down"
+                class="w-5 h-5 text-base-content transition-transform duration-300 ease-in-out"
+                :class="{ 'rotate-180': !expandedGroups[group.id] }"
               />
             </div>
 
-            <!-- Gruppen-Icon -->
+            <!-- Gruppen-Icon (dynamisch basierend auf Typ) -->
             <div class="flex-shrink-0 mr-2">
-              <Icon :icon="group.icon" :class="`w-4 h-4 ${group.color}`" />
+              <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
             </div>
 
             <!-- Gruppenname -->
@@ -328,39 +332,50 @@ function clearAutoExpandTimer() {
 
             <!-- Gruppenstatus-Indikator -->
             <div class="flex-shrink-0 text-xs text-base-content/60">
-              {{ group.categories.length }} {{ group.categories.length === 1 ? 'Kategorie' : 'Kategorien' }}
+              {{ getCategoriesForGroup(group.id).length }} {{ getCategoriesForGroup(group.id).length === 1 ? 'Kategorie' : 'Kategorien' }}
             </div>
           </div>
 
-          <!-- Kategorien-Liste (mit Expand/Collapse) -->
+          <!-- Kategorien-Liste (mit Expand/Collapse und Scrollbalken) -->
           <div
             v-show="expandedGroups[group.id]"
             class="categories-list"
             :class="{ 'collapsed': !expandedGroups[group.id] }"
           >
             <div class="categories-content">
-              <!-- Kategorien -->
+              <!-- Kategorien (sortiert nach sortOrder) -->
               <div
-                v-for="category in group.categories"
+                v-for="category in getCategoriesForGroup(group.id)"
                 :key="category.id"
                 class="category-item"
                 :data-category-id="category.id"
                 :data-group-id="group.id"
               >
                 <div class="flex items-center p-2 pl-8 bg-base-50 border-b border-base-200 hover:bg-base-100 cursor-pointer">
-                  <!-- Drag Handle für Kategorie -->
-                  <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                    <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                  <!-- Erweiterte Drag-Area (Handle + Name) -->
+                  <div class="category-drag-area flex items-center flex-grow">
+                    <!-- Drag Handle für Kategorie -->
+                    <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                      <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                    </div>
+
+                    <!-- Kategorie-Icon (falls vorhanden) -->
+                    <div v-if="category.icon" class="flex-shrink-0 mr-2">
+                      <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
+                    </div>
+
+                    <!-- Kategoriename (auch draggable) -->
+                    <div class="flex-grow category-name-drag">
+                      <span class="text-sm text-base-content">{{ category.name }}</span>
+                    </div>
                   </div>
 
-                  <!-- Kategoriename -->
-                  <div class="flex-grow">
-                    <span class="text-sm text-base-content">{{ category.name }}</span>
-                  </div>
-
-                  <!-- Kategorie-Status-Indikatoren -->
+                  <!-- Kategorie-Status-Indikatoren (außerhalb der Drag-Area) -->
                   <div class="flex-shrink-0 flex items-center space-x-1">
-                    <div class="w-2 h-2 bg-success rounded-full" title="Aktiv"></div>
+                    <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
+                    <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                    <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                    <div v-if="category.isActive && !category.isHidden && !category.isSavingsGoal" class="w-2 h-2 bg-success rounded-full" title="Aktiv"></div>
                   </div>
                 </div>
               </div>
@@ -373,7 +388,8 @@ function clearAutoExpandTimer() {
     <div class="mt-6 text-center text-gray-600">
       <p class="mb-2">🎯 Drag group headers to reorder groups</p>
       <p class="mb-2">📦 Drag categories within groups or between groups</p>
-      <p>📱 Elements follow mouse cursor smoothly</p>
+      <p class="mb-2">📱 Elements follow mouse cursor smoothly</p>
+      <p class="text-xs">📊 Daten aus CategoryService - sortiert nach sortOrder</p>
     </div>
   </div>
 </template>
@@ -465,10 +481,40 @@ function clearAutoExpandTimer() {
   cursor: grabbing;
 }
 
+/* Erweiterte Drag-Area für Kategorien */
+.category-drag-area {
+  cursor: grab;
+  transition: all 0.2s ease;
+}
+
+.category-drag-area:hover {
+  background-color: hsl(var(--b2) / 0.5);
+  border-radius: 4px;
+}
+
+.category-drag-area:active {
+  cursor: grabbing;
+}
+
+.category-name-drag {
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background-color 0.2s ease;
+}
+
+.category-name-drag:hover {
+  background-color: hsl(var(--b3) / 0.3);
+}
+
 /* Hover-Effekte */
 .group-header:hover .group-drag-handle,
 .category-item:hover .category-drag-handle {
   opacity: 1;
+}
+
+.category-item:hover .category-drag-area {
+  background-color: hsl(var(--b2) / 0.3);
 }
 
 /* Muuri Drag States für Kategorien (wie im Kanban) */
@@ -509,7 +555,12 @@ function clearAutoExpandTimer() {
 
 /* Chevron Animation */
 .group-header .transition-transform {
-  transition: transform 0.2s ease;
+  transition: transform 0.3s ease-in-out;
+}
+
+/* Chevron Rotation States */
+.rotate-180 {
+  transform: rotate(180deg);
 }
 
 /* Custom Tailwind-Klassen für bessere Abstufungen */
