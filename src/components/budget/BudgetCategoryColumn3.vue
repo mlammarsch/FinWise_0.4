@@ -9,6 +9,8 @@ import { debugLog, errorLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
 import { BudgetService } from '../../services/BudgetService';
 import { toDateOnlyString } from '../../utils/formatters';
+import CategoryTransferModal from './CategoryTransferModal.vue';
+import { TransactionService } from '../../services/TransactionService';
 
 // Props für Monate
 interface Props {
@@ -65,21 +67,50 @@ function calculateGroupSummary(groupId: string, month: { start: Date; end: Date 
   return summary;
 }
 
-function calculateTypeSummary(isIncomeType: boolean, month: { start: Date; end: Date }) {
-  const normalizedStart = new Date(toDateOnlyString(month.start));
-  const normalizedEnd = new Date(toDateOnlyString(month.end));
+const typeSummaryCache = computed(() => {
+  const cache = new Map<string, any>();
 
-  const summary = BudgetService.getMonthlySummary(
-    normalizedStart,
-    normalizedEnd,
-    isIncomeType ? "income" : "expense"
-  );
+  props.months.forEach((month: { key: string; start: Date; end: Date }) => {
+    const normalizedStart = new Date(toDateOnlyString(month.start));
+    const normalizedEnd = new Date(toDateOnlyString(month.end));
 
-  return {
-    budgeted: summary.budgeted,
-    forecast: summary.forecast,
-    spent: summary.spentMiddle,
-    saldo: summary.saldoFull
+    // Cache für Expense-Kategorien
+    const expenseSummary = BudgetService.getMonthlySummary(
+      normalizedStart,
+      normalizedEnd,
+      "expense"
+    );
+    cache.set(`expense-${month.key}`, {
+      budgeted: expenseSummary.budgeted,
+      forecast: expenseSummary.forecast,
+      spent: expenseSummary.spentMiddle,
+      saldo: expenseSummary.saldoFull
+    });
+
+    // Cache für Income-Kategorien
+    const incomeSummary = BudgetService.getMonthlySummary(
+      normalizedStart,
+      normalizedEnd,
+      "income"
+    );
+    cache.set(`income-${month.key}`, {
+      budgeted: incomeSummary.budgeted,
+      forecast: incomeSummary.forecast,
+      spent: incomeSummary.spentMiddle,
+      saldo: incomeSummary.saldoFull
+    });
+  });
+
+  return cache;
+});
+
+function calculateTypeSummary(isIncomeType: boolean, month: { key?: string; start: Date; end: Date }) {
+  const key = `${isIncomeType ? 'income' : 'expense'}-${month.key || toDateOnlyString(month.start)}`;
+  return typeSummaryCache.value.get(key) || {
+    budgeted: 0,
+    forecast: 0,
+    spent: 0,
+    saldo: 0
   };
 }
 
@@ -100,6 +131,31 @@ const categoriesByGroup = CategoryService.getCategoriesByGroup();
 
 // CategoryStore für globalen Expand/Collapse-Zustand
 const categoryStore = useCategoryStore();
+
+// Reaktive Kategorie „Verfügbare Mittel"
+const availableFundsCategory = computed(() =>
+  categoryStore.categories.find(
+    (c) => c.name.trim().toLowerCase() === "verfügbare mittel"
+  )
+);
+function isVerfuegbareMittel(cat: Category) {
+  return availableFundsCategory.value?.id === cat.id;
+}
+
+// Context-Dropdown
+const showDropdown = ref(false);
+const dropdownX = ref(0);
+const dropdownY = ref(0);
+const dropdownRef = ref<HTMLElement | null>(null);
+
+// Modal-State
+const showTransferModal = ref(false);
+const modalData = ref<{
+  mode: "fill" | "transfer";
+  clickedCategory: Category | null;
+  amount: number;
+  month: { start: Date; end: Date } | null;
+} | null>(null);
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
@@ -541,6 +597,102 @@ async function reinitializeMuuriGrids() {
     errorLog('BudgetCategoryColumn3', 'reinitializeMuuriGrids - Error during grid reinitialization', error);
   }
 }
+
+// Context-Menu Funktionen
+function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; end: Date }) {
+  event.preventDefault();
+
+  const categoryData = getCategoryBudgetData(cat.id, month);
+  const hasAvailableAmount = categoryData.saldo > 0;
+
+  // Bei Einnahmenkategorien nur anzeigen, wenn Betrag verfügbar
+  if (cat.isIncomeCategory && !hasAvailableAmount) {
+    debugLog(
+      "BudgetCategoryColumn3",
+      "Context menu on income category without funds prevented.",
+      { category: cat.name, saldo: categoryData.saldo }
+    );
+    return;
+  }
+
+  // Dynamische Positionierung mit Viewport-Berücksichtigung
+  const menuWidth = 192; // w-48 = 12rem = 192px
+  const menuHeight = 120; // Geschätzte Höhe des Menüs (2 Buttons + Padding)
+
+  let x = event.clientX;
+  let y = event.clientY;
+
+  // Viewport-Dimensionen
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  // Horizontale Anpassung - Menü nach links verschieben wenn es rechts rausragen würde
+  if (x + menuWidth > viewportWidth) {
+    x = viewportWidth - menuWidth - 10; // 10px Puffer
+  }
+
+  // Vertikale Anpassung - Menü nach oben verschieben wenn es unten rausragen würde
+  if (y + menuHeight > viewportHeight) {
+    y = viewportHeight - menuHeight - 10; // 10px Puffer
+  }
+
+  // Mindestabstände einhalten
+  x = Math.max(10, x); // Mindestens 10px vom linken Rand
+  y = Math.max(10, y); // Mindestens 10px vom oberen Rand
+
+  dropdownX.value = x;
+  dropdownY.value = y;
+
+  modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
+  showDropdown.value = true;
+  nextTick(() => dropdownRef.value?.focus());
+  debugLog("BudgetCategoryColumn3", "openDropdown", {
+    category: cat,
+    isIncomeCategory: cat.isIncomeCategory,
+    hasAvailableAmount,
+    saldo: categoryData.saldo,
+    position: { x, y },
+    viewport: { width: viewportWidth, height: viewportHeight }
+  });
+}
+
+function closeDropdown() {
+  showDropdown.value = false;
+}
+
+function onDropdownBlur(e: FocusEvent) {
+  const next = e.relatedTarget as HTMLElement | null;
+  if (!dropdownRef.value?.contains(next)) {
+    closeDropdown();
+  }
+}
+
+function optionTransfer() {
+  if (!modalData.value?.clickedCategory || !modalData.value?.month) return;
+  const cat = modalData.value.clickedCategory;
+  const month = modalData.value.month;
+  modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
+  debugLog("BudgetCategoryColumn3", "optionTransfer", { category: cat });
+  closeDropdown();
+  showTransferModal.value = true;
+}
+
+function optionFill() {
+  if (!modalData.value?.clickedCategory || !modalData.value?.month) return;
+  const cat = modalData.value.clickedCategory;
+  const month = modalData.value.month;
+  const data = getCategoryBudgetData(cat.id, month);
+  const amt = data.saldo < 0 ? Math.abs(data.saldo) : 0;
+  modalData.value = { mode: "fill", clickedCategory: cat, amount: amt, month };
+  debugLog("BudgetCategoryColumn3", "optionFill", { category: cat, amount: amt });
+  closeDropdown();
+  showTransferModal.value = true;
+}
+
+function executeTransfer() {
+  showTransferModal.value = false;
+  debugLog("BudgetCategoryColumn3", "Transfer completed, modal closed");
+}
 </script>
 
 <template>
@@ -738,7 +890,13 @@ async function reinitializeMuuriGrids() {
                               class="text-error"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right"
+                            :class="{
+                              'cursor-context-menu hover:bg-base-200': !category.isIncomeCategory || getCategoryBudgetData(category.id, month).saldo > 0
+                            }"
+                            @contextmenu="openDropdown($event, category, month)"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
@@ -947,7 +1105,13 @@ async function reinitializeMuuriGrids() {
                               class="text-base-content/80"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right"
+                            :class="{
+                              'cursor-context-menu hover:bg-base-200': getCategoryBudgetData(category.id, month).saldo > 0
+                            }"
+                            @contextmenu="openDropdown($event, category, month)"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
@@ -974,6 +1138,56 @@ async function reinitializeMuuriGrids() {
         <p class="text-xs mt-1">Erstellen Sie zunächst Kategoriegruppen</p>
       </div>
     </div>
+    <!-- Kontext-Dropdown -->
+    <div
+      v-if="showDropdown"
+      ref="dropdownRef"
+      tabindex="0"
+      class="fixed z-40 w-48 bg-base-100 border border-base-300 rounded shadow p-2"
+      :style="`left: ${dropdownX}px; top: ${dropdownY}px;`"
+      @keydown.escape="closeDropdown"
+      @blur="onDropdownBlur"
+    >
+      <ul>
+        <!-- Fülle auf - nur bei Ausgabenkategorien -->
+        <li
+          v-if="
+            modalData?.clickedCategory &&
+            !modalData.clickedCategory.isIncomeCategory
+          "
+        >
+          <button
+            class="btn btn-ghost btn-sm w-full"
+            @click="optionFill"
+          >
+            <Icon icon="mdi:arrow-collapse-right" />
+            <span>Fülle auf von …</span>
+          </button>
+        </li>
+        <!-- Transferiere zu - bei allen Kategorien -->
+        <li>
+          <button
+            class="btn btn-ghost btn-sm w-full"
+            @click="optionTransfer"
+          >
+            <Icon icon="mdi:arrow-expand-right" />
+            <span>Transferiere zu …</span>
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Transfer-Modal -->
+    <CategoryTransferModal
+      v-if="showTransferModal && modalData && modalData.month"
+      :is-open="showTransferModal"
+      :month="modalData.month"
+      :mode="modalData.mode"
+      :prefillAmount="modalData.amount"
+      :preselectedCategoryId="modalData.clickedCategory?.id"
+      @close="showTransferModal = false"
+      @transfer="executeTransfer"
+    />
   </div>
 </template>
 

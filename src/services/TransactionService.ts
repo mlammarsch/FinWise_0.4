@@ -286,8 +286,12 @@ export const TransactionService = {
       await ruleStore.applyRulesToTransaction(added, 'POST');
     }
 
-    // Salden aktualisieren
-    BalanceService.calculateMonthlyBalances();
+    // Salden asynchron aktualisieren (non-blocking)
+    setTimeout(() => {
+      BalanceService.calculateMonthlyBalances().catch(error => {
+        console.error('Background balance calculation failed:', error);
+      });
+    }, 0);
 
     // ENTFERNT: Redundanter Running Balance Aufruf
     // Die Berechnung erfolgt bereits oben über enqueueRunningBalanceRecalculation
@@ -364,8 +368,12 @@ export const TransactionService = {
 
     debugLog('[TransactionService]', 'addAccountTransfer completed', { fromTx, toTx });
 
-    // Salden aktualisieren
-    BalanceService.calculateMonthlyBalances();
+    // Salden asynchron aktualisieren (non-blocking)
+    setTimeout(() => {
+      BalanceService.calculateMonthlyBalances().catch(error => {
+        console.error('Background balance calculation failed:', error);
+      });
+    }, 0);
 
     // Running Balance Neuberechnung für beide Konten triggern (außer wenn deaktiviert, z.B. während CSV-Import)
     if (!this._skipRunningBalanceRecalc) {
@@ -495,8 +503,12 @@ export const TransactionService = {
       return false;
     }
 
-    // Salden aktualisieren
-    BalanceService.calculateMonthlyBalances();
+    // Salden asynchron aktualisieren (non-blocking)
+    setTimeout(() => {
+      BalanceService.calculateMonthlyBalances().catch(error => {
+        console.error('Background balance calculation failed:', error);
+      });
+    }, 0);
 
     // Running Balance für beide betroffene Konten neu berechnen
     if (!this._skipRunningBalanceRecalc) {
@@ -570,8 +582,12 @@ export const TransactionService = {
 
     debugLog('[TransactionService]', 'addCategoryTransfer completed', { fromTransaction: newFromTx, toTransaction: newToTx });
 
-    // Salden aktualisieren
-    BalanceService.calculateMonthlyBalances();
+    // Salden asynchron aktualisieren (non-blocking)
+    setTimeout(() => {
+      BalanceService.calculateMonthlyBalances().catch(error => {
+        console.error('Background balance calculation failed:', error);
+      });
+    }, 0);
 
     // Running Balance Neuberechnung triggern (Category Transfers haben keine accountId, daher nicht nötig)
 

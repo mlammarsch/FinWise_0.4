@@ -214,45 +214,48 @@ async function performTransfer() {
   showValidationAlert.value = false;
   isProcessing.value = true;
 
-  try {
-    let success = false;
-    if (props.transactionId && props.gegentransactionId) {
-      debugLog("CategoryTransferModal", "Attempting to update transfer");
-      success = await TransactionService.updateCategoryTransfer(
-        props.transactionId,
-        props.gegentransactionId,
-        fromCategoryIdLocal.value,
-        toCategoryIdLocal.value,
-        amount.value,
-        date.value,
-        noteLocal.value
-      );
-    } else {
-      debugLog("CategoryTransferModal", "Attempting to add transfer");
-      const result = await TransactionService.addCategoryTransfer(
-        fromCategoryIdLocal.value,
-        toCategoryIdLocal.value,
-        amount.value,
-        date.value,
-        noteLocal.value
-      );
-      success = !!result;
-    }
+  // Modal SOFORT schließen - Transfer läuft asynchron im Hintergrund
+  debugLog("CategoryTransferModal", "Starting background transfer operation");
+  emit("transfer");
+  emit("close");
+  isProcessing.value = false;
 
-    if (success) {
-      debugLog("CategoryTransferModal", "Transfer successful");
-      // Explizite Aktualisierung der Salden
-      BalanceService.calculateMonthlyBalances();
-      emit("transfer");
-      emit("close");
-    } else {
-      debugLog("CategoryTransferModal", "Transfer failed");
+  // Transfer-Operation komplett asynchron im Hintergrund ausführen
+  setTimeout(async () => {
+    try {
+      let success = false;
+      if (props.transactionId && props.gegentransactionId) {
+        debugLog("CategoryTransferModal", "Background: Attempting to update transfer");
+        success = await TransactionService.updateCategoryTransfer(
+          props.transactionId,
+          props.gegentransactionId,
+          fromCategoryIdLocal.value,
+          toCategoryIdLocal.value,
+          amount.value,
+          date.value,
+          noteLocal.value
+        );
+      } else {
+        debugLog("CategoryTransferModal", "Background: Attempting to add transfer");
+        const result = await TransactionService.addCategoryTransfer(
+          fromCategoryIdLocal.value,
+          toCategoryIdLocal.value,
+          amount.value,
+          date.value,
+          noteLocal.value
+        );
+        success = !!result;
+      }
+
+      if (success) {
+        debugLog("CategoryTransferModal", "Background transfer completed successfully");
+      } else {
+        debugLog("CategoryTransferModal", "Background transfer failed");
+      }
+    } catch (error) {
+      debugLog("CategoryTransferModal", "Background transfer error", error);
     }
-  } catch (error) {
-    debugLog("CategoryTransferModal", "Error during transfer", error);
-  } finally {
-    isProcessing.value = false;
-  }
+  }, 0);
 }
 </script>
 

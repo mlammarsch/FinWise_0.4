@@ -11,6 +11,7 @@ import { useAccountStore } from './accountStore';
 import { useRecipientStore } from './recipientStore';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { TenantDbService } from '@/services/TenantDbService';
+import { BudgetService } from '@/services/BudgetService';
 
 export interface ExtendedTransaction extends Transaction {
   tagIds: string[];
@@ -91,6 +92,8 @@ export const useTransactionStore = defineStore('transaction', () => {
       // Trigger finale UI-Updates durch Reaktivität
       pendingUIUpdates.value = false;
       infoLog('transactionStore', `Batch-Update abgeschlossen: ${processedCount} Transaktionen verarbeitet`);
+      // Pauschale Cache-Invalidierung nach Batch-Update (da viele Transaktionen betroffen)
+      BudgetService.invalidateCache();
     }
 
     debugLog('transactionStore', 'Batch-Update-Modus deaktiviert');
@@ -178,6 +181,12 @@ export const useTransactionStore = defineStore('transaction', () => {
       debugLog('transactionStore', `Batch-Transaktion verarbeitet: ${batchUpdateCount.value} (${transactionWithTimestamp.description})`);
     } else {
       infoLog('transactionStore', `Transaction "${transactionWithTimestamp.description}" im Store hinzugefügt/aktualisiert (ID: ${transactionWithTimestamp.id}).`);
+      // Granulare Cache-Invalidierung nur bei normalen Updates (nicht bei Batch-Mode)
+      BudgetService.invalidateCacheForTransaction({
+        categoryId: transactionWithTimestamp.categoryId,
+        date: transactionWithTimestamp.date,
+        toCategoryId: transactionWithTimestamp.toCategoryId
+      });
     }
 
     if (!fromSync) {
@@ -221,7 +230,7 @@ export const useTransactionStore = defineStore('transaction', () => {
       }
 
       if (localTransaction.updated_at && transactionUpdatesWithTimestamp.updated_at &&
-          new Date(localTransaction.updated_at) >= new Date(transactionUpdatesWithTimestamp.updated_at)) {
+        new Date(localTransaction.updated_at) >= new Date(transactionUpdatesWithTimestamp.updated_at)) {
         infoLog('transactionStore', `updateTransaction (fromSync): Lokale Transaktion ${localTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -246,6 +255,18 @@ export const useTransactionStore = defineStore('transaction', () => {
         warnLog('transactionStore', `updateTransaction (fromSync): Store-Transaktion ${transactions.value[idx].id} war neuer als eingehende ${id}. Store nicht geändert.`);
       }
       infoLog('transactionStore', `Transaction mit ID "${id}" im Store aktualisiert.`);
+
+      // Granulare Cache-Invalidierung bei Updates (außer bei Batch-Mode)
+      if (!isBatchUpdateMode.value) {
+        const transaction = transactions.value.find(t => t.id === id);
+        if (transaction) {
+          BudgetService.invalidateCacheForTransaction({
+            categoryId: transaction.categoryId,
+            date: transaction.date,
+            toCategoryId: transaction.toCategoryId
+          });
+        }
+      }
 
       if (!fromSync) {
         try {

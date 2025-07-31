@@ -8,6 +8,70 @@ import { toDateOnlyString } from "@/utils/formatters";
 import { debugLog } from "@/utils/logger";
 import { BalanceService } from "./BalanceService";
 
+// Performance-Cache für BudgetService
+const summaryCache = new Map<string, { data: any; timestamp: number }>();
+const categoryCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5000; // 5 Sekunden Cache-Zeit (länger für bessere Performance)
+let lastCacheClean = 0;
+
+function getCacheKey(monthStart: Date, monthEnd: Date, type: "expense" | "income"): string {
+  return `${type}-${monthStart.toISOString().split('T')[0]}-${monthEnd.toISOString().split('T')[0]}`;
+}
+
+function getCategoryCacheKey(categoryId: string, monthStart: Date, monthEnd: Date): string {
+  return `cat-${categoryId}-${monthStart.toISOString().split('T')[0]}-${monthEnd.toISOString().split('T')[0]}`;
+}
+
+function cleanExpiredCache() {
+  const now = Date.now();
+  if (now - lastCacheClean < 10000) return; // Nur alle 10 Sekunden cleanen
+
+  lastCacheClean = now;
+  for (const [key, value] of summaryCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      summaryCache.delete(key);
+    }
+  }
+  for (const [key, value] of categoryCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      categoryCache.delete(key);
+    }
+  }
+}
+
+function invalidateCache() {
+  summaryCache.clear();
+  categoryCache.clear();
+}
+
+// Granulare Cache-Invalidierung für spezifische Kategorien und Monate
+function invalidateCacheForTransaction(transaction: { categoryId?: string; date: string; toCategoryId?: string }) {
+  if (!transaction.categoryId && !transaction.toCategoryId) return;
+
+  const transactionDate = new Date(transaction.date);
+  const monthStart = new Date(transactionDate.getFullYear(), transactionDate.getMonth(), 1);
+  const monthEnd = new Date(transactionDate.getFullYear(), transactionDate.getMonth() + 1, 0);
+
+  // Invalidiere nur die betroffenen Kategorien und den spezifischen Monat
+  const categoriesToInvalidate = [transaction.categoryId, transaction.toCategoryId].filter(Boolean);
+
+  categoriesToInvalidate.forEach(categoryId => {
+    if (categoryId) {
+      const categoryKey = getCategoryCacheKey(categoryId, monthStart, monthEnd);
+      categoryCache.delete(categoryKey);
+      debugLog("[BudgetService] Cache invalidated", `Category ${categoryId} for month ${monthStart.toISOString().split('T')[0]}`);
+    }
+  });
+
+  // Invalidiere nur die Summary-Caches für den betroffenen Monat
+  const expenseKey = getCacheKey(monthStart, monthEnd, "expense");
+  const incomeKey = getCacheKey(monthStart, monthEnd, "income");
+  summaryCache.delete(expenseKey);
+  summaryCache.delete(incomeKey);
+
+  debugLog("[BudgetService] Cache invalidated", `Month summaries for ${monthStart.toISOString().split('T')[0]}`);
+}
+
 interface MonthlyBudgetData {
   budgeted: number;
   forecast: number; // NEU: Prognose-Spalte für Plan- und Prognosebuchungen (EXPENSE & INCOME)
@@ -325,6 +389,19 @@ export const BudgetService = {
     monthEnd: Date,
     type: "expense" | "income"
   ): MonthlySummary {
+    // Cache-Check
+    const cacheKey = getCacheKey(monthStart, monthEnd, type);
+    const cached = summaryCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      return cached.data;
+    }
+
+    // Cache-Cleanup
+    cleanExpiredCache();
+
+    // Berechnung
     const categoryStore = useCategoryStore();
     const isIncome = type === "income";
     const roots = categoryStore.categories.filter(
@@ -347,7 +424,21 @@ export const BudgetService = {
       sum.spentMiddle += d.spent;
       sum.saldoFull += d.saldo;
     });
-    debugLog("[BudgetService] Monthly summary", `${type} summary for ${monthStart.toISOString().split('T')[0]} to ${monthEnd.toISOString().split('T')[0]}`);
+
+    // Cache speichern
+    summaryCache.set(cacheKey, { data: sum, timestamp: now });
+
+    debugLog("[BudgetService] Monthly summary", `${type} summary for ${monthStart.toISOString().split('T')[0]} to ${monthEnd.toISOString().split('T')[0]} (${cached ? 'CACHED' : 'CALCULATED'})`);
     return sum;
+  },
+
+  // Cache-Invalidierung für externe Aufrufe
+  invalidateCache() {
+    invalidateCache();
+  },
+
+  // Granulare Cache-Invalidierung für spezifische Transaktionen
+  invalidateCacheForTransaction(transaction: { categoryId?: string; date: string; toCategoryId?: string }) {
+    invalidateCacheForTransaction(transaction);
   },
 };
