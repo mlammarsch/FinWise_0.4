@@ -8,6 +8,7 @@ import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { ref, computed, nextTick } from "vue";
 import { useCategoryStore } from "../../stores/categoryStore";
 import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
+import { Icon } from "@iconify/vue";
 import { TransactionService } from "@/services/TransactionService";
 import { debugLog } from "@/utils/logger";
 import { toDateOnlyString } from "@/utils/formatters";
@@ -146,6 +147,43 @@ function handleTransfer(data: {
       </div>
     </div>
   </div>
+  <!-- Vier Symbole unter der Card -->
+    <div class="pt-2 pb-1 pl-2 mr-[2.6%]">
+      <div class="grid grid-cols-4 gap-1">
+        <div class="flex justify-end">
+          <Icon
+            icon="mdi:envelope-outline"
+            width="21"
+            height="21"
+            class="text-base-content/60 mr-5"
+          />
+        </div>
+        <div class="flex justify-end">
+          <Icon
+            icon="mdi:target-arrow"
+            width="21"
+            height="21"
+            class="text-base-content/60 mr-5"
+          />
+        </div>
+        <div class="flex justify-end">
+          <Icon
+            icon="mdi:bank-transfer"
+            width="22"
+            height="22"
+            class="text-base-content/60 mr-5"
+          />
+        </div>
+        <div class="flex justify-end">
+          <Icon
+            icon="mdi:scale-balance"
+            width="20"
+            height="20"
+            class="text-base-content/60 mr-5"
+          />
+        </div>
+      </div>
+    </div>
 
   <!-- Kontext‑Dropdown -->
   <div

@@ -610,7 +610,7 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-0 bg-base-100 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
               <div class="group-part flex items-center border-r border-base-300 py-2">
                 <!-- Drag Handle für Gruppe -->
@@ -819,7 +819,7 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-0 bg-base-100 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
               <div class="group-part flex items-center border-r border-base-300 py-2">
                 <!-- Drag Handle für Gruppe -->
