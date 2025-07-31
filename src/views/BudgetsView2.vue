@@ -1,6 +1,6 @@
 <!-- Datei: src/views/BudgetsView2.vue -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch, nextTick } from "vue";
 import { useCategoryStore } from "../stores/categoryStore";
 import { useTransactionStore } from "../stores/transactionStore";
 import BudgetMonthHeaderCard from "../components/budget/BudgetMonthHeaderCard.vue";
@@ -16,21 +16,41 @@ const transactionStore = useTransactionStore();
 const localStorageKey = "finwise_budget_months";
 const numMonths = ref<number>(3);
 const monthOffset = ref<number>(0);
+const isLoading = ref<boolean>(true);
 
-onMounted(() => {
+onMounted(async () => {
   const stored = localStorage.getItem(localStorageKey);
   if (stored) numMonths.value = parseInt(stored);
-  recalcStores();
+  await recalcStores();
 });
 
-watch([numMonths, monthOffset], () => {
+watch([numMonths, monthOffset], async () => {
   localStorage.setItem(localStorageKey, numMonths.value.toString());
-  recalcStores();
+  isLoading.value = true;
+  await recalcStores();
 });
 
-function recalcStores() {
-  transactionStore.loadTransactions();
-  categoryStore.loadCategories();
+async function recalcStores() {
+  try {
+    isLoading.value = true;
+
+    // Stores laden
+    await Promise.all([
+      transactionStore.loadTransactions(),
+      categoryStore.loadCategories()
+    ]);
+
+    // Kurz warten, damit die computed properties und Mock-Daten berechnet werden
+    await nextTick();
+
+    // Zusätzliche kurze Verzögerung für Mock-Datenberechnung
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    isLoading.value = false;
+  } catch (error) {
+    console.error('Error loading budget data:', error);
+    isLoading.value = false;
+  }
 }
 
 function onUpdateStartOffset(newOffset: number) {
@@ -99,67 +119,91 @@ const availableByMonth = computed(() => {
 
 <template>
   <div class="h-[calc(100vh-189px)] flex flex-col overflow-hidden">
-    <!-- Header - Sticky positioniert -->
-    <div class="flex-shrink-0 sticky top-0 z-20 bg-base-100 border-b border-base-300">
-      <div class="p-4 flex flex-col">
-        <!-- Feste Header-Row mit drei Bereichen -->
-        <div class="mb-4 flex items-center justify-between w-full">
-          <!-- Links: Überschrift -->
-          <div class="flex-shrink-0">
-            <h1 class="text-2xl font-bold">Budgets 2 (mit Kategoriegruppen)</h1>
-          </div>
+    <!-- Loading State -->
+    <div v-if="isLoading" class="flex-grow flex items-center justify-center bg-base-100">
+      <div class="flex flex-col items-center space-y-4">
+        <!-- Loading Spinner -->
+        <div class="loading loading-spinner loading-lg text-primary"></div>
 
-          <!-- Mitte: Kalenderansicht -->
-          <div class="flex-grow flex justify-center">
-            <PagingYearComponent
-              :displayedMonths="numMonths"
-              :currentStartMonthOffset="monthOffset"
-              @updateStartOffset="onUpdateStartOffset"
-              @updateDisplayedMonths="onUpdateDisplayedMonths"
-            />
-          </div>
+        <!-- Loading Text -->
+        <div class="text-center">
+          <h3 class="text-lg font-semibold text-base-content mb-2">Budget wird geladen...</h3>
+          <p class="text-sm text-base-content/60">Kategorien und Daten werden berechnet</p>
+        </div>
 
-          <!-- Rechts: Platzhalter für zukünftige Elemente -->
-          <div class="flex-shrink-0">
-            <!-- Hier können später weitere Elemente hinzugefügt werden -->
-          </div>
-        </div>
-      </div>
-      <!-- Tabellenkopf -->
-      <div class="flex overflow-x-auto">
-        <!-- Kategorien-Header (sticky) -->
-        <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
-          <div class="text-sm text-base-content/60 p-2">
-            Kategorien
-          </div>
-        </div>
-        <!-- Monats-Header (scrollbar) -->
-        <div class="flex flex-1 min-w-0">
-          <div
-            v-for="(month, i) in months"
-            :key="month.key"
-            class="flex-1 min-w-[120px] flex flex-col"
-          >
-            <BudgetMonthHeaderCard
-              :label="month.label"
-              :toBudget="200"
-              :budgeted="0"
-              :overspent="0"
-              :available="availableByMonth[i]"
-              :nextMonth="0"
-              :month="month"
-            />
-          </div>
+        <!-- Optional: Progress Skeleton -->
+        <div class="w-80 space-y-2">
+          <div class="skeleton h-4 w-full"></div>
+          <div class="skeleton h-4 w-3/4"></div>
+          <div class="skeleton h-4 w-1/2"></div>
         </div>
       </div>
     </div>
-    <!-- Scrollbarer Datenbereich -->
-    <div class="flex-grow overflow-auto">
-      <div class="w-full">
-        <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
-        <BudgetCategoryColumn3 :months="months" />
+
+    <!-- Main Content - nur anzeigen wenn nicht loading -->
+    <template v-else>
+      <!-- Header - Sticky positioniert -->
+      <div class="flex-shrink-0 sticky top-0 z-20 bg-base-100 border-b border-base-300">
+        <div class="p-4 flex flex-col">
+          <!-- Feste Header-Row mit drei Bereichen -->
+          <div class="mb-4 flex items-center justify-between w-full">
+            <!-- Links: Überschrift -->
+            <div class="flex-shrink-0">
+              <h1 class="text-2xl font-bold">Budgets 2 (mit Kategoriegruppen)</h1>
+            </div>
+
+            <!-- Mitte: Kalenderansicht -->
+            <div class="flex-grow flex justify-center">
+              <PagingYearComponent
+                :displayedMonths="numMonths"
+                :currentStartMonthOffset="monthOffset"
+                @updateStartOffset="onUpdateStartOffset"
+                @updateDisplayedMonths="onUpdateDisplayedMonths"
+              />
+            </div>
+
+            <!-- Rechts: Platzhalter für zukünftige Elemente -->
+            <div class="flex-shrink-0">
+              <!-- Hier können später weitere Elemente hinzugefügt werden -->
+            </div>
+          </div>
+        </div>
+        <!-- Tabellenkopf -->
+        <div class="flex overflow-x-auto">
+          <!-- Kategorien-Header (sticky) -->
+          <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
+            <div class="text-sm text-base-content/60 p-2">
+              Kategorien
+            </div>
+          </div>
+          <!-- Monats-Header (scrollbar) -->
+          <div class="flex flex-1 min-w-0">
+            <div
+              v-for="(month, i) in months"
+              :key="month.key"
+              class="flex-1 min-w-[120px] flex flex-col"
+            >
+              <BudgetMonthHeaderCard
+                :label="month.label"
+                :toBudget="200"
+                :budgeted="0"
+                :overspent="0"
+                :available="availableByMonth[i]"
+                :nextMonth="0"
+                :month="month"
+              />
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+      <!-- Scrollbarer Datenbereich -->
+      <div class="flex-grow overflow-auto">
+        <div class="w-full">
+          <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
+          <BudgetCategoryColumn3 :months="months" />
+        </div>
+      </div>
+    </template>
   </div>
 </template>
 

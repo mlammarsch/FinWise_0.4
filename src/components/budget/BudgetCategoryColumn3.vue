@@ -21,6 +21,11 @@ const props = withDefaults(defineProps<Props>(), {
   months: () => []
 });
 
+// Emit für Loading-Status
+const emit = defineEmits<{
+  muuriReady: []
+}>();
+
 // Mock-Daten für Budget-Werte
 interface MockMonthlyBudgetData {
   budgeted: number;
@@ -144,8 +149,13 @@ function initializeGrids() {
     incomeMetaGrid.value = createMetaGrid('#income-categories', true);
 
     debugLog('BudgetCategoryColumn3', 'Muuri grids initialized successfully');
+
+    // Event emittieren, dass Muuri-Grids bereit sind
+    emit('muuriReady');
   } catch (error) {
     errorLog('BudgetCategoryColumn3', 'Failed to initialize Muuri grids', error);
+    // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
+    emit('muuriReady');
   }
 }
 
