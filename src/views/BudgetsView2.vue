@@ -13,6 +13,21 @@ import { BalanceService } from "../services/BalanceService";
 const categoryStore = useCategoryStore();
 const transactionStore = useTransactionStore();
 
+// Computed für den Expand/Collapse-Zustand aller Kategoriengruppen
+const allGroupsExpanded = computed(() => {
+  const allGroupIds = categoryStore.categoryGroups.map(g => g.id);
+  return allGroupIds.length > 0 && allGroupIds.every(id => categoryStore.expandedCategoryGroups.has(id));
+});
+
+// Funktion zum Ein-/Ausklappen aller Kategoriengruppen
+function toggleAllCategoryGroups() {
+  if (allGroupsExpanded.value) {
+    categoryStore.collapseAllCategoryGroups();
+  } else {
+    categoryStore.expandAllCategoryGroups();
+  }
+}
+
 const localStorageKey = "finwise_budget_months";
 const numMonths = ref<number>(3);
 const monthOffset = ref<number>(0);
@@ -149,7 +164,7 @@ const availableByMonth = computed(() => {
           <div class="mb-4 flex items-center justify-between w-full">
             <!-- Links: Überschrift -->
             <div class="flex-shrink-0">
-              <h1 class="text-2xl font-bold">Budgets 2 (mit Kategoriegruppen)</h1>
+              <h1 class="text-2xl font-bold">Budget Verteilung</h1>
             </div>
 
             <!-- Mitte: Kalenderansicht -->
@@ -172,8 +187,12 @@ const availableByMonth = computed(() => {
         <div class="flex overflow-x-auto">
           <!-- Kategorien-Header (sticky) -->
           <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
-            <div class="text-sm text-base-content/60 p-2">
-              Kategorien
+            <div class="text-sm flex items-center cursor-pointer p-2" @click="toggleAllCategoryGroups">
+              <Icon
+                :icon="allGroupsExpanded ? 'mdi:chevron-up' : 'mdi:chevron-down'"
+                class="text-md mr-1"
+              />
+              <span>{{ allGroupsExpanded ? "alle einklappen" : "alle ausklappen" }}</span>
             </div>
           </div>
           <!-- Monats-Header (scrollbar) -->

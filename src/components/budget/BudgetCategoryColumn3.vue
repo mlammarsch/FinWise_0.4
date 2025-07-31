@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, nextTick, computed } from 'vue';
+import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
 import { CategoryService } from '../../services/CategoryService';
+import { useCategoryStore } from '../../stores/categoryStore';
 import type { CategoryGroup, Category } from '../../types';
 import { debugLog, errorLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
@@ -107,8 +108,8 @@ const incomeSubGrids = ref<Muuri[]>([]);
 const categoryGroups = CategoryService.getCategoryGroups();
 const categoriesByGroup = CategoryService.getCategoriesByGroup();
 
-// Expand/Collapse State für jede Gruppe
-const expandedGroups = ref<Record<string, boolean>>({});
+// CategoryStore für globalen Expand/Collapse-Zustand
+const categoryStore = useCategoryStore();
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
@@ -148,9 +149,11 @@ function getCategoriesForGroup(groupId: string): Category[] {
 onMounted(async () => {
   await CategoryService.loadCategories();
 
-  // Expand-State für alle Gruppen initialisieren
+  // Expand-State für alle Gruppen aus CategoryStore initialisieren (falls noch nicht gesetzt)
   for (const group of categoryGroups.value) {
-    expandedGroups.value[group.id] = true;
+    if (!categoryStore.expandedCategoryGroups.has(group.id)) {
+      categoryStore.toggleCategoryGroupExpanded(group.id);
+    }
   }
 
   await nextTick();
@@ -166,6 +169,13 @@ onUnmounted(() => {
     clearTimeout(autoExpandTimer.value);
   }
 });
+
+// Watcher für globale Expand/Collapse-Änderungen
+watch(() => categoryStore.expandedCategoryGroups, () => {
+  nextTick(() => {
+    updateLayoutAfterToggle();
+  });
+}, { deep: true });
 
 function initializeGrids() {
   try {
@@ -343,7 +353,7 @@ function destroyGrids() {
 
 // Expand/Collapse Funktionen
 function toggleGroup(groupId: string) {
-  expandedGroups.value[groupId] = !expandedGroups.value[groupId];
+  categoryStore.toggleCategoryGroupExpanded(groupId);
 
   nextTick(() => {
     updateLayoutAfterToggle();
@@ -383,10 +393,10 @@ function handleDragOverGroup(event: DragEvent) {
     const groupWrapper = groupHeader.closest('.group-wrapper');
     const groupId = groupWrapper?.getAttribute('data-group-id');
 
-    if (groupId && !expandedGroups.value[groupId]) {
+    if (groupId && !categoryStore.expandedCategoryGroups.has(groupId)) {
       clearAutoExpandTimer();
       autoExpandTimer.value = setTimeout(() => {
-        expandedGroups.value[groupId] = true;
+        categoryStore.toggleCategoryGroupExpanded(groupId);
         nextTick(() => {
           updateLayoutAfterToggle();
         });
@@ -672,9 +682,9 @@ async function reinitializeMuuriGrids() {
 
             <!-- Kategorien-Liste -->
             <div
-              v-show="expandedGroups[group.id]"
+              v-show="categoryStore.expandedCategoryGroups.has(group.id)"
               class="categories-list"
-              :class="{ 'collapsed': !expandedGroups[group.id] }"
+              :class="{ 'collapsed': !categoryStore.expandedCategoryGroups.has(group.id) }"
             >
               <div class="categories-content">
                 <div
@@ -881,9 +891,9 @@ async function reinitializeMuuriGrids() {
 
             <!-- Kategorien-Liste -->
             <div
-              v-show="expandedGroups[group.id]"
+              v-show="categoryStore.expandedCategoryGroups.has(group.id)"
               class="categories-list"
-              :class="{ 'collapsed': !expandedGroups[group.id] }"
+              :class="{ 'collapsed': !categoryStore.expandedCategoryGroups.has(group.id) }"
             >
               <div class="categories-content">
                 <div

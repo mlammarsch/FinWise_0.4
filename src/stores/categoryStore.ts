@@ -14,6 +14,7 @@ export const useCategoryStore = defineStore('category', () => {
   const categories = ref<Category[]>([]);
   const categoryGroups = ref<CategoryGroup[]>([]);
   const expandedCategories = ref<Set<string>>(new Set());
+  const expandedCategoryGroups = ref<Set<string>>(new Set());
 
   /* ----------------------------------------------- Getters */
   const getCategoryById = computed(() => (id: string) =>
@@ -415,6 +416,51 @@ export const useCategoryStore = defineStore('category', () => {
     debugLog('categoryStore', 'collapseAllCategories', 'completed');
   }
 
+  /* -------------------------- CategoryGroup Expanded-Handling */
+  function loadExpandedCategoryGroups() {
+    const raw = localStorage.getItem(storageKey('expanded_category_groups'));
+    if (raw) {
+      try {
+        const ids = JSON.parse(raw);
+        expandedCategoryGroups.value = new Set(ids);
+        debugLog('categoryStore', 'loadExpandedCategoryGroups', [...expandedCategoryGroups.value].join(', '));
+      } catch (error) {
+        debugLog('categoryStore', 'loadExpandedCategoryGroups - parse error', String(error));
+      }
+    }
+  }
+
+  function saveExpandedCategoryGroups() {
+    localStorage.setItem(
+      storageKey('expanded_category_groups'),
+      JSON.stringify([...expandedCategoryGroups.value]),
+    );
+    debugLog('categoryStore', 'saveExpandedCategoryGroups', [...expandedCategoryGroups.value].join(', '));
+  }
+
+  function toggleCategoryGroupExpanded(id: string) {
+    if (expandedCategoryGroups.value.has(id)) {
+      expandedCategoryGroups.value.delete(id);
+    } else {
+      expandedCategoryGroups.value.add(id);
+    }
+    saveExpandedCategoryGroups();
+    debugLog('categoryStore', 'toggleCategoryGroupExpanded', id);
+  }
+
+  function expandAllCategoryGroups() {
+    const allGroupIds = categoryGroups.value.map(g => g.id);
+    expandedCategoryGroups.value = new Set(allGroupIds);
+    saveExpandedCategoryGroups();
+    debugLog('categoryStore', 'expandAllCategoryGroups', [...expandedCategoryGroups.value].join(', '));
+  }
+
+  function collapseAllCategoryGroups() {
+    expandedCategoryGroups.value.clear();
+    saveExpandedCategoryGroups();
+    debugLog('categoryStore', 'collapseAllCategoryGroups', 'completed');
+  }
+
   /* ----------------------------------------------- Persistence */
   async function loadCategories(): Promise<void> {
     try {
@@ -440,6 +486,7 @@ export const useCategoryStore = defineStore('category', () => {
       }
 
       loadExpandedCategories();
+      loadExpandedCategoryGroups();
 
       debugLog('categoryStore', 'loadCategories completed', {
         categories: categories.value.length,
@@ -491,6 +538,7 @@ export const useCategoryStore = defineStore('category', () => {
     categories,
     categoryGroups,
     expandedCategories,
+    expandedCategoryGroups,
     getCategoryById,
     findCategoryById,
     getCategoriesByParentId,
@@ -511,6 +559,9 @@ export const useCategoryStore = defineStore('category', () => {
     toggleCategoryExpanded,
     expandAllCategories,
     collapseAllCategories,
+    toggleCategoryGroupExpanded,
+    expandAllCategoryGroups,
+    collapseAllCategoryGroups,
     loadCategories,
     reset,
     initializeStore,

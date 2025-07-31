@@ -108,14 +108,38 @@ const visibleIconCount = computed(() => {
 </script>
 
 <template>
-  <div class="flex items-center justify-between w-full max-w-4xl">
+  <div class="flex items-end justify-between w-full max-w-4xl">
     <!-- Links: Leer für Balance -->
-    <div class="flex-shrink-0 w-16">
+    <div class="flex-shrink-0 w-[10%]">
+      <!-- Platzhalter für zukünftige Elemente -->
+    </div>
+
+    <!-- Rechts: Monatsspaltensatz Auswahl mit Icons (rechtsbündig) -->
+    <div class="flex items-center flex-shrink-0 justify-start">
+      <button
+        v-for="iconData in monthIcons.slice(0, visibleIconCount)"
+        :key="iconData.count"
+        class="btn btn-xs p-0 transition-all duration-200"
+        :class="{
+          'btn-ghost': iconData.count <= props.displayedMonths,
+          'btn-ghost opacity-40': iconData.count > props.displayedMonths,
+        }"
+        :title="iconData.tooltip"
+        @click="onDisplayedMonthsChange(iconData.count)"
+      >
+        <Icon
+          :icon="iconData.icon"
+          class="w-4 h-4"
+        />
+      </button>
+    </div>
+
+    <div class="flex-shrink-0 w-[5%]">
       <!-- Platzhalter für zukünftige Elemente -->
     </div>
 
     <!-- Mitte: Kalenderansicht -->
-    <div class="flex flex-col gap-1 flex-grow mx-4">
+    <div class="flex flex-col gap-1 flex-grow mx-2">
       <!-- Jahresbeschriftungen -->
       <div class="flex gap-1 justify-center">
         <div
@@ -152,25 +176,7 @@ const visibleIconCount = computed(() => {
       </div>
     </div>
 
-    <!-- Rechts: Monatsspaltensatz Auswahl mit Icons (rechtsbündig) -->
-    <div class="flex items-center flex-shrink-0 justify-end">
-      <button
-        v-for="iconData in monthIcons.slice(0, visibleIconCount)"
-        :key="iconData.count"
-        class="btn btn-xs p-1 transition-all duration-200"
-        :class="{
-          'btn-ghost': iconData.count <= props.displayedMonths,
-          'btn-ghost opacity-40': iconData.count > props.displayedMonths,
-        }"
-        :title="iconData.tooltip"
-        @click="onDisplayedMonthsChange(iconData.count)"
-      >
-        <Icon
-          :icon="iconData.icon"
-          class="w-5 h-5"
-        />
-      </button>
-    </div>
+
   </div>
 </template>
 
