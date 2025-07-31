@@ -51,6 +51,47 @@ function generateMockBudgetData(categoryId: string, monthKey: string): MockMonth
   };
 }
 
+// Berechnungsfunktionen für Summen
+function calculateGroupSummary(groupId: string, monthKey: string) {
+  const categories = getCategoriesForGroup(groupId);
+  const summary = {
+    budgeted: 0,
+    forecast: 0,
+    spent: 0,
+    saldo: 0
+  };
+
+  categories.forEach(category => {
+    const data = generateMockBudgetData(category.id, monthKey);
+    summary.budgeted += data.budgeted;
+    summary.forecast += data.forecast;
+    summary.spent += data.spent;
+    summary.saldo += data.saldo;
+  });
+
+  return summary;
+}
+
+function calculateTypeSummary(isIncomeType: boolean, monthKey: string) {
+  const groups = isIncomeType ? incomeGroups.value : expenseGroups.value;
+  const summary = {
+    budgeted: 0,
+    forecast: 0,
+    spent: 0,
+    saldo: 0
+  };
+
+  groups.forEach(group => {
+    const groupSummary = calculateGroupSummary(group.id, monthKey);
+    summary.budgeted += groupSummary.budgeted;
+    summary.forecast += groupSummary.forecast;
+    summary.spent += groupSummary.spent;
+    summary.saldo += groupSummary.saldo;
+  });
+
+  return summary;
+}
+
 // Drag Container
 const dragContainer = ref<HTMLElement>();
 
@@ -510,9 +551,53 @@ async function reinitializeMuuriGrids() {
     <!-- Ausgaben-Sektion -->
     <div v-if="expenseGroups.length > 0" class="flex-1">
       <div class="sticky top-0 bg-base-200 px-3 py-2 border-b border-base-300 z-10">
-        <div class="flex items-center">
-          <Icon icon="mdi:trending-down" class="w-4 h-4 mr-2 text-error" />
-          <h3 class="font-semibold text-sm text-base-content">Ausgaben</h3>
+        <!-- Typ-Header mit Gesamtsummen -->
+        <div class="type-header-extended flex w-full">
+          <!-- Sticky Typ-Teil -->
+          <div class="type-part flex items-center">
+            <Icon icon="mdi:trending-down" class="w-4 h-4 mr-2 text-error" />
+            <h3 class="font-semibold text-sm text-base-content">Ausgaben</h3>
+          </div>
+
+          <!-- Dynamische Typ-Gesamtsummen -->
+          <div class="type-values-part flex">
+            <div
+              v-for="month in months"
+              :key="month.key"
+              class="month-column flex-1 min-w-[120px] p-1"
+            >
+              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold">
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(false, month.key).budgeted"
+                    :as-integer="true"
+                    class="text-base-content"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(false, month.key).forecast"
+                    :as-integer="true"
+                    class="text-base-content"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(false, month.key).spent"
+                    :as-integer="true"
+                    :class="calculateTypeSummary(false, month.key).spent >= 0 ? 'text-base-content' : 'text-error'"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(false, month.key).saldo"
+                    :as-integer="true"
+                    :class="calculateTypeSummary(false, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -524,26 +609,64 @@ async function reinitializeMuuriGrids() {
           :data-group-id="group.id"
         >
           <div class="category-group-row border-b border-base-300">
-            <!-- Kategoriegruppen-Header -->
-            <div class="group-header flex items-center py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
-              <!-- Drag Handle für Gruppe -->
-              <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+            <!-- Kategoriegruppen-Header mit Summenwerten -->
+            <div class="group-header-extended flex w-full py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+              <!-- Sticky Gruppen-Teil -->
+              <div class="group-part flex items-center">
+                <!-- Drag Handle für Gruppe -->
+                <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                  <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+                </div>
+
+                <!-- Gruppen-Icon -->
+                <div class="flex-shrink-0 mr-2">
+                  <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
+                </div>
+
+                <!-- Gruppenname -->
+                <div class="flex-grow" @click.stop="toggleGroup(group.id)">
+                  <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
+                </div>
               </div>
 
-              <!-- Gruppen-Icon -->
-              <div class="flex-shrink-0 mr-2">
-                <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
-              </div>
-
-              <!-- Gruppenname -->
-              <div class="flex-grow" @click.stop="toggleGroup(group.id)">
-                <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
-              </div>
-
-              <!-- Gruppenstatus-Indikator -->
-              <div class="flex-shrink-0 text-xs text-base-content/60">
-                {{ getCategoriesForGroup(group.id).length }} {{ getCategoriesForGroup(group.id).length === 1 ? 'Kategorie' : 'Kategorien' }}
+              <!-- Dynamische Gruppen-Summen-Teile -->
+              <div class="group-values-part flex">
+                <div
+                  v-for="month in months"
+                  :key="month.key"
+                  class="month-column flex-1 min-w-[120px] p-0  border-base-300"
+                >
+                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold">
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).budgeted"
+                        :as-integer="true"
+                        class="text-base-content"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).forecast"
+                        :as-integer="true"
+                        class="text-base-content"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).spent"
+                        :as-integer="true"
+                        :class="calculateGroupSummary(group.id, month.key).spent >= 0 ? 'text-base-content' : 'text-error'"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).saldo"
+                        :as-integer="true"
+                        :class="calculateGroupSummary(group.id, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -637,9 +760,53 @@ async function reinitializeMuuriGrids() {
     <!-- Einnahmen-Sektion -->
     <div v-if="incomeGroups.length > 0" class="flex-1 border-t border-base-300">
       <div class="sticky top-0 bg-base-200 px-3 py-2 border-b border-base-300 z-10">
-        <div class="flex items-center">
-          <Icon icon="mdi:trending-up" class="w-4 h-4 mr-2 text-success" />
-          <h3 class="font-semibold text-sm text-base-content">Einnahmen</h3>
+        <!-- Typ-Header mit Gesamtsummen -->
+        <div class="type-header-extended flex w-full">
+          <!-- Sticky Typ-Teil -->
+          <div class="type-part flex items-center">
+            <Icon icon="mdi:trending-up" class="w-4 h-4 mr-2 text-success" />
+            <h3 class="font-semibold text-sm text-base-content">Einnahmen</h3>
+          </div>
+
+          <!-- Dynamische Typ-Gesamtsummen -->
+          <div class="type-values-part flex">
+            <div
+              v-for="month in months"
+              :key="month.key"
+              class="month-column flex-1 min-w-[120px] p-1"
+            >
+              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold">
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(true, month.key).budgeted"
+                    :as-integer="true"
+                    class="text-success"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(true, month.key).forecast"
+                    :as-integer="true"
+                    class="text-success"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(true, month.key).spent"
+                    :as-integer="true"
+                    class="text-base-content"
+                  />
+                </div>
+                <div class="text-right">
+                  <CurrencyDisplay
+                    :amount="calculateTypeSummary(true, month.key).saldo"
+                    :as-integer="true"
+                    class="text-base-content"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -651,26 +818,64 @@ async function reinitializeMuuriGrids() {
           :data-group-id="group.id"
         >
           <div class="category-group-row border-b border-base-300">
-            <!-- Kategoriegruppen-Header -->
-            <div class="group-header flex items-center py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
-              <!-- Drag Handle für Gruppe -->
-              <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+            <!-- Kategoriegruppen-Header mit Summenwerten -->
+            <div class="group-header-extended flex w-full py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+              <!-- Sticky Gruppen-Teil -->
+              <div class="group-part flex items-center">
+                <!-- Drag Handle für Gruppe -->
+                <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                  <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+                </div>
+
+                <!-- Gruppen-Icon -->
+                <div class="flex-shrink-0 mr-2">
+                  <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
+                </div>
+
+                <!-- Gruppenname -->
+                <div class="flex-grow" @click.stop="toggleGroup(group.id)">
+                  <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
+                </div>
               </div>
 
-              <!-- Gruppen-Icon -->
-              <div class="flex-shrink-0 mr-2">
-                <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
-              </div>
-
-              <!-- Gruppenname -->
-              <div class="flex-grow" @click.stop="toggleGroup(group.id)">
-                <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
-              </div>
-
-              <!-- Gruppenstatus-Indikator -->
-              <div class="flex-shrink-0 text-xs text-base-content/60">
-                {{ getCategoriesForGroup(group.id).length }} {{ getCategoriesForGroup(group.id).length === 1 ? 'Kategorie' : 'Kategorien' }}
+              <!-- Dynamische Gruppen-Summen-Teile -->
+              <div class="group-values-part flex">
+                <div
+                  v-for="month in months"
+                  :key="month.key"
+                  class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                >
+                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold">
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).budgeted"
+                        :as-integer="true"
+                        class="text-success"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).forecast"
+                        :as-integer="true"
+                        class="text-success"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).spent"
+                        :as-integer="true"
+                        class="text-base-content"
+                      />
+                    </div>
+                    <div class="text-right">
+                      <CurrencyDisplay
+                        :amount="calculateGroupSummary(group.id, month.key).saldo"
+                        :as-integer="true"
+                        class="text-base-content"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -870,6 +1075,58 @@ async function reinitializeMuuriGrids() {
 
 .budget-values {
   padding: 4px;
+}
+
+/* Layout für erweiterte Header */
+.type-header-extended {
+  align-items: center;
+}
+
+.type-part {
+  flex: 0 0 300px;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: inherit;
+}
+
+.type-values-part {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+}
+
+.group-header-extended {
+  align-items: center;
+}
+
+.group-part {
+  flex: 0 0 300px;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: inherit;
+}
+
+.group-values-part {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+}
+
+.type-summary-values,
+.group-summary-values {
+  padding: 2px;
+}
+
+.type-summary-values {
+  background: hsl(var(--b3) / 0.3);
+  border-radius: 4px;
+}
+
+.group-summary-values {
+  background: hsl(var(--b2) / 0.3);
+  border-radius: 4px;
 }
 
 /* Drag Handle Styles */
