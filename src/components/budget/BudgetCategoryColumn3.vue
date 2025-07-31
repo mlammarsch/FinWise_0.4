@@ -550,7 +550,7 @@ async function reinitializeMuuriGrids() {
 
     <!-- Ausgaben-Sektion -->
     <div v-if="expenseGroups.length > 0" class="flex-1">
-      <div class="sticky top-0 bg-base-200 px-3 py-2 border-b border-base-300 z-10">
+      <div class="sticky top-0 bg-base-200 px-0 py-2 border-b border-base-300 z-10">
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
@@ -564,9 +564,9 @@ async function reinitializeMuuriGrids() {
             <div
               v-for="month in months"
               :key="month.key"
-              class="month-column flex-1 min-w-[120px] p-1"
+              class="month-column flex-1 min-w-[120px] p-1 border-base-300"
             >
-              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold">
+              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month.key).budgeted"
@@ -610,9 +610,9 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header-extended flex w-full py-0 bg-base-100 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
-              <div class="group-part flex items-center">
+              <div class="group-part flex items-center border-r border-base-300 py-2">
                 <!-- Drag Handle für Gruppe -->
                 <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                   <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
@@ -634,9 +634,9 @@ async function reinitializeMuuriGrids() {
                 <div
                   v-for="month in months"
                   :key="month.key"
-                  class="month-column flex-1 min-w-[120px] p-0  border-base-300"
+                  class="month-column flex-1 min-w-[120px] py-2 border-r border-base-300"
                 >
-                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold">
+                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
                     <div class="text-right">
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month.key).budgeted"
@@ -687,7 +687,7 @@ async function reinitializeMuuriGrids() {
                   <!-- Unified Muuri Item: Kategorie + Werte -->
                   <div class="flex w-full">
                     <!-- Sticky Kategorie-Teil -->
-                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
+                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer">
                       <div class="category-drag-area flex items-center flex-grow">
                         <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                           <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
@@ -714,9 +714,9 @@ async function reinitializeMuuriGrids() {
                       <div
                         v-for="month in months"
                         :key="month.key"
-                        class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                        class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
-                        <div class="budget-values grid grid-cols-4 gap-1 text-xs">
+                        <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div class="text-right">
                             <CurrencyDisplay
                               :amount="generateMockBudgetData(category.id, month.key).budgeted"
@@ -758,8 +758,8 @@ async function reinitializeMuuriGrids() {
     </div>
 
     <!-- Einnahmen-Sektion -->
-    <div v-if="incomeGroups.length > 0" class="flex-1 border-t border-base-300">
-      <div class="sticky top-0 bg-base-200 px-3 py-2 border-b border-base-300 z-10">
+    <div v-if="incomeGroups.length > 0" class="flex-1 border-b border-t border-base-300 mt-3">
+      <div class="sticky top-0 bg-base-200 px-0 py-3 border-b border-r border-base-300 z-10">
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
@@ -773,9 +773,9 @@ async function reinitializeMuuriGrids() {
             <div
               v-for="month in months"
               :key="month.key"
-              class="month-column flex-1 min-w-[120px] p-1"
+              class="month-column flex-1 min-w-[120px] p-0"
             >
-              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold">
+              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(true, month.key).budgeted"
@@ -819,9 +819,9 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-2 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header-extended flex w-full py-0 bg-base-100 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
-              <div class="group-part flex items-center">
+              <div class="group-part flex items-center border-r border-base-300 py-2">
                 <!-- Drag Handle für Gruppe -->
                 <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                   <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
@@ -843,9 +843,9 @@ async function reinitializeMuuriGrids() {
                 <div
                   v-for="month in months"
                   :key="month.key"
-                  class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                  class="month-column flex-1 min-w-[120px] py-2 border-r border-base-300"
                 >
-                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold">
+                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
                     <div class="text-right">
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month.key).budgeted"
@@ -896,7 +896,7 @@ async function reinitializeMuuriGrids() {
                   <!-- Unified Muuri Item: Kategorie + Werte -->
                   <div class="flex w-full">
                     <!-- Sticky Kategorie-Teil -->
-                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
+                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer">
                       <div class="category-drag-area flex items-center flex-grow">
                         <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                           <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
@@ -923,9 +923,9 @@ async function reinitializeMuuriGrids() {
                       <div
                         v-for="month in months"
                         :key="month.key"
-                        class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                        class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
-                        <div class="budget-values grid grid-cols-4 gap-1 text-xs">
+                        <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div class="text-right">
                             <CurrencyDisplay
                               :amount="generateMockBudgetData(category.id, month.key).budgeted"
@@ -1024,7 +1024,7 @@ async function reinitializeMuuriGrids() {
 .categories-list {
   position: relative;
   min-height: 50px;
-  max-height: 400px;
+  /*max-height: 400px;*/
   overflow-y: auto;
   transition: all 0.3s ease;
 }
