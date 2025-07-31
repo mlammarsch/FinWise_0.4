@@ -910,23 +910,68 @@ async function reinitializeMuuriGrids() {
   background-color: hsl(var(--b2) / 0.3);
 }
 
-/* Muuri Drag States für erweiterte Kategorien */
+/* Muuri Drag States für erweiterte Kategorien - exakt wie in MuuriTestView */
+.category-item-extended {
+  display: block;
+  position: absolute;
+  width: 100%;
+  margin: 0;
+  z-index: 1;
+}
+
 .category-item-extended.muuri-item-dragging {
-  z-index: 9999 !important;
-  cursor: move !important;
-  transform: scale(1.02) !important;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
+  z-index: 3 !important;
 }
 
 .category-item-extended.muuri-item-releasing {
-  z-index: 9998 !important;
-  transform: scale(1) !important;
-  transition: transform 300ms ease !important;
+  z-index: 2 !important;
 }
 
 .category-item-extended.muuri-item-hidden {
   z-index: 0 !important;
-  opacity: 0 !important;
+}
+
+/* Gruppe Drag States - exakt wie in MuuriTestView */
+.group-wrapper {
+  display: block;
+  position: absolute;
+  width: 100%;
+  margin: 0;
+  z-index: 1;
+}
+
+.group-wrapper.muuri-item-dragging {
+  z-index: 3 !important;
+}
+
+.group-wrapper.muuri-item-releasing {
+  z-index: 2 !important;
+}
+
+.group-wrapper.muuri-item-hidden {
+  z-index: 0 !important;
+}
+
+/* Sicherstellen, dass die Drag-Area korrekt funktioniert */
+.category-drag-area {
+  position: relative;
+  cursor: grab;
+}
+
+.category-drag-area:active {
+  cursor: grabbing;
+}
+
+/* Drag Handle Styles */
+.category-drag-handle,
+.group-drag-handle {
+  cursor: grab;
+  transition: opacity 0.2s ease;
+}
+
+.category-drag-handle:active,
+.group-drag-handle:active {
+  cursor: grabbing;
 }
 
 /* Placeholder styling */
