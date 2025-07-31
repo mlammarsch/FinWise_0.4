@@ -7,6 +7,8 @@ import { useCategoryStore } from '../../stores/categoryStore';
 import type { CategoryGroup, Category } from '../../types';
 import { debugLog, errorLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
+import { BudgetService } from '../../services/BudgetService';
+import { toDateOnlyString } from '../../utils/formatters';
 
 // Props für Monate
 interface Props {
@@ -27,33 +29,23 @@ const emit = defineEmits<{
   muuriReady: []
 }>();
 
-// Mock-Daten für Budget-Werte
-interface MockMonthlyBudgetData {
+// Interface für Budget-Daten
+interface MonthlyBudgetData {
   budgeted: number;
   forecast: number;
   spent: number;
   saldo: number;
 }
 
-// Mock-Daten Generator
-function generateMockBudgetData(categoryId: string, monthKey: string): MockMonthlyBudgetData {
-  // Einfache Hash-Funktion für konsistente Mock-Daten
-  const hash = (categoryId + monthKey).split('').reduce((a, b) => {
-    a = ((a << 5) - a) + b.charCodeAt(0);
-    return a & a;
-  }, 0);
+// Berechnungsfunktionen für echte Budget-Daten
+function getCategoryBudgetData(categoryId: string, month: { start: Date; end: Date }): MonthlyBudgetData {
+  const normalizedStart = new Date(toDateOnlyString(month.start));
+  const normalizedEnd = new Date(toDateOnlyString(month.end));
 
-  const base = Math.abs(hash) % 1000;
-  return {
-    budgeted: base + 100,
-    forecast: base + 50,
-    spent: -(base + 25),
-    saldo: base + 125
-  };
+  return BudgetService.getAggregatedMonthlyBudgetData(categoryId, normalizedStart, normalizedEnd);
 }
 
-// Berechnungsfunktionen für Summen
-function calculateGroupSummary(groupId: string, monthKey: string) {
+function calculateGroupSummary(groupId: string, month: { start: Date; end: Date }) {
   const categories = getCategoriesForGroup(groupId);
   const summary = {
     budgeted: 0,
@@ -63,7 +55,7 @@ function calculateGroupSummary(groupId: string, monthKey: string) {
   };
 
   categories.forEach(category => {
-    const data = generateMockBudgetData(category.id, monthKey);
+    const data = getCategoryBudgetData(category.id, month);
     summary.budgeted += data.budgeted;
     summary.forecast += data.forecast;
     summary.spent += data.spent;
@@ -73,24 +65,22 @@ function calculateGroupSummary(groupId: string, monthKey: string) {
   return summary;
 }
 
-function calculateTypeSummary(isIncomeType: boolean, monthKey: string) {
-  const groups = isIncomeType ? incomeGroups.value : expenseGroups.value;
-  const summary = {
-    budgeted: 0,
-    forecast: 0,
-    spent: 0,
-    saldo: 0
+function calculateTypeSummary(isIncomeType: boolean, month: { start: Date; end: Date }) {
+  const normalizedStart = new Date(toDateOnlyString(month.start));
+  const normalizedEnd = new Date(toDateOnlyString(month.end));
+
+  const summary = BudgetService.getMonthlySummary(
+    normalizedStart,
+    normalizedEnd,
+    isIncomeType ? "income" : "expense"
+  );
+
+  return {
+    budgeted: summary.budgeted,
+    forecast: summary.forecast,
+    spent: summary.spentMiddle,
+    saldo: summary.saldoFull
   };
-
-  groups.forEach(group => {
-    const groupSummary = calculateGroupSummary(group.id, monthKey);
-    summary.budgeted += groupSummary.budgeted;
-    summary.forecast += groupSummary.forecast;
-    summary.spent += groupSummary.spent;
-    summary.saldo += groupSummary.saldo;
-  });
-
-  return summary;
 }
 
 // Drag Container
@@ -579,30 +569,30 @@ async function reinitializeMuuriGrids() {
               <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(false, month.key).budgeted"
+                    :amount="calculateTypeSummary(false, month).budgeted"
                     :as-integer="true"
                     class="text-base-content"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(false, month.key).forecast"
+                    :amount="calculateTypeSummary(false, month).forecast"
                     :as-integer="true"
                     class="text-base-content"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(false, month.key).spent"
+                    :amount="calculateTypeSummary(false, month).spent"
                     :as-integer="true"
-                    :class="calculateTypeSummary(false, month.key).spent >= 0 ? 'text-base-content' : 'text-error'"
+                    :class="calculateTypeSummary(false, month).spent >= 0 ? 'text-base-content' : 'text-error'"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(false, month.key).saldo"
+                    :amount="calculateTypeSummary(false, month).saldo"
                     :as-integer="true"
-                    :class="calculateTypeSummary(false, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                    :class="calculateTypeSummary(false, month).saldo >= 0 ? 'text-success' : 'text-error'"
                   />
                 </div>
               </div>
@@ -620,7 +610,7 @@ async function reinitializeMuuriGrids() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Kategoriegruppen-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
+            <div class="group-header-extended flex w-full bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
               <div class="group-part flex items-center border-r border-base-300 py-2">
                 <!-- Drag Handle für Gruppe -->
@@ -644,35 +634,35 @@ async function reinitializeMuuriGrids() {
                 <div
                   v-for="month in months"
                   :key="month.key"
-                  class="month-column flex-1 min-w-[120px] py-2 border-r border-base-300"
+                  class="month-column flex-1 min-w-[120px] py-2 px-1 border-r border-base-300"
                 >
                   <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).budgeted"
+                        :amount="calculateGroupSummary(group.id, month).budgeted"
                         :as-integer="true"
                         class="text-base-content"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).forecast"
+                        :amount="calculateGroupSummary(group.id, month).forecast"
                         :as-integer="true"
                         class="text-base-content"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).spent"
+                        :amount="calculateGroupSummary(group.id, month).spent"
                         :as-integer="true"
-                        :class="calculateGroupSummary(group.id, month.key).spent >= 0 ? 'text-base-content' : 'text-error'"
+                        :class="calculateGroupSummary(group.id, month).spent >= 0 ? 'text-base-content' : 'text-error'"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).saldo"
+                        :amount="calculateGroupSummary(group.id, month).saldo"
                         :as-integer="true"
-                        :class="calculateGroupSummary(group.id, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                        :class="calculateGroupSummary(group.id, month).saldo >= 0 ? 'text-success' : 'text-error'"
                       />
                     </div>
                   </div>
@@ -729,30 +719,30 @@ async function reinitializeMuuriGrids() {
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).budgeted"
+                              :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-base-content/80"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).forecast"
+                              :amount="getCategoryBudgetData(category.id, month).forecast"
                               :as-integer="true"
                               class="text-base-content/80"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).spent"
+                              :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
                               class="text-error"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).saldo"
+                              :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
-                              :class="generateMockBudgetData(category.id, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                              :class="getCategoryBudgetData(category.id, month).saldo >= 0 ? 'text-success' : 'text-error'"
                             />
                           </div>
                         </div>
@@ -788,28 +778,28 @@ async function reinitializeMuuriGrids() {
               <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(true, month.key).budgeted"
+                    :amount="calculateTypeSummary(true, month).budgeted"
                     :as-integer="true"
                     class="text-success"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(true, month.key).forecast"
+                    :amount="calculateTypeSummary(true, month).forecast"
                     :as-integer="true"
                     class="text-success"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(true, month.key).spent"
+                    :amount="calculateTypeSummary(true, month).spent"
                     :as-integer="true"
                     class="text-base-content"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
-                    :amount="calculateTypeSummary(true, month.key).saldo"
+                    :amount="calculateTypeSummary(true, month).saldo"
                     :as-integer="true"
                     class="text-base-content"
                   />
@@ -858,28 +848,28 @@ async function reinitializeMuuriGrids() {
                   <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).budgeted"
+                        :amount="calculateGroupSummary(group.id, month).budgeted"
                         :as-integer="true"
                         class="text-success"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).forecast"
+                        :amount="calculateGroupSummary(group.id, month).forecast"
                         :as-integer="true"
                         class="text-success"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).spent"
+                        :amount="calculateGroupSummary(group.id, month).spent"
                         :as-integer="true"
                         class="text-base-content"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month.key).saldo"
+                        :amount="calculateGroupSummary(group.id, month).saldo"
                         :as-integer="true"
                         class="text-base-content"
                       />
@@ -938,28 +928,28 @@ async function reinitializeMuuriGrids() {
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).budgeted"
+                              :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-success"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).forecast"
+                              :amount="getCategoryBudgetData(category.id, month).forecast"
                               :as-integer="true"
                               class="text-success"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).spent"
+                              :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
                               class="text-base-content/80"
                             />
                           </div>
                           <div class="text-right">
                             <CurrencyDisplay
-                              :amount="generateMockBudgetData(category.id, month.key).saldo"
+                              :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
                               class="text-base-content/80"
                             />
