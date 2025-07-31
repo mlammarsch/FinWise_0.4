@@ -177,11 +177,11 @@ const availableByMonth = computed(() => {
             </div>
           </div>
           <!-- Monats-Header (scrollbar) -->
-          <div class="flex flex-1 min-w-0">
+          <div class="flex flex-1 min-w-0 mr-3">
             <div
               v-for="(month, i) in months"
               :key="month.key"
-              class="flex-1 min-w-[120px] flex flex-col"
+              class="flex-1 min-w-[120px] flex flex-col "
             >
               <BudgetMonthHeaderCard
                 :label="month.label"
