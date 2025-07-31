@@ -127,47 +127,37 @@ const availableByMonth = computed(() => {
       </div>
       <!-- Tabellenkopf -->
       <div class="flex overflow-x-auto">
-        <div
-          :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
-          class="flex flex-col justify-end"
-        >
-          <!-- Platzhalter für zukünftige Header-Elemente -->
-          <div class="text-sm text-base-content/60">
+        <!-- Kategorien-Header (sticky) -->
+        <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
+          <div class="text-sm text-base-content/60 p-2">
             Kategorien
           </div>
         </div>
-        <div
-          v-for="(month, i) in months"
-          :key="month.key"
-          :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
-          class="flex flex-col"
-        >
-          <BudgetMonthHeaderCard
-            :label="month.label"
-            :toBudget="200"
-            :budgeted="0"
-            :overspent="0"
-            :available="availableByMonth[i]"
-            :nextMonth="0"
-            :month="month"
-          />
+        <!-- Monats-Header (scrollbar) -->
+        <div class="flex flex-1 min-w-0">
+          <div
+            v-for="(month, i) in months"
+            :key="month.key"
+            class="flex-1 min-w-[120px] flex flex-col"
+          >
+            <BudgetMonthHeaderCard
+              :label="month.label"
+              :toBudget="200"
+              :budgeted="0"
+              :overspent="0"
+              :available="availableByMonth[i]"
+              :nextMonth="0"
+              :month="month"
+            />
+          </div>
         </div>
       </div>
     </div>
     <!-- Scrollbarer Datenbereich -->
     <div class="flex-grow overflow-auto">
-      <div class="flex min-w-full">
-        <!-- Kategorie-Spalte mit BudgetCategoryColumn2 -->
-        <div
-          :style="{
-            flex: '0 0 calc(100% / ' + totalColumns + ')',
-            minWidth: 'calc(100% / ' + totalColumns + ')'
-          }"
-          class="flex flex-col sticky left-0 z-10 bg-base-100 border-r border-base-300"
-        >
-          <BudgetCategoryColumn3 />
-        </div>
-        <!-- Monats-Spalten (entfernt für Fokus auf Header und Kategorie) -->
+      <div class="w-full">
+        <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
+        <BudgetCategoryColumn3 :months="months" />
       </div>
     </div>
   </div>

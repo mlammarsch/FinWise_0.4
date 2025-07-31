@@ -135,9 +135,15 @@ function handleTransfer(data: {
         <CurrencyDisplay :amount="props.available ?? 0" :as-integer="true" />
         verfügbare Mittel
       </div>
-      <div>-{{ props.overspent ?? 0 }} Vormonatsdefizit</div>
-      <div>-{{ props.budgeted ?? 0 }} Budgetiert</div>
-      <div>-{{ props.nextMonth ?? 0 }} Übertrag</div>
+      <div>
+        -<CurrencyDisplay :amount="props.overspent ?? 0" :as-integer="true" /> Vormonatsdefizit
+      </div>
+      <div>
+        -<CurrencyDisplay :amount="props.budgeted ?? 0" :as-integer="true" /> Budgetiert
+      </div>
+      <div>
+        -<CurrencyDisplay :amount="props.nextMonth ?? 0" :as-integer="true" /> Übertrag
+      </div>
     </div>
   </div>
 

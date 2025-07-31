@@ -5,6 +5,46 @@ import Muuri from 'muuri';
 import { CategoryService } from '../../services/CategoryService';
 import type { CategoryGroup, Category } from '../../types';
 import { debugLog, errorLog } from '../../utils/logger';
+import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
+
+// Props für Monate
+interface Props {
+  months?: Array<{
+    key: string;
+    label: string;
+    start: Date;
+    end: Date;
+  }>;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  months: () => []
+});
+
+// Mock-Daten für Budget-Werte
+interface MockMonthlyBudgetData {
+  budgeted: number;
+  forecast: number;
+  spent: number;
+  saldo: number;
+}
+
+// Mock-Daten Generator
+function generateMockBudgetData(categoryId: string, monthKey: string): MockMonthlyBudgetData {
+  // Einfache Hash-Funktion für konsistente Mock-Daten
+  const hash = (categoryId + monthKey).split('').reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+
+  const base = Math.abs(hash) % 1000;
+  return {
+    budgeted: base + 100,
+    forecast: base + 50,
+    spent: -(base + 25),
+    saldo: base + 125
+  };
+}
 
 // Drag Container
 const dragContainer = ref<HTMLElement>();
@@ -111,7 +151,7 @@ function initializeGrids() {
 
 function createSubGrid(element: HTMLElement, subGridsArray: typeof expenseSubGrids): Muuri {
   return new Muuri(element, {
-    items: '.category-item',
+    items: '.category-item-extended',
     dragEnabled: true,
     dragHandle: '.category-drag-area',
     dragContainer: dragContainer.value,
@@ -507,29 +547,73 @@ async function reinitializeMuuriGrids() {
                 <div
                   v-for="category in getCategoriesForGroup(group.id)"
                   :key="category.id"
-                  class="category-item"
+                  class="category-item-extended"
                   :data-category-id="category.id"
                   :data-group-id="group.id"
                 >
-                  <div class="flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
-                    <div class="category-drag-area flex items-center flex-grow">
-                      <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                        <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                  <!-- Unified Muuri Item: Kategorie + Werte -->
+                  <div class="flex w-full">
+                    <!-- Sticky Kategorie-Teil -->
+                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
+                      <div class="category-drag-area flex items-center flex-grow">
+                        <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                          <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                        </div>
+
+                        <div v-if="category.icon" class="flex-shrink-0 mr-2">
+                          <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
+                        </div>
+
+                        <div class="flex-grow category-name-drag">
+                          <span class="text-xs text-base-content">{{ category.name }}</span>
+                        </div>
                       </div>
 
-                      <div v-if="category.icon" class="flex-shrink-0 mr-2">
-                        <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
-                      </div>
-
-                      <div class="flex-grow category-name-drag">
-                        <span class="text-xs text-base-content">{{ category.name }}</span>
+                      <div class="flex-shrink-0 flex items-center space-x-1">
+                        <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
+                        <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                        <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
                       </div>
                     </div>
 
-                    <div class="flex-shrink-0 flex items-center space-x-1">
-                      <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                      <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                      <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                    <!-- Dynamische Werte-Teile -->
+                    <div class="values-part flex">
+                      <div
+                        v-for="month in months"
+                        :key="month.key"
+                        class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                      >
+                        <div class="budget-values grid grid-cols-4 gap-1 text-xs">
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).budgeted"
+                              :as-integer="true"
+                              class="text-base-content/80"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).forecast"
+                              :as-integer="true"
+                              class="text-base-content/80"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).spent"
+                              :as-integer="true"
+                              class="text-error"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).saldo"
+                              :as-integer="true"
+                              :class="generateMockBudgetData(category.id, month.key).saldo >= 0 ? 'text-success' : 'text-error'"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -590,29 +674,73 @@ async function reinitializeMuuriGrids() {
                 <div
                   v-for="category in getCategoriesForGroup(group.id)"
                   :key="category.id"
-                  class="category-item"
+                  class="category-item-extended"
                   :data-category-id="category.id"
                   :data-group-id="group.id"
                 >
-                  <div class="flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
-                    <div class="category-drag-area flex items-center flex-grow">
-                      <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                        <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                  <!-- Unified Muuri Item: Kategorie + Werte -->
+                  <div class="flex w-full">
+                    <!-- Sticky Kategorie-Teil -->
+                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
+                      <div class="category-drag-area flex items-center flex-grow">
+                        <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                          <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                        </div>
+
+                        <div v-if="category.icon" class="flex-shrink-0 mr-2">
+                          <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
+                        </div>
+
+                        <div class="flex-grow category-name-drag">
+                          <span class="text-xs text-base-content">{{ category.name }}</span>
+                        </div>
                       </div>
 
-                      <div v-if="category.icon" class="flex-shrink-0 mr-2">
-                        <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
-                      </div>
-
-                      <div class="flex-grow category-name-drag">
-                        <span class="text-xs text-base-content">{{ category.name }}</span>
+                      <div class="flex-shrink-0 flex items-center space-x-1">
+                        <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
+                        <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                        <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
                       </div>
                     </div>
 
-                    <div class="flex-shrink-0 flex items-center space-x-1">
-                      <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                      <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                      <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                    <!-- Dynamische Werte-Teile -->
+                    <div class="values-part flex">
+                      <div
+                        v-for="month in months"
+                        :key="month.key"
+                        class="month-column flex-1 min-w-[120px] p-1 border-b border-base-300"
+                      >
+                        <div class="budget-values grid grid-cols-4 gap-1 text-xs">
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).budgeted"
+                              :as-integer="true"
+                              class="text-success"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).forecast"
+                              :as-integer="true"
+                              class="text-success"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).spent"
+                              :as-integer="true"
+                              class="text-base-content/80"
+                            />
+                          </div>
+                          <div class="text-right">
+                            <CurrencyDisplay
+                              :amount="generateMockBudgetData(category.id, month.key).saldo"
+                              :as-integer="true"
+                              class="text-base-content/80"
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -697,7 +825,7 @@ async function reinitializeMuuriGrids() {
   min-height: 100%;
 }
 
-.category-item {
+.category-item-extended {
   position: absolute;
   display: block;
   width: 100%;
@@ -705,8 +833,33 @@ async function reinitializeMuuriGrids() {
   z-index: 1;
 }
 
-.category-item:last-child .flex:last-child {
+.category-item-extended:last-child .flex:last-child {
   border-bottom: none;
+}
+
+/* Layout für erweiterte Items */
+.category-part {
+  flex: 0 0 300px;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: inherit;
+}
+
+.values-part {
+  flex: 1;
+  display: flex;
+  overflow-x: auto;
+}
+
+.month-column {
+  flex: 1;
+  min-width: 120px;
+  background: hsl(var(--b1));
+}
+
+.budget-values {
+  padding: 4px;
 }
 
 /* Drag Handle Styles */
@@ -749,26 +902,31 @@ async function reinitializeMuuriGrids() {
 
 /* Hover-Effekte */
 .group-header:hover .group-drag-handle,
-.category-item:hover .category-drag-handle {
+.category-item-extended:hover .category-drag-handle {
   opacity: 1;
 }
 
-.category-item:hover .category-drag-area {
+.category-item-extended:hover .category-drag-area {
   background-color: hsl(var(--b2) / 0.3);
 }
 
-/* Muuri Drag States für Kategorien */
-.category-item.muuri-item-dragging {
+/* Muuri Drag States für erweiterte Kategorien */
+.category-item-extended.muuri-item-dragging {
   z-index: 9999 !important;
   cursor: move !important;
+  transform: scale(1.02) !important;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
 }
 
-.category-item.muuri-item-releasing {
+.category-item-extended.muuri-item-releasing {
   z-index: 9998 !important;
+  transform: scale(1) !important;
+  transition: transform 300ms ease !important;
 }
 
-.category-item.muuri-item-hidden {
+.category-item-extended.muuri-item-hidden {
   z-index: 0 !important;
+  opacity: 0 !important;
 }
 
 /* Placeholder styling */
