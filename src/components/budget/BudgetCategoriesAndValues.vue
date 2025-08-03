@@ -5,7 +5,7 @@ import Muuri from 'muuri';
 import { CategoryService } from '../../services/CategoryService';
 import { useCategoryStore } from '../../stores/categoryStore';
 import type { CategoryGroup, Category } from '../../types';
-import { debugLog, errorLog } from '../../utils/logger';
+import { debugLog, errorLog, infoLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
 import CalculatorInput from '../ui/CalculatorInput.vue';
 import { BudgetService } from '../../services/BudgetService';
@@ -216,22 +216,77 @@ function isEditingBudget(categoryId: string, monthKey: string): boolean {
 }
 
 // Handler für CalculatorInput
-function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
-  // DEBUG: Console-Ausgabe für Formel-Tests
-  console.log('=== CALCULATOR INPUT EMIT ===');
-  console.log('Category ID:', categoryId);
-  console.log('Month Key:', monthKey);
-  console.log('Calculated Value:', newValue);
-  console.log('Value Type:', typeof newValue);
-  console.log('Is Finite:', isFinite(newValue));
-  console.log('==============================');
-
-  // TODO: Hier wird später die tatsächliche Budget-Update-Logik implementiert
+async function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
   debugLog('BudgetCategoriesAndValues', `Budget update: ${categoryId}-${monthKey} = ${newValue}`);
-  // Beispiel: BudgetService.updateBudget(categoryId, monthKey, newValue);
 
-  // Nach dem Update den Edit-Modus beenden
-  handleBudgetFinish(categoryId, monthKey);
+  try {
+    // Finde den entsprechenden Monat basierend auf monthKey
+    const targetMonth = props.months.find(month => month.key === monthKey);
+    if (!targetMonth) {
+      errorLog('BudgetCategoriesAndValues', `Monat mit Key ${monthKey} nicht gefunden`);
+      return;
+    }
+
+    // Berechne den aktuellen Budgetwert (Summe aller CATEGORYTRANSFER-Buchungen)
+    const currentBudgetData = BudgetService.getSingleCategoryMonthlyBudgetData(
+      categoryId,
+      targetMonth.start,
+      targetMonth.end
+    );
+    const currentBudgetValue = currentBudgetData.budgeted;
+
+    debugLog('BudgetCategoriesAndValues', `Aktueller Budgetwert: ${currentBudgetValue}, Zielwert: ${newValue}`);
+
+    // Berechne die Differenz
+    const difference = newValue - currentBudgetValue;
+
+    if (Math.abs(difference) < 0.01) {
+      debugLog('BudgetCategoriesAndValues', 'Keine Änderung erforderlich - Differenz zu gering');
+      handleBudgetFinish(categoryId, monthKey);
+      return;
+    }
+
+    // Finde die "Verfügbare Mittel" Kategorie
+    const availableFunds = availableFundsCategory.value;
+    if (!availableFunds) {
+      errorLog('BudgetCategoriesAndValues', 'Kategorie "Verfügbare Mittel" nicht gefunden');
+      return;
+    }
+
+    // Erstelle CATEGORYTRANSFER-Buchung basierend auf der Differenz
+    const transferDate = toDateOnlyString(targetMonth.start);
+    const transferNote = `Budget-Anpassung für ${monthKey}`;
+
+    if (difference < 0) {
+      // Negative Differenz: Transfer von Kategorie zu "Verfügbare Mittel"
+      debugLog('BudgetCategoriesAndValues', `Erstelle Transfer von Kategorie zu Verfügbare Mittel: ${Math.abs(difference)}`);
+      await TransactionService.addCategoryTransfer(
+        categoryId,
+        availableFunds.id,
+        Math.abs(difference),
+        transferDate,
+        transferNote
+      );
+    } else {
+      // Positive Differenz: Transfer von "Verfügbare Mittel" zu Kategorie
+      debugLog('BudgetCategoriesAndValues', `Erstelle Transfer von Verfügbare Mittel zu Kategorie: ${difference}`);
+      await TransactionService.addCategoryTransfer(
+        availableFunds.id,
+        categoryId,
+        difference,
+        transferDate,
+        transferNote
+      );
+    }
+
+    infoLog('BudgetCategoriesAndValues', `Budget-Update abgeschlossen für Kategorie ${categoryId} im Monat ${monthKey}`);
+
+  } catch (error) {
+    errorLog('BudgetCategoriesAndValues', 'Fehler beim Budget-Update', error);
+  } finally {
+    // Nach dem Update den Edit-Modus beenden
+    handleBudgetFinish(categoryId, monthKey);
+  }
 }
 
 function handleBudgetFinish(categoryId: string, monthKey: string) {
@@ -242,17 +297,13 @@ function handleBudgetFinish(categoryId: string, monthKey: string) {
 }
 
 function handleBudgetClick(categoryId: string, monthKey: string) {
-  console.log('CLICK EVENT TRIGGERED!', categoryId, monthKey); // Einfacher Console.log für Test
   debugLog('BudgetCategoriesAndValues', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
 
   if (!isEditingBudget(categoryId, monthKey)) {
-    console.log('Starting edit mode for:', categoryId, monthKey);
     debugLog('BudgetCategoriesAndValues', 'Not currently editing, starting edit mode');
     activeEditField.value = `${categoryId}-${monthKey}`;
-    console.log('activeEditField set to:', activeEditField.value);
     debugLog('BudgetCategoriesAndValues', `activeEditField set to: ${activeEditField.value}`);
   } else {
-    console.log('Already editing this field');
     debugLog('BudgetCategoriesAndValues', 'Already editing this field');
   }
 }
@@ -1404,30 +1455,12 @@ function handleTransactionUpdated() {
                         class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
-                          <div
-                            class="text-right transition-all duration-200 rounded px-1 py-0.5 border"
-                            :class="{
-                              'cursor-pointer border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
-                              'border-transparent': isEditingBudget(category.id, month.key)
-                            }"
-                            @click.stop="handleBudgetClick(category.id, month.key)"
-                          >
-                            <!-- Edit-Modus: CalculatorInput -->
-                            <CalculatorInput
-                              v-if="isEditingBudget(category.id, month.key)"
-                              :model-value="getCategoryBudgetData(category.id, month).budgeted"
-                              :is-active="true"
-                              :field-key="`${category.id}-${month.key}`"
-                              @update:model-value="handleBudgetUpdate(category.id, month.key, $event)"
-                              @finish="handleBudgetFinish(category.id, month.key)"
-                            />
-                            <!-- Anzeige-Modus: CurrencyDisplay -->
+                          <div class="text-right">
+                            <!-- Income-Bereich: Nur CurrencyDisplay, keine Edit-Funktionalität -->
                             <CurrencyDisplay
-                              v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-success"
-                              @click.stop="handleBudgetClick(category.id, month.key)"
                             />
                           </div>
                           <div class="text-right">
