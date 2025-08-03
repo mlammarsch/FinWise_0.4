@@ -866,7 +866,7 @@ function executeTransfer() {
                       <div
                         v-for="month in months"
                         :key="month.key"
-                        class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
+                        class="month-column flex-1 min-w-[120px] p-[3px] border-b border-r border-base-300"
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div class="text-right">
