@@ -251,6 +251,28 @@ watch(() => categoryStore.expandedCategoryGroups, () => {
   });
 }, { deep: true });
 
+// Watcher für Änderungen der months-Props (PagingYearComponent, Spaltenanzahl)
+watch(() => props.months, async (newMonths, oldMonths) => {
+  if (!newMonths || newMonths.length === 0) return;
+
+  // Prüfe ob sich die Monate tatsächlich geändert haben
+  const monthsChanged = !oldMonths ||
+    newMonths.length !== oldMonths.length ||
+    newMonths.some((month, index) =>
+      !oldMonths[index] || month.key !== oldMonths[index].key
+    );
+
+  if (monthsChanged) {
+    debugLog('BudgetCategoryColumn3', `Months changed, updating layout. New count: ${newMonths.length}`);
+
+    // Kurz warten für DOM-Updates
+    await nextTick();
+
+    // Layout aller Grids aktualisieren
+    updateLayoutAfterMonthsChange();
+  }
+}, { deep: true });
+
 function initializeGrids() {
   debugLog('BudgetCategoryColumn3', 'initializeGrids() function called');
 
@@ -519,6 +541,98 @@ function updateLayoutAfterToggle() {
   if (incomeMetaGrid.value) {
     incomeMetaGrid.value.refreshItems();
     incomeMetaGrid.value.layout(true);
+  }
+}
+
+function updateLayoutAfterMonthsChange() {
+  debugLog('BudgetCategoryColumn3', 'updateLayoutAfterMonthsChange() called');
+
+  try {
+    let completedLayouts = 0;
+    const totalGrids = 2; // Expense Meta-Grid + Income Meta-Grid
+
+    const checkAllLayoutsComplete = () => {
+      completedLayouts++;
+      debugLog('BudgetCategoryColumn3', `Layout update completed: ${completedLayouts}/${totalGrids}`);
+      if (completedLayouts >= totalGrids) {
+        debugLog('BudgetCategoryColumn3', 'All layouts updated after months change - emitting muuriReady');
+        emit('muuriReady');
+      }
+    };
+
+    // Alle Sub-Grids refreshen
+    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach(grid => {
+      if (grid) {
+        grid.refreshItems();
+        grid.layout(true);
+      }
+    });
+
+    // Meta-Grids refreshen mit Layout-Completion-Tracking
+    if (expenseMetaGrid.value) {
+      expenseMetaGrid.value.refreshItems();
+
+      // Prüfe ob Items vorhanden sind
+      if (expenseMetaGrid.value.getItems().length === 0) {
+        debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid has no items, layout complete immediately');
+        checkAllLayoutsComplete();
+      } else {
+        // Einmaliger Event-Listener für layoutEnd
+        const handleExpenseLayoutEnd = () => {
+          expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
+          debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout update completed');
+          checkAllLayoutsComplete();
+        };
+        expenseMetaGrid.value.on('layoutEnd', handleExpenseLayoutEnd);
+        expenseMetaGrid.value.layout(true);
+
+        // Fallback nach 300ms
+        setTimeout(() => {
+          if (completedLayouts < 1) {
+            expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
+            debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via timeout fallback');
+            checkAllLayoutsComplete();
+          }
+        }, 300);
+      }
+    } else {
+      checkAllLayoutsComplete();
+    }
+
+    if (incomeMetaGrid.value) {
+      incomeMetaGrid.value.refreshItems();
+
+      // Prüfe ob Items vorhanden sind
+      if (incomeMetaGrid.value.getItems().length === 0) {
+        debugLog('BudgetCategoryColumn3', 'Income Meta-Grid has no items, layout complete immediately');
+        checkAllLayoutsComplete();
+      } else {
+        // Einmaliger Event-Listener für layoutEnd
+        const handleIncomeLayoutEnd = () => {
+          incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
+          debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout update completed');
+          checkAllLayoutsComplete();
+        };
+        incomeMetaGrid.value.on('layoutEnd', handleIncomeLayoutEnd);
+        incomeMetaGrid.value.layout(true);
+
+        // Fallback nach 300ms
+        setTimeout(() => {
+          if (completedLayouts < 2) {
+            incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
+            debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via timeout fallback');
+            checkAllLayoutsComplete();
+          }
+        }, 300);
+      }
+    } else {
+      checkAllLayoutsComplete();
+    }
+
+  } catch (error) {
+    errorLog('BudgetCategoryColumn3', 'Failed to update layout after months change', error);
+    // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
+    emit('muuriReady');
   }
 }
 
