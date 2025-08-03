@@ -42,6 +42,12 @@ export interface Category {
   categoryGroupId?: string
   parentCategoryId?: string
   isSavingsGoal?: boolean
+  goalDate?: string
+  targetAmount?: number
+  priority?: number
+  proportion?: number
+  monthlyAmount?: number
+  note?: string
   updatedAt?: string // ISO 8601 Format
 }
 
@@ -156,8 +162,8 @@ export enum RuleActionType {
   ADD_TAG = 'ADD_TAG',
   SET_NOTE = 'SET_NOTE',
   LINK_SCHEDULE = 'LINK_SCHEDULE',
-  SET_ACCOUNT    = "SET_ACCOUNT",
-  SET_RECIPIENT  = "SET_RECIPIENT",
+  SET_ACCOUNT = "SET_ACCOUNT",
+  SET_RECIPIENT = "SET_RECIPIENT",
 }
 
 export type RuleOperator = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_empty' | 'is_not_empty' | 'one_of' | 'starts_with' | 'ends_with';

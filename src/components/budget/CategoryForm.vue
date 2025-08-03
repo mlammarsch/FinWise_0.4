@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { Category } from "../../types";
 import { CategoryService } from "../../services/CategoryService";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
+import CurrencyInput from "../ui/CurrencyInput.vue";
 import ButtonGroup from "../ui/ButtonGroup.vue";
 import { Icon } from "@iconify/vue";
 
@@ -17,15 +18,25 @@ const emit = defineEmits(["save", "cancel"]);
 const name = ref("");
 const description = ref("");
 const isActive = ref(true);
+const isHidden = ref(false);
 const isSavingsGoal = ref(false);
 const targetAmount = ref(0);
 const targetDate = ref("");
 const categoryGroupId = ref("");
 const balance = ref(0);
+const goalDate = ref("");
+const priority = ref(0);
+const proportion = ref(0);
+const monthlyAmount = ref(0);
+const note = ref("");
 
 // Validierung
 const submitAttempted = ref(false);
 const showValidationAlert = ref(false);
+
+// Flags zur Verhinderung von Endlosschleifen bei automatischen Berechnungen
+const isCalculatingDate = ref(false);
+const isCalculatingAmount = ref(false);
 
 // Lade die Daten, wenn eine Kategorie zum Bearbeiten übergeben wurde
 onMounted(() => {
@@ -33,11 +44,17 @@ onMounted(() => {
     name.value = props.category.name;
     description.value = ""; // Category hat keine description property
     isActive.value = props.category.isActive;
+    isHidden.value = props.category.isHidden || false;
     isSavingsGoal.value = props.category.isSavingsGoal || false;
-    targetAmount.value = 0; // Category hat keine targetAmount property
-    targetDate.value = ""; // Category hat keine targetDate property
+    targetAmount.value = props.category.targetAmount || 0;
+    targetDate.value = ""; // Wird nicht verwendet, goalDate ist das korrekte Feld
     categoryGroupId.value = props.category.categoryGroupId || "";
     balance.value = props.category.available || 0;
+    goalDate.value = props.category.goalDate || "";
+    priority.value = props.category.priority || 0;
+    proportion.value = props.category.proportion || 0;
+    monthlyAmount.value = props.category.monthlyAmount || 0;
+    note.value = props.category.note || "";
   } else {
     const groups = CategoryService.getCategoryGroups().value;
     if (groups.length > 0) {
@@ -46,17 +63,58 @@ onMounted(() => {
   }
 });
 
-// Konvertiere einen String in eine Zahl
-const parseNumber = (value: string): number => {
-  const normalized = value.replace(/\./g, "").replace(",", ".");
-  return parseFloat(normalized) || 0;
+// Automatische Berechnungen für Sparziel
+const calculateGoalDate = () => {
+  if (!isSavingsGoal.value || targetAmount.value <= 0 || monthlyAmount.value <= 0 || isCalculatingDate.value) {
+    return;
+  }
+
+  isCalculatingDate.value = true;
+
+  const monthsNeeded = Math.ceil(targetAmount.value / monthlyAmount.value);
+  const today = new Date();
+  const goalDateCalculated = new Date(today.getFullYear(), today.getMonth() + monthsNeeded, today.getDate());
+
+  goalDate.value = goalDateCalculated.toISOString().split('T')[0];
+
+  setTimeout(() => {
+    isCalculatingDate.value = false;
+  }, 100);
 };
 
-// Formatiere eine Zahl für die Anzeige
-const formatNumber = (value: number | undefined | null): string => {
-  if (value === undefined || value === null || isNaN(value)) return "0,00";
-  return value.toString().replace(".", ",");
+const calculateMonthlyAmount = () => {
+  if (!isSavingsGoal.value || targetAmount.value <= 0 || !goalDate.value || isCalculatingAmount.value) {
+    return;
+  }
+
+  isCalculatingAmount.value = true;
+
+  const today = new Date();
+  const targetDateObj = new Date(goalDate.value);
+  const monthsDiff = (targetDateObj.getFullYear() - today.getFullYear()) * 12 +
+                     (targetDateObj.getMonth() - today.getMonth());
+
+  if (monthsDiff > 0) {
+    monthlyAmount.value = Math.ceil(targetAmount.value / monthsDiff * 100) / 100;
+  }
+
+  setTimeout(() => {
+    isCalculatingAmount.value = false;
+  }, 100);
 };
+
+// Watch für automatische Berechnungen
+watch([targetAmount, monthlyAmount], () => {
+  if (isSavingsGoal.value && !isCalculatingDate.value) {
+    calculateGoalDate();
+  }
+}, { deep: true });
+
+watch([targetAmount, goalDate], () => {
+  if (isSavingsGoal.value && !isCalculatingAmount.value) {
+    calculateMonthlyAmount();
+  }
+}, { deep: true });
 
 // Validierungsfehler sammeln
 const validationErrors = computed(() => {
@@ -87,11 +145,17 @@ const saveCategory = () => {
     activity: 0,
     available: balance.value,
     isIncomeCategory: false,
-    isHidden: false,
+    isHidden: isHidden.value,
     isActive: isActive.value,
     sortOrder: 0,
     categoryGroupId: categoryGroupId.value,
     isSavingsGoal: isSavingsGoal.value,
+    goalDate: goalDate.value || undefined,
+    targetAmount: targetAmount.value || undefined,
+    priority: priority.value || undefined,
+    proportion: proportion.value || undefined,
+    monthlyAmount: monthlyAmount.value || undefined,
+    note: note.value || undefined,
   };
 
   emit("save", categoryData);
@@ -110,6 +174,41 @@ const categoryGroups = computed(
 
 <template>
   <div class="relative">
+    <!-- Header mit Switches und Saldo -->
+    <div class="flex justify-between items-start mb-6">
+      <div class="flex gap-4">
+        <div class="form-control">
+          <label class="label cursor-pointer gap-2">
+            <span class="label-text">Aktiv</span>
+            <input
+              type="checkbox"
+              v-model="isActive"
+              class="toggle toggle-sm toggle-primary"
+            />
+          </label>
+        </div>
+        <div class="form-control">
+          <label class="label cursor-pointer gap-2">
+            <span class="label-text">Versteckt</span>
+            <input
+              type="checkbox"
+              v-model="isHidden"
+              class="toggle toggle-sm toggle-primary"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div v-if="props.category" class="text-right">
+        <div class="text-sm text-base-content/70 mb-1">Akt. Saldo</div>
+        <CurrencyDisplay
+          :amount="balance"
+          :show-zero="true"
+          :as-integer="true"
+        />
+      </div>
+    </div>
+
     <!-- X-Icon zum Schließen -->
     <button
       type="button"
@@ -159,33 +258,23 @@ const categoryGroups = computed(
       @submit.prevent="saveCategory"
       class="space-y-4"
     >
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">
-          Name<span class="text-error">*</span>
-        </legend>
-        <input
-          type="text"
-          v-model="name"
-          class="input input-bordered w-full"
-          required
-          placeholder="Kategoriename"
-        />
-      </fieldset>
-
-      <fieldset class="fieldset">
-        <legend class="fieldset-legend">Beschreibung</legend>
-        <input
-          type="text"
-          v-model="description"
-          class="input input-bordered w-full"
-          placeholder="Kurze Beschreibung"
-        />
-      </fieldset>
-
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <fieldset class="fieldset">
           <legend class="fieldset-legend">
-            Kategoriegruppe<span class="text-error">*</span>
+            Name<span class="text-error">*</span>
+          </legend>
+          <input
+            type="text"
+            v-model="name"
+            class="input input-bordered w-full"
+            required
+            placeholder="Kategoriename"
+          />
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Lebensbereich<span class="text-error">*</span>
           </legend>
           <select
             v-model="categoryGroupId"
@@ -201,12 +290,59 @@ const categoryGroups = computed(
             </option>
           </select>
         </fieldset>
+      </div>
 
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Beschreibung</legend>
+        <input
+          type="text"
+          v-model="description"
+          class="input input-bordered w-full"
+          placeholder="Kurze Beschreibung"
+        />
+      </fieldset>
+
+      <!-- Regelverteilung bei Budgetplanung -->
+      <div class="divider pt-6">Regelverteilung bei Budgetplanung</div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Mtl. Betrag</legend>
+          <CurrencyInput
+            v-model="monthlyAmount"
+            :borderless="false"
+          />
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Priorität</legend>
+          <input
+            type="number"
+            v-model.number="priority"
+            class="input input-bordered"
+            min="0"
+            max="10"
+            placeholder="0-10"
+          />
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Anteil (%)</legend>
+          <input
+            type="number"
+            v-model.number="proportion"
+            class="input input-bordered"
+            min="0"
+            max="100"
+            step="0.1"
+            placeholder="0-100"
+          />
+        </fieldset>
       </div>
 
       <div class="form-control">
         <label class="label cursor-pointer">
-          <span class="label-text">Als Sparziel verwenden</span>
+          <span class="label-text text-xs">Als Sparziel verwenden</span>
           <input
             type="checkbox"
             v-model="isSavingsGoal"
@@ -219,64 +355,36 @@ const categoryGroups = computed(
         v-if="isSavingsGoal"
         class="grid grid-cols-1 md:grid-cols-2 gap-4"
       >
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text">Zielbetrag</span>
-            <span class="text-error">*</span>
-          </label>
-          <div class="input-group">
-            <input
-              type="text"
-              :value="formatNumber(targetAmount)"
-              @input="
-                targetAmount = parseNumber(
-                  ($event.target as HTMLInputElement).value
-                )
-              "
-              class="input input-bordered w-full"
-              :required="isSavingsGoal"
-              placeholder="0,00"
-            />
-          </div>
-        </div>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">
+            Zielbetrag<span class="text-error">*</span>
+          </legend>
+          <CurrencyInput
+            v-model="targetAmount"
+            :borderless="false"
+          />
+        </fieldset>
 
-        <div class="form-control">
-          <label class="label">
-            <span class="label-text">Zieldatum</span>
-          </label>
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Zieldatum</legend>
           <input
             type="date"
-            v-model="targetDate"
+            v-model="goalDate"
             class="input input-bordered"
-            placeholder="Zieldatum"
+            placeholder="tt.mm.jjjj"
           />
-        </div>
+        </fieldset>
       </div>
 
-      <div
-        v-if="props.category"
-        class="form-control"
-      >
-        <label class="label">
-          <span class="label-text">Aktueller Saldo</span>
-        </label>
-        <CurrencyDisplay
-          :amount="balance"
-          :show-zero="true"
-          :as-integer="false"
-        />
-      </div>
-
-      <div class="form-control">
-        <label class="label cursor-pointer">
-          <span class="label-text">Aktiv</span>
-          <input
-            type="checkbox"
-            v-model="isActive"
-            class="toggle toggle-primary"
-          />
-        </label>
-      </div>
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Notiz</legend>
+        <textarea
+          v-model="note"
+          class="textarea textarea-bordered"
+          rows="3"
+          placeholder="Zusätzliche Informationen zur Kategorie"
+        ></textarea>
+      </fieldset>
 
       <div class="flex justify-end pt-4">
         <ButtonGroup
