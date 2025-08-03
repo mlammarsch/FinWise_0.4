@@ -1269,43 +1269,47 @@ function handleTransactionUpdated() {
       </div>
     </div>
     <!-- Kontext-Dropdown -->
-    <div
+    <ul
       v-if="showDropdown"
       ref="dropdownRef"
       tabindex="0"
-      class="fixed z-40 w-48 bg-base-100 border border-base-300 rounded shadow p-2"
+      class="fixed z-40 menu p-2 shadow bg-base-100 border border-base-300 rounded-box w-56"
       :style="`left: ${dropdownX}px; top: ${dropdownY}px;`"
       @keydown.escape="closeDropdown"
       @blur="onDropdownBlur"
     >
-      <ul>
-        <!-- Fülle auf - nur bei Ausgabenkategorien -->
-        <li
-          v-if="
-            modalData?.clickedCategory &&
-            !modalData.clickedCategory.isIncomeCategory
-          "
-        >
-          <button
-            class="btn btn-ghost btn-sm w-full"
-            @click="optionFill"
-          >
-            <Icon icon="mdi:arrow-collapse-right" />
-            <span>Fülle auf von …</span>
-          </button>
-        </li>
-        <!-- Transferiere zu - bei allen Kategorien -->
-        <li>
-          <button
-            class="btn btn-ghost btn-sm w-full"
-            @click="optionTransfer"
-          >
-            <Icon icon="mdi:arrow-expand-right" />
-            <span>Transferiere zu …</span>
-          </button>
-        </li>
-      </ul>
-    </div>
+      <!-- Überschrift -->
+      <li class="menu-title">
+        <span>Budget-Aktionen</span>
+      </li>
+
+      <!-- Fülle auf - nur bei Ausgabenkategorien -->
+      <li
+        v-if="
+          modalData?.clickedCategory &&
+          !modalData.clickedCategory.isIncomeCategory
+        "
+      >
+        <a @click="optionFill">
+          <Icon
+            icon="mdi:arrow-collapse-right"
+            class="text-lg"
+          />
+          Fülle auf von …
+        </a>
+      </li>
+
+      <!-- Transferiere zu - bei allen Kategorien -->
+      <li>
+        <a @click="optionTransfer">
+          <Icon
+            icon="mdi:arrow-expand-right"
+            class="text-lg"
+          />
+          Transferiere zu …
+        </a>
+      </li>
+    </ul>
 
     <!-- Transfer-Modal -->
     <CategoryTransferModal
