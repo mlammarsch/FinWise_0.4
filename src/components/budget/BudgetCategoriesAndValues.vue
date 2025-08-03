@@ -9,6 +9,7 @@ import { debugLog, errorLog, infoLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
 import CalculatorInput from '../ui/CalculatorInput.vue';
 import { BudgetService } from '../../services/BudgetService';
+import { BalanceService } from '../../services/BalanceService';
 import { toDateOnlyString } from '../../utils/formatters';
 import CategoryTransferModal from './CategoryTransferModal.vue';
 import CategoryTransactionModal from './CategoryTransactionModal.vue';
@@ -144,6 +145,24 @@ const availableFundsCategory = computed(() =>
 function isVerfuegbareMittel(cat: Category) {
   return availableFundsCategory.value?.id === cat.id;
 }
+
+// Berechnet den aktuellen Saldo einer Kategorie basierend auf allen Transaktionen
+const getCategoryBalance = (categoryId: string): number => {
+  return BalanceService.getTodayBalance("category", categoryId);
+};
+
+// Berechnet den Progress-Wert für Sparziele (Saldo / Sparziel * 100, max. 100)
+const getSavingsGoalProgress = (category: Category): number => {
+  if (!category.isSavingsGoal || !category.targetAmount || category.targetAmount <= 0) {
+    return 0;
+  }
+
+  const currentBalance = getCategoryBalance(category.id);
+  const progress = (currentBalance / category.targetAmount) * 100;
+
+  // Ergebnis kann nie höher als 100 sein
+  return Math.min(Math.max(progress, 0), 100);
+};
 
 // Context-Dropdown
 const showDropdown = ref(false);
@@ -1241,10 +1260,22 @@ function handleTransactionUpdated() {
                         </div>
                       </div>
 
-                      <div class="flex-shrink-0 flex items-center space-x-1">
-                        <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                        <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                        <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                      <div class="flex-shrink-0 flex items-center space-x-2">
+                        <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="flex items-center space-x-2">
+                          <div class="flex flex-col w-full mr-1 items-center">
+
+                            <div class="badge badge-xs badge-primary badge-soft text-xs w-full">
+                              <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-0" />
+                              - {{ new Date(category.goalDate).toLocaleDateString('de-DE', { month: '2-digit', year: '2-digit' }) }}
+                            </div>
+                            <progress class="progress progress-primary w-28 mt-1" :value="getSavingsGoalProgress(category)" max="100"></progress>
+                          </div>
+                        </div>
+                        <div v-else class="flex items-center space-x-1">
+                          <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
+                          <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                          <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                        </div>
                       </div>
                     </div>
 
@@ -1308,7 +1339,7 @@ function handleTransactionUpdated() {
                             />
                           </div>
                           <div
-                            class="text-right"
+                            class="text-right py-0.5 "
                             :class="{
                               'cursor-context-menu hover:bg-base-200': !category.isIncomeCategory || getCategoryBudgetData(category.id, month).saldo > 0
                             }"
@@ -1490,10 +1521,19 @@ function handleTransactionUpdated() {
                         </div>
                       </div>
 
-                      <div class="flex-shrink-0 flex items-center space-x-1">
-                        <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                        <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                        <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                      <div class="flex-shrink-0 flex items-center space-x-2">
+                        <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="flex items-center space-x-2">
+                          <div class="badge badge-primary badge-soft text-xs">
+                            <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-1" />
+                            bis {{ new Date(category.goalDate).toLocaleDateString('de-DE', { month: '2-digit', year: '2-digit' }) }}
+                          </div>
+                          <progress class="progress progress-primary w-16" :value="getSavingsGoalProgress(category)" max="100"></progress>
+                        </div>
+                        <div v-else class="flex items-center space-x-1">
+                          <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
+                          <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                          <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                        </div>
                       </div>
                     </div>
 
@@ -1537,7 +1577,7 @@ function handleTransactionUpdated() {
                             />
                           </div>
                           <div
-                            class="text-right"
+                            class="text-right py-0.5 "
                             :class="{
                               'cursor-context-menu hover:bg-base-200': getCategoryBudgetData(category.id, month).saldo > 0
                             }"

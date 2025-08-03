@@ -5,7 +5,7 @@
  * Utils‑Abhängigkeit (addCategoryTransfer) entfällt – es wird nun TransactionService genutzt.
  */
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
-import { ref, computed, nextTick } from "vue";
+import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useCategoryStore } from "../../stores/categoryStore";
 import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
 import { Icon } from "@iconify/vue";
@@ -71,6 +71,87 @@ function handleEscHeaderDropdown(event: KeyboardEvent) {
 }
 
 /* ----------------------------------------------------------- */
+/* ------------------- Budget-Aktions-Menü ------------------- */
+/* ----------------------------------------------------------- */
+const isBudgetMenuOpen = ref(false);
+const budgetMenuButtonRef = ref<HTMLButtonElement | null>(null);
+const budgetMenuRef = ref<HTMLUListElement | null>(null);
+const budgetMenuStyle = ref({});
+
+function openBudgetMenu() {
+  if (!budgetMenuButtonRef.value) return;
+  const rect = budgetMenuButtonRef.value.getBoundingClientRect();
+  budgetMenuStyle.value = {
+    position: "fixed",
+    top: `${rect.bottom}px`,
+    left: `${rect.right}px`,
+    transform: "translateX(-100%)",
+    zIndex: 5000,
+  };
+  isBudgetMenuOpen.value = true;
+}
+
+function closeBudgetMenu() {
+  isBudgetMenuOpen.value = false;
+}
+
+function toggleBudgetMenu() {
+  if (isBudgetMenuOpen.value) {
+    closeBudgetMenu();
+  } else {
+    openBudgetMenu();
+  }
+}
+
+function handleBudgetMenuClickOutside(event: MouseEvent) {
+  if (
+    (budgetMenuRef.value && budgetMenuRef.value.contains(event.target as Node)) ||
+    (budgetMenuButtonRef.value &&
+      budgetMenuButtonRef.value.contains(event.target as Node))
+  ) {
+    return;
+  }
+  closeBudgetMenu();
+}
+
+function handleBudgetAction(action: string) {
+  debugLog("[BudgetMonthHeaderCard] Budget-Aktion ausgeführt", { action });
+  // TODO: Implementierung der Budget-Aktionen
+  switch (action) {
+    case 'carry-surplus':
+      console.log('Überschuss in Folgemonat übertragen');
+      break;
+    case 'show-template':
+      console.log('Budget-Template anzeigen');
+      break;
+    case 'apply-template':
+      console.log('Budget-Template anwenden');
+      break;
+    case 'overwrite-template':
+      console.log('Mit Budget-Template überschreiben');
+      break;
+    case 'copy-last-month':
+      console.log('Letztes Monatsbudget kopieren');
+      break;
+    case 'set-3month-average':
+      console.log('3-Monats-Durchschnitt setzen');
+      break;
+    case 'reset-budget':
+      console.log('Budget auf 0 setzen');
+      break;
+  }
+  closeBudgetMenu();
+}
+
+onMounted(() => {
+  document.addEventListener("click", handleBudgetMenuClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener("click", handleBudgetMenuClickOutside);
+});
+
+/* ----------------------------------------------------------- */
 /* --------------------- Transfer‑Modal ---------------------- */
 /* ----------------------------------------------------------- */
 const showTransferModal = ref(false);
@@ -123,13 +204,26 @@ function handleTransfer(data: {
   >
     <div
       :class="[
-        'p-2 text-center font-bold',
+        'p-2 text-center font-bold relative',
         isCurrentMonth
           ? 'border-b border-accent opacity-70 bg-accent/20'
           : 'border-b border-base-300',
       ]"
     >
       {{ props.label }}
+
+      <!-- 3-Punkt-Menü Button -->
+      <button
+        ref="budgetMenuButtonRef"
+        @click.stop="toggleBudgetMenu"
+        class="btn btn-xs btn-ghost btn-circle absolute top-1 right-1 opacity-60 hover:opacity-100"
+        title="Budget-Aktionen"
+      >
+        <Icon
+          icon="mdi:dots-vertical"
+          class="text-sm"
+        />
+      </button>
     </div>
     <div class="p-2 text-sm space-y-1 flex flex-col items-center">
       <div @contextmenu.prevent="openHeaderDropdown" class="cursor-pointer">
@@ -137,13 +231,13 @@ function handleTransfer(data: {
         verfügbare Mittel
       </div>
       <div>
-        -<CurrencyDisplay :amount="props.overspent ?? 0" :as-integer="true" :show-zero="false" /> Vormonatsdefizit
+        <CurrencyDisplay :amount="props.overspent ?? 0" :as-integer="true" :show-zero="false" /> Def./Übersch. Vormonat
       </div>
       <div>
-        -<CurrencyDisplay :amount="props.budgeted ?? 0" :as-integer="true" :show-zero="false" /> Budgetiert
+        <CurrencyDisplay :amount="props.budgeted ?? 0" :as-integer="true" :show-zero="false" /> Budgetiert
       </div>
       <div>
-        -<CurrencyDisplay :amount="props.nextMonth ?? 0" :as-integer="true" :show-zero="false" /> Übertrag
+        <CurrencyDisplay :amount="props.nextMonth ?? 0" :as-integer="true" :show-zero="false" /> Übertrag
       </div>
     </div>
   </div>
@@ -203,6 +297,105 @@ function handleTransfer(data: {
       </li>
     </ul>
   </div>
+
+  <!-- Budget-Aktions-Menü -->
+  <Teleport to="body">
+    <ul
+      v-if="isBudgetMenuOpen"
+      ref="budgetMenuRef"
+      :style="budgetMenuStyle"
+      class="menu p-2 shadow bg-base-100 border border-base-300 rounded-box w-64"
+    >
+      <!-- Überschrift -->
+      <li class="menu-title">
+        <span>Budget-Aktionen</span>
+      </li>
+
+      <!-- Überschuss in Folgemonat -->
+      <li>
+        <a @click="handleBudgetAction('carry-surplus')">
+          <Icon
+            icon="mdi:arrow-right-circle"
+            class="text-lg"
+          />
+          Überschuss in Folgemonat
+        </a>
+      </li>
+
+      <!-- Budget-Template anzeigen -->
+      <li>
+        <a @click="handleBudgetAction('show-template')">
+          <Icon
+            icon="mdi:eye"
+            class="text-lg"
+          />
+          Zeige Budget-Template
+        </a>
+      </li>
+
+      <!-- Budget-Template anwenden -->
+      <li>
+        <a @click="handleBudgetAction('apply-template')">
+          <Icon
+            icon="mdi:content-paste"
+            class="text-lg"
+          />
+          Wende Budget-Template an
+        </a>
+      </li>
+
+      <!-- Mit Budget-Template überschreiben -->
+      <li>
+        <a @click="handleBudgetAction('overwrite-template')">
+          <Icon
+            icon="mdi:file-replace"
+            class="text-lg"
+          />
+          Überschreibe mit Budget-Template
+        </a>
+      </li>
+
+      <li class="divider"></li>
+
+      <!-- Letztes Monatsbudget kopieren -->
+      <li>
+        <a @click="handleBudgetAction('copy-last-month')">
+          <Icon
+            icon="mdi:content-copy"
+            class="text-lg"
+          />
+          Kopiere letztes Monatsbudget
+        </a>
+      </li>
+
+      <!-- 3-Monats-Durchschnitt setzen -->
+      <li>
+        <a @click="handleBudgetAction('set-3month-average')">
+          <Icon
+            icon="mdi:chart-line"
+            class="text-lg"
+          />
+          Setze 3-Monats-Durchschnitt
+        </a>
+      </li>
+
+      <li class="divider"></li>
+
+      <!-- Budget auf 0 setzen -->
+      <li>
+        <a
+          @click="handleBudgetAction('reset-budget')"
+          class="text-warning"
+        >
+          <Icon
+            icon="mdi:refresh"
+            class="text-lg"
+          />
+          Setze Budget auf 0
+        </a>
+      </li>
+    </ul>
+  </Teleport>
 
   <!-- Transfer‑Modal -->
   <CategoryTransferModal

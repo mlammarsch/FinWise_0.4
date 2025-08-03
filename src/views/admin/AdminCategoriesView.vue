@@ -746,7 +746,7 @@ const getSavingsGoalProgress = (category: Category): number => {
                   <span v-else class="text-base-content/50">-</span>
                 </td>
                 <td>
-                  <span v-if="category.priority" class="badge badge-outline">
+                  <span v-if="category.priority" class="badge badge-sm badge-outline">
                     {{ category.priority }}
                   </span>
                   <span v-else class="text-base-content/50">-</span>
@@ -759,8 +759,8 @@ const getSavingsGoalProgress = (category: Category): number => {
                 </td>
                 <td>
                   <div class="flex flex-col w-full">
-                    <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="badge badge-primary badge-soft text-xs w-full justify-center mb-1">
-                      <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-1" />
+                    <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="badge badge-xs badge-primary badge-soft text-xs w-full justify-center mb-1">
+                      <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-0" />
                       - {{ new Date(category.goalDate).toLocaleDateString('de-DE') }}
                     </div>
                     <span v-else class="text-base-content/50">-</span>
