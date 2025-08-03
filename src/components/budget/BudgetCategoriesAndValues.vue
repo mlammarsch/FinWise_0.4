@@ -211,22 +211,22 @@ function getCategoriesForGroup(groupId: string): Category[] {
 
 // Editable Budget Functions
 function startEditBudget(categoryId: string, monthKey: string, currentValue: number) {
-  debugLog('BudgetCategoryColumn3', `startEditBudget called: ${categoryId}-${monthKey}, value: ${currentValue}`);
+  debugLog('BudgetCategoriesAndValues', `startEditBudget called: ${categoryId}-${monthKey}, value: ${currentValue}`);
 
   const fieldKey = `${categoryId}-${monthKey}`;
   activeEditField.value = fieldKey;
   editValue.value = Math.abs(currentValue).toString();
 
-  debugLog('BudgetCategoryColumn3', `activeEditField set to: ${activeEditField.value}, editValue: ${editValue.value}`);
+  debugLog('BudgetCategoriesAndValues', `activeEditField set to: ${activeEditField.value}, editValue: ${editValue.value}`);
 
   nextTick(() => {
     const inputElement = document.querySelector(`input[data-field-key="${fieldKey}"]`) as HTMLInputElement;
     if (inputElement) {
-      debugLog('BudgetCategoryColumn3', 'Input element found, focusing and selecting');
+      debugLog('BudgetCategoriesAndValues', 'Input element found, focusing and selecting');
       inputElement.focus();
       inputElement.select();
     } else {
-      debugLog('BudgetCategoryColumn3', 'Input element not found');
+      debugLog('BudgetCategoriesAndValues', 'Input element not found');
     }
   });
 }
@@ -245,7 +245,7 @@ function handleBudgetKeydown(event: KeyboardEvent) {
 
 function isEditingBudget(categoryId: string, monthKey: string): boolean {
   const result = activeEditField.value === `${categoryId}-${monthKey}`;
-  // debugLog('BudgetCategoryColumn3', `isEditingBudget(${categoryId}, ${monthKey}): ${result}, activeEditField: ${activeEditField.value}`);
+  // debugLog('BudgetCategoriesAndValues', `isEditingBudget(${categoryId}, ${monthKey}): ${result}, activeEditField: ${activeEditField.value}`);
   return result;
 }
 
@@ -265,21 +265,21 @@ function handleBudgetMouseLeave(event: MouseEvent, categoryId: string, monthKey:
 }
 
 function handleBudgetClick(categoryId: string, monthKey: string) {
-  debugLog('BudgetCategoryColumn3', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
+  debugLog('BudgetCategoriesAndValues', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
 
   if (!isEditingBudget(categoryId, monthKey)) {
-    debugLog('BudgetCategoryColumn3', 'Not currently editing, starting edit mode');
+    debugLog('BudgetCategoriesAndValues', 'Not currently editing, starting edit mode');
     // Find the month data from props.months
     const monthData = props.months.find(m => m.key === monthKey);
     if (monthData) {
       const budgetData = getCategoryBudgetData(categoryId, monthData);
-      debugLog('BudgetCategoryColumn3', `Budget data found: ${budgetData.budgeted}`);
+      debugLog('BudgetCategoriesAndValues', `Budget data found: ${budgetData.budgeted}`);
       startEditBudget(categoryId, monthKey, budgetData.budgeted);
     } else {
-      debugLog('BudgetCategoryColumn3', `Month data not found for key: ${monthKey}`);
+      debugLog('BudgetCategoriesAndValues', `Month data not found for key: ${monthKey}`);
     }
   } else {
-    debugLog('BudgetCategoryColumn3', 'Already editing this field');
+    debugLog('BudgetCategoriesAndValues', 'Already editing this field');
   }
 }
 
@@ -298,10 +298,10 @@ function handleOutsideClick(event: Event) {
 onMounted(async () => {
   // Add outside click listener
   document.addEventListener('click', handleOutsideClick);
-  debugLog('BudgetCategoryColumn3', 'Component mounted, starting initialization');
+  debugLog('BudgetCategoriesAndValues', 'Component mounted, starting initialization');
 
   await CategoryService.loadCategories();
-  debugLog('BudgetCategoryColumn3', 'Categories loaded successfully');
+  debugLog('BudgetCategoriesAndValues', 'Categories loaded successfully');
 
   // Batch-Expansion aller Gruppen über CategoryService
   const groupsToExpand = categoryGroups.value
@@ -309,18 +309,18 @@ onMounted(async () => {
     .map(group => group.id);
 
   if (groupsToExpand.length > 0) {
-    debugLog('BudgetCategoryColumn3', `Expanding ${groupsToExpand.length} category groups`);
+    debugLog('BudgetCategoriesAndValues', `Expanding ${groupsToExpand.length} category groups`);
     CategoryService.expandCategoryGroupsBatch(groupsToExpand);
   }
 
   await nextTick();
-  debugLog('BudgetCategoryColumn3', 'Starting Muuri grid initialization');
+  debugLog('BudgetCategoriesAndValues', 'Starting Muuri grid initialization');
 
   // Muuri-Initialisierung mit mehreren requestAnimationFrame für bessere Animation-Performance
   requestAnimationFrame(() => {
-    debugLog('BudgetCategoryColumn3', 'First animation frame - allowing spinner to animate');
+    debugLog('BudgetCategoriesAndValues', 'First animation frame - allowing spinner to animate');
     requestAnimationFrame(() => {
-      debugLog('BudgetCategoryColumn3', 'Second animation frame - calling initializeGrids');
+      debugLog('BudgetCategoriesAndValues', 'Second animation frame - calling initializeGrids');
       initializeGrids();
     });
   });
@@ -357,7 +357,7 @@ watch(() => props.months, async (newMonths, oldMonths) => {
     );
 
   if (monthsChanged) {
-    debugLog('BudgetCategoryColumn3', `Months changed, updating layout. New count: ${newMonths.length}`);
+    debugLog('BudgetCategoriesAndValues', `Months changed, updating layout. New count: ${newMonths.length}`);
 
     // Kurz warten für DOM-Updates
     await nextTick();
@@ -368,7 +368,7 @@ watch(() => props.months, async (newMonths, oldMonths) => {
 }, { deep: true });
 
 function initializeGrids() {
-  debugLog('BudgetCategoryColumn3', 'initializeGrids() function called');
+  debugLog('BudgetCategoriesAndValues', 'initializeGrids() function called');
 
   try {
     let completedLayouts = 0;
@@ -376,9 +376,9 @@ function initializeGrids() {
 
     const checkAllLayoutsComplete = () => {
       completedLayouts++;
-      debugLog('BudgetCategoryColumn3', `Layout completed: ${completedLayouts}/${totalGrids}`);
+      debugLog('BudgetCategoriesAndValues', `Layout completed: ${completedLayouts}/${totalGrids}`);
       if (completedLayouts >= totalGrids) {
-        debugLog('BudgetCategoryColumn3', 'All Muuri grids layouts completed successfully - emitting muuriReady');
+        debugLog('BudgetCategoriesAndValues', 'All Muuri grids layouts completed successfully - emitting muuriReady');
         emit('muuriReady');
       }
     };
@@ -400,23 +400,23 @@ function initializeGrids() {
     // Meta-Grids mit längeren Delays für bessere Animation-Performance
     setTimeout(() => {
       try {
-        debugLog('BudgetCategoryColumn3', 'Initializing Expense Meta-Grid');
+        debugLog('BudgetCategoriesAndValues', 'Initializing Expense Meta-Grid');
         // Expense Meta-Grid initialisieren
         expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
 
         // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
         if (expenseMetaGrid.value.getItems().length === 0) {
-          debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid has no items, layout complete immediately');
+          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
           checkAllLayoutsComplete();
         } else {
           expenseMetaGrid.value.on('layoutEnd', () => {
-            debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via event');
+            debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via event');
             checkAllLayoutsComplete();
           });
           // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
           setTimeout(() => {
             if (completedLayouts < 1) {
-              debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via timeout fallback');
+              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
               checkAllLayoutsComplete();
             }
           }, 200);
@@ -425,44 +425,44 @@ function initializeGrids() {
         // Längerer Delay für Income Meta-Grid um Spinner-Animation zu ermöglichen
         setTimeout(() => {
           try {
-            debugLog('BudgetCategoryColumn3', 'Initializing Income Meta-Grid');
+            debugLog('BudgetCategoriesAndValues', 'Initializing Income Meta-Grid');
             // Income Meta-Grid initialisieren
             incomeMetaGrid.value = createMetaGrid('#income-categories', true);
 
             // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
             if (incomeMetaGrid.value.getItems().length === 0) {
-              debugLog('BudgetCategoryColumn3', 'Income Meta-Grid has no items, layout complete immediately');
+              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
               checkAllLayoutsComplete();
             } else {
               incomeMetaGrid.value.on('layoutEnd', () => {
-                debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via event');
+                debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via event');
                 checkAllLayoutsComplete();
               });
               // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
               setTimeout(() => {
                 if (completedLayouts < 2) {
-                  debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via timeout fallback');
+                  debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
                   checkAllLayoutsComplete();
                 }
               }, 200);
             }
 
-            debugLog('BudgetCategoryColumn3', 'Muuri grids initialized, waiting for layouts to complete');
+            debugLog('BudgetCategoriesAndValues', 'Muuri grids initialized, waiting for layouts to complete');
 
           } catch (error) {
-            errorLog('BudgetCategoryColumn3', 'Failed to initialize Income Meta-Grid', error);
+            errorLog('BudgetCategoriesAndValues', 'Failed to initialize Income Meta-Grid', error);
             emit('muuriReady'); // Trotzdem Event emittieren
           }
         }, 100); // Erhöht von 50ms auf 100ms für bessere Animation
 
       } catch (error) {
-        errorLog('BudgetCategoryColumn3', 'Failed to initialize Expense Meta-Grid', error);
+        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Expense Meta-Grid', error);
         emit('muuriReady'); // Trotzdem Event emittieren
       }
     }, 150); // Erhöht von 100ms auf 150ms für bessere Animation
 
   } catch (error) {
-    errorLog('BudgetCategoryColumn3', 'Failed to initialize Sub-Grids', error);
+    errorLog('BudgetCategoriesAndValues', 'Failed to initialize Sub-Grids', error);
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
     emit('muuriReady');
   }
@@ -603,9 +603,9 @@ function destroyGrids() {
       incomeMetaGrid.value.destroy();
       incomeMetaGrid.value = null;
     }
-    debugLog('BudgetCategoryColumn3', 'Muuri grids destroyed');
+    debugLog('BudgetCategoriesAndValues', 'Muuri grids destroyed');
   } catch (error) {
-    errorLog('BudgetCategoryColumn3', 'Failed to destroy Muuri grids', error);
+    errorLog('BudgetCategoriesAndValues', 'Failed to destroy Muuri grids', error);
   }
 }
 
@@ -639,7 +639,7 @@ function updateLayoutAfterToggle() {
 }
 
 function updateLayoutAfterMonthsChange() {
-  debugLog('BudgetCategoryColumn3', 'updateLayoutAfterMonthsChange() called');
+  debugLog('BudgetCategoriesAndValues', 'updateLayoutAfterMonthsChange() called');
 
   try {
     let completedLayouts = 0;
@@ -647,9 +647,9 @@ function updateLayoutAfterMonthsChange() {
 
     const checkAllLayoutsComplete = () => {
       completedLayouts++;
-      debugLog('BudgetCategoryColumn3', `Layout update completed: ${completedLayouts}/${totalGrids}`);
+      debugLog('BudgetCategoriesAndValues', `Layout update completed: ${completedLayouts}/${totalGrids}`);
       if (completedLayouts >= totalGrids) {
-        debugLog('BudgetCategoryColumn3', 'All layouts updated after months change - emitting muuriReady');
+        debugLog('BudgetCategoriesAndValues', 'All layouts updated after months change - emitting muuriReady');
         emit('muuriReady');
       }
     };
@@ -668,13 +668,13 @@ function updateLayoutAfterMonthsChange() {
 
       // Prüfe ob Items vorhanden sind
       if (expenseMetaGrid.value.getItems().length === 0) {
-        debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid has no items, layout complete immediately');
+        debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
         checkAllLayoutsComplete();
       } else {
         // Einmaliger Event-Listener für layoutEnd
         const handleExpenseLayoutEnd = () => {
           expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
-          debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout update completed');
+          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout update completed');
           checkAllLayoutsComplete();
         };
         expenseMetaGrid.value.on('layoutEnd', handleExpenseLayoutEnd);
@@ -684,7 +684,7 @@ function updateLayoutAfterMonthsChange() {
         setTimeout(() => {
           if (completedLayouts < 1) {
             expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
-            debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via timeout fallback');
+            debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
             checkAllLayoutsComplete();
           }
         }, 300);
@@ -698,13 +698,13 @@ function updateLayoutAfterMonthsChange() {
 
       // Prüfe ob Items vorhanden sind
       if (incomeMetaGrid.value.getItems().length === 0) {
-        debugLog('BudgetCategoryColumn3', 'Income Meta-Grid has no items, layout complete immediately');
+        debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
         checkAllLayoutsComplete();
       } else {
         // Einmaliger Event-Listener für layoutEnd
         const handleIncomeLayoutEnd = () => {
           incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
-          debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout update completed');
+          debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout update completed');
           checkAllLayoutsComplete();
         };
         incomeMetaGrid.value.on('layoutEnd', handleIncomeLayoutEnd);
@@ -714,7 +714,7 @@ function updateLayoutAfterMonthsChange() {
         setTimeout(() => {
           if (completedLayouts < 2) {
             incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
-            debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via timeout fallback');
+            debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
             checkAllLayoutsComplete();
           }
         }, 300);
@@ -724,7 +724,7 @@ function updateLayoutAfterMonthsChange() {
     }
 
   } catch (error) {
-    errorLog('BudgetCategoryColumn3', 'Failed to update layout after months change', error);
+    errorLog('BudgetCategoriesAndValues', 'Failed to update layout after months change', error);
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
     emit('muuriReady');
   }
@@ -775,7 +775,7 @@ function handleCategoryDragEnd(item: any) {
       const categoryId = draggedElement.getAttribute('data-category-id');
 
       if (!categoryId) {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Category ID not found');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Category ID not found');
         return;
       }
 
@@ -784,7 +784,7 @@ function handleCategoryDragEnd(item: any) {
       const actualGroupId = groupWrapper?.getAttribute('data-group-id');
 
       if (!actualGroupId) {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Group ID not found');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Group ID not found');
         return;
       }
 
@@ -796,7 +796,7 @@ function handleCategoryDragEnd(item: any) {
       });
 
       if (!targetGrid) {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Target grid not found', { actualGroupId });
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Target grid not found', { actualGroupId });
         return;
       }
 
@@ -809,7 +809,7 @@ function handleCategoryDragEnd(item: any) {
         if (id) newOrder.push(id);
       });
 
-      debugLog('BudgetCategoryColumn3', 'handleCategoryDragEnd', {
+      debugLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd', {
         categoryId,
         actualGroupId,
         newOrder,
@@ -821,14 +821,14 @@ function handleCategoryDragEnd(item: any) {
       const success = await CategoryService.updateCategoriesWithSortOrder(sortOrderUpdates);
 
       if (success) {
-        debugLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Sort order updated successfully');
+        debugLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Sort order updated successfully');
         await reinitializeMuuriGrids();
       } else {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Failed to update sort order');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Failed to update sort order');
       }
 
     } catch (error) {
-      errorLog('BudgetCategoryColumn3', 'handleCategoryDragEnd - Error updating sort order', error);
+      errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Error updating sort order', error);
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
@@ -845,13 +845,13 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
       const groupId = draggedElement.getAttribute('data-group-id');
 
       if (!groupId) {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd - Group ID not found');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Group ID not found');
         return;
       }
 
       const metaGrid = isIncomeGrid ? incomeMetaGrid.value : expenseMetaGrid.value;
       if (!metaGrid) {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd - Meta grid not found');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Meta grid not found');
         return;
       }
 
@@ -864,7 +864,7 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
         if (id) groupsInOrder.push(id);
       });
 
-      debugLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd', {
+      debugLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd', {
         groupId,
         groupsInOrder,
         isIncomeGrid,
@@ -875,14 +875,14 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
       const success = await CategoryService.updateCategoryGroupsWithSortOrder(sortOrderUpdates);
 
       if (success) {
-        debugLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd - Sort order updated successfully');
+        debugLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Sort order updated successfully');
         await reinitializeMuuriGrids();
       } else {
-        errorLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd - Failed to update sort order');
+        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Failed to update sort order');
       }
 
     } catch (error) {
-      errorLog('BudgetCategoryColumn3', 'handleCategoryGroupDragEnd - Error updating sort order', error);
+      errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Error updating sort order', error);
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
@@ -890,15 +890,15 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
 // UI-Refresh-Funktionen
 async function reinitializeMuuriGrids() {
   try {
-    debugLog('BudgetCategoryColumn3', 'reinitializeMuuriGrids - Starting grid reinitialization');
+    debugLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Starting grid reinitialization');
 
     destroyGrids();
     await nextTick();
     initializeGrids();
 
-    debugLog('BudgetCategoryColumn3', 'reinitializeMuuriGrids - Grid reinitialization completed');
+    debugLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Grid reinitialization completed');
   } catch (error) {
-    errorLog('BudgetCategoryColumn3', 'reinitializeMuuriGrids - Error during grid reinitialization', error);
+    errorLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Error during grid reinitialization', error);
   }
 }
 
@@ -912,7 +912,7 @@ function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; en
   // Bei Einnahmenkategorien nur anzeigen, wenn Betrag verfügbar
   if (cat.isIncomeCategory && !hasAvailableAmount) {
     debugLog(
-      "BudgetCategoryColumn3",
+      "BudgetCategoriesAndValues",
       "Context menu on income category without funds prevented.",
       { category: cat.name, saldo: categoryData.saldo }
     );
@@ -950,7 +950,7 @@ function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; en
   modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
   showDropdown.value = true;
   nextTick(() => dropdownRef.value?.focus());
-  debugLog("BudgetCategoryColumn3", "openDropdown", {
+  debugLog("BudgetCategoriesAndValues", "openDropdown", {
     category: cat,
     isIncomeCategory: cat.isIncomeCategory,
     hasAvailableAmount,
@@ -976,7 +976,7 @@ function optionTransfer() {
   const cat = modalData.value.clickedCategory;
   const month = modalData.value.month;
   modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
-  debugLog("BudgetCategoryColumn3", "optionTransfer", { category: cat });
+  debugLog("BudgetCategoriesAndValues", "optionTransfer", { category: cat });
   closeDropdown();
   showTransferModal.value = true;
 }
@@ -988,14 +988,14 @@ function optionFill() {
   const data = getCategoryBudgetData(cat.id, month);
   const amt = data.saldo < 0 ? Math.abs(data.saldo) : 0;
   modalData.value = { mode: "fill", clickedCategory: cat, amount: amt, month };
-  debugLog("BudgetCategoryColumn3", "optionFill", { category: cat, amount: amt });
+  debugLog("BudgetCategoriesAndValues", "optionFill", { category: cat, amount: amt });
   closeDropdown();
   showTransferModal.value = true;
 }
 
 function executeTransfer() {
   showTransferModal.value = false;
-  debugLog("BudgetCategoryColumn3", "Transfer completed, modal closed");
+  debugLog("BudgetCategoriesAndValues", "Transfer completed, modal closed");
 }
 
 // Transaction Modal Functions
@@ -1005,7 +1005,7 @@ function openTransactionModal(category: Category, month: { key: string; label: s
     month: month
   };
   showTransactionModal.value = true;
-  debugLog("BudgetCategoryColumn3", "Transaction modal opened", {
+  debugLog("BudgetCategoriesAndValues", "Transaction modal opened", {
     categoryId: category.id,
     categoryName: category.name,
     month: month.label
@@ -1015,12 +1015,12 @@ function openTransactionModal(category: Category, month: { key: string; label: s
 function closeTransactionModal() {
   showTransactionModal.value = false;
   transactionModalData.value = null;
-  debugLog("BudgetCategoryColumn3", "Transaction modal closed");
+  debugLog("BudgetCategoriesAndValues", "Transaction modal closed");
 }
 
 function handleTransactionUpdated() {
   // Refresh budget data after transaction changes
-  debugLog("BudgetCategoryColumn3", "Transaction updated, refreshing budget data");
+  debugLog("BudgetCategoriesAndValues", "Transaction updated, refreshing budget data");
   // The reactive computed properties will automatically update
 }
 </script>

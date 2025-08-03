@@ -113,7 +113,7 @@ Dieser Plan beschreibt die schrittweise Implementierung der neuen BudgetsView2 u
           :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
           class="flex flex-col"
         >
-          <BudgetCategoryColumn2 />
+          <BudgetCategoriesAndValues2 />
         </div>
 
         <!-- Monats-Spalten - WIEDERVERWENDET -->
@@ -141,7 +141,7 @@ Dieser Plan beschreibt die schrittweise Implementierung der neuen BudgetsView2 u
 import { ref, computed, onMounted, watch } from "vue";
 import { useCategoryStore } from "../stores/categoryStore";
 import { useTransactionStore } from "../stores/transactionStore";
-import BudgetCategoryColumn2 from "../components/budget/BudgetCategoryColumn2.vue";
+import BudgetCategoriesAndValues2 from "../components/budget/BudgetCategoriesAndValues2.vue";
 import BudgetMonthCard from "../components/budget/BudgetMonthCard.vue";
 import BudgetMonthHeaderCard from "../components/budget/BudgetMonthHeaderCard.vue";
 import PagingYearComponent from "../components/ui/PagingYearComponent.vue";
@@ -219,12 +219,12 @@ function toggleAll() {
 </script>
 ```
 
-## Phase 2: BudgetCategoryColumn2 - Kategoriegruppen-Integration (Woche 2)
+## Phase 2: BudgetCategoriesAndValues2 - Kategoriegruppen-Integration (Woche 2)
 
 ### 2.1 Neue Kategoriespalte mit Gruppierung
 
 **Neue Datei:**
-- `src/components/budget/BudgetCategoryColumn2.vue`
+- `src/components/budget/BudgetCategoriesAndValues2.vue`
 
 **Template-Struktur:**
 ```vue
@@ -233,7 +233,7 @@ function toggleAll() {
     class="bg-base-100 p-1 rounded-lg z-10"
     :style="$attrs.style"
   >
-    <!-- Header-Ersatz: Identisch zu BudgetCategoryColumn -->
+    <!-- Header-Ersatz: Identisch zu BudgetCategoriesAndValues -->
     <div class="sticky top-0 bg-base-100 z-20">
       <div class="p-2 font-bold text-sm border-b border-base-300">
         Kategorie
@@ -369,7 +369,7 @@ defineEmits<{
 ### 2.3 Computed Properties für Kategoriegruppen
 
 ```typescript
-// In BudgetCategoryColumn2.vue
+// In BudgetCategoriesAndValues2.vue
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useCategoryStore } from '@/stores/categoryStore';
@@ -411,10 +411,10 @@ function toggleGroupExpanded(groupId: string) {
 
 ## Phase 3: Muuri-Integration (Woche 3)
 
-### 3.1 Muuri-Setup in BudgetCategoryColumn2
+### 3.1 Muuri-Setup in BudgetCategoriesAndValues2
 
 ```typescript
-// In BudgetCategoryColumn2.vue
+// In BudgetCategoriesAndValues2.vue
 import Muuri from 'muuri';
 import { onMounted, onUnmounted, nextTick } from 'vue';
 
@@ -486,10 +486,10 @@ async function handleCategoryDrop(item: any) {
       updated_at: new Date().toISOString()
     });
 
-    infoLog('BudgetCategoryColumn2', 'Category reordered', { categoryId, newSortOrder });
+    infoLog('BudgetCategoriesAndValues2', 'Category reordered', { categoryId, newSortOrder });
 
   } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Failed to reorder category', error);
+    errorLog('BudgetCategoriesAndValues2', 'Failed to reorder category', error);
     // Rollback Muuri position
     await rollbackMuuriPosition();
   }
@@ -507,10 +507,10 @@ async function handleGroupDrop(item: any) {
       updated_at: new Date().toISOString()
     });
 
-    infoLog('BudgetCategoryColumn2', 'Group reordered', { groupId, newSortOrder });
+    infoLog('BudgetCategoriesAndValues2', 'Group reordered', { groupId, newSortOrder });
 
   } catch (error) {
-    errorLog('BudgetCategoryColumn2', 'Failed to reorder group', error);
+    errorLog('BudgetCategoriesAndValues2', 'Failed to reorder group', error);
     await rollbackMuuriPosition();
   }
 }

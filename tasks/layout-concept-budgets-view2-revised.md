@@ -138,7 +138,7 @@ Dieses Dokument beschreibt das Layout-Konzept für die neue BudgetsView2 unter *
           :style="{ flex: '0 0 calc(100% / ' + totalColumns + ')' }"
           class="flex flex-col"
         >
-          <BudgetCategoryColumn2 />
+          <BudgetCategoriesAndValues2 />
         </div>
 
         <!-- Monats-Spalten - WIEDERVERWENDET -->
@@ -159,16 +159,16 @@ Dieses Dokument beschreibt das Layout-Konzept für die neue BudgetsView2 unter *
 </template>
 ```
 
-### BudgetCategoryColumn2 - Neue Kategoriespalte mit Gruppierung
+### BudgetCategoriesAndValues2 - Neue Kategoriespalte mit Gruppierung
 
 ```vue
-<!-- BudgetCategoryColumn2.vue -->
+<!-- BudgetCategoriesAndValues2.vue -->
 <template>
   <div
     class="bg-base-100 p-1 rounded-lg z-10"
     :style="$attrs.style"
   >
-    <!-- Header-Ersatz: IDENTISCH zu BudgetCategoryColumn -->
+    <!-- Header-Ersatz: IDENTISCH zu BudgetCategoriesAndValues -->
     <div class="sticky top-0 bg-base-100 z-20">
       <div class="p-2 font-bold text-sm border-b border-base-300">
         Kategorie
@@ -201,7 +201,7 @@ Dieses Dokument beschreibt das Layout-Konzept für die neue BudgetsView2 unter *
               <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
             </div>
 
-            <!-- Expand/Collapse Button - IDENTISCH zu BudgetCategoryColumn -->
+            <!-- Expand/Collapse Button - IDENTISCH zu BudgetCategoriesAndValues -->
             <button
               v-if="categoriesByGroup[group.id]?.length > 0"
               class="btn btn-ghost btn-xs px-1 mr-1"
@@ -221,7 +221,7 @@ Dieses Dokument beschreibt das Layout-Konzept für die neue BudgetsView2 unter *
             <span class="font-medium">{{ group.name }}</span>
           </div>
 
-          <!-- Kategorien (wenn expandiert) - IDENTISCH zu BudgetCategoryColumn -->
+          <!-- Kategorien (wenn expandiert) - IDENTISCH zu BudgetCategoriesAndValues -->
           <template v-if="expandedGroups.has(group.id)">
             <div
               v-for="category in categoriesByGroup[group.id] || []"
@@ -355,7 +355,7 @@ const columnStyle = computed(() => ({
 ### Muuri-Setup (nur in Kategoriespalte)
 
 ```typescript
-// In BudgetCategoryColumn2.vue
+// In BudgetCategoriesAndValues2.vue
 import Muuri from 'muuri';
 
 const muuriContainer = ref<HTMLElement | null>(null);
@@ -426,7 +426,7 @@ function initializeMuuri() {
 
 ### Neue Komponenten
 
-1. **BudgetCategoryColumn2**: Neue Kategoriespalte mit Gruppierung
+1. **BudgetCategoriesAndValues2**: Neue Kategoriespalte mit Gruppierung
 2. **BudgetsView2**: Neue Hauptview (basiert auf BudgetsView)
 
 ## Datenfluss (identisch zu BudgetsView)

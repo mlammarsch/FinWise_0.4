@@ -90,14 +90,14 @@ Die aktuelle BudgetsView in FinWise verwendet eine kaskadierte Kategorienstruktu
 BudgetsView2.vue (neue Hauptview)
 ├── PagingYearComponent (wiederverwendet)
 ├── BudgetMonthHeaderCard (Kann wiederverwendet werden)
-├── BudgetCategoryColumn2.vue (neue Kategoriespalte mit Gruppen und vielleicht auch mit der Budget Monthcard zusammenlegen?)
+├── BudgetCategoriesAndValues2.vue (neue Kategoriespalte mit Gruppen und vielleicht auch mit der Budget Monthcard zusammenlegen?)
 └── BudgetMonthCard (kann wiederverwendet werden, wenn es designlogisch zueinanderpasst. Ich schlage vor, den Datenteil als eine eigene Gesamteinheit zu betrachten. Achtung auf die Monats-Headerstruktur. Vielleicht alles zusammenlegen?)
 ```
 
 ### Layout-Struktur (identisch zu BudgetsView)
 - **Header-Bereich**: Sticky, mit PagingYearComponent
 - **Tabellenkopf**: Sticky, mit BudgetMonthHeaderCard
-- **Datenbereich**: Scrollbar, mit BudgetCategoryColumn2 + BudgetMonthCard
+- **Datenbereich**: Scrollbar, mit BudgetCategoriesAndValues2 + BudgetMonthCard
 - **Spaltenaufteilung**: `calc(100% / (numMonths + 1))`
 
 ## Technische Überlegungen
@@ -106,10 +106,10 @@ BudgetsView2.vue (neue Hauptview)
 - **PagingYearComponent**: Unveränderte Übernahme
 - **BudgetMonthHeaderCard**: siehe oben
 - **BudgetMonthCard**: siehe oben
-- **BudgetCategoryColumn**: Neue Version mit Kategoriegruppen-Logik, sonst siehe oben.
+- **BudgetCategoriesAndValues**: Neue Version mit Kategoriegruppen-Logik, sonst siehe oben.
 
 ### Muuri-Integration
-- **Grid-Container**: Nur in der neuen BudgetCategoryColumn2
+- **Grid-Container**: Nur in der neuen BudgetCategoriesAndValues2
 - **Draggable Items**: Kategoriegruppen und einzelne Kategorien
 - **Layout-Constraints**: Beibehaltung der sticky-Spalten-Struktur
 
@@ -128,7 +128,7 @@ BudgetsView2.vue (neue Hauptview)
 - Neue Route und Navigation
 
 ### Phase 2: Kategoriegruppen-Integration
-- Neue BudgetCategoryColumn2 mit Gruppierung
+- Neue BudgetCategoriesAndValues2 mit Gruppierung
 - Anpassung der Datenlogik für Kategoriegruppen
 - Beibehaltung aller bestehenden Features
 
@@ -141,7 +141,7 @@ BudgetsView2.vue (neue Hauptview)
 
 ### Neue Dateien
 - `src/views/BudgetsView2.vue` (basiert auf BudgetsView.vue)
-- `src/components/budget/BudgetCategoryColumn2.vue` (neue Kategoriespalte)
+- `src/components/budget/BudgetCategoriesAndValues2.vue` (neue Kategoriespalte)
 
 ### Geänderte Dateien
 - `src/components/ui/MainNavigation.vue` (neuer Menüeintrag)

@@ -519,7 +519,7 @@ async function reinitializeMuuriGrids() {
     <!-- Drag Container wie im Kanban -->
     <div ref="dragContainer" class="drag-container"></div>
 
-    <!-- Muuri Container für Kategoriegruppen (BudgetCategoryColumn2 Design) -->
+    <!-- Muuri Container für Kategoriegruppen (BudgetCategoriesAndValues2 Design) -->
     <div class="muuri-container bg-base-100 p-4">
       <!-- Kategoriegruppen (sortiert nach Typ und sortOrder) -->
       <div

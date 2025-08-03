@@ -24,8 +24,7 @@ const routes = [
   { path: "/accounts", name: "Konten", icon: "mdi:bank" },
   { path: "/transactions", name: "Transaktionen", icon: "mdi:swap-horizontal" },
   { path: "/planning", name: "Planung", icon: "mdi:calendar" },
-  { path: "/budgets", name: "Budgets", icon: "mdi:wallet" },
-  { path: "/budgets2", name: "Budgets 2", icon: "mdi:wallet-outline" },
+  { path: "/budgets", name: "Budgets", icon: "mdi:wallet-outline" },
   { path: "/statistics", name: "Statistiken", icon: "mdi:chart-bar" },
 ];
 

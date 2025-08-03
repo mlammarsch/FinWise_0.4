@@ -1,7 +1,7 @@
 ## Relevant Files
 
 - `src/views/BudgetsView2.vue` - Neue Hauptview basierend auf BudgetsView.vue mit identischem Layout
-- `src/components/budget/BudgetCategoryColumn2.vue` - Neue Kategoriespalte mit Kategoriegruppen und Muuri-Integration
+- `src/components/budget/BudgetCategoriesAndValues2.vue` - Neue Kategoriespalte mit Kategoriegruppen und Muuri-Integration
 - `src/components/budget/CategoryGroupRow2.vue` - Komponente für einzelne Kategoriegruppen mit Expand/Collapse
 - `src/router/index.ts` - Router-Konfiguration für neue /budgets2 Route
 - `src/components/ui/MainNavigation.vue` - Navigation mit neuem "Budgets 2" Menüeintrag
@@ -15,7 +15,7 @@
 
 - Die Implementierung fokussiert sich auf Layout-Konsistenz mit der bestehenden BudgetsView
 - Alle bestehenden Komponenten (BudgetMonthHeaderCard, BudgetMonthCard, PagingYearComponent) werden unverändert wiederverwendet
-- Muuri.js wird nur in der neuen BudgetCategoryColumn2 für Drag & Drop integriert
+- Muuri.js wird nur in der neuen BudgetCategoriesAndValues2 für Drag & Drop integriert
 - Die bestehende BudgetsView bleibt als Vergleichsimplementierung bestehen
 
 ## Tasks
@@ -35,8 +35,8 @@
   - [ ] 2.6 Spaltenbreiten-Berechnung `calc(100% / (numMonths + 1))` übernehmen
   - [ ] 2.7 Toggle-All-Funktionalität für Expand/Collapse implementieren
 
-- [ ] 3.0 BudgetCategoryColumn2 mit Kategoriegruppen-Integration
-  - [ ] 3.1 `src/components/budget/BudgetCategoryColumn2.vue` erstellen
+- [ ] 3.0 BudgetCategoriesAndValues2 mit Kategoriegruppen-Integration
+  - [ ] 3.1 `src/components/budget/BudgetCategoriesAndValues2.vue` erstellen
   - [ ] 3.2 Template-Struktur mit Muuri-Container und Sektionen (Ausgaben/Einnahmen) aufbauen
   - [ ] 3.3 `src/components/budget/CategoryGroupRow2.vue` für einzelne Kategoriegruppen erstellen
   - [ ] 3.4 Computed Properties für `expenseGroups`, `incomeGroups`, `categoriesByGroup` implementieren
@@ -46,7 +46,7 @@
   - [ ] 3.8 Datenkompatibilität mit bestehender CategoryStore sicherstellen
 
 - [ ] 4.0 Muuri Drag & Drop-Funktionalität implementieren (Hinweis auf Doku in `docs/Muuri.md`)
-  - [ ] 4.1 Muuri.js in BudgetCategoryColumn2 initialisieren
+  - [ ] 4.1 Muuri.js in BudgetCategoriesAndValues2 initialisieren
   - [ ] 4.2 Drag-Handles für Kategoriegruppen und Kategorien implementieren
   - [ ] 4.3 Muuri-Event-Handler für `dragEnd` implementieren
   - [ ] 4.4 `handleCategoryDrop()` für Kategorie-Verschiebungen zwischen Gruppen

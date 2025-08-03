@@ -42,7 +42,7 @@ $searchFiles = @(
 
     # ### components\budget
     "src\components\budget\BudgetCard.vue",
-    "src\components\budget\BudgetCategoryColumn.vue",
+    "src\components\budget\BudgetCategoriesAndValues.vue",
     "src\components\budget\BudgetMonthCard.vue",
     "src\components\budget\BudgetMonthHeaderCard.vue",
     "src\components\budget\CategoryForm.vue",
