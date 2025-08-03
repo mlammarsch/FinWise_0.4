@@ -24,21 +24,6 @@ export const CategoryService = {
     return computed(() => categoryStore.getCategoryById(id));
   },
 
-  /**
-   * Gibt alle Kindkategorien einer Elternkategorie als reactive computed property zurück
-   */
-  getChildCategories(parentId: string): ComputedRef<Category[]> {
-    const categoryStore = useCategoryStore();
-    return computed(() => categoryStore.getChildCategories(parentId));
-  },
-
-  /**
-   * Gibt alle Root-Kategorien (ohne Elternkategorie) als reactive computed property zurück
-   */
-  getRootCategories(): ComputedRef<Category[]> {
-    const categoryStore = useCategoryStore();
-    return computed(() => categoryStore.rootCategories);
-  },
 
   /**
    * Gibt Kategorien gruppiert nach CategoryGroup als reactive computed property zurück
@@ -240,12 +225,6 @@ export const CategoryService = {
     try {
       const categoryStore = useCategoryStore();
 
-      // Prüfe auf Kindkategorien
-      const hasChildren = categoryStore.categories.some(category => category.parentCategoryId === id);
-      if (hasChildren) {
-        errorLog("CategoryService", `deleteCategory - Category ${id} has child categories and cannot be deleted`);
-        return false;
-      }
 
       await categoryStore.deleteCategory(id);
       debugLog("CategoryService", "deleteCategory - Category deleted", { id });
@@ -398,16 +377,6 @@ export const CategoryService = {
     return group?.name || 'Unbekannte Gruppe';
   },
 
-  /**
-   * Gibt den Namen einer Elternkategorie anhand ihrer ID zurück
-   */
-  getParentCategoryName(parentId: string | null): string {
-    if (!parentId) return 'Keine Elternkategorie';
-
-    const categoryStore = useCategoryStore();
-    const category = categoryStore.findCategoryById(parentId);
-    return category?.name || 'Unbekannte Kategorie';
-  },
 
   /**
    * Gibt den Namen einer Kategorie anhand ihrer ID zurück

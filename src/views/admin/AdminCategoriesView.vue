@@ -7,6 +7,7 @@ import { useTransactionStore } from "../../stores/transactionStore";
 import CategoryForm from "../../components/budget/CategoryForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
 import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
+import SearchGroup from "../../components/ui/SearchGroup.vue";
 import { Category } from "../../types";
 import { Icon } from "@iconify/vue";
 
@@ -29,11 +30,21 @@ const categorySortCriteria = ref<SortCriteria[]>([
 const groupSortField = ref<string>("name");
 const groupSortDirection = ref<"asc" | "desc">("asc");
 
+// Suchfunktionalität
+const searchQuery = ref("");
+
 // Gefilterte und sortierte Daten mit Mehrfachsortierung
 const categories = computed(() => {
-  const filtered = CategoryService.getCategories().value.filter(
+  let filtered = CategoryService.getCategories().value.filter(
     (c) => !isVerfuegbareMittel(c)
   );
+
+  // Filtern nach Suchbegriff
+  if (searchQuery.value.trim() !== "") {
+    filtered = filtered.filter((c) =>
+      c.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+    );
+  }
 
   return [...filtered].sort((a, b) => {
     for (const criteria of categorySortCriteria.value) {
@@ -48,10 +59,6 @@ const categories = computed(() => {
         case "group":
           aValue = getGroupName(a.categoryGroupId).toLowerCase();
           bValue = getGroupName(b.categoryGroupId).toLowerCase();
-          break;
-        case "parent":
-          aValue = getParentCategoryName(a.parentCategoryId).toLowerCase();
-          bValue = getParentCategoryName(b.parentCategoryId).toLowerCase();
           break;
         case "status":
           aValue = a.isActive;
@@ -103,6 +110,19 @@ const categoryGroups = computed(() => {
   });
 });
 
+const filteredCategoryGroups = computed(() => {
+  let groups = categoryGroups.value;
+
+  // Filtern nach Suchbegriff
+  if (searchQuery.value.trim() !== "") {
+    groups = groups.filter((g) =>
+      g.name.toLowerCase().includes(searchQuery.value.toLowerCase())
+    );
+  }
+
+  return groups;
+});
+
 // Kategorie State
 const showCategoryModal = ref(false);
 const selectedCategory = ref<Category | null>(null);
@@ -143,12 +163,6 @@ const categoryGroupHasTransactions = (groupId: string): boolean => {
 };
 
 const canDeleteCategory = (category: Category): boolean => {
-  // Prüfe auf Kindkategorien
-  const hasChildren = categories.value.some(
-    (c) => c.parentCategoryId === category.id
-  );
-  if (hasChildren) return false;
-
   // Prüfe auf Transaktionen
   return !categoryHasTransactions(category.id);
 };
@@ -219,21 +233,7 @@ const saveCategory = async (categoryData: Omit<Category, "id">) => {
 const deleteCategory = async (category: Category) => {
   // Prüfe ob Kategorie gelöscht werden kann
   if (!canDeleteCategory(category)) {
-    const hasChildren = categories.value.some(
-      (c) => c.parentCategoryId === category.id
-    );
-    const hasTransactions = categoryHasTransactions(category.id);
-
-    let message = "Die Kategorie kann nicht gelöscht werden, da sie ";
-    if (hasChildren && hasTransactions) {
-      message += "Unterkategorien und Buchungen enthält.";
-    } else if (hasChildren) {
-      message += "Unterkategorien enthält.";
-    } else if (hasTransactions) {
-      message += "Buchungen zugeordnet hat.";
-    }
-
-    alert(message);
+    alert("Die Kategorie kann nicht gelöscht werden, da sie Buchungen zugeordnet hat.");
     return;
   }
 
@@ -393,46 +393,6 @@ const updateCategoryGroup = async (category: Category, newGroupId: string) => {
   }
 };
 
-const updateCategoryParent = async (
-  category: Category,
-  newParentId: string
-) => {
-  // Prüfe, ob sich die übergeordnete Kategorie tatsächlich geändert hat
-  const currentParentId = category.parentCategoryId || "";
-  if (currentParentId === newParentId) {
-    console.log(
-      `Kategorie ${category.name} bleibt bei derselben übergeordneten Kategorie`
-    );
-    return;
-  }
-
-  try {
-    await CategoryService.updateCategory(category.id, {
-      parentCategoryId: newParentId || undefined,
-    });
-
-    console.log(
-      `Kategorie ${category.name} erfolgreich zu übergeordneter Kategorie ${
-        newParentId || "Keine"
-      } verschoben`
-    );
-  } catch (error) {
-    console.error(
-      `Fehler beim Verschieben von Kategorie ${category.name} zu übergeordneter Kategorie ${newParentId}`,
-      error
-    );
-  }
-};
-
-// Computed für verfügbare Parent-Kategorien (ohne Tochterkategorien)
-const availableParentCategories = computed(() => {
-  return categories.value.filter((c) => !c.parentCategoryId);
-});
-
-// Prüft, ob eine Kategorie bereits als übergeordnete Kategorie verwendet wird
-const isUsedAsParent = computed(() => (categoryId: string) => {
-  return categories.value.some((c) => c.parentCategoryId === categoryId);
-});
 
 // Sortier-Handler für Kategorien mit Mehrfachsortierung
 const sortCategories = (field: string, event?: MouseEvent) => {
@@ -514,10 +474,6 @@ const getGroupName = (groupId: string | undefined): string => {
   return CategoryService.getGroupName(groupId);
 };
 
-const getParentCategoryName = (parentId: string | null | undefined): string => {
-  if (parentId === undefined) return "-";
-  return CategoryService.getParentCategoryName(parentId);
-};
 
 // Berechnet den aktuellen Saldo einer Kategorie basierend auf allen Transaktionen
 const getCategoryBalance = (categoryId: string): number => {
@@ -532,30 +488,15 @@ const getCategoryBalance = (categoryId: string): number => {
       class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
     >
       <h2 class="text-xl font-bold flex-shrink-0">Kategorien verwalten</h2>
-      <div class="flex justify-end w-full md:w-auto mt-2 md:mt-0">
-        <div class="join">
-          <button
-            class="btn join-item rounded-l-full btn-sm btn-soft border border-base-300"
-            @click="createCategoryGroup"
-          >
-            <Icon
-              icon="mdi:folder-plus"
-              class="mr-2 text-base"
-            />
-            Neue Gruppe
-          </button>
-          <button
-            class="btn join-item rounded-r-full btn-sm btn-soft border border-base-300"
-            @click="createCategory"
-          >
-            <Icon
-              icon="mdi:plus"
-              class="mr-2 text-base"
-            />
-            Neue Kategorie
-          </button>
-        </div>
-      </div>
+      <SearchGroup
+        btnMiddleRight="Neue Gruppe"
+        btnMiddleRightIcon="mdi:folder-plus"
+        btnRight="Neue Kategorie"
+        btnRightIcon="mdi:plus"
+        @search="(query: string) => (searchQuery = query)"
+        @btn-middle-right-click="createCategoryGroup"
+        @btn-right-click="createCategory"
+      />
     </div>
 
     <!-- Kategorien -->
@@ -602,26 +543,6 @@ const getCategoryBalance = (categoryId: string): number => {
                         class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
                       >
                         {{ getSortPriority("name") }}
-                      </span>
-                    </div>
-                  </div>
-                </th>
-                <th
-                  class="cursor-pointer hover:bg-base-200 select-none"
-                  @click="sortCategories('parent', $event)"
-                >
-                  <div class="flex items-center justify-between">
-                    <span>Übergeordnete Kategorie</span>
-                    <div class="flex items-center">
-                      <Icon
-                        :icon="getSortIcon('parent')"
-                        class="w-4 h-4 opacity-60"
-                      />
-                      <span
-                        v-if="getSortPriority('parent')"
-                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
-                      >
-                        {{ getSortPriority("parent") }}
                       </span>
                     </div>
                   </div>
@@ -684,31 +605,6 @@ const getCategoryBalance = (categoryId: string): number => {
                   >
                 </td>
                 <td>
-                  <select
-                    class="select select-sm w-full rounded-full border border-base-300"
-                    :class="{ 'select-disabled': isUsedAsParent(category.id) }"
-                    :disabled="isUsedAsParent(category.id)"
-                    :value="category.parentCategoryId || ''"
-                    @change="
-                      updateCategoryParent(
-                        category,
-                        ($event.target as HTMLSelectElement).value
-                      )
-                    "
-                  >
-                    <option value="">Keine übergeordnete Kategorie</option>
-                    <option
-                      v-for="parentCategory in availableParentCategories.filter(
-                        (c) => c.id !== category.id
-                      )"
-                      :key="parentCategory.id"
-                      :value="parentCategory.id"
-                    >
-                      {{ parentCategory.name }}
-                    </option>
-                  </select>
-                </td>
-                <td>
                   <CurrencyDisplay
                     :class="
                       getCategoryBalance(category.id) >= 0
@@ -754,7 +650,7 @@ const getCategoryBalance = (categoryId: string): number => {
                       :title="
                         canDeleteCategory(category)
                           ? 'Kategorie löschen'
-                          : 'Kategorie kann nicht gelöscht werden (hat Unterkategorien oder Buchungen)'
+                          : 'Kategorie kann nicht gelöscht werden (hat Buchungen)'
                       "
                       @click="
                         canDeleteCategory(category)
@@ -772,7 +668,7 @@ const getCategoryBalance = (categoryId: string): number => {
               </tr>
               <tr v-if="(categories?.length ?? 0) === 0">
                 <td
-                  colspan="6"
+                  colspan="5"
                   class="text-center py-4"
                 >
                   Keine Kategorien vorhanden
@@ -834,7 +730,7 @@ const getCategoryBalance = (categoryId: string): number => {
             </thead>
             <tbody>
               <tr
-                v-for="group in categoryGroups"
+                v-for="group in filteredCategoryGroups"
                 :key="group.id"
               >
                 <td>{{ group.name }}</td>
@@ -892,7 +788,7 @@ const getCategoryBalance = (categoryId: string): number => {
                   </div>
                 </td>
               </tr>
-              <tr v-if="(categoryGroups?.length ?? 0) === 0">
+              <tr v-if="(filteredCategoryGroups?.length ?? 0) === 0">
                 <td
                   colspan="5"
                   class="text-center py-4"

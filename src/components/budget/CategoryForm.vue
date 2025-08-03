@@ -21,7 +21,6 @@ const isSavingsGoal = ref(false);
 const targetAmount = ref(0);
 const targetDate = ref("");
 const categoryGroupId = ref("");
-const parentCategoryId = ref<string | undefined>(undefined);
 const balance = ref(0);
 
 // Validierung
@@ -38,7 +37,6 @@ onMounted(() => {
     targetAmount.value = 0; // Category hat keine targetAmount property
     targetDate.value = ""; // Category hat keine targetDate property
     categoryGroupId.value = props.category.categoryGroupId || "";
-    parentCategoryId.value = props.category.parentCategoryId;
     balance.value = props.category.available || 0;
   } else {
     const groups = CategoryService.getCategoryGroups().value;
@@ -93,7 +91,6 @@ const saveCategory = () => {
     isActive: isActive.value,
     sortOrder: 0,
     categoryGroupId: categoryGroupId.value,
-    parentCategoryId: parentCategoryId.value,
     isSavingsGoal: isSavingsGoal.value,
   };
 
@@ -109,14 +106,6 @@ const categoryGroups = computed(
   () => CategoryService.getCategoryGroups().value
 );
 
-const parentCategories = computed(() => {
-  return CategoryService.getCategories()
-    .value.filter((cat) => !props.category || cat.id !== props.category.id)
-    .map((cat) => ({
-      id: cat.id,
-      name: cat.name,
-    }));
-});
 </script>
 
 <template>
@@ -213,22 +202,6 @@ const parentCategories = computed(() => {
           </select>
         </fieldset>
 
-        <fieldset class="fieldset">
-          <legend class="fieldset-legend">Übergeordnete Kategorie</legend>
-          <select
-            v-model="parentCategoryId"
-            class="select select-bordered w-full"
-          >
-            <option :value="undefined">Keine (Hauptkategorie)</option>
-            <option
-              v-for="category in parentCategories"
-              :key="category.id"
-              :value="category.id"
-            >
-              {{ category.name }}
-            </option>
-          </select>
-        </fieldset>
       </div>
 
       <div class="form-control">
