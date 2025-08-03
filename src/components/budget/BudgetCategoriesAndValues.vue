@@ -7,6 +7,7 @@ import { useCategoryStore } from '../../stores/categoryStore';
 import type { CategoryGroup, Category } from '../../types';
 import { debugLog, errorLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
+import CalculatorInput from '../ui/CalculatorInput.vue';
 import { BudgetService } from '../../services/BudgetService';
 import { toDateOnlyString } from '../../utils/formatters';
 import CategoryTransferModal from './CategoryTransferModal.vue';
@@ -172,7 +173,6 @@ const transactionModalData = ref<{
 
 // Editable Budget State
 const activeEditField = ref<string | null>(null); // Format: "categoryId-monthKey"
-const editValue = ref<string>('');
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
@@ -210,89 +210,56 @@ function getCategoriesForGroup(groupId: string): Category[] {
 }
 
 // Editable Budget Functions
-function startEditBudget(categoryId: string, monthKey: string, currentValue: number) {
-  debugLog('BudgetCategoriesAndValues', `startEditBudget called: ${categoryId}-${monthKey}, value: ${currentValue}`);
-
-  const fieldKey = `${categoryId}-${monthKey}`;
-  activeEditField.value = fieldKey;
-  editValue.value = Math.abs(currentValue).toString();
-
-  debugLog('BudgetCategoriesAndValues', `activeEditField set to: ${activeEditField.value}, editValue: ${editValue.value}`);
-
-  nextTick(() => {
-    const inputElement = document.querySelector(`input[data-field-key="${fieldKey}"]`) as HTMLInputElement;
-    if (inputElement) {
-      debugLog('BudgetCategoriesAndValues', 'Input element found, focusing and selecting');
-      inputElement.focus();
-      inputElement.select();
-    } else {
-      debugLog('BudgetCategoriesAndValues', 'Input element not found');
-    }
-  });
-}
-
-function finishEditBudget() {
-  activeEditField.value = null;
-  editValue.value = '';
-}
-
-function handleBudgetKeydown(event: KeyboardEvent) {
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    finishEditBudget();
-  }
-}
-
 function isEditingBudget(categoryId: string, monthKey: string): boolean {
   const result = activeEditField.value === `${categoryId}-${monthKey}`;
-  // debugLog('BudgetCategoriesAndValues', `isEditingBudget(${categoryId}, ${monthKey}): ${result}, activeEditField: ${activeEditField.value}`);
   return result;
 }
 
-// Event handlers for hover effects
-function handleBudgetMouseEnter(event: MouseEvent) {
-  const target = event.target as HTMLElement;
-  if (target) {
-    target.classList.add('border-primary');
-  }
+// Handler für CalculatorInput
+function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
+  // DEBUG: Console-Ausgabe für Formel-Tests
+  console.log('=== CALCULATOR INPUT EMIT ===');
+  console.log('Category ID:', categoryId);
+  console.log('Month Key:', monthKey);
+  console.log('Calculated Value:', newValue);
+  console.log('Value Type:', typeof newValue);
+  console.log('Is Finite:', isFinite(newValue));
+  console.log('==============================');
+
+  // TODO: Hier wird später die tatsächliche Budget-Update-Logik implementiert
+  debugLog('BudgetCategoriesAndValues', `Budget update: ${categoryId}-${monthKey} = ${newValue}`);
+  // Beispiel: BudgetService.updateBudget(categoryId, monthKey, newValue);
+
+  // Nach dem Update den Edit-Modus beenden
+  handleBudgetFinish(categoryId, monthKey);
 }
 
-function handleBudgetMouseLeave(event: MouseEvent, categoryId: string, monthKey: string) {
-  const target = event.target as HTMLElement;
-  if (target && !isEditingBudget(categoryId, monthKey)) {
-    target.classList.remove('border-primary');
+function handleBudgetFinish(categoryId: string, monthKey: string) {
+  const fieldKey = `${categoryId}-${monthKey}`;
+  if (activeEditField.value === fieldKey) {
+    activeEditField.value = null;
   }
 }
 
 function handleBudgetClick(categoryId: string, monthKey: string) {
+  console.log('CLICK EVENT TRIGGERED!', categoryId, monthKey); // Einfacher Console.log für Test
   debugLog('BudgetCategoriesAndValues', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
 
   if (!isEditingBudget(categoryId, monthKey)) {
+    console.log('Starting edit mode for:', categoryId, monthKey);
     debugLog('BudgetCategoriesAndValues', 'Not currently editing, starting edit mode');
-    // Find the month data from props.months
-    const monthData = props.months.find(m => m.key === monthKey);
-    if (monthData) {
-      const budgetData = getCategoryBudgetData(categoryId, monthData);
-      debugLog('BudgetCategoriesAndValues', `Budget data found: ${budgetData.budgeted}`);
-      startEditBudget(categoryId, monthKey, budgetData.budgeted);
-    } else {
-      debugLog('BudgetCategoriesAndValues', `Month data not found for key: ${monthKey}`);
-    }
+    activeEditField.value = `${categoryId}-${monthKey}`;
+    console.log('activeEditField set to:', activeEditField.value);
+    debugLog('BudgetCategoriesAndValues', `activeEditField set to: ${activeEditField.value}`);
   } else {
+    console.log('Already editing this field');
     debugLog('BudgetCategoriesAndValues', 'Already editing this field');
   }
 }
 
-// Outside click handler
+// Outside click handler (nicht mehr benötigt, da CalculatorInput eigenes Outside-Click-Handling hat)
 function handleOutsideClick(event: Event) {
-  if (activeEditField.value) {
-    const target = event.target as HTMLElement;
-    const isInputField = target.tagName === 'INPUT' && target.hasAttribute('data-field-key');
-
-    if (!isInputField) {
-      finishEditBudget();
-    }
-  }
+  // Leer lassen - CalculatorInput handhabt Outside-Clicks selbst
 }
 
 onMounted(async () => {
@@ -1200,27 +1167,29 @@ function handleTransactionUpdated() {
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div
-                            class="text-right cursor-pointer transition-all duration-200 rounded px-1 py-0.5 border"
+                            class="text-right transition-all duration-200 rounded px-1 py-0.5 border"
                             :class="{
-                              'border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
-                              'border-primary': isEditingBudget(category.id, month.key)
+                              'cursor-pointer border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
+                              'border-transparent': isEditingBudget(category.id, month.key)
                             }"
                             @click.stop="handleBudgetClick(category.id, month.key)"
                           >
-                            <input
+                            <!-- Edit-Modus: CalculatorInput -->
+                            <CalculatorInput
                               v-if="isEditingBudget(category.id, month.key)"
-                              v-model="editValue"
-                              :data-field-key="`${category.id}-${month.key}`"
-                              type="text"
-                              class="w-full text-right text-xs bg-transparent border-none outline-none text-base-content p-0 m-0"
-                              @keydown="handleBudgetKeydown"
-                              @click.stop
+                              :model-value="getCategoryBudgetData(category.id, month).budgeted"
+                              :is-active="true"
+                              :field-key="`${category.id}-${month.key}`"
+                              @update:model-value="handleBudgetUpdate(category.id, month.key, $event)"
+                              @finish="handleBudgetFinish(category.id, month.key)"
                             />
+                            <!-- Anzeige-Modus: CurrencyDisplay -->
                             <CurrencyDisplay
                               v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-base-content/80"
+                              @click.stop="handleBudgetClick(category.id, month.key)"
                             />
                           </div>
                           <div class="text-right">
@@ -1436,27 +1405,29 @@ function handleTransactionUpdated() {
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
                           <div
-                            class="text-right cursor-pointer transition-all duration-200 rounded px-1 py-0.5 border"
+                            class="text-right transition-all duration-200 rounded px-1 py-0.5 border"
                             :class="{
-                              'border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
-                              'border-primary': isEditingBudget(category.id, month.key)
+                              'cursor-pointer border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
+                              'border-transparent': isEditingBudget(category.id, month.key)
                             }"
-                            @click="handleBudgetClick(category.id, month.key)"
+                            @click.stop="handleBudgetClick(category.id, month.key)"
                           >
-                            <input
+                            <!-- Edit-Modus: CalculatorInput -->
+                            <CalculatorInput
                               v-if="isEditingBudget(category.id, month.key)"
-                              v-model="editValue"
-                              :data-field-key="`${category.id}-${month.key}`"
-                              type="text"
-                              class="w-full text-right text-xs bg-transparent border-none outline-none text-success p-0 m-0"
-                              @keydown="handleBudgetKeydown"
-                              @click.stop
+                              :model-value="getCategoryBudgetData(category.id, month).budgeted"
+                              :is-active="true"
+                              :field-key="`${category.id}-${month.key}`"
+                              @update:model-value="handleBudgetUpdate(category.id, month.key, $event)"
+                              @finish="handleBudgetFinish(category.id, month.key)"
                             />
+                            <!-- Anzeige-Modus: CurrencyDisplay -->
                             <CurrencyDisplay
                               v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-success"
+                              @click.stop="handleBudgetClick(category.id, month.key)"
                             />
                           </div>
                           <div class="text-right">
