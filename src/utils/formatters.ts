@@ -66,7 +66,7 @@ export function toDateOnlyString(input: string | Date): string {
 export function getAmountClass(amount: number): string {
   if (amount > 0) return 'text-success'
   if (amount < 0) return 'text-error'
-  return ''
+  return 'text-neutral'
 }
 
 /**

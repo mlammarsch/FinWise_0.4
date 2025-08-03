@@ -49,11 +49,17 @@ const amountClass = computed(() => getAmountClass(props.amount));
 
 // Legt fest, ob der Betrag angezeigt wird
 const showAmount = computed(() => props.amount !== 0 || props.showZero);
+
+// Bestimmt, was bei showZero=false angezeigt wird
+const fallbackDisplay = computed(() => {
+  // Wenn showSign true ist, zeige "- €", sonst nur "-"
+  return props.showSign ? '- €' : '-';
+});
 </script>
 
 <template>
   <span v-if="showAmount" :class="amountClass">
     {{ formattedAmount }}
   </span>
-  <span v-else class="text-neutral">-</span>
+  <span v-else class="text-neutral">{{ fallbackDisplay }}</span>
 </template>

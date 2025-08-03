@@ -12,6 +12,7 @@ import { BudgetService } from '../../services/BudgetService';
 import { toDateOnlyString } from '../../utils/formatters';
 import CategoryTransferModal from './CategoryTransferModal.vue';
 import CategoryTransactionModal from './CategoryTransactionModal.vue';
+import CategoryPlanningModal from './CategoryPlanningModal.vue';
 import { TransactionService } from '../../services/TransactionService';
 
 // Props für Monate
@@ -162,6 +163,18 @@ const modalData = ref<{
 // Transaction Modal State
 const showTransactionModal = ref(false);
 const transactionModalData = ref<{
+  categoryId: string;
+  month: {
+    key: string;
+    label: string;
+    start: Date;
+    end: Date;
+  };
+} | null>(null);
+
+// Planning Modal State
+const showPlanningModal = ref(false);
+const planningModalData = ref<{
   categoryId: string;
   month: {
     key: string;
@@ -1036,6 +1049,26 @@ function closeTransactionModal() {
   debugLog("BudgetCategoriesAndValues", "Transaction modal closed");
 }
 
+// Planning Modal Functions
+function openPlanningModal(category: Category, month: { key: string; label: string; start: Date; end: Date }) {
+  planningModalData.value = {
+    categoryId: category.id,
+    month
+  };
+  showPlanningModal.value = true;
+  debugLog("BudgetCategoriesAndValues", "Planning modal opened", {
+    categoryId: category.id,
+    categoryName: category.name,
+    month: month.label
+  });
+}
+
+function closePlanningModal() {
+  showPlanningModal.value = false;
+  planningModalData.value = null;
+  debugLog("BudgetCategoriesAndValues", "Planning modal closed");
+}
+
 function handleTransactionUpdated() {
   // Refresh budget data after transaction changes
   debugLog("BudgetCategoriesAndValues", "Transaction updated, refreshing budget data");
@@ -1054,7 +1087,7 @@ function handleTransactionUpdated() {
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
-          <div class="type-part flex items-center">
+          <div class="type-part flex items-center pl-2">
             <Icon icon="mdi:trending-down" class="w-4 h-4 mr-2 text-error" />
             <h3 class="font-semibold text-sm text-base-content">Ausgaben</h3>
           </div>
@@ -1071,6 +1104,7 @@ function handleTransactionUpdated() {
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month).budgeted"
                     :as-integer="true"
+                    :show-zero="false"
                     class="text-base-content"
                   />
                 </div>
@@ -1078,6 +1112,7 @@ function handleTransactionUpdated() {
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month).forecast"
                     :as-integer="true"
+                    :show-zero="false"
                     class="text-base-content"
                   />
                 </div>
@@ -1085,6 +1120,7 @@ function handleTransactionUpdated() {
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month).spent"
                     :as-integer="true"
+                    :show-zero="false"
                     :class="calculateTypeSummary(false, month).spent >= 0 ? 'text-base-content' : 'text-error'"
                   />
                 </div>
@@ -1092,7 +1128,7 @@ function handleTransactionUpdated() {
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month).saldo"
                     :as-integer="true"
-                    :class="calculateTypeSummary(false, month).saldo >= 0 ? 'text-success' : 'text-error'"
+                    :show-zero="false"
                   />
                 </div>
               </div>
@@ -1141,6 +1177,7 @@ function handleTransactionUpdated() {
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).budgeted"
                         :as-integer="true"
+                        :show-zero="false"
                         class="text-base-content"
                       />
                     </div>
@@ -1148,6 +1185,7 @@ function handleTransactionUpdated() {
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).forecast"
                         :as-integer="true"
+                        :show-zero="false"
                         class="text-base-content"
                       />
                     </div>
@@ -1155,6 +1193,7 @@ function handleTransactionUpdated() {
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).spent"
                         :as-integer="true"
+                        :show-zero="false"
                         :class="calculateGroupSummary(group.id, month).spent >= 0 ? 'text-base-content' : 'text-error'"
                       />
                     </div>
@@ -1162,7 +1201,7 @@ function handleTransactionUpdated() {
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).saldo"
                         :as-integer="true"
-                        :class="calculateGroupSummary(group.id, month).saldo >= 0 ? 'text-success' : 'text-error'"
+                        :show-zero="false"
                       />
                     </div>
                   </div>
@@ -1239,14 +1278,20 @@ function handleTransactionUpdated() {
                               v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
+                              :show-zero="false"
                               class="text-base-content/80"
                               @click.stop="handleBudgetClick(category.id, month.key)"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer hover:bg-base-200 rounded px-1 py-0.5 transition-colors"
+                            @click="openPlanningModal(category, month)"
+                            title="Klicken um Planungen anzuzeigen"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).forecast"
                               :as-integer="true"
+                              :show-zero="false"
                               class="text-base-content/80"
                             />
                           </div>
@@ -1258,6 +1303,7 @@ function handleTransactionUpdated() {
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
+                              :show-zero="false"
                               class="text-error"
                             />
                           </div>
@@ -1271,7 +1317,7 @@ function handleTransactionUpdated() {
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
-                              :class="getCategoryBudgetData(category.id, month).saldo >= 0 ? 'text-success' : 'text-error'"
+                              :show-zero="false"
                             />
                           </div>
                         </div>
@@ -1292,7 +1338,7 @@ function handleTransactionUpdated() {
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
-          <div class="type-part flex items-center">
+          <div class="type-part flex items-center pl-2">
             <Icon icon="mdi:trending-up" class="w-4 h-4 mr-2 text-success" />
             <h3 class="font-semibold text-sm text-base-content">Einnahmen</h3>
           </div>
@@ -1302,27 +1348,28 @@ function handleTransactionUpdated() {
             <div
               v-for="month in months"
               :key="month.key"
-              class="month-column flex-1 min-w-[120px] p-0"
+              class="month-column flex-1 min-w-[120px] p-0 px-1"
             >
               <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(true, month).budgeted"
                     :as-integer="true"
-                    class="text-success"
+                    :show-zero="false"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(true, month).forecast"
                     :as-integer="true"
-                    class="text-success"
+                    :show-zero="false"
                   />
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(true, month).spent"
                     :as-integer="true"
+                    :show-zero="false"
                     class="text-base-content"
                   />
                 </div>
@@ -1330,6 +1377,7 @@ function handleTransactionUpdated() {
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(true, month).saldo"
                     :as-integer="true"
+                    :show-zero="false"
                     class="text-base-content"
                   />
                 </div>
@@ -1372,27 +1420,28 @@ function handleTransactionUpdated() {
                 <div
                   v-for="month in months"
                   :key="month.key"
-                  class="month-column flex-1 min-w-[120px] py-2 border-r border-base-300"
+                  class="month-column flex-1 min-w-[120px] py-2 px-1 border-r border-base-300"
                 >
                   <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
                     <div class="text-right">
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).budgeted"
                         :as-integer="true"
-                        class="text-success"
+                        :show-zero="false"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).forecast"
                         :as-integer="true"
-                        class="text-success"
+                        :show-zero="false"
                       />
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).spent"
                         :as-integer="true"
+                        :show-zero="false"
                         class="text-base-content"
                       />
                     </div>
@@ -1400,6 +1449,7 @@ function handleTransactionUpdated() {
                       <CurrencyDisplay
                         :amount="calculateGroupSummary(group.id, month).saldo"
                         :as-integer="true"
+                        :show-zero="false"
                         class="text-base-content"
                       />
                     </div>
@@ -1460,14 +1510,18 @@ function handleTransactionUpdated() {
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
-                              class="text-success"
+                              :show-zero="false"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer hover:bg-base-200 rounded px-1 py-0.5 transition-colors"
+                            @click="openPlanningModal(category, month)"
+                            title="Klicken um Planungen anzuzeigen"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).forecast"
                               :as-integer="true"
-                              class="text-success"
+                              :show-zero="false"
                             />
                           </div>
                           <div
@@ -1478,6 +1532,7 @@ function handleTransactionUpdated() {
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
+                              :show-zero="false"
                               class="text-base-content/80"
                             />
                           </div>
@@ -1491,6 +1546,7 @@ function handleTransactionUpdated() {
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).saldo"
                               :as-integer="true"
+                              :show-zero="false"
                               class="text-base-content/80"
                             />
                           </div>
@@ -1577,6 +1633,15 @@ function handleTransactionUpdated() {
       :month="transactionModalData.month"
       @close="closeTransactionModal"
       @transaction-updated="handleTransactionUpdated"
+    />
+
+    <!-- Planning Modal -->
+    <CategoryPlanningModal
+      v-if="showPlanningModal && planningModalData"
+      :is-open="showPlanningModal"
+      :category-id="planningModalData.categoryId"
+      :month="planningModalData.month"
+      @close="closePlanningModal"
     />
   </div>
 </template>
