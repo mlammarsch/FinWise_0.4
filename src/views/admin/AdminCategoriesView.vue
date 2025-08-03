@@ -48,8 +48,8 @@ const categories = computed(() => {
 
   return [...filtered].sort((a, b) => {
     for (const criteria of categorySortCriteria.value) {
-      let aValue: string | boolean;
-      let bValue: string | boolean;
+      let aValue: string | boolean | number;
+      let bValue: string | boolean | number;
 
       switch (criteria.field) {
         case "name":
@@ -63,6 +63,22 @@ const categories = computed(() => {
         case "status":
           aValue = a.isActive;
           bValue = b.isActive;
+          break;
+        case "monthlyAmount":
+          aValue = a.monthlyAmount || 0;
+          bValue = b.monthlyAmount || 0;
+          break;
+        case "priority":
+          aValue = a.priority || 0;
+          bValue = b.priority || 0;
+          break;
+        case "proportion":
+          aValue = a.proportion || 0;
+          bValue = b.proportion || 0;
+          break;
+        case "savingsGoal":
+          aValue = a.isSavingsGoal || false;
+          bValue = b.isSavingsGoal || false;
           break;
         default:
           continue;
@@ -367,6 +383,35 @@ const toggleCategoryStatus = async (category: Category) => {
   }
 };
 
+/**
+ * Schaltet den Sparziel-Status einer Kategorie um
+ */
+const toggleSavingsGoal = async (category: Category) => {
+  try {
+    const newSavingsGoalStatus = !category.isSavingsGoal;
+    const success = await CategoryService.updateCategory(category.id, {
+      isSavingsGoal: newSavingsGoalStatus,
+    });
+
+    if (success) {
+      console.log(
+        `Kategorie "${category.name}" Sparziel-Status geändert zu: ${
+          newSavingsGoalStatus ? "Aktiv" : "Inaktiv"
+        }`
+      );
+    } else {
+      console.error(
+        `Fehler beim Ändern des Sparziel-Status von Kategorie "${category.name}"`
+      );
+    }
+  } catch (error) {
+    console.error(
+      `Fehler beim Umschalten des Sparziel-Status für "${category.name}":`,
+      error
+    );
+  }
+};
+
 // Update-Funktionen für Dropdowns
 const updateCategoryGroup = async (category: Category, newGroupId: string) => {
   // Prüfe, ob sich die Gruppe tatsächlich geändert hat
@@ -479,6 +524,19 @@ const getGroupName = (groupId: string | undefined): string => {
 const getCategoryBalance = (categoryId: string): number => {
   return BalanceService.getTodayBalance("category", categoryId);
 };
+
+// Berechnet den Progress-Wert für Sparziele (Saldo / Sparziel * 100, max. 100)
+const getSavingsGoalProgress = (category: Category): number => {
+  if (!category.isSavingsGoal || !category.targetAmount || category.targetAmount <= 0) {
+    return 0;
+  }
+
+  const currentBalance = getCategoryBalance(category.id);
+  const progress = (currentBalance / category.targetAmount) * 100;
+
+  // Ergebnis kann nie höher als 100 sein
+  return Math.min(Math.max(progress, 0), 100);
+};
 </script>
 
 <template>
@@ -547,6 +605,86 @@ const getCategoryBalance = (categoryId: string): number => {
                     </div>
                   </div>
                 </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('monthlyAmount', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Mtl. Beitrag</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('monthlyAmount')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('monthlyAmount')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("monthlyAmount") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('priority', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Priorität</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('priority')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('priority')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("priority") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('proportion', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Anteil</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('proportion')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('proportion')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("proportion") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
+                <th
+                  class="cursor-pointer hover:bg-base-200 select-none"
+                  @click="sortCategories('savingsGoal', $event)"
+                >
+                  <div class="flex items-center justify-between">
+                    <span>Sparziel</span>
+                    <div class="flex items-center">
+                      <Icon
+                        :icon="getSortIcon('savingsGoal')"
+                        class="w-4 h-4 opacity-60"
+                      />
+                      <span
+                        v-if="getSortPriority('savingsGoal')"
+                        class="ml-1 text-xs bg-primary text-primary-content rounded-full w-4 h-4 flex items-center justify-center"
+                      >
+                        {{ getSortPriority("savingsGoal") }}
+                      </span>
+                    </div>
+                  </div>
+                </th>
                 <th>Saldo</th>
                 <th
                   class="cursor-pointer hover:bg-base-200 select-none"
@@ -598,11 +736,36 @@ const getCategoryBalance = (categoryId: string): number => {
                 </td>
                 <td>
                   {{ category.name }}
-                  <span
-                    v-if="category.isSavingsGoal"
-                    class="badge badge-sm badge-accent ml-1"
-                    >Sparziel</span
-                  >
+                </td>
+                <td>
+                  <CurrencyDisplay
+                    v-if="category.monthlyAmount"
+                    :amount="category.monthlyAmount"
+                    :show-sign="false"
+                  />
+                  <span v-else class="text-base-content/50">-</span>
+                </td>
+                <td>
+                  <span v-if="category.priority" class="badge badge-outline">
+                    {{ category.priority }}
+                  </span>
+                  <span v-else class="text-base-content/50">-</span>
+                </td>
+                <td>
+                  <span v-if="category.proportion" class="text-sm">
+                    {{ category.proportion }}%
+                  </span>
+                  <span v-else class="text-base-content/50">-</span>
+                </td>
+                <td>
+                  <div class="flex flex-col w-full">
+                    <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="badge badge-primary badge-soft text-xs w-full justify-center mb-1">
+                      <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-1" />
+                      - {{ new Date(category.goalDate).toLocaleDateString('de-DE') }}
+                    </div>
+                    <span v-else class="text-base-content/50">-</span>
+                    <progress v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" className="progress progress-primary w-full" :value="getSavingsGoalProgress(category)" max="100"></progress>
+                  </div>
                 </td>
                 <td>
                   <CurrencyDisplay
@@ -630,6 +793,17 @@ const getCategoryBalance = (categoryId: string): number => {
                 </td>
                 <td class="text-right">
                   <div class="flex justify-end space-x-1">
+                    <button
+                      class="btn btn-ghost btn-xs"
+                      :class="category.isSavingsGoal ? 'text-primary' : 'text-base-content/50'"
+                      @click="toggleSavingsGoal(category)"
+                      :title="category.isSavingsGoal ? 'Sparziel deaktivieren' : 'Sparziel aktivieren'"
+                    >
+                      <Icon
+                        :icon="category.isSavingsGoal ? 'mdi:piggy-bank' : 'mdi:piggy-bank-outline'"
+                        class="text-base"
+                      />
+                    </button>
                     <button
                       class="btn btn-ghost btn-xs"
                       @click="editCategory(category)"

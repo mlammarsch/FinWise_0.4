@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { Category } from "../../types";
 import { CategoryService } from "../../services/CategoryService";
+import { BalanceService } from "../../services/BalanceService";
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import CurrencyInput from "../ui/CurrencyInput.vue";
 import ButtonGroup from "../ui/ButtonGroup.vue";
@@ -49,7 +50,8 @@ onMounted(() => {
     targetAmount.value = props.category.targetAmount || 0;
     targetDate.value = ""; // Wird nicht verwendet, goalDate ist das korrekte Feld
     categoryGroupId.value = props.category.categoryGroupId || "";
-    balance.value = props.category.available || 0;
+    // Aktuellen Saldo über BalanceService berechnen statt aus props.category.available
+    balance.value = BalanceService.getTodayBalance("category", props.category.id);
     goalDate.value = props.category.goalDate || "";
     priority.value = props.category.priority || 0;
     proportion.value = props.category.proportion || 0;
@@ -71,11 +73,18 @@ const calculateGoalDate = () => {
 
   isCalculatingDate.value = true;
 
-  const monthsNeeded = Math.ceil(targetAmount.value / monthlyAmount.value);
-  const today = new Date();
-  const goalDateCalculated = new Date(today.getFullYear(), today.getMonth() + monthsNeeded, today.getDate());
+  // Berücksichtige den aktuellen Saldo - nur die Differenz muss noch gespart werden
+  const remainingAmount = targetAmount.value - balance.value;
 
-  goalDate.value = goalDateCalculated.toISOString().split('T')[0];
+  // Wenn das Ziel bereits erreicht ist, setze das Datum auf heute
+  if (remainingAmount <= 0) {
+    goalDate.value = new Date().toISOString().split('T')[0];
+  } else {
+    const monthsNeeded = Math.ceil(remainingAmount / monthlyAmount.value);
+    const today = new Date();
+    const goalDateCalculated = new Date(today.getFullYear(), today.getMonth() + monthsNeeded, today.getDate());
+    goalDate.value = goalDateCalculated.toISOString().split('T')[0];
+  }
 
   setTimeout(() => {
     isCalculatingDate.value = false;
@@ -94,8 +103,14 @@ const calculateMonthlyAmount = () => {
   const monthsDiff = (targetDateObj.getFullYear() - today.getFullYear()) * 12 +
                      (targetDateObj.getMonth() - today.getMonth());
 
-  if (monthsDiff > 0) {
-    monthlyAmount.value = Math.ceil(targetAmount.value / monthsDiff * 100) / 100;
+  // Berücksichtige den aktuellen Saldo - nur die Differenz muss noch gespart werden
+  const remainingAmount = targetAmount.value - balance.value;
+
+  if (monthsDiff > 0 && remainingAmount > 0) {
+    monthlyAmount.value = Math.ceil(remainingAmount / monthsDiff * 100) / 100;
+  } else if (remainingAmount <= 0) {
+    // Ziel bereits erreicht
+    monthlyAmount.value = 0;
   }
 
   setTimeout(() => {
@@ -104,13 +119,13 @@ const calculateMonthlyAmount = () => {
 };
 
 // Watch für automatische Berechnungen
-watch([targetAmount, monthlyAmount], () => {
+watch([targetAmount, monthlyAmount, balance], () => {
   if (isSavingsGoal.value && !isCalculatingDate.value) {
     calculateGoalDate();
   }
 }, { deep: true });
 
-watch([targetAmount, goalDate], () => {
+watch([targetAmount, goalDate, balance], () => {
   if (isSavingsGoal.value && !isCalculatingAmount.value) {
     calculateMonthlyAmount();
   }
