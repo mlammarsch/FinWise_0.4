@@ -10,6 +10,7 @@ import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
 import { BudgetService } from '../../services/BudgetService';
 import { toDateOnlyString } from '../../utils/formatters';
 import CategoryTransferModal from './CategoryTransferModal.vue';
+import CategoryTransactionModal from './CategoryTransactionModal.vue';
 import { TransactionService } from '../../services/TransactionService';
 
 // Props für Monate
@@ -155,6 +156,18 @@ const modalData = ref<{
   clickedCategory: Category | null;
   amount: number;
   month: { start: Date; end: Date } | null;
+} | null>(null);
+
+// Transaction Modal State
+const showTransactionModal = ref(false);
+const transactionModalData = ref<{
+  categoryId: string;
+  month: {
+    key: string;
+    label: string;
+    start: Date;
+    end: Date;
+  };
 } | null>(null);
 
 // Auto-Expand Timer für Drag-Over
@@ -776,6 +789,32 @@ function executeTransfer() {
   showTransferModal.value = false;
   debugLog("BudgetCategoryColumn3", "Transfer completed, modal closed");
 }
+
+// Transaction Modal Functions
+function openTransactionModal(category: Category, month: { key: string; label: string; start: Date; end: Date }) {
+  transactionModalData.value = {
+    categoryId: category.id,
+    month: month
+  };
+  showTransactionModal.value = true;
+  debugLog("BudgetCategoryColumn3", "Transaction modal opened", {
+    categoryId: category.id,
+    categoryName: category.name,
+    month: month.label
+  });
+}
+
+function closeTransactionModal() {
+  showTransactionModal.value = false;
+  transactionModalData.value = null;
+  debugLog("BudgetCategoryColumn3", "Transaction modal closed");
+}
+
+function handleTransactionUpdated() {
+  // Refresh budget data after transaction changes
+  debugLog("BudgetCategoryColumn3", "Transaction updated, refreshing budget data");
+  // The reactive computed properties will automatically update
+}
 </script>
 
 <template>
@@ -966,7 +1005,11 @@ function executeTransfer() {
                               class="text-base-content/80"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer hover:bg-base-200 rounded px-1 py-0.5 transition-colors"
+                            @click="openTransactionModal(category, month)"
+                            title="Klicken um Transaktionen anzuzeigen"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
@@ -1181,7 +1224,11 @@ function executeTransfer() {
                               class="text-success"
                             />
                           </div>
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer hover:bg-base-200 rounded px-1 py-0.5 transition-colors"
+                            @click="openTransactionModal(category, month)"
+                            title="Klicken um Transaktionen anzuzeigen"
+                          >
                             <CurrencyDisplay
                               :amount="getCategoryBudgetData(category.id, month).spent"
                               :as-integer="true"
@@ -1270,6 +1317,16 @@ function executeTransfer() {
       :preselectedCategoryId="modalData.clickedCategory?.id"
       @close="showTransferModal = false"
       @transfer="executeTransfer"
+    />
+
+    <!-- Transaction Modal -->
+    <CategoryTransactionModal
+      v-if="showTransactionModal && transactionModalData"
+      :is-open="showTransactionModal"
+      :category-id="transactionModalData.categoryId"
+      :month="transactionModalData.month"
+      @close="closeTransactionModal"
+      @transaction-updated="handleTransactionUpdated"
     />
   </div>
 </template>
