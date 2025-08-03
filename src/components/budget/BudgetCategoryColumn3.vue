@@ -193,17 +193,32 @@ function getCategoriesForGroup(groupId: string): Category[] {
 }
 
 onMounted(async () => {
-  await CategoryService.loadCategories();
+  debugLog('BudgetCategoryColumn3', 'Component mounted, starting initialization');
 
-  // Expand-State für alle Gruppen aus CategoryStore initialisieren (falls noch nicht gesetzt)
-  for (const group of categoryGroups.value) {
-    if (!categoryStore.expandedCategoryGroups.has(group.id)) {
-      categoryStore.toggleCategoryGroupExpanded(group.id);
-    }
+  await CategoryService.loadCategories();
+  debugLog('BudgetCategoryColumn3', 'Categories loaded successfully');
+
+  // Batch-Expansion aller Gruppen über CategoryService
+  const groupsToExpand = categoryGroups.value
+    .filter(group => !categoryStore.expandedCategoryGroups.has(group.id))
+    .map(group => group.id);
+
+  if (groupsToExpand.length > 0) {
+    debugLog('BudgetCategoryColumn3', `Expanding ${groupsToExpand.length} category groups`);
+    CategoryService.expandCategoryGroupsBatch(groupsToExpand);
   }
 
   await nextTick();
-  initializeGrids();
+  debugLog('BudgetCategoryColumn3', 'Starting Muuri grid initialization');
+
+  // Muuri-Initialisierung mit mehreren requestAnimationFrame für bessere Animation-Performance
+  requestAnimationFrame(() => {
+    debugLog('BudgetCategoryColumn3', 'First animation frame - allowing spinner to animate');
+    requestAnimationFrame(() => {
+      debugLog('BudgetCategoryColumn3', 'Second animation frame - calling initializeGrids');
+      initializeGrids();
+    });
+  });
 });
 
 onUnmounted(() => {
@@ -224,7 +239,21 @@ watch(() => categoryStore.expandedCategoryGroups, () => {
 }, { deep: true });
 
 function initializeGrids() {
+  debugLog('BudgetCategoryColumn3', 'initializeGrids() function called');
+
   try {
+    let completedLayouts = 0;
+    const totalGrids = 2; // Expense Meta-Grid + Income Meta-Grid
+
+    const checkAllLayoutsComplete = () => {
+      completedLayouts++;
+      debugLog('BudgetCategoryColumn3', `Layout completed: ${completedLayouts}/${totalGrids}`);
+      if (completedLayouts >= totalGrids) {
+        debugLog('BudgetCategoryColumn3', 'All Muuri grids layouts completed successfully - emitting muuriReady');
+        emit('muuriReady');
+      }
+    };
+
     // Expense Sub-Grids initialisieren
     const expenseSubGridElements = document.querySelectorAll('#expense-categories .categories-content') as NodeListOf<HTMLElement>;
     expenseSubGridElements.forEach(el => {
@@ -239,18 +268,72 @@ function initializeGrids() {
       incomeSubGrids.value.push(grid);
     });
 
-    // Expense Meta-Grid initialisieren
-    expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
+    // Meta-Grids mit längeren Delays für bessere Animation-Performance
+    setTimeout(() => {
+      try {
+        debugLog('BudgetCategoryColumn3', 'Initializing Expense Meta-Grid');
+        // Expense Meta-Grid initialisieren
+        expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
 
-    // Income Meta-Grid initialisieren
-    incomeMetaGrid.value = createMetaGrid('#income-categories', true);
+        // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
+        if (expenseMetaGrid.value.getItems().length === 0) {
+          debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid has no items, layout complete immediately');
+          checkAllLayoutsComplete();
+        } else {
+          expenseMetaGrid.value.on('layoutEnd', () => {
+            debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via event');
+            checkAllLayoutsComplete();
+          });
+          // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
+          setTimeout(() => {
+            if (completedLayouts < 1) {
+              debugLog('BudgetCategoryColumn3', 'Expense Meta-Grid layout completed via timeout fallback');
+              checkAllLayoutsComplete();
+            }
+          }, 200);
+        }
 
-    debugLog('BudgetCategoryColumn3', 'Muuri grids initialized successfully');
+        // Längerer Delay für Income Meta-Grid um Spinner-Animation zu ermöglichen
+        setTimeout(() => {
+          try {
+            debugLog('BudgetCategoryColumn3', 'Initializing Income Meta-Grid');
+            // Income Meta-Grid initialisieren
+            incomeMetaGrid.value = createMetaGrid('#income-categories', true);
 
-    // Event emittieren, dass Muuri-Grids bereit sind
-    emit('muuriReady');
+            // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
+            if (incomeMetaGrid.value.getItems().length === 0) {
+              debugLog('BudgetCategoryColumn3', 'Income Meta-Grid has no items, layout complete immediately');
+              checkAllLayoutsComplete();
+            } else {
+              incomeMetaGrid.value.on('layoutEnd', () => {
+                debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via event');
+                checkAllLayoutsComplete();
+              });
+              // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
+              setTimeout(() => {
+                if (completedLayouts < 2) {
+                  debugLog('BudgetCategoryColumn3', 'Income Meta-Grid layout completed via timeout fallback');
+                  checkAllLayoutsComplete();
+                }
+              }, 200);
+            }
+
+            debugLog('BudgetCategoryColumn3', 'Muuri grids initialized, waiting for layouts to complete');
+
+          } catch (error) {
+            errorLog('BudgetCategoryColumn3', 'Failed to initialize Income Meta-Grid', error);
+            emit('muuriReady'); // Trotzdem Event emittieren
+          }
+        }, 100); // Erhöht von 50ms auf 100ms für bessere Animation
+
+      } catch (error) {
+        errorLog('BudgetCategoryColumn3', 'Failed to initialize Expense Meta-Grid', error);
+        emit('muuriReady'); // Trotzdem Event emittieren
+      }
+    }, 150); // Erhöht von 100ms auf 150ms für bessere Animation
+
   } catch (error) {
-    errorLog('BudgetCategoryColumn3', 'Failed to initialize Muuri grids', error);
+    errorLog('BudgetCategoryColumn3', 'Failed to initialize Sub-Grids', error);
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
     emit('muuriReady');
   }

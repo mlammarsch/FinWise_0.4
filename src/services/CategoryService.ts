@@ -115,6 +115,20 @@ export const CategoryService = {
     debugLog("CategoryService", "collapseAllCategories - All categories collapsed");
   },
 
+  /**
+   * Erweitert mehrere CategoryGroups in einem Batch-Vorgang (Performance-optimiert)
+   */
+  expandCategoryGroupsBatch(groupIds: string[]): void {
+    if (!groupIds || groupIds.length === 0) {
+      debugLog("CategoryService", "expandCategoryGroupsBatch - No group IDs provided");
+      return;
+    }
+
+    const categoryStore = useCategoryStore();
+    categoryStore.expandCategoryGroupsBatch(groupIds);
+    debugLog("CategoryService", "expandCategoryGroupsBatch - Groups expanded", { groupIds });
+  },
+
   /* ----------------------------------------------- Async Methoden */
 
   /**

@@ -461,6 +461,15 @@ export const useCategoryStore = defineStore('category', () => {
     debugLog('categoryStore', 'collapseAllCategoryGroups', 'completed');
   }
 
+  function expandCategoryGroupsBatch(groupIds: string[]) {
+    // Batch-Expansion ohne einzelne Toggle-Aufrufe für bessere Performance
+    groupIds.forEach(id => {
+      expandedCategoryGroups.value.add(id);
+    });
+    saveExpandedCategoryGroups();
+    debugLog('categoryStore', 'expandCategoryGroupsBatch', groupIds.join(', '));
+  }
+
   /* ----------------------------------------------- Persistence */
   async function loadCategories(): Promise<void> {
     try {
@@ -562,6 +571,7 @@ export const useCategoryStore = defineStore('category', () => {
     toggleCategoryGroupExpanded,
     expandAllCategoryGroups,
     collapseAllCategoryGroups,
+    expandCategoryGroupsBatch,
     loadCategories,
     reset,
     initializeStore,

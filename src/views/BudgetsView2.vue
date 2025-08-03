@@ -49,19 +49,14 @@ async function recalcStores() {
   try {
     isLoading.value = true;
 
-    // Stores laden
-    await Promise.all([
-      transactionStore.loadTransactions(),
-      categoryStore.loadCategories()
-    ]);
+    // Stores laden - categoryStore wird bereits in BudgetCategoryColumn3 geladen
+    await transactionStore.loadTransactions();
 
     // Kurz warten, damit die computed properties und Mock-Daten berechnet werden
     await nextTick();
 
-    // Zusätzliche kurze Verzögerung für Mock-Datenberechnung
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    isLoading.value = false;
+    // Loading wird jetzt über muuriReady Event gesteuert
+    // isLoading.value = false; // ← Entfernt, wird über onMuuriReady gesetzt
   } catch (error) {
     console.error('Error loading budget data:', error);
     isLoading.value = false;
@@ -74,6 +69,12 @@ function onUpdateStartOffset(newOffset: number) {
 
 function onUpdateDisplayedMonths(newCount: number) {
   numMonths.value = newCount;
+}
+
+// Event-Handler für Muuri-Initialisierung
+function onMuuriReady() {
+  // Loading erst beenden, wenn Muuri-Grids vollständig initialisiert sind
+  isLoading.value = false;
 }
 
 const months = computed(() => {
@@ -133,12 +134,12 @@ const availableByMonth = computed(() => {
 </script>
 
 <template>
-  <div class="h-[calc(100vh-189px)] flex flex-col overflow-hidden">
-    <!-- Loading State -->
-    <div v-if="isLoading" class="flex-grow flex items-center justify-center bg-base-100">
+  <div class="h-[calc(100vh-189px)] flex flex-col overflow-hidden relative">
+    <!-- Loading Overlay - wird über den Inhalt gelegt -->
+    <div v-if="isLoading" class="absolute inset-0 z-50 flex items-center justify-center bg-base-100" style="will-change: transform;">
       <div class="flex flex-col items-center space-y-4">
-        <!-- Loading Spinner -->
-        <div class="loading loading-spinner loading-lg text-primary"></div>
+        <!-- Loading Spinner mit Hardware-Beschleunigung -->
+        <div class="loading loading-spinner loading-lg text-primary" style="will-change: transform; transform: translateZ(0);"></div>
 
         <!-- Loading Text -->
         <div class="text-center">
@@ -155,8 +156,7 @@ const availableByMonth = computed(() => {
       </div>
     </div>
 
-    <!-- Main Content - nur anzeigen wenn nicht loading -->
-    <template v-else>
+    <!-- Main Content - wird immer gerendert, aber vom Loading-Overlay überdeckt -->
       <!-- Header - Sticky positioniert -->
       <div class="flex-shrink-0 sticky top-0 z-20 bg-base-100 border-b border-base-300">
         <div class="p-4 flex flex-col">
@@ -219,10 +219,9 @@ const availableByMonth = computed(() => {
       <div class="flex-grow overflow-auto">
         <div class="w-full">
           <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
-          <BudgetCategoryColumn3 :months="months" />
+          <BudgetCategoryColumn3 :months="months" @muuriReady="onMuuriReady" />
         </div>
       </div>
-    </template>
   </div>
 </template>
 
