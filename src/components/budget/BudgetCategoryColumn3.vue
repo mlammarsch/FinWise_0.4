@@ -170,6 +170,10 @@ const transactionModalData = ref<{
   };
 } | null>(null);
 
+// Editable Budget State
+const activeEditField = ref<string | null>(null); // Format: "categoryId-monthKey"
+const editValue = ref<string>('');
+
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 
@@ -205,7 +209,95 @@ function getCategoriesForGroup(groupId: string): Category[] {
     .sort((a: Category, b: Category) => a.sortOrder - b.sortOrder);
 }
 
+// Editable Budget Functions
+function startEditBudget(categoryId: string, monthKey: string, currentValue: number) {
+  debugLog('BudgetCategoryColumn3', `startEditBudget called: ${categoryId}-${monthKey}, value: ${currentValue}`);
+
+  const fieldKey = `${categoryId}-${monthKey}`;
+  activeEditField.value = fieldKey;
+  editValue.value = Math.abs(currentValue).toString();
+
+  debugLog('BudgetCategoryColumn3', `activeEditField set to: ${activeEditField.value}, editValue: ${editValue.value}`);
+
+  nextTick(() => {
+    const inputElement = document.querySelector(`input[data-field-key="${fieldKey}"]`) as HTMLInputElement;
+    if (inputElement) {
+      debugLog('BudgetCategoryColumn3', 'Input element found, focusing and selecting');
+      inputElement.focus();
+      inputElement.select();
+    } else {
+      debugLog('BudgetCategoryColumn3', 'Input element not found');
+    }
+  });
+}
+
+function finishEditBudget() {
+  activeEditField.value = null;
+  editValue.value = '';
+}
+
+function handleBudgetKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    finishEditBudget();
+  }
+}
+
+function isEditingBudget(categoryId: string, monthKey: string): boolean {
+  const result = activeEditField.value === `${categoryId}-${monthKey}`;
+  // debugLog('BudgetCategoryColumn3', `isEditingBudget(${categoryId}, ${monthKey}): ${result}, activeEditField: ${activeEditField.value}`);
+  return result;
+}
+
+// Event handlers for hover effects
+function handleBudgetMouseEnter(event: MouseEvent) {
+  const target = event.target as HTMLElement;
+  if (target) {
+    target.classList.add('border-primary');
+  }
+}
+
+function handleBudgetMouseLeave(event: MouseEvent, categoryId: string, monthKey: string) {
+  const target = event.target as HTMLElement;
+  if (target && !isEditingBudget(categoryId, monthKey)) {
+    target.classList.remove('border-primary');
+  }
+}
+
+function handleBudgetClick(categoryId: string, monthKey: string) {
+  debugLog('BudgetCategoryColumn3', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
+
+  if (!isEditingBudget(categoryId, monthKey)) {
+    debugLog('BudgetCategoryColumn3', 'Not currently editing, starting edit mode');
+    // Find the month data from props.months
+    const monthData = props.months.find(m => m.key === monthKey);
+    if (monthData) {
+      const budgetData = getCategoryBudgetData(categoryId, monthData);
+      debugLog('BudgetCategoryColumn3', `Budget data found: ${budgetData.budgeted}`);
+      startEditBudget(categoryId, monthKey, budgetData.budgeted);
+    } else {
+      debugLog('BudgetCategoryColumn3', `Month data not found for key: ${monthKey}`);
+    }
+  } else {
+    debugLog('BudgetCategoryColumn3', 'Already editing this field');
+  }
+}
+
+// Outside click handler
+function handleOutsideClick(event: Event) {
+  if (activeEditField.value) {
+    const target = event.target as HTMLElement;
+    const isInputField = target.tagName === 'INPUT' && target.hasAttribute('data-field-key');
+
+    if (!isInputField) {
+      finishEditBudget();
+    }
+  }
+}
+
 onMounted(async () => {
+  // Add outside click listener
+  document.addEventListener('click', handleOutsideClick);
   debugLog('BudgetCategoryColumn3', 'Component mounted, starting initialization');
 
   await CategoryService.loadCategories();
@@ -242,6 +334,8 @@ onUnmounted(() => {
   if (autoExpandTimer.value) {
     clearTimeout(autoExpandTimer.value);
   }
+  // Remove outside click listener
+  document.removeEventListener('click', handleOutsideClick);
 });
 
 // Watcher für globale Expand/Collapse-Änderungen
@@ -1105,8 +1199,25 @@ function handleTransactionUpdated() {
                         class="month-column flex-1 min-w-[120px] p-[3px] border-b border-r border-base-300"
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer transition-all duration-200 rounded px-1 py-0.5 border"
+                            :class="{
+                              'border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
+                              'border-primary': isEditingBudget(category.id, month.key)
+                            }"
+                            @click.stop="handleBudgetClick(category.id, month.key)"
+                          >
+                            <input
+                              v-if="isEditingBudget(category.id, month.key)"
+                              v-model="editValue"
+                              :data-field-key="`${category.id}-${month.key}`"
+                              type="text"
+                              class="w-full text-right text-xs bg-transparent border-none outline-none text-base-content p-0 m-0"
+                              @keydown="handleBudgetKeydown"
+                              @click.stop
+                            />
                             <CurrencyDisplay
+                              v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-base-content/80"
@@ -1324,8 +1435,25 @@ function handleTransactionUpdated() {
                         class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
-                          <div class="text-right">
+                          <div
+                            class="text-right cursor-pointer transition-all duration-200 rounded px-1 py-0.5 border"
+                            :class="{
+                              'border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
+                              'border-primary': isEditingBudget(category.id, month.key)
+                            }"
+                            @click="handleBudgetClick(category.id, month.key)"
+                          >
+                            <input
+                              v-if="isEditingBudget(category.id, month.key)"
+                              v-model="editValue"
+                              :data-field-key="`${category.id}-${month.key}`"
+                              type="text"
+                              class="w-full text-right text-xs bg-transparent border-none outline-none text-success p-0 m-0"
+                              @keydown="handleBudgetKeydown"
+                              @click.stop
+                            />
                             <CurrencyDisplay
+                              v-else
                               :amount="getCategoryBudgetData(category.id, month).budgeted"
                               :as-integer="true"
                               class="text-success"
