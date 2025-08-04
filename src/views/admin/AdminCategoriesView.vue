@@ -1,6 +1,6 @@
 <!-- src/views/admin/AdminCategoriesView.vue -->
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { CategoryService } from "../../services/CategoryService";
 import { BalanceService } from "../../services/BalanceService";
 import { useTransactionStore } from "../../stores/transactionStore";
@@ -8,6 +8,8 @@ import CategoryForm from "../../components/budget/CategoryForm.vue";
 import CurrencyDisplay from "../../components/ui/CurrencyDisplay.vue";
 import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import SearchGroup from "../../components/ui/SearchGroup.vue";
+import TextInput from "../../components/ui/TextInput.vue";
+import CalculatorInput from "../../components/ui/CalculatorInput.vue";
 import { Category } from "../../types";
 import { Icon } from "@iconify/vue";
 
@@ -159,6 +161,23 @@ const confirmationAction = ref<(() => Promise<void>) | null>(null);
 
 // Transaction Store für Prüfungen
 const transactionStore = useTransactionStore();
+
+// Inline Edit State
+const activeEditField = ref<string | null>(null); // Format: "categoryId-fieldName"
+
+// Outside click handler für Edit-Felder
+const handleOutsideClick = (event: Event) => {
+  if (activeEditField.value) {
+    const target = event.target as HTMLElement;
+    // Prüfe ob der Klick außerhalb aller Input-Felder war
+    const isInsideInput = target.closest('input') || target.closest('.editable-field');
+    if (!isInsideInput) {
+      activeEditField.value = null;
+    }
+  }
+};
+
+// Event-Listener für Outside-Clicks werden in den bestehenden onMounted/onUnmounted Hooks hinzugefügt
 
 // Hilfsfunktionen zur Prüfung von Transaktions-Zuordnungen
 const categoryHasTransactions = (categoryId: string): boolean => {
@@ -537,6 +556,111 @@ const getSavingsGoalProgress = (category: Category): number => {
   // Ergebnis kann nie höher als 100 sein
   return Math.min(Math.max(progress, 0), 100);
 };
+
+// Inline Edit Functions
+const isEditingField = (categoryId: string, fieldName: string): boolean => {
+  return activeEditField.value === `${categoryId}-${fieldName}`;
+};
+
+const handleFieldClick = (categoryId: string, fieldName: string, event: Event) => {
+  // Verhindere Event-Propagation
+  event.stopPropagation();
+  event.preventDefault();
+
+  if (!isEditingField(categoryId, fieldName)) {
+    activeEditField.value = `${categoryId}-${fieldName}`;
+  }
+};
+
+const handleFieldFinish = (categoryId: string, fieldName: string) => {
+  const fieldKey = `${categoryId}-${fieldName}`;
+  if (activeEditField.value === fieldKey) {
+    activeEditField.value = null;
+  }
+};
+
+// Update Handler für Name-Feld
+const handleNameUpdate = async (categoryId: string, newValue: string) => {
+  // Sofort den Edit-Modus beenden für bessere UX
+  handleFieldFinish(categoryId, 'name');
+
+  // Validierung: Leerer Name nicht erlaubt
+  if (!newValue.trim()) {
+    console.warn(`Leerer Name für Kategorie ${categoryId} nicht erlaubt`);
+    return;
+  }
+
+  try {
+    const success = await CategoryService.updateCategory(categoryId, {
+      name: newValue.trim()
+    });
+    if (!success) {
+      console.error(`Fehler beim Aktualisieren des Namens für Kategorie ${categoryId}`);
+    }
+  } catch (error) {
+    console.error(`Fehler beim Aktualisieren des Namens für Kategorie ${categoryId}:`, error);
+  }
+};
+
+// Update Handler für Mtl. Beitrag
+const handleMonthlyAmountUpdate = async (categoryId: string, newValue: number) => {
+  // Sofort den Edit-Modus beenden für bessere UX
+  handleFieldFinish(categoryId, 'monthlyAmount');
+
+  try {
+    const success = await CategoryService.updateCategory(categoryId, {
+      monthlyAmount: newValue
+    });
+    if (!success) {
+      console.error(`Fehler beim Aktualisieren des monatlichen Betrags für Kategorie ${categoryId}`);
+    }
+  } catch (error) {
+    console.error(`Fehler beim Aktualisieren des monatlichen Betrags für Kategorie ${categoryId}:`, error);
+  }
+};
+
+// Update Handler für Priorität
+const handlePriorityUpdate = async (categoryId: string, newValue: number) => {
+  // Sofort den Edit-Modus beenden für bessere UX
+  handleFieldFinish(categoryId, 'priority');
+
+  try {
+    const success = await CategoryService.updateCategory(categoryId, {
+      priority: Math.round(newValue) // Priorität als ganze Zahl
+    });
+    if (!success) {
+      console.error(`Fehler beim Aktualisieren der Priorität für Kategorie ${categoryId}`);
+    }
+  } catch (error) {
+    console.error(`Fehler beim Aktualisieren der Priorität für Kategorie ${categoryId}:`, error);
+  }
+};
+
+// Update Handler für Anteil
+const handleProportionUpdate = async (categoryId: string, newValue: number) => {
+  // Sofort den Edit-Modus beenden für bessere UX
+  handleFieldFinish(categoryId, 'proportion');
+
+  try {
+    const success = await CategoryService.updateCategory(categoryId, {
+      proportion: newValue
+    });
+    if (!success) {
+      console.error(`Fehler beim Aktualisieren des Anteils für Kategorie ${categoryId}`);
+    }
+  } catch (error) {
+    console.error(`Fehler beim Aktualisieren des Anteils für Kategorie ${categoryId}:`, error);
+  }
+};
+
+// Lifecycle Hooks
+onMounted(() => {
+  document.addEventListener('click', handleOutsideClick);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleOutsideClick);
+});
 </script>
 
 <template>
@@ -734,28 +858,84 @@ const getSavingsGoalProgress = (category: Category): number => {
                     </option>
                   </select>
                 </td>
-                <td>
-                  {{ category.name }}
-                </td>
-                <td>
-                  <CurrencyDisplay
-                    v-if="category.monthlyAmount"
-                    :amount="category.monthlyAmount"
-                    :show-sign="false"
+                <td class="min-w-[120px]">
+                  <div
+                    v-if="!isEditingField(category.id, 'name')"
+                    class="editable-field cursor-pointer hover:border hover:border-primary hover:rounded px-2 py-1 transition-all min-h-[32px] flex items-center"
+                    @click="handleFieldClick(category.id, 'name', $event)"
+                  >
+                    {{ category.name }}
+                  </div>
+                  <TextInput
+                    v-else
+                    :model-value="category.name"
+                    :is-active="true"
+                    :field-key="`${category.id}-name`"
+                    @update:model-value="handleNameUpdate(category.id, $event)"
+                    @finish="handleFieldFinish(category.id, 'name')"
                   />
-                  <span v-else class="text-base-content/50">-</span>
                 </td>
-                <td>
-                  <span v-if="category.priority" class="badge badge-sm badge-outline">
-                    {{ category.priority }}
-                  </span>
-                  <span v-else class="text-base-content/50">-</span>
+                <td class="min-w-[100px]">
+                  <div
+                    v-if="!isEditingField(category.id, 'monthlyAmount')"
+                    class="editable-field cursor-pointer hover:border hover:border-primary hover:rounded px-2 py-1 transition-all min-h-[32px] flex items-center justify-end"
+                    @click="handleFieldClick(category.id, 'monthlyAmount', $event)"
+                  >
+                    <CurrencyDisplay
+                      v-if="category.monthlyAmount"
+                      :amount="category.monthlyAmount"
+                      :show-sign="false"
+                    />
+                    <span v-else class="text-base-content/50">-</span>
+                  </div>
+                  <CalculatorInput
+                    v-else
+                    :model-value="category.monthlyAmount || 0"
+                    :is-active="true"
+                    :field-key="`${category.id}-monthlyAmount`"
+                    @update:model-value="handleMonthlyAmountUpdate(category.id, $event)"
+                    @finish="handleFieldFinish(category.id, 'monthlyAmount')"
+                  />
                 </td>
-                <td>
-                  <span v-if="category.proportion" class="text-sm">
-                    {{ category.proportion }}%
-                  </span>
-                  <span v-else class="text-base-content/50">-</span>
+                <td class="min-w-[80px]">
+                  <div
+                    v-if="!isEditingField(category.id, 'priority')"
+                    class="editable-field cursor-pointer hover:border hover:border-primary hover:rounded px-2 py-1 transition-all min-h-[32px] flex items-center justify-center"
+                    @click="handleFieldClick(category.id, 'priority', $event)"
+                  >
+                    <span v-if="category.priority" class="badge badge-sm badge-outline">
+                      {{ category.priority }}
+                    </span>
+                    <span v-else class="text-base-content/50">-</span>
+                  </div>
+                  <CalculatorInput
+                    v-else
+                    :model-value="category.priority || 0"
+                    :is-active="true"
+                    :field-key="`${category.id}-priority`"
+                    @update:model-value="handlePriorityUpdate(category.id, $event)"
+                    @finish="handleFieldFinish(category.id, 'priority')"
+                  />
+                </td>
+                <td class="min-w-[80px]">
+                  <div
+                    v-if="!isEditingField(category.id, 'proportion')"
+                    class="editable-field cursor-pointer hover:border hover:border-primary hover:rounded px-2 py-1 transition-all min-h-[32px] flex items-center justify-center"
+                    @click="handleFieldClick(category.id, 'proportion', $event)"
+                  >
+                    <span v-if="category.proportion" class="text-sm">
+                      {{ category.proportion }}%
+                    </span>
+                    <span v-else class="text-base-content/50">-</span>
+                  </div>
+                  <CalculatorInput
+                    v-else
+                    :model-value="category.proportion || 0"
+                    :is-active="true"
+                    :field-key="`${category.id}-proportion`"
+                    @update:model-value="handleProportionUpdate(category.id, $event)"
+                    @finish="handleFieldFinish(category.id, 'proportion')"
+                  />
                 </td>
                 <td>
                   <div class="flex flex-col w-full">

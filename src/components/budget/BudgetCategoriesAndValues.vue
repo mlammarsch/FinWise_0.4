@@ -4,6 +4,8 @@ import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
 import { CategoryService } from '../../services/CategoryService';
 import { useCategoryStore } from '../../stores/categoryStore';
+import { useTransactionStore } from '../../stores/transactionStore';
+import { usePlanningStore } from '../../stores/planningStore';
 import type { CategoryGroup, Category } from '../../types';
 import { debugLog, errorLog, infoLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
@@ -72,6 +74,23 @@ function calculateGroupSummary(groupId: string, month: { start: Date; end: Date 
 }
 
 const typeSummaryCache = computed(() => {
+  // Abhängigkeiten zu Stores hinzufügen für Reaktivität
+  const transactionStore = useTransactionStore();
+  const planningStore = usePlanningStore();
+
+  // Diese Abhängigkeiten sorgen dafür, dass der Cache neu berechnet wird
+  // wenn sich Transaktionen oder Planungen ändern
+  const _ = [
+    transactionStore.transactions.length,
+    planningStore.planningTransactions.length,
+    // Zusätzlich auf Änderungen der Kategorien reagieren
+    categoryStore.categories.length,
+    // Wichtig: Auch auf Transaktionsinhalte reagieren (für Budgettemplate-Anwendung)
+    // Erstelle einen Hash aus allen relevanten Transaktionsdaten
+    transactionStore.transactions.map(t => `${t.id}-${t.amount}-${t.categoryId}-${t.type}-${t.valueDate}`).join('|'),
+    planningStore.planningTransactions.map(p => `${p.id}-${p.amount}-${p.categoryId}-${p.isActive}`).join('|')
+  ];
+
   const cache = new Map<string, any>();
 
   props.months.forEach((month: { key: string; start: Date; end: Date }) => {

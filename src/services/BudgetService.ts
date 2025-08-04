@@ -510,4 +510,168 @@ export const BudgetService = {
 
     return deletedCount;
   },
+
+  /**
+   * Wendet das Budget-Template auf einen Monat an.
+   * Durchläuft Kategorien nach Prioritäten und wendet monatliche Beträge oder Anteile an.
+   */
+  async applyBudgetTemplate(monthStart: Date, monthEnd: Date, additive: boolean = true): Promise<number> {
+    const categoryStore = useCategoryStore();
+
+    debugLog('[BudgetService]', 'applyBudgetTemplate gestartet', {
+      monthStart: monthStart.toISOString().split('T')[0],
+      monthEnd: monthEnd.toISOString().split('T')[0],
+      additive
+    });
+
+    // Finde "Verfügbare Mittel" Kategorie
+    const availableFundsCategory = categoryStore.categories.find(
+      c => c.name.trim().toLowerCase() === "verfügbare mittel"
+    );
+
+    if (!availableFundsCategory) {
+      errorLog('[BudgetService]', 'Kategorie "Verfügbare Mittel" nicht gefunden');
+      return 0;
+    }
+
+    // Ermittle verfügbare Mittel zu Beginn
+    let availableFunds = BalanceService.getTodayBalance("category", availableFundsCategory.id);
+    debugLog('[BudgetService]', `Verfügbare Mittel zu Beginn: ${availableFunds}€`);
+
+    // Hole alle aktiven Ausgabenkategorien mit Template-Daten
+    const templateCategories = categoryStore.categories
+      .filter(c =>
+        c.isActive &&
+        !c.isIncomeCategory &&
+        c.name.trim().toLowerCase() !== "verfügbare mittel" &&
+        (c.monthlyAmount || c.proportion) // Nur Kategorien mit Template-Daten
+      )
+      .map(c => {
+        const group = categoryStore.categoryGroups.find(g => g.id === c.categoryGroupId);
+        return {
+          ...c,
+          groupSortOrder: group?.sortOrder || 999
+        };
+      })
+      .sort((a, b) => {
+        // Sortierung: Gruppe sortOrder, dann Kategorie sortOrder
+        if (a.groupSortOrder !== b.groupSortOrder) {
+          return a.groupSortOrder - b.groupSortOrder;
+        }
+        return a.sortOrder - b.sortOrder;
+      });
+
+    debugLog('[BudgetService]', `Gefundene Template-Kategorien: ${templateCategories.length}`);
+
+    // Ermittle alle vorhandenen Prioritäten
+    const priorities = [...new Set(templateCategories
+      .map(c => c.priority)
+      .filter(p => p !== undefined && p !== null)
+    )].sort((a, b) => a! - b!);
+
+    debugLog('[BudgetService]', `Gefundene Prioritäten: ${priorities.join(', ')}`);
+
+    let transfersCreated = 0;
+    const transferDate = toDateOnlyString(monthEnd); // Monatsende für Budget-Transfers
+
+    // Durchlauf 1: Kategorien ohne Priorität (Festbeträge)
+    const noPriorityCategories = templateCategories.filter(c => !c.priority);
+    for (const category of noPriorityCategories) {
+      if (availableFunds <= 0) break;
+
+      if (category.monthlyAmount && category.monthlyAmount > 0) {
+        const transferAmount = Math.min(category.monthlyAmount, availableFunds);
+
+        try {
+          await TransactionService.addCategoryTransfer(
+            availableFundsCategory.id,
+            category.id,
+            transferAmount,
+            transferDate,
+            `Budget-Template: ${category.name}`
+          );
+
+          availableFunds -= transferAmount;
+          transfersCreated++;
+
+          debugLog('[BudgetService]', `Transfer erstellt: ${transferAmount}€ für ${category.name} (ohne Priorität)`);
+        } catch (error) {
+          errorLog('[BudgetService]', `Fehler beim Transfer für ${category.name}`, error);
+        }
+      }
+    }
+
+    // Durchläufe 2-n: Kategorien nach Prioritäten
+    for (const priority of priorities) {
+      if (availableFunds <= 0) break;
+
+      const priorityCategories = templateCategories.filter(c => c.priority === priority);
+
+      for (const category of priorityCategories) {
+        if (availableFunds <= 0) break;
+
+        let transferAmount = 0;
+
+        // Primär: Monatlicher Betrag
+        if (category.monthlyAmount && category.monthlyAmount > 0) {
+          transferAmount = Math.min(category.monthlyAmount, availableFunds);
+        }
+        // Sekundär: Anteil von verfügbaren Mitteln
+        else if (category.proportion && category.proportion > 0) {
+          transferAmount = Math.min(
+            Math.round(availableFunds * (category.proportion / 100) * 100) / 100,
+            availableFunds
+          );
+        }
+
+        if (transferAmount > 0) {
+          try {
+            await TransactionService.addCategoryTransfer(
+              availableFundsCategory.id,
+              category.id,
+              transferAmount,
+              transferDate,
+              `Budget-Template: ${category.name} (Priorität ${priority})`
+            );
+
+            availableFunds -= transferAmount;
+            transfersCreated++;
+
+            debugLog('[BudgetService]', `Transfer erstellt: ${transferAmount}€ für ${category.name} (Priorität ${priority})`);
+          } catch (error) {
+            errorLog('[BudgetService]', `Fehler beim Transfer für ${category.name}`, error);
+          }
+        }
+      }
+    }
+
+    // Cache invalidieren
+    this.invalidateCache();
+
+    infoLog('[BudgetService]', `applyBudgetTemplate abgeschlossen: ${transfersCreated} Transfers erstellt, ${availableFunds}€ verbleibend`);
+
+    return transfersCreated;
+  },
+
+  /**
+   * Überschreibt das Budget mit dem Template (resetBudgetMonth + applyBudgetTemplate)
+   */
+  async overwriteWithBudgetTemplate(monthStart: Date, monthEnd: Date): Promise<{ deleted: number; created: number }> {
+    debugLog('[BudgetService]', 'overwriteWithBudgetTemplate gestartet');
+
+    try {
+      // Schritt 1: Budget zurücksetzen
+      const deletedCount = await this.resetMonthBudget(monthStart, monthEnd);
+
+      // Schritt 2: Template anwenden
+      const createdCount = await this.applyBudgetTemplate(monthStart, monthEnd, false);
+
+      infoLog('[BudgetService]', `overwriteWithBudgetTemplate abgeschlossen: ${deletedCount} gelöscht, ${createdCount} erstellt`);
+
+      return { deleted: deletedCount, created: createdCount };
+    } catch (error) {
+      errorLog('[BudgetService]', 'Fehler bei overwriteWithBudgetTemplate', error);
+      throw error;
+    }
+  },
 };

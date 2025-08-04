@@ -118,7 +118,16 @@ function handleBudgetMenuClickOutside(event: MouseEvent) {
 
 function handleBudgetAction(action: string) {
   debugLog("[BudgetMonthHeaderCard] Budget-Aktion ausgeführt", { action });
-  // TODO: Implementierung der Budget-Aktionen
+
+  if (!props.month) {
+    console.warn('Kein Monat definiert für Budget-Aktion');
+    return;
+  }
+
+  // Menü sofort schließen für bessere UX
+  closeBudgetMenu();
+
+  // Asynchrone Aktionen im Hintergrund ausführen
   switch (action) {
     case 'carry-surplus':
       console.log('Überschuss in Folgemonat übertragen');
@@ -127,10 +136,14 @@ function handleBudgetAction(action: string) {
       console.log('Budget-Template anzeigen');
       break;
     case 'apply-template':
-      console.log('Budget-Template anwenden');
+      handleApplyTemplate().catch(error => {
+        console.error('Fehler beim Anwenden des Budget-Templates:', error);
+      });
       break;
     case 'overwrite-template':
-      console.log('Mit Budget-Template überschreiben');
+      handleOverwriteTemplate().catch(error => {
+        console.error('Fehler beim Überschreiben mit Budget-Template:', error);
+      });
       break;
     case 'copy-last-month':
       console.log('Letztes Monatsbudget kopieren');
@@ -142,7 +155,47 @@ function handleBudgetAction(action: string) {
       handleResetBudget();
       break;
   }
-  closeBudgetMenu();
+}
+
+async function handleApplyTemplate() {
+  if (!props.month) return;
+
+  try {
+    debugLog("[BudgetMonthHeaderCard] Wende Budget-Template an", {
+      monthStart: props.month.start.toISOString().split('T')[0],
+      monthEnd: props.month.end.toISOString().split('T')[0]
+    });
+
+    const transfersCreated = await BudgetService.applyBudgetTemplate(
+      props.month.start,
+      props.month.end,
+      true // additive = true (zu bestehenden Budgets hinzufügen)
+    );
+
+    console.log(`Budget-Template angewendet: ${transfersCreated} Transfers erstellt`);
+  } catch (error) {
+    console.error('Fehler beim Anwenden des Budget-Templates:', error);
+  }
+}
+
+async function handleOverwriteTemplate() {
+  if (!props.month) return;
+
+  try {
+    debugLog("[BudgetMonthHeaderCard] Überschreibe mit Budget-Template", {
+      monthStart: props.month.start.toISOString().split('T')[0],
+      monthEnd: props.month.end.toISOString().split('T')[0]
+    });
+
+    const result = await BudgetService.overwriteWithBudgetTemplate(
+      props.month.start,
+      props.month.end
+    );
+
+    console.log(`Budget überschrieben: ${result.deleted} gelöscht, ${result.created} erstellt`);
+  } catch (error) {
+    console.error('Fehler beim Überschreiben mit Budget-Template:', error);
+  }
 }
 
 function handleResetBudget() {
