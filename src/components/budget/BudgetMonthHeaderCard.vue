@@ -8,8 +8,10 @@ import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useCategoryStore } from "../../stores/categoryStore";
 import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
+import ConfirmationModal from "../ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
 import { TransactionService } from "@/services/TransactionService";
+import { BudgetService } from "@/services/BudgetService";
 import { debugLog } from "@/utils/logger";
 import { toDateOnlyString } from "@/utils/formatters";
 
@@ -137,10 +139,36 @@ function handleBudgetAction(action: string) {
       console.log('3-Monats-Durchschnitt setzen');
       break;
     case 'reset-budget':
-      console.log('Budget auf 0 setzen');
+      handleResetBudget();
       break;
   }
   closeBudgetMenu();
+}
+
+function handleResetBudget() {
+  if (!props.month) {
+    console.warn('Kein Monat definiert für Budget-Reset');
+    return;
+  }
+
+  showConfirmationModal.value = true;
+}
+
+async function confirmResetBudget() {
+  if (!props.month) return;
+
+  try {
+    const deletedCount = await BudgetService.resetMonthBudget(props.month.start, props.month.end);
+    console.log(`Budget zurückgesetzt: ${deletedCount} Kategorieumbuchungen gelöscht`);
+    showConfirmationModal.value = false;
+  } catch (error) {
+    console.error('Fehler beim Zurücksetzen des Budgets:', error);
+    showConfirmationModal.value = false;
+  }
+}
+
+function cancelResetBudget() {
+  showConfirmationModal.value = false;
 }
 
 onMounted(() => {
@@ -156,6 +184,10 @@ onUnmounted(() => {
 /* ----------------------------------------------------------- */
 const showTransferModal = ref(false);
 const modalData = ref<{ mode: "header" } | null>({ mode: "header" });
+
+/* ------------------- Confirmation Modal -------------------- */
+/* ----------------------------------------------------------- */
+const showConfirmationModal = ref(false);
 
 const availableCategory = computed(() =>
   categoryStore.categories.find(
@@ -402,10 +434,23 @@ function handleTransfer(data: {
     v-if="showTransferModal"
     :is-open="showTransferModal"
     :month="props.month"
-    mode="header"
+    mode="transfer"
     :category="availableCategory"
     @close="closeModal"
     @transfer="handleTransfer"
+  />
+
+  <!-- Confirmation Modal für Budget Reset -->
+  <ConfirmationModal
+    v-if="showConfirmationModal"
+    title="Budget auf 0 setzen"
+    message="Möchten Sie wirklich alle Kategorieumbuchungen dieses Monats löschen? Diese Aktion betrifft nur Ausgabenkategorien und kann nicht rückgängig gemacht werden.
+
+Alle CATEGORYTRANSFER-Buchungen des Monats für Ausgabenkategorien werden unwiderruflich gelöscht. Buchungen von Einnahmekategorien zu 'Verfügbare Mittel' bleiben unberührt."
+    confirm-text="Ja, Budget zurücksetzen"
+    cancel-text="Abbrechen"
+    @confirm="confirmResetBudget"
+    @cancel="cancelResetBudget"
   />
 </template>
 

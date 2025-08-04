@@ -3,9 +3,10 @@ import { useCategoryStore } from "@/stores/categoryStore";
 import { useTransactionStore } from "@/stores/transactionStore";
 import { usePlanningStore } from "@/stores/planningStore";
 import { PlanningService } from "./PlanningService";
+import { TransactionService } from "./TransactionService";
 import { Category, TransactionType } from "@/types";
 import { toDateOnlyString } from "@/utils/formatters";
-import { debugLog } from "@/utils/logger";
+import { debugLog, infoLog, warnLog, errorLog } from "@/utils/logger";
 import { BalanceService } from "./BalanceService";
 
 // Performance-Cache für BudgetService
@@ -440,5 +441,73 @@ export const BudgetService = {
   // Granulare Cache-Invalidierung für spezifische Transaktionen
   invalidateCacheForTransaction(transaction: { categoryId?: string; date: string; toCategoryId?: string }) {
     invalidateCacheForTransaction(transaction);
+  },
+
+  /**
+   * Setzt das Budget für einen Monat auf 0 zurück, indem alle CATEGORYTRANSFER-Transaktionen
+   * des Monats für Ausgabenkategorien (isIncomeCategory: false) gelöscht werden.
+   * Einnahme-Kategorietransfers werden ignoriert.
+   */
+  async resetMonthBudget(monthStart: Date, monthEnd: Date): Promise<number> {
+    const transactionStore = useTransactionStore();
+    const categoryStore = useCategoryStore();
+
+    debugLog('[BudgetService]', 'resetMonthBudget gestartet', {
+      monthStart: monthStart.toISOString().split('T')[0],
+      monthEnd: monthEnd.toISOString().split('T')[0]
+    });
+
+    // Finde alle CATEGORYTRANSFER-Transaktionen im angegebenen Monat
+    const categoryTransfers = transactionStore.transactions.filter(tx => {
+      const txValueDate = new Date(toDateOnlyString(tx.valueDate));
+      return (
+        tx.type === TransactionType.CATEGORYTRANSFER &&
+        txValueDate >= monthStart &&
+        txValueDate <= monthEnd
+      );
+    });
+
+    debugLog('[BudgetService]', `Gefundene CATEGORYTRANSFER-Transaktionen: ${categoryTransfers.length}`);
+
+    // Filtere nur Transfers, die Ausgabenkategorien betreffen
+    const expenseTransfers = categoryTransfers.filter(tx => {
+      // Prüfe sowohl Quell- als auch Zielkategorie
+      const sourceCategory = tx.categoryId ? categoryStore.getCategoryById(tx.categoryId) : null;
+      const targetCategory = tx.toCategoryId ? categoryStore.getCategoryById(tx.toCategoryId) : null;
+
+      // Nur löschen wenn mindestens eine der Kategorien eine Ausgabenkategorie ist
+      // Ignoriere Transfers von Einnahmekategorien zu "Verfügbare Mittel"
+      const isExpenseTransfer = (sourceCategory && !sourceCategory.isIncomeCategory) ||
+        (targetCategory && !targetCategory.isIncomeCategory);
+
+      return isExpenseTransfer;
+    });
+
+    debugLog('[BudgetService]', `Zu löschende Ausgaben-CATEGORYTRANSFER: ${expenseTransfers.length}`);
+
+    let deletedCount = 0;
+
+    // Lösche alle gefilterten Transaktionen
+    for (const transfer of expenseTransfers) {
+      try {
+        // Verwende TransactionService.deleteTransaction für korrekte Behandlung von Gegenbuchungen
+        const success = await TransactionService.deleteTransaction(transfer.id);
+        if (success) {
+          deletedCount++;
+          debugLog('[BudgetService]', `CATEGORYTRANSFER gelöscht: ${transfer.description} (${transfer.amount}€)`);
+        } else {
+          warnLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER: ${transfer.id}`);
+        }
+      } catch (error) {
+        errorLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER ${transfer.id}`, error);
+      }
+    }
+
+    // Cache invalidieren
+    this.invalidateCache();
+
+    infoLog('[BudgetService]', `resetMonthBudget abgeschlossen: ${deletedCount} Transaktionen gelöscht`);
+
+    return deletedCount;
   },
 };
