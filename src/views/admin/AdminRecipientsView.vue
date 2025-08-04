@@ -12,6 +12,7 @@ import ConfirmationModal from "../../components/ui/ConfirmationModal.vue";
 import RecipientBulkActionDropdown from "../../components/ui/RecipientBulkActionDropdown.vue";
 import RecipientMergeModal from "../../components/ui/RecipientMergeModal.vue";
 import RecipientDeleteConfirmModal from "../../components/ui/RecipientDeleteConfirmModal.vue";
+import TextInput from "../../components/ui/TextInput.vue";
 import { Icon } from "@iconify/vue";
 
 /**
@@ -60,6 +61,7 @@ const orphanCleanupResult = ref<{
 // Auswahlzustand-Management für Checkbox-Funktionalität
 const selectedRecipientIds = ref<Set<string>>(new Set());
 const lastSelectedIndex = ref<number | null>(null);
+const editingRecipientId = ref<string | null>(null); // für Inline-Bearbeitung
 
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
@@ -556,10 +558,53 @@ const getSortIcon = (field: "name" | "usage" | "planning" | "rules") => {
     ? "mdi:sort-ascending"
     : "mdi:sort-descending";
 };
+
+// Inline-Bearbeitung
+const startInlineEdit = (recipientId: string) => {
+  console.log('Starting inline edit for recipient:', recipientId);
+  editingRecipientId.value = recipientId;
+};
+
+const finishInlineEdit = () => {
+  editingRecipientId.value = null;
+};
+
+const saveInlineEdit = (recipientId: string, newName: string) => {
+  console.log('Saving inline edit:', { recipientId, newName });
+
+  if (newName.trim() === '') {
+    console.log('Empty name, finishing edit without saving');
+    finishInlineEdit();
+    return;
+  }
+
+  const recipient = recipientStore.recipients.find(r => r.id === recipientId);
+  console.log('Found recipient:', recipient);
+
+  if (recipient && recipient.name !== newName.trim()) {
+    const updatedRecipient: Recipient = {
+      ...recipient,
+      name: newName.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+    console.log('Updating recipient:', updatedRecipient);
+    recipientStore.updateRecipient(updatedRecipient);
+  } else {
+    console.log('No update needed or recipient not found');
+  }
+  finishInlineEdit();
+};
+
+const handleInlineEditFinish = (recipientId: string, newName: string) => {
+  console.log('handleInlineEditFinish called:', { recipientId, newName });
+  saveInlineEdit(recipientId, newName);
+};
 </script>
 
 <template>
   <div class="max-w-4xl mx-auto flex flex-col min-h-screen py-8">
+
+
     <!-- Header -->
     <div
       class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
@@ -576,6 +621,10 @@ const getSortIcon = (field: "name" | "usage" | "planning" | "rules") => {
         @btn-middle-click="handleOrphanCleanup"
         @btn-right-click="createRecipient"
       />
+    </div>
+    <!-- Legende -->
+    <div class="text-xs text-base-content/60 mb-2 flex items-center space-x-4">
+      <span>💡 Einzelklick auf Namen: Namensänderung</span>
     </div>
 
     <!-- Auswahlzähler-Anzeige mit Batch-Actions (Sub-Task 1.5 + 2.5) -->
@@ -699,7 +748,20 @@ const getSortIcon = (field: "name" | "usage" | "planning" | "rules") => {
                     @change="toggleRecipientSelection(recipient.id)"
                   />
                 </td>
-                <td>{{ recipient.name }}</td>
+                <td>
+                  <div v-if="editingRecipientId === recipient.id" class="w-full">
+                    <TextInput
+                      :modelValue="recipient.name"
+                      :isActive="true"
+                      :placeholder="recipient.name"
+                      @update:modelValue="(newName: string) => handleInlineEditFinish(recipient.id, newName)"
+                      @finish="finishInlineEdit"
+                    />
+                  </div>
+                  <div v-else class="cursor-pointer select-none hover:bg-base-200 px-2 py-1 rounded" @click.stop="startInlineEdit(recipient.id)">
+                    {{ recipient.name }}
+                  </div>
+                </td>
                 <td class="text-center hidden md:table-cell">
                   {{ recipientUsage(recipient.id) }}
                 </td>

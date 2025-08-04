@@ -9,6 +9,7 @@ import PagingComponent from "../../components/ui/PagingComponent.vue";
 import SearchableSelect from "../../components/ui/SearchableSelect.vue";
 import BadgeSoft from "../../components/ui/BadgeSoft.vue";
 import ColorPicker from "../../components/ui/ColorPicker.vue";
+import TextInput from "../../components/ui/TextInput.vue";
 import { getRandomTagColor } from "../../utils/tagColorUtils";
 
 const tagStore = useTagStore();
@@ -19,6 +20,8 @@ const isEditMode = ref(false);
 const selectedTag = ref<Tag | null>(null);
 const showColorPicker = ref(false);
 const tagBeingEditedForColor = ref<Tag | null>(null); // für Liste
+const editingTagId = ref<string | null>(null); // für Inline-Bearbeitung
+const clickTimeout = ref<NodeJS.Timeout | null>(null); // für Click/Doppelclick-Unterscheidung
 
 const searchQuery = ref("");
 const currentPage = ref(1);
@@ -195,10 +198,54 @@ const getSortIcon = (field: "name" | "usage") => {
     ? "mdi:sort-ascending"
     : "mdi:sort-descending";
 };
+
+// Inline-Bearbeitung
+const startInlineEdit = (tagId: string) => {
+  editingTagId.value = tagId;
+};
+
+const finishInlineEdit = () => {
+  editingTagId.value = null;
+};
+
+const saveInlineEdit = (tagId: string, newName: string) => {
+  if (newName.trim() === '') {
+    finishInlineEdit();
+    return;
+  }
+
+  const tag = tagStore.tags.find(t => t.id === tagId);
+  if (tag && tag.name !== newName.trim()) {
+    tagStore.updateTag({ ...tag, name: newName.trim() });
+  }
+  finishInlineEdit();
+};
+
+// Click/Doppelclick-Behandlung
+const handleTagClick = (tag: Tag) => {
+  // Einzelklick: Verzögerung für Farbwahl
+  clickTimeout.value = setTimeout(() => {
+    if (clickTimeout.value) {
+      openColorPicker(tag);
+      clickTimeout.value = null;
+    }
+  }, 250); // 250ms Verzögerung
+};
+
+const handleTagDoubleClick = (tag: Tag) => {
+  // Doppelklick: Timeout abbrechen und Namensbearbeitung starten
+  if (clickTimeout.value) {
+    clearTimeout(clickTimeout.value);
+    clickTimeout.value = null;
+  }
+  startInlineEdit(tag.id);
+};
 </script>
 
 <template>
   <div class="max-w-4xl mx-auto flex flex-col min-h-screen py-8">
+
+
     <div
       class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
     >
@@ -209,6 +256,11 @@ const getSortIcon = (field: "name" | "usage") => {
         @search="(query: string) => (searchQuery = query)"
         @btn-right-click="createTag"
       />
+    </div>
+
+    <!-- Legende -->
+    <div class="text-xs text-base-content/60 mb-2 flex items-center space-x-4">
+      <span>💡 Einzelklick: Farbänderung | Doppelklick: Namensänderung</span>
     </div>
 
     <div class="card bg-base-100 shadow-md border border-base-300 w-full mt-6">
@@ -260,12 +312,24 @@ const getSortIcon = (field: "name" | "usage") => {
                 :key="tag.id"
               >
                 <td>
-                  <BadgeSoft
-                    :label="tag.name"
-                    :colorIntensity="tag.color"
-                    class="cursor-pointer"
-                    @click="openColorPicker(tag)"
-                  />
+                  <div v-if="editingTagId === tag.id" class="w-full">
+                    <TextInput
+                      :modelValue="tag.name"
+                      :isActive="true"
+                      :placeholder="tag.name"
+                      @update:modelValue="(newName: string) => saveInlineEdit(tag.id, newName)"
+                      @finish="finishInlineEdit"
+                    />
+                  </div>
+                  <div v-else class="flex items-center space-x-2">
+                    <BadgeSoft
+                      :label="tag.name"
+                      :colorIntensity="tag.color"
+                      class="cursor-pointer select-none"
+                      @click="handleTagClick(tag)"
+                      @dblclick="handleTagDoubleClick(tag)"
+                    />
+                  </div>
                 </td>
                 <td class="text-center hidden md:table-cell">
                   {{ getParentTagName(tag.parentTagId) }}

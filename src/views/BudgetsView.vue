@@ -204,11 +204,6 @@ const availableByMonth = computed(() => {
             >
               <BudgetMonthHeaderCard
                 :label="month.label"
-                :toBudget="200"
-                :budgeted="0"
-                :overspent="0"
-                :available="availableByMonth[i]"
-                :nextMonth="0"
                 :month="month"
               />
             </div>

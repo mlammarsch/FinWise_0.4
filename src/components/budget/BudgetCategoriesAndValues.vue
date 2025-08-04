@@ -1401,12 +1401,8 @@ function handleTransactionUpdated() {
               class="month-column flex-1 min-w-[120px] p-0 px-1"
             >
               <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
-                <div class="text-right">
-                  <CurrencyDisplay
-                    :amount="calculateTypeSummary(true, month).budgeted"
-                    :as-integer="true"
-                    :show-zero="false"
-                  />
+                <div class="text-right opacity-0">
+                  <!-- Transparente Leerzelle für budgeted bei Einnahmen -->
                 </div>
                 <div class="text-right">
                   <CurrencyDisplay
@@ -1473,12 +1469,8 @@ function handleTransactionUpdated() {
                   class="month-column flex-1 min-w-[120px] py-2 px-1 border-r border-base-300"
                 >
                   <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
-                    <div class="text-right">
-                      <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month).budgeted"
-                        :as-integer="true"
-                        :show-zero="false"
-                      />
+                    <div class="text-right opacity-0">
+                      <!-- Transparente Leerzelle für budgeted bei Einnahmen-Gruppen -->
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
@@ -1564,13 +1556,8 @@ function handleTransactionUpdated() {
                         class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
                         <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
-                          <div class="text-right">
-                            <!-- Income-Bereich: Nur CurrencyDisplay, keine Edit-Funktionalität -->
-                            <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).budgeted"
-                              :as-integer="true"
-                              :show-zero="false"
-                            />
+                          <div class="text-right opacity-0">
+                            <!-- Transparente Leerzelle für budgeted bei Einnahmen-Kategorien -->
                           </div>
                           <div
                             class="text-right cursor-pointer hover:bg-base-200 rounded px-1 py-0.5 transition-colors"
