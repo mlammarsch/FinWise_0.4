@@ -2,17 +2,25 @@
 import { onMounted, onUnmounted, ref, nextTick, computed } from 'vue';
 import { Icon } from '@iconify/vue';
 import Muuri from 'muuri';
-import { CategoryService } from '../../services/CategoryService';
-import type { CategoryGroup, Category } from '../../types';
+import { AccountService } from '../../services/AccountService';
+import type { AccountGroup, Account } from '../../types';
 import { debugLog, errorLog } from '../../utils/logger';
 
 const dragContainer = ref<HTMLElement>();
 const metaGrid = ref<Muuri | null>(null);
 const subGrids = ref<Muuri[]>([]);
 
-// Reale Daten aus CategoryService
-const categoryGroups = CategoryService.getCategoryGroups();
-const categoriesByGroup = CategoryService.getCategoriesByGroup();
+// Reale Daten aus AccountService
+const accountGroups = AccountService.getAllAccountGroups();
+const accountsByGroup = computed(() => {
+  const grouped: Record<string, Account[]> = {};
+  for (const group of accountGroups) {
+    grouped[group.id] = AccountService.getAllAccounts()
+      .filter(a => a.accountGroupId === group.id)
+      .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+  }
+  return grouped;
+});
 
 // Expand/Collapse State für jede Gruppe (dynamisch basierend auf echten Daten)
 const expandedGroups = ref<Record<string, boolean>>({});
@@ -24,50 +32,32 @@ const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 const sortOrderUpdateTimer = ref<NodeJS.Timeout | null>(null);
 const SORT_ORDER_DEBOUNCE_DELAY = 500; // 500ms Debounce
 
-// Sortierte Kategoriegruppen nach Typ und sortOrder (Ausgaben zuerst, dann Einnahmen)
-const sortedCategoryGroups = computed(() => {
-  const groups = categoryGroups.value.slice();
-
-  // Trennung nach Typ
-  const expenseGroups = groups.filter(g => !g.isIncomeGroup).sort((a, b) => a.sortOrder - b.sortOrder);
-  const incomeGroups = groups.filter(g => g.isIncomeGroup).sort((a, b) => a.sortOrder - b.sortOrder);
-
-  return [...expenseGroups, ...incomeGroups];
+// Sortierte Kontogruppen nach sortOrder
+const sortedAccountGroups = computed(() => {
+  return accountGroups.slice().sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
 });
 
-// Hilfsfunktion um zu prüfen, ob eine Trennzeile vor einer Gruppe angezeigt werden soll
-const shouldShowSeparator = (group: CategoryGroup, index: number) => {
-  if (index === 0) return false;
-  const groups = sortedCategoryGroups.value;
-  const prevGroup = groups[index - 1];
-  // Trennzeile zwischen Ausgaben und Einnahmen
-  return !prevGroup.isIncomeGroup && group.isIncomeGroup;
-};
-
-// Icon-Mapping für Kategoriegruppen (einheitliches Ordnersymbol)
-function getGroupIcon(group: CategoryGroup): string {
+// Icon-Mapping für Kontogruppen (einheitliches Ordnersymbol)
+function getGroupIcon(group: AccountGroup): string {
   return 'mdi:folder-outline';
 }
 
-// Icon-Farbe für Kategoriegruppen (einheitlich in base-content)
-function getGroupColor(group: CategoryGroup): string {
+// Icon-Farbe für Kontogruppen (einheitlich in base-content)
+function getGroupColor(group: AccountGroup): string {
   return 'text-base-content';
 }
 
-// Kategorien für eine Gruppe (sortiert nach sortOrder)
-function getCategoriesForGroup(groupId: string): Category[] {
-  const categories = categoriesByGroup.value[groupId] || [];
-  return categories
+// Konten für eine Gruppe (sortiert nach sortOrder)
+function getAccountsForGroup(groupId: string): Account[] {
+  const accounts = accountsByGroup.value[groupId] || [];
+  return accounts
     .slice()
-    .sort((a: Category, b: Category) => a.sortOrder - b.sortOrder);
+    .sort((a: Account, b: Account) => (a.sortOrder || 0) - (b.sortOrder || 0));
 }
 
 onMounted(async () => {
-  // Kategorien laden
-  await CategoryService.loadCategories();
-
   // Expand-State für alle Gruppen initialisieren
-  for (const group of categoryGroups.value) {
+  for (const group of accountGroups) {
     expandedGroups.value[group.id] = true;
   }
 
@@ -88,14 +78,14 @@ onUnmounted(() => {
 
 function initializeGrids() {
   try {
-    // Sub-Grids für Kategorien mit korrekter Kanban-Logik
-    const subGridElements = document.querySelectorAll('.categories-content') as NodeListOf<HTMLElement>;
+    // Sub-Grids für Konten mit korrekter Kanban-Logik
+    const subGridElements = document.querySelectorAll('.accounts-content') as NodeListOf<HTMLElement>;
 
     subGridElements.forEach(el => {
       const grid = new Muuri(el, {
-        items: '.category-item',
+        items: '.account-item',
         dragEnabled: true,
-        dragHandle: '.category-drag-area',
+        dragHandle: '.account-drag-area',
         dragContainer: dragContainer.value,
         dragSort: function () {
           return subGrids.value;
@@ -149,7 +139,7 @@ function initializeGrids() {
         // Auto-Expand Timer aufräumen
         clearAutoExpandTimer();
         // Sort Order Update mit Debouncing
-        handleCategoryDragEnd(item);
+        handleAccountDragEnd(item);
       });
 
       subGrids.value.push(grid);
@@ -206,8 +196,8 @@ function initializeGrids() {
       }
     })
     .on('dragEnd', function (item: any) {
-      // Sort Order Update für CategoryGroups mit Debouncing
-      handleCategoryGroupDragEnd(item);
+      // Sort Order Update für AccountGroups mit Debouncing
+      handleAccountGroupDragEnd(item);
     });
 
     console.log('Muuri grids initialized successfully');
@@ -296,8 +286,8 @@ function clearAutoExpandTimer() {
   document.removeEventListener('dragover', handleDragOverGroup);
 }
 
-// Drag & Drop Persistierung für Kategorien
-function handleCategoryDragEnd(item: any) {
+// Drag & Drop Persistierung für Konten
+function handleAccountDragEnd(item: any) {
   // Debouncing: Vorherigen Timer löschen
   if (sortOrderUpdateTimer.value) {
     clearTimeout(sortOrderUpdateTimer.value);
@@ -306,21 +296,20 @@ function handleCategoryDragEnd(item: any) {
   sortOrderUpdateTimer.value = setTimeout(async () => {
     try {
       const draggedElement = item.getElement();
-      const categoryId = draggedElement.getAttribute('data-category-id');
-      const newGroupId = draggedElement.getAttribute('data-group-id');
+      const accountId = draggedElement.getAttribute('data-account-id');
 
-      if (!categoryId) {
-        errorLog('MuuriTestView', 'handleCategoryDragEnd - Category ID not found');
+      if (!accountId) {
+        errorLog('MuuriTestView', 'handleAccountDragEnd - Account ID not found');
         return;
       }
 
       // Bestimme die neue Gruppe basierend auf dem Container
-      const container = draggedElement.closest('.categories-content');
+      const container = draggedElement.closest('.accounts-content');
       const groupWrapper = container?.closest('.group-wrapper');
       const actualGroupId = groupWrapper?.getAttribute('data-group-id');
 
       if (!actualGroupId) {
-        errorLog('MuuriTestView', 'handleCategoryDragEnd - Group ID not found');
+        errorLog('MuuriTestView', 'handleAccountDragEnd - Group ID not found');
         return;
       }
 
@@ -331,50 +320,63 @@ function handleCategoryDragEnd(item: any) {
       });
 
       if (!targetGrid) {
-        errorLog('MuuriTestView', 'handleCategoryDragEnd - Target grid not found', { actualGroupId });
+        errorLog('MuuriTestView', 'handleAccountDragEnd - Target grid not found', { actualGroupId });
         return;
       }
 
-      // Hole die Items in der aktuellen Muuri-Reihenfolge
+      // Hole die Items in der aktuellen Muuri-Reihenfolge (ohne Placeholder)
       const items = targetGrid.getItems();
       const newOrder: string[] = [];
 
       items.forEach((item: any) => {
         const element = item.getElement();
-        const id = element.getAttribute('data-category-id');
-        if (id) newOrder.push(id);
+        const id = element.getAttribute('data-account-id');
+        // Ignoriere Placeholder-Elemente
+        if (id && !element.classList.contains('empty-group-placeholder')) {
+          newOrder.push(id);
+        }
       });
 
-      debugLog('MuuriTestView', 'handleCategoryDragEnd', {
-        categoryId,
+      debugLog('MuuriTestView', 'handleAccountDragEnd', {
+        accountId,
         actualGroupId,
         newOrder,
         itemsCount: items.length,
-        draggedItemPosition: newOrder.indexOf(categoryId)
+        draggedItemPosition: newOrder.indexOf(accountId)
       });
 
-      // Berechne Sort Order Updates
-      const sortOrderUpdates = CategoryService.calculateCategorySortOrder(actualGroupId, newOrder);
+      // Prüfe, ob das Konto in eine andere Gruppe verschoben wurde
+      const originalAccount = AccountService.getAllAccounts().find(a => a.id === accountId);
+      const originalGroupId = originalAccount?.accountGroupId;
 
-      // Einzelne Updates durchführen
-      const success = await CategoryService.updateCategoriesWithSortOrder(sortOrderUpdates);
-
-      if (success) {
-        debugLog('MuuriTestView', 'handleCategoryDragEnd - Sort order updated successfully');
-        // UI-Refresh nach erfolgreichem Update
-        await reinitializeMuuriGrids();
+      if (originalGroupId && originalGroupId !== actualGroupId) {
+        // Konto wurde zwischen Gruppen verschoben
+        const newIndex = newOrder.indexOf(accountId);
+        await AccountService.moveAccountToGroup(accountId, actualGroupId, newIndex);
+        debugLog('MuuriTestView', 'handleAccountDragEnd - Account moved between groups', {
+          accountId,
+          fromGroup: originalGroupId,
+          toGroup: actualGroupId,
+          newIndex
+        });
       } else {
-        errorLog('MuuriTestView', 'handleCategoryDragEnd - Failed to update sort order');
+        // Konto wurde nur innerhalb der Gruppe neu sortiert
+        await AccountService.updateAccountOrder(actualGroupId, newOrder);
+        debugLog('MuuriTestView', 'handleAccountDragEnd - Account reordered within group');
       }
 
+      debugLog('MuuriTestView', 'handleAccountDragEnd - Sort order updated successfully');
+      // UI-Refresh nach erfolgreichem Update
+      await reinitializeMuuriGrids();
+
     } catch (error) {
-      errorLog('MuuriTestView', 'handleCategoryDragEnd - Error updating sort order', error);
+      errorLog('MuuriTestView', 'handleAccountDragEnd - Error updating sort order', error);
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
 
-// Drag & Drop Persistierung für CategoryGroups
-function handleCategoryGroupDragEnd(item: any) {
+// Drag & Drop Persistierung für AccountGroups
+function handleAccountGroupDragEnd(item: any) {
   // Debouncing: Vorherigen Timer löschen
   if (sortOrderUpdateTimer.value) {
     clearTimeout(sortOrderUpdateTimer.value);
@@ -386,66 +388,46 @@ function handleCategoryGroupDragEnd(item: any) {
       const groupId = draggedElement.getAttribute('data-group-id');
 
       if (!groupId) {
-        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Group ID not found');
+        errorLog('MuuriTestView', 'handleAccountGroupDragEnd - Group ID not found');
         return;
       }
 
       // Hole die neue Reihenfolge direkt vom Meta-Grid
       if (!metaGrid.value) {
-        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Meta grid not found');
+        errorLog('MuuriTestView', 'handleAccountGroupDragEnd - Meta grid not found');
         return;
       }
 
       const items = metaGrid.value.getItems();
       const allGroupsInOrder: string[] = [];
-      const expenseGroups: string[] = [];
-      const incomeGroups: string[] = [];
 
       items.forEach((item: any) => {
         const element = item.getElement();
         const id = element.getAttribute('data-group-id');
-        if (!id) return;
-
-        allGroupsInOrder.push(id);
-
-        // Bestimme ob es eine Einnahmen- oder Ausgabengruppe ist
-        const group = categoryGroups.value.find(g => g.id === id);
-        if (group?.isIncomeGroup) {
-          incomeGroups.push(id);
-        } else {
-          expenseGroups.push(id);
-        }
+        if (id) allGroupsInOrder.push(id);
       });
 
-      debugLog('MuuriTestView', 'handleCategoryGroupDragEnd', {
+      debugLog('MuuriTestView', 'handleAccountGroupDragEnd', {
         groupId,
         allGroupsInOrder,
-        expenseGroups,
-        incomeGroups,
-        draggedGroupPosition: allGroupsInOrder.indexOf(groupId),
-        draggedGroupType: categoryGroups.value.find(g => g.id === groupId)?.isIncomeGroup ? 'income' : 'expense'
+        draggedGroupPosition: allGroupsInOrder.indexOf(groupId)
       });
 
-      // Berechne Sort Order Updates für beide Typen separat
-      const expenseUpdates = CategoryService.calculateCategoryGroupSortOrder(expenseGroups, false);
-      const incomeUpdates = CategoryService.calculateCategoryGroupSortOrder(incomeGroups, true);
+      // Berechne Sort Order Updates
+      const sortOrderUpdates = allGroupsInOrder.map((id, index) => ({
+        id,
+        sortOrder: index
+      }));
 
-      // Kombiniere alle Updates
-      const allUpdates = [...expenseUpdates, ...incomeUpdates];
+      // Verwende AccountService für die Sortierung
+      await AccountService.updateAccountGroupOrder(sortOrderUpdates);
 
-      // Einzelne Updates durchführen
-      const success = await CategoryService.updateCategoryGroupsWithSortOrder(allUpdates);
-
-      if (success) {
-        debugLog('MuuriTestView', 'handleCategoryGroupDragEnd - Sort order updated successfully');
-        // UI-Refresh nach erfolgreichem Update
-        await reinitializeMuuriGrids();
-      } else {
-        errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Failed to update sort order');
-      }
+      debugLog('MuuriTestView', 'handleAccountGroupDragEnd - Sort order updated successfully');
+      // UI-Refresh nach erfolgreichem Update
+      await reinitializeMuuriGrids();
 
     } catch (error) {
-      errorLog('MuuriTestView', 'handleCategoryGroupDragEnd - Error updating sort order', error);
+      errorLog('MuuriTestView', 'handleAccountGroupDragEnd - Error updating sort order', error);
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
@@ -512,35 +494,24 @@ async function reinitializeMuuriGrids() {
 <template>
   <div class="container mx-auto p-6">
     <div class="mb-6">
-      <h1 class="text-3xl font-bold text-center mb-2">Kategorien Drag & Drop Test</h1>
+      <h1 class="text-3xl font-bold text-center mb-2">Konten Drag & Drop Test</h1>
 
     </div>
 
     <!-- Drag Container wie im Kanban -->
     <div ref="dragContainer" class="drag-container"></div>
 
-    <!-- Muuri Container für Kategoriegruppen (BudgetCategoriesAndValues2 Design) -->
+    <!-- Muuri Container für Kontogruppen -->
     <div class="muuri-container bg-base-100 p-4">
-      <!-- Kategoriegruppen (sortiert nach Typ und sortOrder) -->
+      <!-- Kontogruppen (sortiert nach sortOrder) -->
       <div
-        v-for="(group, index) in sortedCategoryGroups"
+        v-for="(group, index) in sortedAccountGroups"
         :key="group.id"
         class="group-wrapper"
         :data-group-id="group.id"
       >
-        <!-- Trennzeile zwischen Ausgaben und Einnahmen -->
-        <div v-if="shouldShowSeparator(group, index)" class="type-separator mb-4 mt-2">
-          <div class="flex items-center">
-            <div class="flex-grow h-px bg-base-300"></div>
-            <div class="px-4 text-sm font-medium text-base-content/60 bg-base-100">
-              Einnahmen
-            </div>
-            <div class="flex-grow h-px bg-base-300"></div>
-          </div>
-        </div>
-
-        <div class="category-group-row border-t border-b border-base-300">
-          <!-- Kategoriegruppen-Header -->
+        <div class="account-group-row border-t border-b border-base-300">
+          <!-- Kontogruppen-Header -->
           <div class="group-header flex items-center p-1 bg-base-100 border-b border-base-300 hover:bg-base-50 cursor-pointer">
             <!-- Drag Handle für Gruppe -->
             <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
@@ -560,7 +531,7 @@ async function reinitializeMuuriGrids() {
               />
             </div>
 
-            <!-- Gruppen-Icon (dynamisch basierend auf Typ) -->
+            <!-- Gruppen-Icon -->
             <div class="flex-shrink-0 mr-2">
               <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
             </div>
@@ -572,50 +543,56 @@ async function reinitializeMuuriGrids() {
 
             <!-- Gruppenstatus-Indikator -->
             <div class="flex-shrink-0 text-xs text-base-content/60">
-              {{ getCategoriesForGroup(group.id).length }} {{ getCategoriesForGroup(group.id).length === 1 ? 'Kategorie' : 'Kategorien' }}
+              {{ getAccountsForGroup(group.id).length }} {{ getAccountsForGroup(group.id).length === 1 ? 'Konto' : 'Konten' }}
             </div>
           </div>
 
-          <!-- Kategorien-Liste (mit Expand/Collapse und Scrollbalken) -->
+          <!-- Konten-Liste (mit Expand/Collapse und Scrollbalken) -->
           <div
             v-show="expandedGroups[group.id]"
-            class="categories-list"
+            class="accounts-list"
             :class="{ 'collapsed': !expandedGroups[group.id] }"
           >
-            <div class="categories-content">
-              <!-- Kategorien (sortiert nach sortOrder) -->
+            <div class="accounts-content">
+              <!-- Konten (sortiert nach sortOrder) -->
               <div
-                v-for="category in getCategoriesForGroup(group.id)"
-                :key="category.id"
-                class="category-item"
-                :data-category-id="category.id"
+                v-for="account in getAccountsForGroup(group.id)"
+                :key="account.id"
+                class="account-item"
+                :data-account-id="account.id"
                 :data-group-id="group.id"
               >
                 <div class="flex items-center p-0 pl-8 bg-base-50 border-b border-base-300 hover:bg-base-100 cursor-pointer">
                   <!-- Erweiterte Drag-Area (Handle + Name) -->
-                  <div class="category-drag-area flex items-center flex-grow">
-                    <!-- Drag Handle für Kategorie -->
-                    <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
+                  <div class="account-drag-area flex items-center flex-grow">
+                    <!-- Drag Handle für Konto -->
+                    <div class="account-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
                       <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
                     </div>
 
-                    <!-- Kategorie-Icon (falls vorhanden) -->
-                    <div v-if="category.icon" class="flex-shrink-0 mr-2">
-                      <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
-                    </div>
-
-                    <!-- Kategoriename (auch draggable) -->
-                    <div class="flex-grow category-name-drag">
-                      <span class="text-xs text-base-content">{{ category.name }}</span>
+                    <!-- Kontoname (auch draggable) -->
+                    <div class="flex-grow account-name-drag">
+                      <span class="text-xs text-base-content">{{ account.name }}</span>
                     </div>
                   </div>
 
-                  <!-- Kategorie-Status-Indikatoren (außerhalb der Drag-Area) -->
+                  <!-- Konto-Status-Indikatoren (außerhalb der Drag-Area) -->
                   <div class="flex-shrink-0 flex items-center space-x-1">
-                    <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                    <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                    <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                    <div v-if="!account.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
+                    <div v-if="account.isOfflineBudget" class="w-2 h-2 bg-info rounded-full" title="Offline Budget"></div>
                   </div>
+                </div>
+              </div>
+
+              <!-- Placeholder für leere Gruppen - ermöglicht Dropping -->
+              <div
+                v-if="getAccountsForGroup(group.id).length === 0"
+                class="empty-group-placeholder account-item"
+                :data-group-id="group.id"
+                style="position: relative; height: 40px; width: 100%;"
+              >
+                <div class="flex items-center justify-center h-full text-xs text-base-content/40 italic">
+                  Konten hier hinziehen...
                 </div>
               </div>
             </div>
@@ -626,9 +603,9 @@ async function reinitializeMuuriGrids() {
 
     <div class="mt-6 text-center text-gray-600">
       <p class="mb-2">🎯 Drag group headers to reorder groups</p>
-      <p class="mb-2">📦 Drag categories within groups or between groups</p>
+      <p class="mb-2">📦 Drag accounts within groups or between groups</p>
       <p class="mb-2">📱 Elements follow mouse cursor smoothly</p>
-      <p class="text-xs">📊 Daten aus CategoryService - sortiert nach sortOrder</p>
+      <p class="text-xs">📊 Daten aus AccountService - sortiert nach sortOrder</p>
     </div>
   </div>
 </template>
@@ -665,8 +642,8 @@ async function reinitializeMuuriGrids() {
   z-index: 9998 !important;
 }
 
-/* CategoryGroupRow2 Design */
-.category-group-row {
+/* AccountGroupRow Design */
+.account-group-row {
   border-radius: 0rem;
   overflow: hidden;
   background: hsl(var(--b1));
@@ -677,7 +654,7 @@ async function reinitializeMuuriGrids() {
   background: linear-gradient(to right, hsl(var(--b1)), hsl(var(--b2)));
 }
 
-.categories-list {
+.accounts-list {
   position: relative;
   min-height: 50px;
   max-height: 400px;
@@ -685,18 +662,18 @@ async function reinitializeMuuriGrids() {
   transition: all 0.3s ease;
 }
 
-.categories-list.collapsed {
+.accounts-list.collapsed {
   min-height: 0;
   max-height: 0;
   overflow: hidden;
 }
 
-.categories-content {
+.accounts-content {
   position: relative;
   min-height: 100%;
 }
 
-.category-item {
+.account-item {
   position: absolute;
   display: block;
   width: 100%;
@@ -704,35 +681,48 @@ async function reinitializeMuuriGrids() {
   z-index: 1;
 }
 
-.category-item:last-child .flex:last-child {
+.account-item:last-child .flex:last-child {
   border-bottom: none;
 }
 
 /* Drag Handle Styles */
 .group-drag-handle,
-.category-drag-handle {
+.account-drag-handle {
   cursor: grab;
   transition: opacity 0.2s ease;
 }
 
 .group-drag-handle:active,
-.category-drag-handle:active {
+.account-drag-handle:active {
   cursor: grabbing;
 }
 
-/* Erweiterte Drag-Area für Kategorien */
-.category-drag-area {
+/* Erweiterte Drag-Area für Konten */
+.account-drag-area {
   cursor: grab;
   transition: all 0.2s ease;
 }
 
-.category-drag-area:hover {
+.account-drag-area:hover {
   background-color: hsl(var(--b2) / 0.5);
   border-radius: 4px;
 }
 
-.category-drag-area:active {
+.account-drag-area:active {
   cursor: grabbing;
+}
+
+/* Empty Group Placeholder */
+.empty-group-placeholder {
+  border: 2px dashed hsl(var(--bc) / 0.2);
+  border-radius: 4px;
+  margin: 4px 0;
+  transition: all 0.2s ease;
+}
+
+.empty-group-placeholder:hover {
+  border-color: hsl(var(--bc) / 0.4);
+  background-color: hsl(var(--b2) / 0.3);
 }
 
 .category-name-drag {
