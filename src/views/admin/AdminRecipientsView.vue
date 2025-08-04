@@ -337,18 +337,35 @@ const editRecipient = (recipient: Recipient) => {
   showRecipientModal.value = true;
 };
 
-const saveRecipient = () => {
+const saveRecipient = async () => {
   if (!nameInput.value.trim()) return;
 
   if (isEditMode.value && selectedRecipient.value) {
+    // Stelle sicher, dass der lokale Timestamp immer aktueller ist
+    const now = new Date();
     const updatedRecipient: Recipient = {
       ...selectedRecipient.value,
       name: nameInput.value.trim(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
     };
-    recipientStore.updateRecipient(updatedRecipient);
+
+    try {
+      const success = await recipientStore.updateRecipient(updatedRecipient, false);
+      if (!success) {
+        console.error('Failed to update recipient in modal');
+        return; // Verhindere das Schließen des Modals bei Fehlern
+      }
+    } catch (error) {
+      console.error('Error updating recipient in modal:', error);
+      return; // Verhindere das Schließen des Modals bei Fehlern
+    }
   } else {
-    recipientStore.addRecipient({ name: nameInput.value.trim() });
+    try {
+      await recipientStore.addRecipient({ name: nameInput.value.trim() });
+    } catch (error) {
+      console.error('Error adding recipient:', error);
+      return; // Verhindere das Schließen des Modals bei Fehlern
+    }
   }
 
   showRecipientModal.value = false;
@@ -569,7 +586,7 @@ const finishInlineEdit = () => {
   editingRecipientId.value = null;
 };
 
-const saveInlineEdit = (recipientId: string, newName: string) => {
+const saveInlineEdit = async (recipientId: string, newName: string) => {
   console.log('Saving inline edit:', { recipientId, newName });
 
   if (newName.trim() === '') {
@@ -582,13 +599,27 @@ const saveInlineEdit = (recipientId: string, newName: string) => {
   console.log('Found recipient:', recipient);
 
   if (recipient && recipient.name !== newName.trim()) {
+    // Stelle sicher, dass der lokale Timestamp immer aktueller ist
+    const now = new Date();
     const updatedRecipient: Recipient = {
       ...recipient,
       name: newName.trim(),
-      updatedAt: new Date().toISOString(),
+      updatedAt: now.toISOString(),
     };
-    console.log('Updating recipient:', updatedRecipient);
-    recipientStore.updateRecipient(updatedRecipient);
+    console.log('Updating recipient with timestamp:', updatedRecipient);
+
+    try {
+      const success = await recipientStore.updateRecipient(updatedRecipient, false);
+      console.log('Update result:', success);
+
+      if (!success) {
+        console.error('Failed to update recipient');
+        // Optional: Zeige Fehlermeldung an
+      }
+    } catch (error) {
+      console.error('Error updating recipient:', error);
+      // Optional: Zeige Fehlermeldung an
+    }
   } else {
     console.log('No update needed or recipient not found');
   }

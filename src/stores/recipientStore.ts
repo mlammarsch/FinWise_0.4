@@ -375,10 +375,15 @@ export const useRecipientStore = defineStore('recipient', () => {
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localRecipient = await tenantDbService.getRecipientById(recipientWithTimestamp.id);
-      if (localRecipient && localRecipient.updatedAt && recipientWithTimestamp.updatedAt &&
-          new Date(localRecipient.updatedAt) >= new Date(recipientWithTimestamp.updatedAt)) {
-        infoLog('recipientStore', `addRecipient (fromSync): Lokaler Empfänger ${localRecipient.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
-        return localRecipient; // Gib den lokalen, "gewinnenden" Empfänger zurück
+      if (localRecipient) {
+        // Berücksichtige sowohl updatedAt als auch updated_at
+        const localTimestamp = localRecipient.updatedAt || (localRecipient as any).updated_at;
+        const incomingTimestamp = recipientWithTimestamp.updatedAt || (recipientWithTimestamp as any).updated_at;
+
+        if (localTimestamp && incomingTimestamp && new Date(localTimestamp) >= new Date(incomingTimestamp)) {
+          infoLog('recipientStore', `addRecipient (fromSync): Lokaler Empfänger ${localRecipient.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
+          return localRecipient; // Gib den lokalen, "gewinnenden" Empfänger zurück
+        }
       }
       // Wenn eingehend neuer ist oder lokal nicht existiert, fahre fort mit DB-Update und Store-Update
       await tenantDbService.createRecipient(recipientWithTimestamp); // createRecipient ist wie put, überschreibt wenn ID existiert
@@ -392,11 +397,15 @@ export const useRecipientStore = defineStore('recipient', () => {
       recipients.value.push(recipientWithTimestamp);
     } else {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt, falls die DB-Operation nicht sofort reflektiert wird
-      if (!fromSync || (recipientWithTimestamp.updatedAt && (!recipients.value[existingRecipientIndex].updatedAt || new Date(recipientWithTimestamp.updatedAt) > new Date(recipients.value[existingRecipientIndex].updatedAt!)))) {
+      // Berücksichtige sowohl updatedAt als auch updated_at für Store-Update
+      const storeTimestamp = recipients.value[existingRecipientIndex].updatedAt || (recipients.value[existingRecipientIndex] as any).updated_at;
+      const incomingTimestamp = recipientWithTimestamp.updatedAt || (recipientWithTimestamp as any).updated_at;
+
+      if (!fromSync || (incomingTimestamp && (!storeTimestamp || new Date(incomingTimestamp) > new Date(storeTimestamp)))) {
         recipients.value[existingRecipientIndex] = recipientWithTimestamp;
       } else if (fromSync) {
         // Wenn fromSync und das Store-Empfänger neuer ist, behalte das Store-Empfänger (sollte durch obige DB-Prüfung nicht passieren)
-         warnLog('recipientStore', `addRecipient (fromSync): Store-Empfänger ${recipients.value[existingRecipientIndex].id} war neuer als eingehender ${recipientWithTimestamp.id}. Store nicht geändert.`);
+        warnLog('recipientStore', `addRecipient (fromSync): Store-Empfänger ${recipients.value[existingRecipientIndex].id} war neuer als eingehender ${recipientWithTimestamp.id}. Store nicht geändert.`);
       }
     }
     infoLog('recipientStore', `Recipient "${recipientWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${recipientWithTimestamp.id}).`);
@@ -404,11 +413,17 @@ export const useRecipientStore = defineStore('recipient', () => {
     // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
     if (!fromSync) {
       try {
+        // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+        const backendPayload = {
+          ...tenantDbService.toPlainObject(recipientWithTimestamp),
+          updated_at: recipientWithTimestamp.updatedAt
+        };
+
         await tenantDbService.addSyncQueueEntry({
           entityType: EntityTypeEnum.RECIPIENT,
           entityId: recipientWithTimestamp.id,
           operationType: SyncOperationType.CREATE,
-          payload: tenantDbService.toPlainObject(recipientWithTimestamp),
+          payload: backendPayload,
         });
         infoLog('recipientStore', `Recipient "${recipientWithTimestamp.name}" zur Sync Queue hinzugefügt (CREATE).`);
       } catch (e) {
@@ -435,8 +450,17 @@ export const useRecipientStore = defineStore('recipient', () => {
         return true; // Frühzeitiger Ausstieg, da addRecipient die weitere Logik übernimmt
       }
 
-      if (localRecipient.updatedAt && recipientUpdatesWithTimestamp.updatedAt &&
-          new Date(localRecipient.updatedAt) >= new Date(recipientUpdatesWithTimestamp.updatedAt)) {
+      // Verbesserte LWW-Logik: Berücksichtige sowohl updatedAt als auch updated_at
+      const localTimestamp = localRecipient.updatedAt || (localRecipient as any).updated_at;
+      const incomingTimestamp = recipientUpdatesWithTimestamp.updatedAt || (recipientUpdatesWithTimestamp as any).updated_at;
+
+      if (localTimestamp && !incomingTimestamp) {
+        infoLog('recipientStore', `updateRecipient (fromSync): Backend sendet null-Timestamp, lokale Daten haben Vorrang. Eingehende Änderung verworfen.`);
+        return true;
+      }
+
+      if (localTimestamp && incomingTimestamp &&
+        new Date(localTimestamp) >= new Date(incomingTimestamp)) {
         infoLog('recipientStore', `updateRecipient (fromSync): Lokaler Empfänger ${localRecipient.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
       }
@@ -450,7 +474,10 @@ export const useRecipientStore = defineStore('recipient', () => {
     const idx = recipients.value.findIndex(r => r.id === recipientUpdatesWithTimestamp.id);
     if (idx !== -1) {
       // Stelle sicher, dass auch hier die LWW-Logik für den Store gilt
-      if (!fromSync || (recipientUpdatesWithTimestamp.updatedAt && (!recipients.value[idx].updatedAt || new Date(recipientUpdatesWithTimestamp.updatedAt) > new Date(recipients.value[idx].updatedAt!)))) {
+      const storeTimestamp = recipients.value[idx].updatedAt || (recipients.value[idx] as any).updated_at;
+      const incomingTimestamp = recipientUpdatesWithTimestamp.updatedAt || (recipientUpdatesWithTimestamp as any).updated_at;
+
+      if (!fromSync || (incomingTimestamp && (!storeTimestamp || new Date(incomingTimestamp) > new Date(storeTimestamp)))) {
         recipients.value[idx] = { ...recipients.value[idx], ...recipientUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('recipientStore', `updateRecipient (fromSync): Store-Empfänger ${recipients.value[idx].id} war neuer als eingehender ${recipientUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -460,11 +487,17 @@ export const useRecipientStore = defineStore('recipient', () => {
       // SyncQueue-Logik für alle lokalen Änderungen (konsistente Synchronisation)
       if (!fromSync) {
         try {
+          // Feldmapping: updatedAt -> updated_at für Backend-Kompatibilität
+          const backendPayload = {
+            ...tenantDbService.toPlainObject(recipientUpdatesWithTimestamp),
+            updated_at: recipientUpdatesWithTimestamp.updatedAt
+          };
+
           await tenantDbService.addSyncQueueEntry({
             entityType: EntityTypeEnum.RECIPIENT,
             entityId: recipientUpdatesWithTimestamp.id,
             operationType: SyncOperationType.UPDATE,
-            payload: tenantDbService.toPlainObject(recipientUpdatesWithTimestamp),
+            payload: backendPayload,
           });
           infoLog('recipientStore', `Recipient "${recipientUpdatesWithTimestamp.name}" zur Sync Queue hinzugefügt (UPDATE).`);
         } catch (e) {
@@ -1298,7 +1331,7 @@ export const useRecipientStore = defineStore('recipient', () => {
           // Bereinige Bedingungen
           for (const condition of updatedRule.conditions) {
             if ((condition.type === 'RECIPIENT_EQUALS' || condition.type === 'RECIPIENT_CONTAINS') &&
-                typeof condition.value === 'string' && deletedRecipientIds.includes(condition.value)) {
+              typeof condition.value === 'string' && deletedRecipientIds.includes(condition.value)) {
               condition.value = mergedRecipientId;
               ruleUpdated = true;
             }
@@ -1307,7 +1340,7 @@ export const useRecipientStore = defineStore('recipient', () => {
           // Bereinige Aktionen
           for (const action of updatedRule.actions) {
             if (action.type === 'SET_RECIPIENT' &&
-                typeof action.value === 'string' && deletedRecipientIds.includes(action.value)) {
+              typeof action.value === 'string' && deletedRecipientIds.includes(action.value)) {
               action.value = mergedRecipientId;
               ruleUpdated = true;
             }
@@ -1557,7 +1590,7 @@ export const useRecipientStore = defineStore('recipient', () => {
         // Bedingungen prüfen
         for (const condition of rule.conditions) {
           if ((condition.type === 'RECIPIENT_EQUALS' || condition.type === 'RECIPIENT_CONTAINS') &&
-              typeof condition.value === 'string' && oldRecipientIds.includes(condition.value)) {
+            typeof condition.value === 'string' && oldRecipientIds.includes(condition.value)) {
             condition.value = newRecipientId;
             ruleUpdated = true;
           }
@@ -1566,7 +1599,7 @@ export const useRecipientStore = defineStore('recipient', () => {
         // Aktionen prüfen
         for (const action of rule.actions) {
           if (action.type === 'SET_RECIPIENT' &&
-              typeof action.value === 'string' && oldRecipientIds.includes(action.value)) {
+            typeof action.value === 'string' && oldRecipientIds.includes(action.value)) {
             action.value = newRecipientId;
             ruleUpdated = true;
           }
