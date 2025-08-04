@@ -580,7 +580,23 @@ export const BudgetService = {
       if (availableFunds <= 0) break;
 
       if (category.monthlyAmount && category.monthlyAmount > 0) {
-        const transferAmount = Math.min(category.monthlyAmount, availableFunds);
+        let transferAmount = Math.min(category.monthlyAmount, availableFunds);
+
+        // Sparziel-Prüfung: Begrenze Transfer auf noch benötigten Betrag
+        if (category.isSavingsGoal && category.targetAmount) {
+          const currentBalance = BalanceService.getTodayBalance("category", category.id);
+          const remainingToGoal = category.targetAmount - currentBalance;
+
+          if (remainingToGoal <= 0) {
+            debugLog('[BudgetService]', `Sparziel bereits erreicht für ${category.name} (${currentBalance}€ >= ${category.targetAmount}€)`);
+            continue; // Überspringe diese Kategorie
+          }
+
+          if (transferAmount > remainingToGoal) {
+            transferAmount = remainingToGoal;
+            debugLog('[BudgetService]', `Transfer begrenzt auf Sparziel für ${category.name}: ${transferAmount}€ (noch benötigt: ${remainingToGoal}€)`);
+          }
+        }
 
         try {
           await TransactionService.addCategoryTransfer(
@@ -622,6 +638,22 @@ export const BudgetService = {
             Math.round(availableFunds * (category.proportion / 100) * 100) / 100,
             availableFunds
           );
+        }
+
+        // Sparziel-Prüfung: Begrenze Transfer auf noch benötigten Betrag
+        if (category.isSavingsGoal && category.targetAmount && transferAmount > 0) {
+          const currentBalance = BalanceService.getTodayBalance("category", category.id);
+          const remainingToGoal = category.targetAmount - currentBalance;
+
+          if (remainingToGoal <= 0) {
+            debugLog('[BudgetService]', `Sparziel bereits erreicht für ${category.name} (${currentBalance}€ >= ${category.targetAmount}€)`);
+            continue; // Überspringe diese Kategorie
+          }
+
+          if (transferAmount > remainingToGoal) {
+            transferAmount = remainingToGoal;
+            debugLog('[BudgetService]', `Transfer begrenzt auf Sparziel für ${category.name}: ${transferAmount}€ (noch benötigt: ${remainingToGoal}€)`);
+          }
         }
 
         if (transferAmount > 0) {
