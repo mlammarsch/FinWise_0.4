@@ -329,8 +329,8 @@ export class DataImportExportService {
   }
 
   /**
-   * Importiert Kategorien und Kategoriengruppen in den CategoryStore
-   * @param data - Array mit Kategorie- und Kategoriengruppen-Daten
+   * Importiert Kategorien und Lebensbereiche in den CategoryStore
+   * @param data - Array mit Kategorie- und Lebensbereiche-Daten
    * @param importMode - Import-Modus ('replace' oder 'merge')
    */
   private static async importCategories(data: any[], importMode: ImportMode): Promise<void> {

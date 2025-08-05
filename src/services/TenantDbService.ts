@@ -298,10 +298,10 @@ export class TenantDbService {
     }
     try {
       const categoryGroups = await this.db.categoryGroups.toArray();
-      debugLog('TenantDbService', 'Alle Kategoriegruppen abgerufen.', { count: categoryGroups.length });
+      debugLog('TenantDbService', 'Alle Lebensbereiche abgerufen.', { count: categoryGroups.length });
       return categoryGroups;
     } catch (err) {
-      errorLog('TenantDbService', 'Fehler beim Abrufen aller Kategoriegruppen', { error: err });
+      errorLog('TenantDbService', 'Fehler beim Abrufen aller Lebensbereiche', { error: err });
       return [];
     }
   }

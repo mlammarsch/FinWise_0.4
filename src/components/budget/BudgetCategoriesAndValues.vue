@@ -232,7 +232,7 @@ const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 const sortOrderUpdateTimer = ref<NodeJS.Timeout | null>(null);
 const SORT_ORDER_DEBOUNCE_DELAY = 500;
 
-// Getrennte Kategoriegruppen nach Typ
+// Getrennte Lebensbereiche nach Typ
 const expenseGroups = computed(() => {
   const groups = categoryGroups.value.filter(g => !g.isIncomeGroup);
   return groups.sort((a, b) => a.sortOrder - b.sortOrder);
@@ -243,7 +243,7 @@ const incomeGroups = computed(() => {
   return groups.sort((a, b) => a.sortOrder - b.sortOrder);
 });
 
-// Icon-Mapping für Kategoriegruppen
+// Icon-Mapping für Lebensbereiche
 function getGroupIcon(group: CategoryGroup): string {
   return 'mdi:folder-outline';
 }
@@ -1183,7 +1183,7 @@ function handleTransactionUpdated() {
           :data-group-id="group.id"
         >
           <div class="category-group-row border-b border-base-300">
-            <!-- Kategoriegruppen-Header mit Summenwerten -->
+            <!-- Lebensbereiche-Header mit Summenwerten -->
             <div class="group-header-extended flex w-full bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
               <div class="group-part flex items-center border-r border-base-300 py-2">
@@ -1441,7 +1441,7 @@ function handleTransactionUpdated() {
           :data-group-id="group.id"
         >
           <div class="category-group-row border-b border-base-300">
-            <!-- Kategoriegruppen-Header mit Summenwerten -->
+            <!-- Lebensbereiche-Header mit Summenwerten -->
             <div class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
               <!-- Sticky Gruppen-Teil -->
               <div class="group-part flex items-center border-r border-base-300 py-2">
@@ -1612,8 +1612,8 @@ function handleTransactionUpdated() {
     <div v-if="expenseGroups.length === 0 && incomeGroups.length === 0" class="flex-1 flex items-center justify-center p-8">
       <div class="text-center text-base-content/60">
         <Icon icon="mdi:folder-outline" class="w-12 h-12 mx-auto mb-3" />
-        <p class="text-sm font-medium">Keine Kategoriegruppen</p>
-        <p class="text-xs mt-1">Erstellen Sie zunächst Kategoriegruppen</p>
+        <p class="text-sm font-medium">Keine Lebensbereiche</p>
+        <p class="text-xs mt-1">Erstellen Sie zunächst Lebensbereiche</p>
       </div>
     </div>
     <!-- Kontext-Dropdown -->

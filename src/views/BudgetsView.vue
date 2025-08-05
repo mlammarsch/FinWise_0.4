@@ -13,13 +13,13 @@ import { BalanceService } from "../services/BalanceService";
 const categoryStore = useCategoryStore();
 const transactionStore = useTransactionStore();
 
-// Computed für den Expand/Collapse-Zustand aller Kategoriengruppen
+// Computed für den Expand/Collapse-Zustand aller Lebensbereiche
 const allGroupsExpanded = computed(() => {
   const allGroupIds = categoryStore.categoryGroups.map(g => g.id);
   return allGroupIds.length > 0 && allGroupIds.every(id => categoryStore.expandedCategoryGroups.has(id));
 });
 
-// Funktion zum Ein-/Ausklappen aller Kategoriengruppen
+// Funktion zum Ein-/Ausklappen aller Lebensbereiche
 function toggleAllCategoryGroups() {
   if (allGroupsExpanded.value) {
     categoryStore.collapseAllCategoryGroups();

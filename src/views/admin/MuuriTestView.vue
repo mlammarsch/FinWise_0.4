@@ -145,7 +145,7 @@ function initializeGrids() {
       subGrids.value.push(grid);
     });
 
-    // Meta-Grid für Kategoriegruppen (mit gleicher Kanban-Logik)
+    // Meta-Grid für Lebensbereiche (mit gleicher Kanban-Logik)
     metaGrid.value = new Muuri('.muuri-container', {
       items: '.group-wrapper',
       dragEnabled: true,

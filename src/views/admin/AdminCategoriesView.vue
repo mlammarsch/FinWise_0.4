@@ -28,7 +28,7 @@ const categorySortCriteria = ref<SortCriteria[]>([
   { field: "name", direction: "asc" },
 ]);
 
-// Sortierung für Kategoriegruppen
+// Sortierung für Lebensbereiche
 const groupSortField = ref<string>("name");
 const groupSortDirection = ref<"asc" | "desc">("asc");
 
@@ -291,7 +291,7 @@ const deleteCategory = async (category: Category) => {
   );
 };
 
-// Kategoriegruppen-Aktionen
+// Lebensbereiche-Aktionen
 const createCategoryGroup = () => {
   editingGroupId.value = null;
   groupName.value = "";
@@ -494,7 +494,7 @@ const sortCategories = (field: string, event?: MouseEvent) => {
   }
 };
 
-// Sortier-Handler für Kategoriegruppen
+// Sortier-Handler für Lebensbereiche
 const sortCategoryGroups = (field: string) => {
   if (groupSortField.value === field) {
     groupSortDirection.value =
@@ -520,7 +520,7 @@ const getSortPriority = (field: string): number | null => {
   return index >= 0 ? index + 1 : null;
 };
 
-// Helper für Kategoriegruppen-Sortier-Icon
+// Helper für Lebensbereiche-Sortier-Icon
 const getGroupSortIcon = (
   field: string,
   currentField: string,
@@ -1034,10 +1034,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Kategoriegruppen -->
+    <!-- Lebensbereiche -->
     <div class="card bg-base-100 shadow-md border border-base-300">
       <div class="card-body">
-        <h3 class="card-title text-lg mb-4">Kategoriegruppen</h3>
+        <h3 class="card-title text-lg mb-4">Lebensbereiche</h3>
         <div class="overflow-x-auto">
           <table class="table table-zebra w-full">
             <thead>
@@ -1147,7 +1147,7 @@ onUnmounted(() => {
                   colspan="5"
                   class="text-center py-4"
                 >
-                  Keine Kategoriegruppen vorhanden
+                  Keine Lebensbereiche vorhanden
                 </td>
               </tr>
             </tbody>
