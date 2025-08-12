@@ -440,14 +440,49 @@ export const useTenantStore = defineStore('tenant', (): TenantStoreState => {
       const tenantDB = new FinwiseTenantSpecificDB(dbName);
       await tenantDB.open();
       activeTenantDB.value = tenantDB;
+
+      // KRITISCH: Session erst NACH erfolgreicher DB-Verbindung setzen
+      // Dies verhindert Race Conditions beim WebSocket-Reconnect
+      debugLog('tenantStore', `DB erfolgreich geöffnet für Tenant ${id}, setze jetzt Session`);
       session.currentTenantId = id;
       infoLog('tenantStore', `Tenant "${tenantExists.tenantName}" (DB: ${dbName}) aktiviert und DB verbunden. SessionStore aktualisiert.`);
 
+      // Stores vollständig zurücksetzen und neu initialisieren
+      debugLog('tenantStore', `Initialisiere alle Stores für neuen Tenant ${id}`);
+
+      // Alle relevanten Stores resetten
       const accountStore = useAccountStore();
-      await accountStore.initializeStore();
+      await accountStore.reset();
 
       const categoryStore = useCategoryStore();
+      await categoryStore.reset();
+
+      // Weitere Stores importieren und resetten
+      const { useRecipientStore } = await import('./recipientStore');
+      const recipientStore = useRecipientStore();
+      await recipientStore.reset();
+
+      const { useTagStore } = await import('./tagStore');
+      const tagStore = useTagStore();
+      await tagStore.reset();
+
+      const { useRuleStore } = await import('./ruleStore');
+      const ruleStore = useRuleStore();
+      await ruleStore.reset();
+
+      const { usePlanningStore } = await import('./planningStore');
+      const planningStore = usePlanningStore();
+      await planningStore.reset();
+
+      const { useTransactionStore } = await import('./transactionStore');
+      const transactionStore = useTransactionStore();
+      await transactionStore.reset();
+
+      // Stores neu initialisieren
+      await accountStore.initializeStore();
       await categoryStore.initializeStore();
+
+      debugLog('tenantStore', `Alle Stores für Tenant ${id} zurückgesetzt und Account/Category-Stores initialisiert`);
 
       if (id) {
         WebSocketService.requestInitialData(id);

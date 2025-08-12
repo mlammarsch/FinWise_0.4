@@ -73,8 +73,15 @@ router.isReady().then(() => {
         WebSocketService.disconnect();
       }
 
+      // Verbesserte Logik für Initial Data Load
       if (newTenantId && connStatus === WebSocketConnectionStatus.CONNECTED && backendStatus === BackendStatus.ONLINE) {
         debugLog('[main.ts Watcher]', `Conditions met for initial data request for tenant ${newTenantId}. Requesting...`, { newTenantId, connStatus, backendStatus });
+        WebSocketService.requestInitialData(newTenantId);
+      } else if (newTenantId && (connectionJustEstablished || backendJustOnline)) {
+        // Zusätzlicher Trigger: Wenn Verbindung gerade hergestellt wurde oder Backend online kam
+        debugLog('[main.ts Watcher]', `Connection/Backend just became available for tenant ${newTenantId}. Requesting initial data...`, {
+          connectionJustEstablished, backendJustOnline, connStatus, backendStatus
+        });
         WebSocketService.requestInitialData(newTenantId);
       } else {
         debugLog('[main.ts Watcher]', 'Conditions NOT met for initial data request.', { newTenantId, connStatus, backendStatus });

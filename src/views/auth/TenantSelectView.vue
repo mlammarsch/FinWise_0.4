@@ -150,10 +150,14 @@ function handleTenantListKeyDown(event: KeyboardEvent) {
   }
 }
 
-function selectTenant(id: string) {
+async function selectTenant(id: string) {
   debugLog("[TenantSelectView] selectTenant", `Tenant ID: ${id}`);
-  TenantService.switchTenant(id);
-  router.push("/");
+  const success = await TenantService.switchTenant(id);
+  if (success) {
+    router.push("/");
+  } else {
+    errorLog("[TenantSelectView]", `Fehler beim Mandantenwechsel zu ${id}`);
+  }
 }
 
 async function createTenant() {

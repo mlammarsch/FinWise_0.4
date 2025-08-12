@@ -180,10 +180,10 @@ export const WebSocketService = {
                   const accountData = updateMessage.data.single_entity as Account | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await accountStore.addAccount(accountData as Account, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Account ${ (accountData as Account).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `Account ${(accountData as Account).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await accountStore.updateAccount(accountData as Account, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Account ${ (accountData as Account).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `Account ${(accountData as Account).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for Account ${accountData.id}`, {
                       accountData,
@@ -198,10 +198,10 @@ export const WebSocketService = {
                   const accountGroupData = updateMessage.data.single_entity as AccountGroup | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await accountStore.addAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `AccountGroup ${ (accountGroupData as AccountGroup).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `AccountGroup ${(accountGroupData as AccountGroup).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await accountStore.updateAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `AccountGroup ${ (accountGroupData as AccountGroup).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `AccountGroup ${(accountGroupData as AccountGroup).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for AccountGroup ${accountGroupData.id}`, {
                       accountGroupData,
@@ -216,10 +216,10 @@ export const WebSocketService = {
                   const categoryData = updateMessage.data.single_entity as Category | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await categoryStore.addCategory(categoryData as Category, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Category ${ (categoryData as Category).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `Category ${(categoryData as Category).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await categoryStore.updateCategory(categoryData as Category, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Category ${ (categoryData as Category).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `Category ${(categoryData as Category).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for Category ${categoryData.id}`, {
                       categoryData,
@@ -234,10 +234,10 @@ export const WebSocketService = {
                   const categoryGroupData = updateMessage.data.single_entity as CategoryGroup | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await categoryStore.addCategoryGroup(categoryGroupData as CategoryGroup, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `CategoryGroup ${ (categoryGroupData as CategoryGroup).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `CategoryGroup ${(categoryGroupData as CategoryGroup).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await categoryStore.updateCategoryGroup(categoryGroupData as CategoryGroup, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `CategoryGroup ${ (categoryGroupData as CategoryGroup).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `CategoryGroup ${(categoryGroupData as CategoryGroup).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for CategoryGroup ${categoryGroupData.id}`, {
                       categoryGroupData,
@@ -252,10 +252,10 @@ export const WebSocketService = {
                   const recipientData = updateMessage.data.single_entity as Recipient | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await recipientStore.addRecipient(recipientData as Recipient, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Recipient ${ (recipientData as Recipient).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `Recipient ${(recipientData as Recipient).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await recipientStore.updateRecipient(recipientData as Recipient, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Recipient ${ (recipientData as Recipient).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `Recipient ${(recipientData as Recipient).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for Recipient ${recipientData.id}`, {
                       recipientData,
@@ -270,10 +270,10 @@ export const WebSocketService = {
                   const tagData = updateMessage.data.single_entity as Tag | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await tagStore.addTag(tagData as Tag, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Tag ${ (tagData as Tag).name } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `Tag ${(tagData as Tag).name} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await tagStore.updateTag(tagData as Tag, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `Tag ${ (tagData as Tag).name } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `Tag ${(tagData as Tag).name} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for Tag ${tagData.id}`, {
                       tagData,
@@ -288,10 +288,10 @@ export const WebSocketService = {
                   const ruleData = updateMessage.data.single_entity as AutomationRule | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await ruleStore.addRule(ruleData as AutomationRule, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `AutomationRule ${(ruleData as AutomationRule).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await ruleStore.updateRule((ruleData as AutomationRule).id, ruleData as AutomationRule, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `AutomationRule ${ (ruleData as AutomationRule).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `AutomationRule ${(ruleData as AutomationRule).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for AutomationRule ${ruleData.id}`, {
                       ruleData,
@@ -306,10 +306,10 @@ export const WebSocketService = {
                   const planningTransactionData = updateMessage.data.single_entity as PlanningTransaction | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await planningStore.addPlanningTransaction(planningTransactionData as PlanningTransaction, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `PlanningTransaction ${ (planningTransactionData as PlanningTransaction).id } created via WebSocket.`);
+                    infoLog('[WebSocketService]', `PlanningTransaction ${(planningTransactionData as PlanningTransaction).id} created via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.UPDATE) {
                     await planningStore.updatePlanningTransaction((planningTransactionData as PlanningTransaction).id, planningTransactionData as PlanningTransaction, true); // true für 'fromSync'
-                    infoLog('[WebSocketService]', `PlanningTransaction ${ (planningTransactionData as PlanningTransaction).id } updated via WebSocket.`);
+                    infoLog('[WebSocketService]', `PlanningTransaction ${(planningTransactionData as PlanningTransaction).id} updated via WebSocket.`);
                   } else if (updateMessage.operation_type === SyncOperationType.DELETE) {
                     debugLog('[WebSocketService]', `Processing DELETE for PlanningTransaction ${planningTransactionData.id}`, {
                       planningTransactionData,
@@ -349,7 +349,7 @@ export const WebSocketService = {
             // Loggen der geparsten Nachricht
             // debugLog('[WebSocketService]', 'Parsed message received:', message); // Bereits oben geloggt
 
-          // Prüfe auf event_type, da das Backend dies für initial_data_load sendet
+            // Prüfe auf event_type, da das Backend dies für initial_data_load sendet
           } else if ('event_type' in message && message.event_type === 'initial_data_load') { // Type guard hinzugefügt
             const initialDataMessage = message as InitialDataLoadMessage; // Type assertion ist hier immer noch wichtig
             infoLog('[WebSocketService]', 'InitialDataLoadMessage received (matched on event_type):', initialDataMessage);
@@ -1055,8 +1055,8 @@ export const WebSocketService = {
     } else {
       const socketStateText = socket ?
         (socket.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
-         socket.readyState === WebSocket.CLOSING ? 'CLOSING' :
-         socket.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN') : 'NULL';
+          socket.readyState === WebSocket.CLOSING ? 'CLOSING' :
+            socket.readyState === WebSocket.CLOSED ? 'CLOSED' : 'UNKNOWN') : 'NULL';
 
       errorLog('[WebSocketService]', 'Cannot send message - WebSocket not ready', {
         sendTime: sendTime,
@@ -1203,10 +1203,28 @@ export const WebSocketService = {
       };
       this.sendMessage(message);
     } else {
-      errorLog('[WebSocketService]', 'Cannot request initial data: WebSocket not connected or backend not online.', {
+      warnLog('[WebSocketService]', 'Cannot request initial data immediately - WebSocket not ready. Will retry when connection is established.', {
         connected: socket?.readyState === WebSocket.OPEN,
         backendStatus: webSocketStore.backendStatus,
+        tenantId: tenantId
       });
+
+      // Retry-Mechanismus: Versuche es in 1 Sekunde erneut
+      setTimeout(() => {
+        if (socket && socket.readyState === WebSocket.OPEN && webSocketStore.backendStatus === BackendStatus.ONLINE) {
+          infoLog('[WebSocketService]', `Retrying initial data request for tenant ${tenantId}`);
+          const retryMessage: RequestInitialDataMessage = {
+            type: 'request_initial_data',
+            tenant_id: tenantId,
+          };
+          this.sendMessage(retryMessage);
+        } else {
+          errorLog('[WebSocketService]', `Failed to request initial data for tenant ${tenantId} after retry`, {
+            connected: socket?.readyState === WebSocket.OPEN,
+            backendStatus: webSocketStore.backendStatus,
+          });
+        }
+      }, 1000);
     }
   },
 
@@ -1584,9 +1602,9 @@ export const WebSocketService = {
       [() => webSocketStore.connectionStatus, () => webSocketStore.backendStatus],
       ([newConnStatus, newBackendStatus], [oldConnStatus, oldBackendStatus]) => {
         const wasOffline = oldConnStatus !== WebSocketConnectionStatus.CONNECTED ||
-                          oldBackendStatus !== BackendStatus.ONLINE;
+          oldBackendStatus !== BackendStatus.ONLINE;
         const isNowOnline = newConnStatus === WebSocketConnectionStatus.CONNECTED &&
-                           newBackendStatus === BackendStatus.ONLINE;
+          newBackendStatus === BackendStatus.ONLINE;
 
         if (wasOffline && isNowOnline) {
           infoLog('[WebSocketService]', 'Connection re-established, triggering immediate sync');
@@ -1599,7 +1617,7 @@ export const WebSocketService = {
   isOnlineAndReady(): boolean {
     const webSocketStore = useWebSocketStore();
     return webSocketStore.connectionStatus === WebSocketConnectionStatus.CONNECTED &&
-           webSocketStore.backendStatus === BackendStatus.ONLINE;
+      webSocketStore.backendStatus === BackendStatus.ONLINE;
   },
 
   async requestServerDataStatus(tenantId: string): Promise<void> {
@@ -1652,7 +1670,7 @@ export const WebSocketService = {
     }
   },
 
-  async getPendingDeleteOperations(tenantId: string): Promise<{accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[]}> {
+  async getPendingDeleteOperations(tenantId: string): Promise<{ accounts: string[], accountGroups: string[], categories: string[], categoryGroups: string[], recipients: string[], tags: string[] }> {
     /**
      * Holt alle pending DELETE-Operationen aus der Sync-Queue um zu vermeiden,
      * dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
