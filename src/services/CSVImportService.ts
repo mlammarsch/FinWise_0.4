@@ -554,9 +554,25 @@ export const useCSVImportService = defineStore('csvImportService', () => {
   /**
    * Findet passende Empfänger für einen Text und speichert die Übereinstimmungen
    * Erweiterte Logik für korrekte recipientId-Zuordnung gemäß Task 4.1
+   * NEUE FUNKTION: Erkennt auch Account-Namen für Account-Transfers
    */
   function findMatchingRecipient(row: ImportRow, searchText: string) {
     if (!searchText) return;
+
+    // NEUE LOGIK: Prüfe zuerst ob searchText einem Kontonamen entspricht
+    const matchingAccount = accountStore.accounts.find(
+      account => account.name && account.name.toLowerCase() === searchText.toLowerCase().trim()
+    );
+
+    if (matchingAccount) {
+      // Markiere als potentieller Account-Transfer (wird später in der Import-Logik behandelt)
+      (row as any)._potentialAccountTransfer = {
+        toAccountId: matchingAccount.id,
+        toAccountName: matchingAccount.name
+      };
+      debugLog('CSVImportService', `Potentieller Account-Transfer erkannt: "${searchText}" -> Konto ${matchingAccount.name} (${matchingAccount.id})`);
+      return;
+    }
 
     // Task 4.1: Einfacher Namensvergleich (case-insensitive) für recipientId-Zuordnung
     const directMatch = recipientStore.recipients.find(
@@ -885,7 +901,9 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         // REGEL-FIRST-ARCHITEKTUR: Setze payee-Feld IMMER aus CSV-Daten
         payee: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : '',
         // Speichere den Original-Empfängernamen für weitere Verarbeitung
-        originalRecipientName: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : null
+        originalRecipientName: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : null,
+        // Eindeutiger Identifikator für Account-Transfer-Erkennung
+        _uniqueRowIdentifier: row._uniqueRowIdentifier
       };
 
       preparedData.push(rowData);
@@ -937,6 +955,149 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Fall 4: Neuen Empfänger mit dem Namen anlegen
     return row.originalRecipientName;
+  }
+
+  /**
+   * Prüft, ob ein Account-Transfer bereits als Gegenbuchung existiert
+   * Verhindert doppelte Erfassung bei separaten Importen beider Konten
+   */
+  function isDuplicateAccountTransfer(transfer: {
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+  }, alreadyCreatedTransfers: Array<{
+    fromAccountId: string;
+    toAccountId: string;
+    amount: number;
+    date: string;
+  }> = []): boolean {
+    const transferDate = transfer.date;
+    const transferAmount = Math.abs(transfer.amount);
+
+    // Prüfe zuerst gegen bereits in diesem Import erstellte Transfers
+    for (const createdTransfer of alreadyCreatedTransfers) {
+      if (createdTransfer.date === transferDate &&
+        Math.abs(createdTransfer.amount) === transferAmount) {
+        // Prüfe auf umgekehrte Richtung (Duplikat)
+        if ((createdTransfer.fromAccountId === transfer.toAccountId &&
+          createdTransfer.toAccountId === transfer.fromAccountId) ||
+          (createdTransfer.fromAccountId === transfer.fromAccountId &&
+            createdTransfer.toAccountId === transfer.toAccountId)) {
+          debugLog('CSVImportService', `CSV-internes Duplikat erkannt`, {
+            existing: createdTransfer,
+            new: transfer
+          });
+          return true;
+        }
+      }
+    }
+
+    // Suche nach existierenden Account-Transfers am gleichen Datum
+    const existingTransfers = transactionStore.transactions.filter(tx =>
+      tx.type === TransactionType.ACCOUNTTRANSFER &&
+      tx.date === transferDate &&
+      Math.abs(tx.amount) === transferAmount
+    );
+
+    for (const existingTx of existingTransfers) {
+      // Prüfe ob es sich um die Gegenbuchung handelt
+      // Fall 1: Existierende Transaktion ist FROM-Seite (negativ), neue wäre TO-Seite
+      if (existingTx.amount < 0 &&
+        existingTx.accountId === transfer.fromAccountId &&
+        existingTx.transferToAccountId === transfer.toAccountId) {
+        debugLog('CSVImportService', `Duplikat erkannt: FROM-Seite bereits vorhanden`, {
+          existing: { accountId: existingTx.accountId, amount: existingTx.amount, transferTo: existingTx.transferToAccountId },
+          new: { fromAccountId: transfer.fromAccountId, toAccountId: transfer.toAccountId, amount: transfer.amount }
+        });
+        return true;
+      }
+
+      // Fall 2: Existierende Transaktion ist TO-Seite (positiv), neue wäre FROM-Seite
+      if (existingTx.amount > 0 &&
+        existingTx.accountId === transfer.toAccountId &&
+        existingTx.transferToAccountId === transfer.fromAccountId) {
+        debugLog('CSVImportService', `Duplikat erkannt: TO-Seite bereits vorhanden`, {
+          existing: { accountId: existingTx.accountId, amount: existingTx.amount, transferTo: existingTx.transferToAccountId },
+          new: { fromAccountId: transfer.fromAccountId, toAccountId: transfer.toAccountId, amount: transfer.amount }
+        });
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Findet potentielle Duplikate in den zu importierenden Daten
+   */
+  function findPotentialDuplicates(targetAccountId: string) {
+    const duplicates: Array<{
+      csvRow: any;
+      existingTransaction: any;
+      duplicateType: 'exact' | 'similar' | 'account_transfer';
+      confidence: number;
+    }> = [];
+
+    for (let i = 0; i < allParsedData.value.length; i++) {
+      const row = allParsedData.value[i];
+
+      if (!row._selected) continue;
+
+      const date = parseDate(row[mappedColumns.value.date]);
+      const amount = parseAmount(row[mappedColumns.value.amount]);
+
+      if (!date || amount === null) continue;
+
+      // Suche nach existierenden Transaktionen
+      const existingTransactions = transactionStore.transactions.filter(tx => {
+        const sameDate = tx.date === date;
+        const sameAmount = Math.abs(tx.amount) === Math.abs(amount);
+
+        if (!sameDate || !sameAmount) return false;
+
+        // Prüfe auf Account-Transfer-Duplikat
+        if (tx.type === TransactionType.ACCOUNTTRANSFER) {
+          const payee = mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : '';
+          const matchingAccount = accountStore.accounts.find(
+            account => account.name && account.name.toLowerCase() === payee.toLowerCase().trim()
+          );
+
+          if (matchingAccount) {
+            return (tx.accountId === targetAccountId && tx.transferToAccountId === matchingAccount.id) ||
+              (tx.accountId === matchingAccount.id && tx.transferToAccountId === targetAccountId);
+          }
+        }
+
+        // Prüfe auf normale Transaktions-Duplikate
+        if (tx.accountId === targetAccountId) {
+          const recipientMatch = mappedColumns.value.recipient ?
+            row[mappedColumns.value.recipient]?.toLowerCase().includes(tx.payee?.toLowerCase() || '') ||
+            tx.payee?.toLowerCase().includes(row[mappedColumns.value.recipient]?.toLowerCase() || '') : false;
+
+          const noteMatch = mappedColumns.value.notes ?
+            row[mappedColumns.value.notes]?.toLowerCase().includes(tx.note?.toLowerCase() || '') ||
+            tx.note?.toLowerCase().includes(row[mappedColumns.value.notes]?.toLowerCase() || '') : false;
+
+          return recipientMatch || noteMatch;
+        }
+
+        return false;
+      });
+
+      // Füge gefundene Duplikate hinzu
+      for (const existingTx of existingTransactions) {
+        const duplicateType = existingTx.type === TransactionType.ACCOUNTTRANSFER ? 'account_transfer' : 'exact';
+        duplicates.push({
+          csvRow: { ...row, _originalIndex: i },
+          existingTransaction: existingTx,
+          duplicateType,
+          confidence: duplicateType === 'account_transfer' ? 0.95 : 0.85
+        });
+      }
+    }
+
+    return duplicates;
   }
 
   /**
@@ -998,6 +1159,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           planningTransactionId: null,
           isReconciliation: false,
           runningBalance: 0,
+
           reconciled: false,
           isCategoryTransfer: false,
           transferToAccountId: null,
@@ -1005,6 +1167,9 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
+
+        // Verknüpfung zur ursprünglichen CSV-Zeile für Account-Transfer-Erkennung (als any um TypeScript-Fehler zu vermeiden)
+        (transactionData as any)._originalRowIdentifier = (item as any)._uniqueRowIdentifier;
 
         transactionsToImport.push(transactionData);
       }
@@ -1021,10 +1186,77 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         transactionsToImport.push(...processedTransactions);
       }
 
-      // Phase 3: Automatisches Matching nur für Transaktionen ohne Regel-Zuordnung
-      for (const tx of transactionsToImport) {
-        // Empfänger-Matching nur wenn keine Regel recipientId gesetzt hat
+      // Phase 3: Account-Transfer-Erkennung und automatisches Matching
+      const accountTransfersToCreate: Array<{
+        fromAccountId: string;
+        toAccountId: string;
+        amount: number;
+        date: string;
+        valueDate: string;
+        note: string;
+        originalTxIndex: number;
+      }> = [];
+
+      // Sammle Account-Transfers und markiere entsprechende Transaktionen
+      for (let i = 0; i < transactionsToImport.length; i++) {
+        const tx = transactionsToImport[i];
+
+        // Prüfe ob Empfänger einem Kontonamen entspricht (nur wenn keine Regel recipientId gesetzt hat)
         if (!tx.recipientId && !tx._skipAutoRecipientMatching && tx.payee) {
+          const matchingAccount = accountStore.accounts.find(
+            account => account.name && account.name.toLowerCase() === tx.payee.toLowerCase().trim()
+          );
+
+          if (matchingAccount && matchingAccount.id !== tx.accountId) {
+            // Account-Transfer erkannt
+            debugLog('CSVImportService', `Account-Transfer erkannt: ${tx.payee} -> Konto ${matchingAccount.name} (${matchingAccount.id})`);
+
+            accountTransfersToCreate.push({
+              fromAccountId: tx.accountId,
+              toAccountId: matchingAccount.id,
+              amount: Math.abs(tx.amount), // Immer positiver Betrag für Transfer
+              date: tx.date,
+              valueDate: tx.valueDate,
+              note: tx.note || `Transfer zu ${matchingAccount.name}`,
+              originalTxIndex: i
+            });
+
+            // Markiere diese Transaktion als Account-Transfer (wird später übersprungen)
+            (tx as any)._isAccountTransfer = true;
+            continue;
+          }
+        }
+
+        // Zusätzlich: Prüfe auf potentielle Account-Transfers aus findMatchingRecipient
+        const originalRowData = allParsedData.value.find(row =>
+          row._uniqueRowIdentifier && (tx as any)._originalRowIdentifier === row._uniqueRowIdentifier
+        );
+
+        if (originalRowData && (originalRowData as any)._potentialAccountTransfer) {
+          const potentialTransfer = (originalRowData as any)._potentialAccountTransfer;
+
+          if (potentialTransfer.toAccountId !== tx.accountId) {
+            // Account-Transfer aus findMatchingRecipient erkannt
+            debugLog('CSVImportService', `Account-Transfer aus Matching erkannt: ${tx.payee} -> Konto ${potentialTransfer.toAccountName} (${potentialTransfer.toAccountId})`);
+
+            accountTransfersToCreate.push({
+              fromAccountId: tx.accountId,
+              toAccountId: potentialTransfer.toAccountId,
+              amount: Math.abs(tx.amount),
+              date: tx.date,
+              valueDate: tx.valueDate,
+              note: tx.note || `Transfer zu ${potentialTransfer.toAccountName}`,
+              originalTxIndex: i
+            });
+
+            // Markiere diese Transaktion als Account-Transfer
+            (tx as any)._isAccountTransfer = true;
+            continue;
+          }
+        }
+
+        // Empfänger-Matching nur wenn keine Regel recipientId gesetzt hat und kein Account-Transfer
+        if (!tx.recipientId && !tx._skipAutoRecipientMatching && tx.payee && !(tx as any)._isAccountTransfer) {
           const matchResult = await performRecipientMatching(tx.payee);
           if (matchResult) {
             if (typeof matchResult === 'string') {
@@ -1073,7 +1305,88 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         });
       }
 
-      // Phase 2: BATCH-IMPORT aller Transaktionen
+      // Phase 3.5: Account-Transfers erstellen (im Bulk-Prozess)
+      if (accountTransfersToCreate.length > 0) {
+        infoLog('CSVImportService', `Prüfe ${accountTransfersToCreate.length} Account-Transfers auf Duplikate`);
+
+        // Filtere Duplikate heraus und markiere entsprechende ursprüngliche Transaktionen
+        const validTransfers = [];
+        const duplicateTransferIndexes = new Set<number>();
+
+        for (const transfer of accountTransfersToCreate) {
+          if (!isDuplicateAccountTransfer(transfer)) {
+            validTransfers.push(transfer);
+          } else {
+            // Markiere die ursprüngliche Transaktion als Duplikat, damit sie nicht als normale Transaktion importiert wird
+            duplicateTransferIndexes.add(transfer.originalTxIndex);
+            debugLog('CSVImportService', `Account-Transfer übersprungen (Duplikat): ${transfer.amount}€ von ${accountStore.getAccountById(transfer.fromAccountId)?.name} zu ${accountStore.getAccountById(transfer.toAccountId)?.name} am ${transfer.date}`);
+          }
+        }
+
+        // Markiere die entsprechenden ursprünglichen Transaktionen als Duplikate
+        for (let i = 0; i < transactionsToImport.length; i++) {
+          if (duplicateTransferIndexes.has(i)) {
+            (transactionsToImport[i] as any)._isDuplicateAccountTransfer = true;
+            debugLog('CSVImportService', `Ursprüngliche Transaktion als Account-Transfer-Duplikat markiert (Index ${i})`);
+          }
+        }
+
+        infoLog('CSVImportService', `Erstelle ${validTransfers.length} Account-Transfers im Bulk-Prozess (${accountTransfersToCreate.length - validTransfers.length} Duplikate übersprungen)`);
+
+        for (const transfer of validTransfers) {
+          try {
+            // Erstelle Account-Transfer mit Gegenbuchung
+            const { fromTransaction, toTransaction } = await TransactionService.addAccountTransfer(
+              transfer.fromAccountId,
+              transfer.toAccountId,
+              transfer.amount,
+              transfer.date,
+              transfer.valueDate,
+              transfer.note,
+              null, // planningTransactionId
+              undefined // recipientId - wird automatisch aus Kontonamen abgeleitet
+            );
+
+            // Füge beide Transaktionen zur UI-Anzeige hinzu
+            importedTransactions.value.push({
+              ...fromTransaction,
+              recipientName: accountStore.getAccountById(transfer.toAccountId)?.name || "",
+              categoryName: "",
+              accountName: accountStore.getAccountById(transfer.fromAccountId)?.name || "",
+            });
+
+            importedTransactions.value.push({
+              ...toTransaction,
+              recipientName: accountStore.getAccountById(transfer.fromAccountId)?.name || "",
+              categoryName: "",
+              accountName: accountStore.getAccountById(transfer.toAccountId)?.name || "",
+            });
+
+            debugLog('CSVImportService', `Account-Transfer erstellt: ${transfer.amount}€ von ${accountStore.getAccountById(transfer.fromAccountId)?.name} zu ${accountStore.getAccountById(transfer.toAccountId)?.name}`);
+
+          } catch (error) {
+            errorLog('CSVImportService', `Fehler beim Erstellen des Account-Transfers`, {
+              transfer,
+              error
+            });
+          }
+        }
+      }
+
+      // Entferne Account-Transfer-Transaktionen und Duplikate aus der normalen Import-Liste
+      const filteredTransactionsToImport = transactionsToImport.filter(tx =>
+        !(tx as any)._isAccountTransfer && !(tx as any)._isDuplicateAccountTransfer
+      );
+
+      const removedCount = transactionsToImport.length - filteredTransactionsToImport.length;
+      if (removedCount > 0) {
+        debugLog('CSVImportService', `${removedCount} Transaktionen aus normalem Import entfernt (Account-Transfers und Duplikate)`);
+      }
+
+      transactionsToImport.length = 0;
+      transactionsToImport.push(...filteredTransactionsToImport);
+
+      // Phase 4: BATCH-IMPORT aller verbleibenden Transaktionen
       if (transactionsToImport.length > 0) {
         try {
           // Batch-Import über TenantDbService für bessere Performance
@@ -1082,9 +1395,10 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           // Sync-Queue-Einträge werden NACH der Running Balance Neuberechnung erstellt
           // (siehe addTransactionsBatchToSyncQueue nach der Neuberechnung)
 
-          infoLog('CSVImportService', `Batch-Import erfolgreich: ${transactionsToImport.length} Transaktionen importiert`, {
+          infoLog('CSVImportService', `Batch-Import erfolgreich: ${transactionsToImport.length} normale Transaktionen importiert`, {
             accountId,
-            batchSize: transactionsToImport.length
+            batchSize: transactionsToImport.length,
+            accountTransfers: accountTransfersToCreate.length
           });
 
         } catch (batchError) {
@@ -1097,8 +1411,9 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           // Fallback: Versuche einzelne Transaktionen zu importieren
           warnLog('CSVImportService', 'Fallback auf einzelne Transaktions-Imports');
 
-          // Lösche die bereits vorbereiteten UI-Daten
-          importedTransactions.value = [];
+          // Lösche die bereits vorbereiteten UI-Daten (Account-Transfers bleiben erhalten)
+          const existingAccountTransfers = importedTransactions.value.filter(tx => tx.type === TransactionType.ACCOUNTTRANSFER);
+          importedTransactions.value = [...existingAccountTransfers];
 
           for (const transactionData of transactionsToImport) {
             try {
@@ -1139,9 +1454,11 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
       // Berechne Running Balance für alle betroffenen Konten einmal am Ende (Performance-Optimierung)
       infoLog('CSVImportService', 'Starte Running Balance Neuberechnung für betroffene Konten...');
-      const affectedAccountIds = [...new Set(
-        importedTransactions.value.map((tx: any) => tx.accountId).filter(Boolean)
-      )];
+
+      // Sammle alle betroffenen Konten (normale Transaktionen + Account-Transfers)
+      const normalAccountIds = importedTransactions.value.map((tx: any) => tx.accountId).filter(Boolean);
+      const transferAccountIds = accountTransfersToCreate.flatMap(transfer => [transfer.fromAccountId, transfer.toAccountId]);
+      const affectedAccountIds = [...new Set([...normalAccountIds, ...transferAccountIds])];
 
       // Ermittle das älteste Datum aller importierten Transaktionen für optimierte Neuberechnung
       let oldestImportDate: Date | undefined = undefined;
@@ -1381,6 +1698,67 @@ export const useCSVImportService = defineStore('csvImportService', () => {
     }
   }
 
+  // Hilfsfunktionen für Matching (Regel-First-Architektur)
+  async function performRecipientMatching(recipientName: string): Promise<string | { id: string, name: string } | null> {
+    if (!recipientName) return null;
+
+    // Direkter Match (case-insensitive)
+    const directMatch = recipientStore.recipients.find(
+      r => r.name && r.name.toLowerCase() === recipientName.toLowerCase().trim()
+    );
+
+    if (directMatch) {
+      debugLog('CSVImportService', `Direkter Empfänger-Match: "${recipientName}" -> ${directMatch.name}`);
+      return directMatch;
+    }
+
+    // Fuzzy Match (ähnliche Namen)
+    const fuzzyMatches = recipientStore.recipients.filter(r => {
+      if (!r.name) return false;
+      const similarity = calculateStringSimilarity(r.name.toLowerCase(), recipientName.toLowerCase());
+      return similarity > 0.8; // 80% Ähnlichkeit
+    });
+
+    if (fuzzyMatches.length === 1) {
+      debugLog('CSVImportService', `Fuzzy Empfänger-Match: "${recipientName}" -> ${fuzzyMatches[0].name} (${Math.round(calculateStringSimilarity(fuzzyMatches[0].name!.toLowerCase(), recipientName.toLowerCase()) * 100)}%)`);
+      return fuzzyMatches[0];
+    }
+
+    // Kein Match gefunden - Empfänger muss erstellt werden
+    debugLog('CSVImportService', `Kein Empfänger-Match für "${recipientName}" - wird erstellt`);
+    return recipientName; // String zurückgeben bedeutet "erstellen"
+  }
+
+  async function performCategoryMatching(categoryName: string): Promise<{ id: string, name: string } | null> {
+    if (!categoryName) return null;
+
+    // Direkter Match (case-insensitive)
+    const directMatch = categoryStore.categories.find(
+      c => c.name && c.name.toLowerCase() === categoryName.toLowerCase().trim()
+    );
+
+    if (directMatch) {
+      debugLog('CSVImportService', `Direkter Kategorie-Match: "${categoryName}" -> ${directMatch.name}`);
+      return directMatch;
+    }
+
+    // Fuzzy Match (ähnliche Namen)
+    const fuzzyMatches = categoryStore.categories.filter(c => {
+      if (!c.name) return false;
+      const similarity = calculateStringSimilarity(c.name.toLowerCase(), categoryName.toLowerCase());
+      return similarity > 0.8; // 80% Ähnlichkeit
+    });
+
+    if (fuzzyMatches.length === 1) {
+      debugLog('CSVImportService', `Fuzzy Kategorie-Match: "${categoryName}" -> ${fuzzyMatches[0].name} (${Math.round(calculateStringSimilarity(fuzzyMatches[0].name!.toLowerCase(), categoryName.toLowerCase()) * 100)}%)`);
+      return fuzzyMatches[0];
+    }
+
+    // Kein Match gefunden
+    debugLog('CSVImportService', `Kein Kategorie-Match für "${categoryName}"`);
+    return null;
+  }
+
   return {
     // State
     csvFile,
@@ -1414,70 +1792,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
     updateRowNote,
     resolveRecipient,
     performRecipientMatching,
-    performCategoryMatching
+    performCategoryMatching,
+    findPotentialDuplicates
   };
 
-  // Hilfsfunktionen für Matching (Regel-First-Architektur)
-  async function performRecipientMatching(recipientName: string): Promise<string | { id: string, name: string } | null> {
-    if (!recipientName) return null;
-
-    // Direkter Match (case-insensitive)
-    const directMatch = recipientStore.recipients.find(
-      r => r.name && r.name.toLowerCase() === recipientName.toLowerCase().trim()
-    );
-
-    if (directMatch) {
-      debugLog('CSVImportService', `Direkter Empfänger-Match: "${recipientName}" -> ${directMatch.name}`);
-      return directMatch;
-    }
-
-    // Fuzzy-Match mit hohem Schwellwert
-    const fuzzyMatches = recipientStore.recipients
-      .map(recipient => ({
-        ...recipient,
-        similarity: calculateStringSimilarity(recipient.name, recipientName)
-      }))
-      .filter(match => match.similarity > 0.8)
-      .sort((a, b) => b.similarity - a.similarity);
-
-    if (fuzzyMatches.length > 0) {
-      debugLog('CSVImportService', `Fuzzy-Match Empfänger: "${recipientName}" -> ${fuzzyMatches[0].name} (${fuzzyMatches[0].similarity})`);
-      return { id: fuzzyMatches[0].id, name: fuzzyMatches[0].name };
-    }
-
-    // Kein Match gefunden - Name für neue Empfänger-Erstellung zurückgeben
-    debugLog('CSVImportService', `Kein Empfänger-Match für "${recipientName}" - wird als neuer Empfänger erstellt`);
-    return recipientName;
-  }
-
-  async function performCategoryMatching(categoryName: string): Promise<{ id: string, name: string } | null> {
-    if (!categoryName) return null;
-
-    // Direkter Match
-    const directMatch = categoryStore.categories.find(
-      c => c.name && c.name.toLowerCase() === categoryName.toLowerCase()
-    );
-
-    if (directMatch) {
-      debugLog('CSVImportService', `Direkter Kategorie-Match: "${categoryName}" -> ${directMatch.name}`);
-      return directMatch;
-    }
-
-    // Fuzzy-Match
-    const fuzzyMatches = categoryStore.categories
-      .map(category => ({
-        ...category,
-        similarity: calculateStringSimilarity(category.name, categoryName)
-      }))
-      .filter(match => match.similarity > 0.8)
-      .sort((a, b) => b.similarity - a.similarity);
-
-    if (fuzzyMatches.length > 0) {
-      debugLog('CSVImportService', `Fuzzy-Match Kategorie: "${categoryName}" -> ${fuzzyMatches[0].name} (${fuzzyMatches[0].similarity})`);
-      return { id: fuzzyMatches[0].id, name: fuzzyMatches[0].name };
-    }
-
-    debugLog('CSVImportService', `Kein Kategorie-Match für "${categoryName}"`);
-    return null;
-  }
 });
