@@ -224,6 +224,7 @@ const planningModalData = ref<{
 
 // Editable Budget State
 const activeEditField = ref<string | null>(null); // Format: "categoryId-monthKey"
+const processingBudgetUpdate = ref<Set<string>>(new Set()); // Verhindert doppelte Updates
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
@@ -268,7 +269,16 @@ function isEditingBudget(categoryId: string, monthKey: string): boolean {
 
 // Handler für CalculatorInput
 async function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
-  debugLog('BudgetCategoriesAndValues', `Budget update: ${categoryId}-${monthKey} = ${newValue}`);
+  const updateKey = `${categoryId}-${monthKey}`;
+  debugLog('BudgetCategoriesAndValues', `Budget update: ${updateKey} = ${newValue}`);
+
+  // Verhindere doppelte Updates für dasselbe Feld
+  if (processingBudgetUpdate.value.has(updateKey)) {
+    debugLog('BudgetCategoriesAndValues', `Budget update bereits in Bearbeitung für ${updateKey}, überspringe`);
+    return;
+  }
+
+  processingBudgetUpdate.value.add(updateKey);
 
   try {
     // Finde den entsprechenden Monat basierend auf monthKey
@@ -337,6 +347,8 @@ async function handleBudgetUpdate(categoryId: string, monthKey: string, newValue
   } finally {
     // Nach dem Update den Edit-Modus beenden
     handleBudgetFinish(categoryId, monthKey);
+    // Processing-Flag entfernen
+    processingBudgetUpdate.value.delete(updateKey);
   }
 }
 
@@ -358,6 +370,109 @@ function handleBudgetClick(categoryId: string, monthKey: string) {
     debugLog('BudgetCategoriesAndValues', 'Already editing this field');
   }
 }
+
+function handleFocusNext(categoryId: string, monthKey: string) {
+  debugLog('BudgetCategoriesAndValues', `handleFocusNext called for category ${categoryId}, month ${monthKey}`);
+
+  // Erst das Budget-Update durchführen (wird bereits durch CalculatorInput gemacht)
+  // Dann zum nächsten Feld navigieren
+  const nextField = findNextBudgetField(categoryId, monthKey);
+  if (nextField) {
+    debugLog('BudgetCategoriesAndValues', `Focusing next field: ${nextField.categoryId}-${nextField.monthKey}`);
+    activeEditField.value = `${nextField.categoryId}-${nextField.monthKey}`;
+  } else {
+    debugLog('BudgetCategoriesAndValues', 'No next field found, removing focus');
+    activeEditField.value = null;
+  }
+}
+
+function handleFocusPrevious(categoryId: string, monthKey: string) {
+  debugLog('BudgetCategoriesAndValues', `handleFocusPrevious called for category ${categoryId}, month ${monthKey}`);
+
+  // Erst das Budget-Update durchführen (wird bereits durch CalculatorInput gemacht)
+  // Dann zum vorherigen Feld navigieren
+  const previousField = findPreviousBudgetField(categoryId, monthKey);
+  if (previousField) {
+    debugLog('BudgetCategoriesAndValues', `Focusing previous field: ${previousField.categoryId}-${previousField.monthKey}`);
+    activeEditField.value = `${previousField.categoryId}-${previousField.monthKey}`;
+  } else {
+    debugLog('BudgetCategoriesAndValues', 'No previous field found, removing focus');
+    activeEditField.value = null;
+  }
+}
+
+// Hilfsfunktionen für die Navigation zwischen Budget-Feldern
+function findNextBudgetField(currentCategoryId: string, currentMonthKey: string): { categoryId: string; monthKey: string } | null {
+  // Erstelle eine Liste aller editierbaren Kategorien im gleichen Monat
+  const editableCategories: string[] = [];
+
+  // Durchlaufe alle Gruppen (Ausgaben zuerst, dann Einnahmen)
+  const allGroups = [...expenseGroups.value, ...incomeGroups.value];
+
+  allGroups.forEach(group => {
+    // Nur erweiterte Gruppen berücksichtigen
+    if (categoryStore.expandedCategoryGroups.has(group.id)) {
+      const categories = getCategoriesForGroup(group.id);
+      categories.forEach(category => {
+        // Nur für Ausgaben-Kategorien sind Budget-Felder editierbar
+        if (!category.isIncomeCategory) {
+          editableCategories.push(category.id);
+        }
+      });
+    }
+  });
+
+  // Finde den Index der aktuellen Kategorie
+  const currentIndex = editableCategories.findIndex(categoryId => categoryId === currentCategoryId);
+
+  // Wenn aktuelle Kategorie gefunden und es gibt eine nächste Kategorie
+  if (currentIndex >= 0 && currentIndex < editableCategories.length - 1) {
+    return {
+      categoryId: editableCategories[currentIndex + 1],
+      monthKey: currentMonthKey // Bleibe im gleichen Monat
+    };
+  }
+
+  // Kein nächstes Feld gefunden
+  return null;
+}
+
+function findPreviousBudgetField(currentCategoryId: string, currentMonthKey: string): { categoryId: string; monthKey: string } | null {
+  // Erstelle eine Liste aller editierbaren Kategorien im gleichen Monat
+  const editableCategories: string[] = [];
+
+  // Durchlaufe alle Gruppen (Ausgaben zuerst, dann Einnahmen)
+  const allGroups = [...expenseGroups.value, ...incomeGroups.value];
+
+  allGroups.forEach(group => {
+    // Nur erweiterte Gruppen berücksichtigen
+    if (categoryStore.expandedCategoryGroups.has(group.id)) {
+      const categories = getCategoriesForGroup(group.id);
+      categories.forEach(category => {
+        // Nur für Ausgaben-Kategorien sind Budget-Felder editierbar
+        if (!category.isIncomeCategory) {
+          editableCategories.push(category.id);
+        }
+      });
+    }
+  });
+
+  // Finde den Index der aktuellen Kategorie
+  const currentIndex = editableCategories.findIndex(categoryId => categoryId === currentCategoryId);
+
+  // Wenn aktuelle Kategorie gefunden und es gibt eine vorherige Kategorie
+  if (currentIndex > 0) {
+    return {
+      categoryId: editableCategories[currentIndex - 1],
+      monthKey: currentMonthKey // Bleibe im gleichen Monat
+    };
+  }
+
+  // Kein vorheriges Feld gefunden
+  return null;
+}
+
+// Outside click handler (nicht mehr benötigt, da CalculatorInput eigenes Outside-Click-Handling hat)
 
 // Outside click handler (nicht mehr benötigt, da CalculatorInput eigenes Outside-Click-Handling hat)
 function handleOutsideClick(event: Event) {
@@ -1322,6 +1437,8 @@ function handleTransactionUpdated() {
                               :field-key="`${category.id}-${month.key}`"
                               @update:model-value="handleBudgetUpdate(category.id, month.key, $event)"
                               @finish="handleBudgetFinish(category.id, month.key)"
+                              @focus-next="handleFocusNext(category.id, month.key)"
+                              @focus-previous="handleFocusPrevious(category.id, month.key)"
                             />
                             <!-- Anzeige-Modus: CurrencyDisplay -->
                             <CurrencyDisplay

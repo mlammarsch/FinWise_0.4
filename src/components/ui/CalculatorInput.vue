@@ -16,10 +16,13 @@ const emit = defineEmits<{
   'update:modelValue': [value: number];
   'finish': [];
   'activate': [];
+  'focus-next': [];
+  'focus-previous': [];
 }>();
 
 const inputRef = ref<HTMLInputElement>();
 const editValue = ref<string>('');
+const isFinishing = ref<boolean>(false);
 
 // Deutsche Dezimalnotation: Komma zu Punkt für Berechnung
 function normalizeDecimal(value: string): string {
@@ -80,13 +83,87 @@ function initializeEdit() {
 }
 
 function finishEdit() {
-  if (editValue.value.trim()) {
-    const calculatedValue = evaluateExpression(editValue.value);
-    emit('update:modelValue', calculatedValue);
+  // Verhindere mehrfache Ausführung
+  if (isFinishing.value) {
+    debugLog('CalculatorInput', 'finishEdit bereits in Ausführung, überspringe');
+    return;
   }
 
-  editValue.value = '';
-  emit('finish');
+  isFinishing.value = true;
+
+  try {
+    if (editValue.value.trim()) {
+      const calculatedValue = evaluateExpression(editValue.value);
+      debugLog('CalculatorInput', `finishEdit: Emittiere Wert ${calculatedValue} für Feld ${props.fieldKey}`);
+      emit('update:modelValue', calculatedValue);
+    } else {
+      // Wenn das Feld leer ist, übergebe 0 an das Parent
+      debugLog('CalculatorInput', `finishEdit: Feld leer, emittiere 0 für Feld ${props.fieldKey}`);
+      emit('update:modelValue', 0);
+    }
+
+    editValue.value = '';
+    emit('finish');
+  } finally {
+    // Reset nach kurzer Verzögerung, um Race Conditions zu vermeiden
+    setTimeout(() => {
+      isFinishing.value = false;
+    }, 100);
+  }
+}
+
+function finishEditAndFocusNext() {
+  if (isFinishing.value) {
+    debugLog('CalculatorInput', 'finishEditAndFocusNext bereits in Ausführung, überspringe');
+    return;
+  }
+
+  isFinishing.value = true;
+
+  try {
+    if (editValue.value.trim()) {
+      const calculatedValue = evaluateExpression(editValue.value);
+      debugLog('CalculatorInput', `finishEditAndFocusNext: Emittiere Wert ${calculatedValue} für Feld ${props.fieldKey}`);
+      emit('update:modelValue', calculatedValue);
+    } else {
+      debugLog('CalculatorInput', `finishEditAndFocusNext: Feld leer, emittiere 0 für Feld ${props.fieldKey}`);
+      emit('update:modelValue', 0);
+    }
+
+    editValue.value = '';
+    emit('focus-next');
+  } finally {
+    setTimeout(() => {
+      isFinishing.value = false;
+    }, 100);
+  }
+}
+
+function finishEditAndFocusPrevious() {
+  if (isFinishing.value) {
+    debugLog('CalculatorInput', 'finishEditAndFocusPrevious bereits in Ausführung, überspringe');
+    return;
+  }
+
+  isFinishing.value = true;
+
+  try {
+    if (editValue.value.trim()) {
+      const calculatedValue = evaluateExpression(editValue.value);
+      debugLog('CalculatorInput', `finishEditAndFocusPrevious: Emittiere Wert ${calculatedValue} für Feld ${props.fieldKey}`);
+      emit('update:modelValue', calculatedValue);
+    } else {
+      debugLog('CalculatorInput', `finishEditAndFocusPrevious: Feld leer, emittiere 0 für Feld ${props.fieldKey}`);
+      emit('update:modelValue', 0);
+    }
+
+    editValue.value = '';
+    emit('focus-previous');
+  } finally {
+    setTimeout(() => {
+      isFinishing.value = false;
+    }, 100);
+  }
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -97,6 +174,12 @@ function handleKeydown(event: KeyboardEvent) {
     event.preventDefault();
     editValue.value = '';
     emit('finish');
+  } else if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    finishEditAndFocusNext();
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    finishEditAndFocusPrevious();
   }
 }
 
@@ -118,6 +201,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleOutsideClick);
+  // Reset des Finishing-Flags beim Unmount
+  isFinishing.value = false;
 });
 </script>
 
