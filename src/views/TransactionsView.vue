@@ -29,7 +29,8 @@ import BulkAssignTagsModal from "../components/ui/BulkAssignTagsModal.vue";
 import BulkChangeDateModal from "../components/ui/BulkChangeDateModal.vue";
 import BulkDeleteModal from "../components/ui/BulkDeleteModal.vue";
 import PlanningTransactionForm from "../components/planning/PlanningTransactionForm.vue";
-import ForecastChart from "../components/ui/charts/ForecastChart.vue";
+import AccountForecastChart from "../components/ui/charts/AccountForecastChart.vue";
+import CategoryForecastChart from "../components/ui/charts/CategoryForecastChart.vue";
 import DetailedForecastChart from "../components/ui/charts/DetailedForecastChart.vue";
 import CurrencyDisplay from "../components/ui/CurrencyDisplay.vue";
 import ConfirmationModal from "../components/ui/ConfirmationModal.vue";
@@ -143,13 +144,19 @@ const showBulkDeleteModal = ref(false);
 const bulkDeleteTransactionIds = ref<string[]>([]);
 
 const selectedTransactionCount = computed(() => {
+  let count = 0;
   if (currentViewMode.value === "account") {
-    return transactionListRef.value?.getSelectedTransactions()?.length || 0;
+    count = transactionListRef.value?.getSelectedTransactions()?.length || 0;
   } else {
-    return (
-      categoryTransactionListRef.value?.getSelectedTransactions()?.length || 0
-    );
+    count = categoryTransactionListRef.value?.getSelectedTransactions()?.length || 0;
   }
+  console.log('[TransactionsView] selectedTransactionCount computed:', {
+    currentViewMode: currentViewMode.value,
+    count,
+    hasTransactionListRef: !!transactionListRef.value,
+    hasCategoryTransactionListRef: !!categoryTransactionListRef.value
+  });
+  return count;
 });
 
 // Ansicht / Filter --------------------------------------------------------
@@ -1921,12 +1928,10 @@ watch(activeTab, (newTab) => {
       <div class="divider px-5 m-0" />
 
       <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
-      <ForecastChart
+      <AccountForecastChart
         :key="`accounts-chart-${activeTab}`"
         :start-date="planningDateRange.start"
         :filtered-account-id="planningSelectedAccountId"
-        :selected-account-for-detail="selectedAccountForDetail"
-        type="accounts"
       />
     </div>
 
@@ -2035,13 +2040,10 @@ watch(activeTab, (newTab) => {
       <div class="divider px-5 m-0" />
 
       <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
-      <ForecastChart
+      <CategoryForecastChart
         :key="`categories-chart-${activeTab}`"
         :start-date="planningDateRange.start"
-        :selected-category-for-detail="selectedCategoryForDetail"
-        type="categories"
-        @show-category-detail="showCategoryDetail"
-        @hide-category-detail="hideCategoryDetail"
+        :filtered-category-id="planningSelectedCategoryId"
       />
     </div>
 

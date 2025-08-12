@@ -94,7 +94,8 @@
   --color-base-200: #211f25;
   --color-base-300: #38353b;
   --color-base-content: #bdbcbd;
-  --color-info: #599EAB; /* #1cadca; Altfarbe */
+  --color-info: #599EAB;
+  /* #1cadca; Altfarbe */
   --color-info-content: #000b0f;
   --color-success: #76b279;
   --color-success-content: #050c05;
@@ -139,7 +140,8 @@
   --color-info-content: #000b0f;
   --color-success: #529455;
   --color-success-content: #050c05;
-  --color-warning: #f1c40f;
+  --color-warning: #FF9B2F;
+  /*  #f1c40f; */
   --color-warning-content: #140e00;
   --color-error: #cf5151;
   --color-error-content: #100202;
@@ -250,15 +252,15 @@
 } */
 
 
-  /* Checkbox mit class "checkbox-sm" rund darstellen */
-  .checkbox.checkbox-sm {
-    @apply rounded-sm;
-  }
+/* Checkbox mit class "checkbox-sm" rund darstellen */
+.checkbox.checkbox-sm {
+  @apply rounded-sm;
+}
 
-  /* Andere Checkboxen scharfkantig darstellen */
-  .checkbox:not(.checkbox-sm) {
-    @apply rounded-full;
-  }
+/* Andere Checkboxen scharfkantig darstellen */
+.checkbox:not(.checkbox-sm) {
+  @apply rounded-full;
+}
 
 
 .bg-gradient {

@@ -644,8 +644,6 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-6">
-    <h3 class="text-xl font-bold">Kontenprognose</h3>
-
     <!-- Kontoübersicht und Legende -->
     <div class="flex flex-wrap gap-4">
       <div

@@ -159,6 +159,9 @@ const lastSelectedIndex = ref<number | null>(null);
 const currentPageIds = computed(() =>
   sortedDisplayTransactions.value.map((tx) => tx.id)
 );
+const allDisplayIds = computed(() =>
+  allSortedDisplayTransactions.value.map((tx) => tx.id)
+);
 const allSelected = computed(
   () =>
     currentPageIds.value.length > 0 &&
@@ -167,13 +170,28 @@ const allSelected = computed(
 
 function handleHeaderCheckboxChange(event: Event) {
   const checked = (event.target as HTMLInputElement).checked;
+  console.log('[TransactionList] Header checkbox changed:', {
+    checked,
+    currentPageIds: currentPageIds.value.length,
+    allDisplayIds: allDisplayIds.value.length,
+    allSortedDisplayTransactions: allSortedDisplayTransactions.value.length,
+    selectedIdsBefore: selectedIds.value.length
+  });
+
   if (checked) {
-    selectedIds.value = [...currentPageIds.value];
+    // Wähle ALLE gefilterten Transaktionen aus, nicht nur die sichtbaren
+    selectedIds.value = [...allDisplayIds.value];
   } else {
+    // Entferne ALLE gefilterten Transaktionen aus der Auswahl
     selectedIds.value = selectedIds.value.filter(
-      (id) => !currentPageIds.value.includes(id)
+      (id) => !allDisplayIds.value.includes(id)
     );
   }
+
+  console.log('[TransactionList] After header checkbox change:', {
+    selectedIdsAfter: selectedIds.value.length,
+    getSelectedTransactionsLength: getSelectedTransactions().length
+  });
 }
 
 function handleCheckboxClick(
@@ -207,9 +225,16 @@ function handleCheckboxClick(
 }
 
 function getSelectedTransactions(): Transaction[] {
-  return allSortedDisplayTransactions.value.filter((tx) =>
+  const result = allSortedDisplayTransactions.value.filter((tx) =>
     selectedIds.value.includes(tx.id)
   );
+  console.log('[TransactionList] getSelectedTransactions called:', {
+    selectedIds: selectedIds.value.length,
+    allSortedDisplayTransactions: allSortedDisplayTransactions.value.length,
+    resultLength: result.length,
+    selectedIdsArray: selectedIds.value
+  });
+  return result;
 }
 
 function clearSelection() {

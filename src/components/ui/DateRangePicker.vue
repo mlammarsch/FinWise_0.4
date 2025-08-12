@@ -27,6 +27,7 @@ const isDragging = ref(false);
 const dragStart = ref<string | null>(null);
 const hoverDate = ref<string | null>(null);
 const dropdownPosition = ref<"left" | "center" | "right">("left");
+const dropdownStyles = ref<Record<string, string>>({});
 
 // Current displayed months (left = previous month, right = current month)
 const currentDate = ref(dayjs());
@@ -308,35 +309,41 @@ const cancelSelection = () => {
   isOpen.value = false;
 };
 
-// Calculate optimal dropdown position
+// Calculate optimal dropdown position for teleported element
 const calculateDropdownPosition = () => {
-  if (!containerRef.value || !dropdownRef.value) return;
+  if (!containerRef.value) return;
 
   const container = containerRef.value.getBoundingClientRect();
-  const dropdown = dropdownRef.value.getBoundingClientRect();
   const viewport = {
     width: window.innerWidth,
     height: window.innerHeight,
   };
 
-  // Check available space on each side
-  const spaceLeft = container.left;
-  const spaceRight = viewport.width - container.right;
-  const spaceCenter = Math.min(spaceLeft, spaceRight);
+  // Dropdown width is approximately 750px
+  const dropdownWidth = 750;
 
-  // Dropdown width is approximately 800px
-  const dropdownWidth = 800;
+  let left = container.left;
+  let top = container.bottom + 8; // 8px gap below trigger
 
-  if (spaceRight >= dropdownWidth) {
-    dropdownPosition.value = "left";
-  } else if (spaceLeft >= dropdownWidth) {
-    dropdownPosition.value = "right";
-  } else if (spaceCenter >= dropdownWidth / 2) {
-    dropdownPosition.value = "center";
-  } else {
-    // Fallback to left if no good position
-    dropdownPosition.value = "left";
+  // Check if dropdown would overflow right edge
+  if (left + dropdownWidth > viewport.width) {
+    left = viewport.width - dropdownWidth - 16; // 16px margin from edge
   }
+
+  // Check if dropdown would overflow left edge
+  if (left < 16) {
+    left = 16; // 16px margin from edge
+  }
+
+  // Check if dropdown would overflow bottom edge
+  if (top + 400 > viewport.height) { // Approximate dropdown height
+    top = container.top - 400 - 8; // Show above trigger
+  }
+
+  dropdownStyles.value = {
+    left: `${left}px`,
+    top: `${top}px`,
+  };
 };
 
 // Format display value (original range format)
@@ -351,12 +358,20 @@ const displayValue = computed(() => {
 
 // Close on outside click
 const handleClickOutside = (event: Event) => {
-  if (
-    containerRef.value &&
-    !containerRef.value.contains(event.target as Node)
-  ) {
-    cancelSelection();
+  const target = event.target as Node;
+
+  // Check if click is inside the trigger button
+  if (containerRef.value && containerRef.value.contains(target)) {
+    return;
   }
+
+  // Check if click is inside the teleported dropdown
+  if (dropdownRef.value && dropdownRef.value.contains(target)) {
+    return;
+  }
+
+  // Click is outside both elements, close the dropdown
+  cancelSelection();
 };
 
 // Watch for dropdown open/close to calculate position
@@ -435,7 +450,7 @@ defineExpose({
 
 <template>
   <div
-    class="relative z-[9999]"
+    class="relative"
     ref="containerRef"
   >
     <!-- Trigger Button (MonthSelector style) -->
@@ -453,18 +468,15 @@ defineExpose({
       />
     </button>
 
-    <!-- Dropdown -->
-    <div
-      v-if="isOpen"
-      ref="dropdownRef"
-      class="absolute top-full mt-2 bg-base-100 border border-base-300 rounded-lg shadow-xl z-[9999] p-3 min-w-[750px]"
-      :class="{
-        'left-0': dropdownPosition === 'left',
-        'right-0': dropdownPosition === 'right',
-        'left-1/2 transform -translate-x-1/2': dropdownPosition === 'center',
-      }"
-    >
-      <div class="flex gap-3">
+    <!-- Dropdown with Teleport -->
+    <Teleport to="body">
+      <div
+        v-if="isOpen"
+        ref="dropdownRef"
+        class="fixed bg-base-100 border border-base-300 rounded-lg shadow-xl z-[10000] p-3 min-w-[750px]"
+        :style="dropdownStyles"
+      >
+        <div class="flex gap-3">
         <!-- Shortcuts -->
         <div class="w-44 border-r border-base-300 pr-3">
           <h3 class="font-semibold text-sm mb-2 text-base-content/70">
@@ -583,7 +595,7 @@ defineExpose({
                       !dayData.isEmpty &&
                       dayData.isCurrentMonth &&
                       !isDateInRange(dayData.date),
-                    'ring-2 ring-primary ring-offset-1':
+                    'ring-2 ring-primary ring-offset-1 relative z-10':
                       !dayData.isEmpty && dayData.isToday,
                     'cursor-pointer':
                       !dayData.isEmpty && dayData.isCurrentMonth,
@@ -643,7 +655,7 @@ defineExpose({
                       !dayData.isEmpty &&
                       dayData.isCurrentMonth &&
                       !isDateInRange(dayData.date),
-                    'ring-2 ring-primary ring-offset-1':
+                    'ring-2 ring-primary ring-offset-1 relative z-10':
                       !dayData.isEmpty && dayData.isToday,
                     'cursor-pointer':
                       !dayData.isEmpty && dayData.isCurrentMonth,
@@ -670,8 +682,9 @@ defineExpose({
             </div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 

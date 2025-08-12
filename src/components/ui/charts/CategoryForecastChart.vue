@@ -25,6 +25,7 @@ import ApexCharts from "apexcharts";
 
 const props = defineProps<{
   startDate: string;
+  filteredCategoryId?: string;
 }>();
 
 // Stores
@@ -69,11 +70,9 @@ interface CategoryForecast {
 const expenseForecastData = ref<CategoryForecast[]>([]);
 const incomeForecastData = ref<CategoryForecast[]>([]);
 
-// Aktive Forecastdaten basierend auf dem Anzeigemodus
+// Aktive Forecastdaten - zeige alle Kategorien
 const activeForecastData = computed(() => {
-  return displayMode.value === "expenses"
-    ? expenseForecastData.value
-    : incomeForecastData.value;
+  return [...expenseForecastData.value, ...incomeForecastData.value];
 });
 
 // Responsive Breakpoint Detection
@@ -81,50 +80,78 @@ function checkScreenSize(): void {
   isSmallScreen.value = window.innerWidth < 768;
 }
 
-// Theme-Farben aus CSS-Variablen extrahieren
-function getThemeColors() {
-  const root = document.documentElement;
-  const computedStyle = getComputedStyle(root);
+// Funktion zum Abrufen der CSS-Variablen-Werte
+const getCSSVariableValue = (variableName: string): string => {
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(variableName)
+    .trim();
 
-  return {
-    primary: `hsl(${computedStyle.getPropertyValue("--p").trim()})`,
-    secondary: `hsl(${computedStyle.getPropertyValue("--s").trim()})`,
-    accent: `hsl(${computedStyle.getPropertyValue("--a").trim()})`,
-    neutral: `hsl(${computedStyle.getPropertyValue("--n").trim()})`,
-    base100: `hsl(${computedStyle.getPropertyValue("--b1").trim()})`,
-    base200: `hsl(${computedStyle.getPropertyValue("--b2").trim()})`,
-    base300: `hsl(${computedStyle.getPropertyValue("--b3").trim()})`,
-    baseContent: `hsl(${computedStyle.getPropertyValue("--bc").trim()})`,
-    success: `hsl(${computedStyle.getPropertyValue("--su").trim()})`,
-    warning: `hsl(${computedStyle.getPropertyValue("--wa").trim()})`,
-    error: `hsl(${computedStyle.getPropertyValue("--er").trim()})`,
-    info: `hsl(${computedStyle.getPropertyValue("--in").trim()})`,
-    textColor: computedStyle.getPropertyValue("--bc")
-      ? `hsl(${computedStyle.getPropertyValue("--bc").trim()})`
-      : "#374151",
-    fontFamily:
-      computedStyle.getPropertyValue("font-family") ||
-      'Inter, "Source Sans Pro", Roboto, sans-serif',
-  };
-}
+  if (!value) {
+    console.warn(`CSS Variable ${variableName} not found`);
+    return "#000000";
+  }
 
-// 10-Farben-Spektrum aus DaisyUI-Variablen
-function getColorSpectrum(): string[] {
-  const themeColors = getThemeColors();
+  if (value.startsWith("oklch(")) {
+    return value;
+  }
 
+  if (value.includes("%") && value.includes(" ")) {
+    return `oklch(${value})`;
+  }
+
+  return value;
+};
+
+// Funktion zum Abrufen der Schriftfamilie
+const getFontFamily = (): string => {
+  const htmlElement = document.documentElement;
+  const computedStyle = getComputedStyle(htmlElement);
+  const fontFamily = computedStyle.fontFamily;
+  return (
+    fontFamily || "Inter, 'Source Sans Pro', Roboto, system-ui, sans-serif"
+  );
+};
+
+// 10-Farben-Spektrum basierend auf DaisyUI-Variablen
+const getColorSpectrum = () => {
   return [
-    themeColors.primary,
-    themeColors.secondary,
-    themeColors.accent,
-    themeColors.info,
-    themeColors.success,
-    themeColors.warning,
-    themeColors.error,
-    themeColors.neutral,
-    `hsl(280, 70%, 60%)`, // Lila
-    `hsl(320, 70%, 60%)`, // Pink
+    getCSSVariableValue("--color-primary"),
+    getCSSVariableValue("--color-secondary"),
+    getCSSVariableValue("--color-accent"),
+    getCSSVariableValue("--color-info"),
+    getCSSVariableValue("--color-success"),
+    getCSSVariableValue("--color-warning"),
+    getCSSVariableValue("--color-error"),
+    getCSSVariableValue("--color-neutral"),
+    // Erweiterte Farben durch Mischungen
+    `color-mix(in srgb, ${getCSSVariableValue(
+      "--color-primary"
+    )} 70%, ${getCSSVariableValue("--color-secondary")} 30%)`,
+    `color-mix(in srgb, ${getCSSVariableValue(
+      "--color-accent"
+    )} 70%, ${getCSSVariableValue("--color-info")} 30%)`,
   ];
-}
+};
+
+// Theme-Farben
+const getThemeColors = () => {
+  return {
+    success: getCSSVariableValue("--color-success"),
+    error: getCSSVariableValue("--color-error"),
+    warning: getCSSVariableValue("--color-warning"),
+    baseContent: getCSSVariableValue("--color-base-content"),
+    textColor: getCSSVariableValue("--color-base-content"),
+    primary: getCSSVariableValue("--color-primary"),
+    secondary: getCSSVariableValue("--color-secondary"),
+    accent: getCSSVariableValue("--color-accent"),
+    base100: getCSSVariableValue("--color-base-100"),
+    base200: getCSSVariableValue("--color-base-200"),
+    base300: getCSSVariableValue("--color-base-300"),
+    neutral: getCSSVariableValue("--color-neutral"),
+    info: getCSSVariableValue("--color-info"),
+    fontFamily: getFontFamily(),
+  };
+};
 
 // Deutsche Monatsnamen
 function getGermanMonthName(date: dayjs.Dayjs): string {
@@ -165,10 +192,17 @@ function generateForecastData(): void {
   const incomeData: CategoryForecast[] = [];
 
   // Nur Root-Kategorien für die Übersicht
-  const rootCategories = categoryStore.categories.filter(
+  let rootCategories = categoryStore.categories.filter(
     (c: any) =>
       c.isActive && !c.parentCategoryId && c.name !== "Verfügbare Mittel"
   );
+
+  // Filtere nach spezifischer Kategorie, falls gesetzt
+  if (props.filteredCategoryId) {
+    rootCategories = rootCategories.filter(
+      (c: any) => c.id === props.filteredCategoryId
+    );
+  }
 
   // Generiere Daten für jede Kategorie
   rootCategories.forEach((category: any) => {
@@ -344,7 +378,7 @@ const chartOptions = computed(() => {
       },
       labels: {
         style: {
-          colors: themeColors.textColor,
+          colors: Array(data.labels.length).fill(themeColors.textColor),
           fontSize: "12px",
           fontFamily: themeColors.fontFamily,
         },
@@ -353,7 +387,7 @@ const chartOptions = computed(() => {
     yaxis: {
       labels: {
         style: {
-          colors: themeColors.textColor,
+          colors: Array(10).fill(themeColors.textColor),
           fontSize: "12px",
           fontFamily: themeColors.fontFamily,
         },
@@ -387,7 +421,8 @@ const chartOptions = computed(() => {
       fontSize: "12px",
       fontFamily: themeColors.fontFamily,
       labels: {
-        colors: themeColors.textColor,
+        colors: themeColors.baseContent,
+        useSeriesColors: false,
       },
       markers: {
         width: 12,
@@ -434,7 +469,6 @@ const createChart = async () => {
       debugLog("[CategoryForecastChart] Chart created successfully", {
         series: chartOptions.value.series.length,
         container: !!chartContainer.value,
-        mode: displayMode.value,
       });
     } catch (error) {
       debugLog("[CategoryForecastChart] Error creating chart", error);
@@ -467,24 +501,17 @@ function setupThemeObserver(): void {
   });
 }
 
-// Wechselt zwischen Ausgaben- und Einnahmenansicht
-function toggleDisplayMode(mode: "expenses" | "income"): void {
-  displayMode.value = mode;
-}
 
 // Watchers für Datenänderungen
-watch(
-  () => props.startDate,
-  async () => {
-    generateForecastData();
-    await nextTick();
-    if (!chart) {
-      setTimeout(() => {
-        createChart();
-      }, 100);
-    }
+watch([() => props.startDate, () => props.filteredCategoryId], async () => {
+  generateForecastData();
+  await nextTick();
+  if (!chart) {
+    setTimeout(() => {
+      createChart();
+    }, 100);
   }
-);
+});
 
 watch(
   chartData,
@@ -501,16 +528,6 @@ watch(
   { deep: true }
 );
 
-watch(displayMode, async () => {
-  if (chart) {
-    await updateChart();
-  } else if (activeForecastData.value.length > 0) {
-    await nextTick();
-    setTimeout(() => {
-      createChart();
-    }, 100);
-  }
-});
 
 watch(
   () => themeStore.isDarkMode,
@@ -555,34 +572,6 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-6">
-    <div class="flex justify-between items-center">
-      <h3 class="text-xl font-bold">Kategorienprognose</h3>
-      <!-- Umschalter zwischen Ausgaben und Einnahmen -->
-      <div class="tabs tabs-boxed">
-        <a
-          class="tab"
-          :class="{ 'tab-active': displayMode === 'expenses' }"
-          @click="toggleDisplayMode('expenses')"
-        >
-          <Icon
-            icon="mdi:cash-minus"
-            class="mr-2"
-          />
-          Ausgaben
-        </a>
-        <a
-          class="tab"
-          :class="{ 'tab-active': displayMode === 'income' }"
-          @click="toggleDisplayMode('income')"
-        >
-          <Icon
-            icon="mdi:cash-plus"
-            class="mr-2"
-          />
-          Einnahmen
-        </a>
-      </div>
-    </div>
 
     <!-- Keine Daten Hinweis -->
     <div
@@ -593,11 +582,7 @@ onUnmounted(() => {
         icon="mdi:alert-circle-outline"
         class="text-4xl text-warning mb-2"
       />
-      <p>
-        Keine
-        {{ displayMode === "expenses" ? "Ausgaben" : "Einnahmen" }}kategorien
-        verfügbar.
-      </p>
+      <p>Keine Kategorien verfügbar.</p>
     </div>
 
     <!-- ApexCharts Flächenchart -->
