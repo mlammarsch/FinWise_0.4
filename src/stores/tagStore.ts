@@ -66,7 +66,7 @@ export const useTagStore = defineStore('tag', () => {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localTag = await tenantDbService.getTagById(tagWithTimestamp.id);
       if (localTag && localTag.updatedAt && tagWithTimestamp.updatedAt &&
-          new Date(localTag.updatedAt) >= new Date(tagWithTimestamp.updatedAt)) {
+        new Date(localTag.updatedAt) >= new Date(tagWithTimestamp.updatedAt)) {
         infoLog('tagStore', `addTag (fromSync): Lokaler Tag ${localTag.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localTag; // Gib den lokalen, "gewinnenden" Tag zurück
       }
@@ -86,7 +86,7 @@ export const useTagStore = defineStore('tag', () => {
         tags.value[existingTagIndex] = tagWithTimestamp;
       } else if (fromSync) {
         // Wenn fromSync und das Store-Tag neuer ist, behalte das Store-Tag (sollte durch obige DB-Prüfung nicht passieren)
-         warnLog('tagStore', `addTag (fromSync): Store-Tag ${tags.value[existingTagIndex].id} war neuer als eingehender ${tagWithTimestamp.id}. Store nicht geändert.`);
+        warnLog('tagStore', `addTag (fromSync): Store-Tag ${tags.value[existingTagIndex].id} war neuer als eingehender ${tagWithTimestamp.id}. Store nicht geändert.`);
       }
     }
     infoLog('tagStore', `Tag "${tagWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${tagWithTimestamp.id}).`);
@@ -139,7 +139,7 @@ export const useTagStore = defineStore('tag', () => {
       }
 
       if (localTag.updatedAt && tagUpdatesWithTimestamp.updatedAt &&
-          new Date(localTag.updatedAt) >= new Date(tagUpdatesWithTimestamp.updatedAt)) {
+        new Date(localTag.updatedAt) >= new Date(tagUpdatesWithTimestamp.updatedAt)) {
         infoLog('tagStore', `updateTag (fromSync): Lokaler Tag ${localTag.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true; // Änderung verworfen, aber Operation als "erfolgreich" für den Sync-Handler betrachten
       }
@@ -283,12 +283,23 @@ export const useTagStore = defineStore('tag', () => {
 
   async function reset() {
     try {
+      // Versuche alle Tags aus der Datenbank zu löschen
+      const result = await tenantDbService.clearAllTags();
+
+      if (!result.success) {
+        warnLog('tagStore', `Reset fehlgeschlagen: ${result.message}`);
+        throw new Error(result.message);
+      }
+
+      // Lokale Arrays leeren und neu laden
       tags.value = [];
       colorHistory.value = [];
       await loadTags();
-      debugLog('tagStore', 'TagStore zurückgesetzt und neu geladen');
+
+      infoLog('tagStore', 'Reset erfolgreich abgeschlossen - alle Tags gelöscht');
     } catch (error) {
-      errorLog('tagStore', 'Fehler beim Zurücksetzen des TagStores', error);
+      errorLog('tagStore', 'Fehler beim Reset der Tags', error);
+      throw error;
     }
   }
 

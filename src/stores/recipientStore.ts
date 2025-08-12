@@ -620,9 +620,24 @@ export const useRecipientStore = defineStore('recipient', () => {
   }
 
   async function reset() {
-    recipients.value = [];
-    await loadRecipients();
-    debugLog('recipientStore', 'Store zurückgesetzt');
+    try {
+      // Versuche alle Empfänger aus der Datenbank zu löschen
+      const result = await tenantDbService.clearAllRecipients();
+
+      if (!result.success) {
+        warnLog('recipientStore', `Reset fehlgeschlagen: ${result.message}`);
+        throw new Error(result.message);
+      }
+
+      // Lokale Arrays leeren und neu laden
+      recipients.value = [];
+      await loadRecipients();
+
+      infoLog('recipientStore', 'Reset erfolgreich abgeschlossen - alle Empfänger gelöscht');
+    } catch (error) {
+      errorLog('recipientStore', 'Fehler beim Reset der Empfänger', error);
+      throw error;
+    }
   }
 
   /**

@@ -1670,4 +1670,151 @@ export class TenantDbService {
     };
     return mapping[operation];
   }
+
+  /**
+   * Prüft, ob Transaktionen existieren, die auf eine bestimmte Kategorie verweisen
+   */
+  async hasTransactionsForCategory(categoryId: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'hasTransactionsForCategory: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const count = await this.db.transactions.where('categoryId').equals(categoryId).count();
+      return count > 0;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Kategorie ${categoryId}`, { error: err });
+      return false;
+    }
+  }
+
+  /**
+   * Prüft, ob Transaktionen existieren, die auf einen bestimmten Empfänger verweisen
+   */
+  async hasTransactionsForRecipient(recipientId: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'hasTransactionsForRecipient: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      const count = await this.db.transactions.where('recipientId').equals(recipientId).count();
+      return count > 0;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Empfänger ${recipientId}`, { error: err });
+      return false;
+    }
+  }
+
+  /**
+   * Prüft, ob Transaktionen existieren, die einen bestimmten Tag verwenden
+   */
+  async hasTransactionsForTag(tagId: string): Promise<boolean> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'hasTransactionsForTag: Keine aktive Mandanten-DB verfügbar.');
+      return false;
+    }
+    try {
+      // Tags sind als Array in transactions.tagIds gespeichert
+      const transactions = await this.db.transactions.toArray();
+      const hasTag = transactions.some(tx => tx.tagIds && tx.tagIds.includes(tagId));
+      return hasTag;
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Tag ${tagId}`, { error: err });
+      return false;
+    }
+  }
+
+  /**
+   * Löscht alle Kategorien und Kategoriengruppen (nur wenn keine Transaktionen existieren)
+   */
+  async clearAllCategories(): Promise<{ success: boolean; message: string }> {
+    if (!this.db) {
+      return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+    }
+    try {
+      // Prüfe, ob Transaktionen existieren, die Kategorien verwenden
+      const categories = await this.db.categories.toArray();
+      for (const category of categories) {
+        const hasTransactions = await this.hasTransactionsForCategory(category.id);
+        if (hasTransactions) {
+          return {
+            success: false,
+            message: `Kategorie "${category.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+          };
+        }
+      }
+
+      // Alle Kategorien und Kategoriengruppen löschen
+      await this.db.categories.clear();
+      await this.db.categoryGroups.clear();
+
+      infoLog('TenantDbService', 'Alle Kategorien und Kategoriengruppen erfolgreich gelöscht');
+      return { success: true, message: 'Alle Kategorien erfolgreich gelöscht.' };
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Löschen aller Kategorien', { error: err });
+      return { success: false, message: 'Fehler beim Löschen der Kategorien.' };
+    }
+  }
+
+  /**
+   * Löscht alle Empfänger (nur wenn keine Transaktionen existieren)
+   */
+  async clearAllRecipients(): Promise<{ success: boolean; message: string }> {
+    if (!this.db) {
+      return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+    }
+    try {
+      // Prüfe, ob Transaktionen existieren, die Empfänger verwenden
+      const recipients = await this.db.recipients.toArray();
+      for (const recipient of recipients) {
+        const hasTransactions = await this.hasTransactionsForRecipient(recipient.id);
+        if (hasTransactions) {
+          return {
+            success: false,
+            message: `Empfänger "${recipient.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+          };
+        }
+      }
+
+      // Alle Empfänger löschen
+      await this.db.recipients.clear();
+
+      infoLog('TenantDbService', 'Alle Empfänger erfolgreich gelöscht');
+      return { success: true, message: 'Alle Empfänger erfolgreich gelöscht.' };
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Löschen aller Empfänger', { error: err });
+      return { success: false, message: 'Fehler beim Löschen der Empfänger.' };
+    }
+  }
+
+  /**
+   * Löscht alle Tags (nur wenn keine Transaktionen existieren)
+   */
+  async clearAllTags(): Promise<{ success: boolean; message: string }> {
+    if (!this.db) {
+      return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+    }
+    try {
+      // Prüfe, ob Transaktionen existieren, die Tags verwenden
+      const tags = await this.db.tags.toArray();
+      for (const tag of tags) {
+        const hasTransactions = await this.hasTransactionsForTag(tag.id);
+        if (hasTransactions) {
+          return {
+            success: false,
+            message: `Tag "${tag.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+          };
+        }
+      }
+
+      // Alle Tags löschen
+      await this.db.tags.clear();
+
+      infoLog('TenantDbService', 'Alle Tags erfolgreich gelöscht');
+      return { success: true, message: 'Alle Tags erfolgreich gelöscht.' };
+    } catch (err) {
+      errorLog('TenantDbService', 'Fehler beim Löschen aller Tags', { error: err });
+      return { success: false, message: 'Fehler beim Löschen der Tags.' };
+    }
+  }
 }
