@@ -978,25 +978,19 @@ onMounted(() => {
               </button>
             </div>
 
-            <div v-if="topExpensesWithBudget.length > 0" class="space-y-4">
+            <div v-if="topExpensesWithBudget.length > 0" class="space-y-2">
               <div
                 v-for="expense in topExpensesWithBudget"
                 :key="expense.categoryId"
                 class="relative"
               >
                 <!-- Kategorie-Name und Beträge -->
-                <div class="flex justify-between items-center mb-2">
-                  <span class="font-medium">{{ expense.name }}</span>
+                <div class="flex justify-left items-center mb-2">
+                  <span class="font-medium mr-1">{{ expense.name }} -</span>
                   <div class="text-right">
                     <div class="text-sm font-semibold">
                       <CurrencyDisplay
                         :amount="expense.spent"
-                        :asInteger="true"
-                      />
-                    </div>
-                    <div v-if="expense.budgeted > 0" class="text-xs opacity-60">
-                      Budget: <CurrencyDisplay
-                        :amount="expense.budgeted"
                         :asInteger="true"
                       />
                     </div>
@@ -1006,7 +1000,7 @@ onMounted(() => {
                 <!-- Budget-Balken mit Marker -->
                 <div class="relative">
                   <!-- Haupt-Balken -->
-                  <div class="w-full bg-base-300 rounded-full h-3 relative overflow-hidden">
+                  <div class="w-full bg-base-300 rounded-full h-1.5 relative overflow-hidden">
                     <!-- Ausgaben-Balken -->
                     <div
                       :class="[
@@ -1022,14 +1016,14 @@ onMounted(() => {
                   <!-- Budget-Marker (Chevron) -->
                   <div
                     v-if="expense.budgeted > 0"
-                    class="absolute top-0 transform -translate-x-1/2"
+                    class="absolute -top-1 transform -translate-x-1/2 -translate-y-full"
                     :style="{
                       left: getBudgetMarkerPosition(expense.spent, expense.budgeted) + '%'
                     }"
                   >
                     <!-- Chevron nach unten zeigend -->
                     <div class="flex flex-col items-center">
-                      <div class="text-xs font-medium mb-1 bg-base-100 px-1 rounded shadow-sm">
+                      <div class="text-xs font-medium mb-0 bg-base-300 px-1 border border-neutral rounded">
                         <CurrencyDisplay
                           :amount="expense.budgeted"
                           :asInteger="true"
