@@ -15,6 +15,7 @@ export const useCategoryStore = defineStore('category', () => {
   const categoryGroups = ref<CategoryGroup[]>([]);
   const expandedCategories = ref<Set<string>>(new Set());
   const expandedCategoryGroups = ref<Set<string>>(new Set());
+  const showHiddenCategories = ref<boolean>(false);
 
   /* ----------------------------------------------- Getters */
   const getCategoryById = computed(() => (id: string) =>
@@ -470,6 +471,34 @@ export const useCategoryStore = defineStore('category', () => {
     debugLog('categoryStore', 'expandCategoryGroupsBatch', groupIds.join(', '));
   }
 
+  /* -------------------------- Hidden Categories Handling */
+  function toggleShowHiddenCategories() {
+    showHiddenCategories.value = !showHiddenCategories.value;
+    localStorage.setItem(storageKey('show_hidden_categories'), JSON.stringify(showHiddenCategories.value));
+    debugLog('categoryStore', 'toggleShowHiddenCategories', showHiddenCategories.value);
+  }
+
+  function setShowHiddenCategories(show: boolean) {
+    showHiddenCategories.value = show;
+    localStorage.setItem(storageKey('show_hidden_categories'), JSON.stringify(show));
+    debugLog('categoryStore', 'setShowHiddenCategories', show);
+  }
+
+  function loadShowHiddenCategories() {
+    const raw = localStorage.getItem(storageKey('show_hidden_categories'));
+    if (raw) {
+      try {
+        showHiddenCategories.value = JSON.parse(raw);
+        debugLog('categoryStore', 'loadShowHiddenCategories', showHiddenCategories.value);
+      } catch (error) {
+        debugLog('categoryStore', 'loadShowHiddenCategories - parse error', String(error));
+        showHiddenCategories.value = false; // Default: versteckte Kategorien ausblenden
+      }
+    } else {
+      showHiddenCategories.value = false; // Default: versteckte Kategorien ausblenden
+    }
+  }
+
   /* ----------------------------------------------- Persistence */
   async function loadCategories(): Promise<void> {
     try {
@@ -496,6 +525,7 @@ export const useCategoryStore = defineStore('category', () => {
 
       loadExpandedCategories();
       loadExpandedCategoryGroups();
+      loadShowHiddenCategories();
 
       debugLog('categoryStore', 'loadCategories completed', {
         categories: categories.value.length,
@@ -563,6 +593,7 @@ export const useCategoryStore = defineStore('category', () => {
     categoryGroups,
     expandedCategories,
     expandedCategoryGroups,
+    showHiddenCategories,
     getCategoryById,
     findCategoryById,
     getCategoriesByParentId,
@@ -587,6 +618,8 @@ export const useCategoryStore = defineStore('category', () => {
     expandAllCategoryGroups,
     collapseAllCategoryGroups,
     expandCategoryGroupsBatch,
+    toggleShowHiddenCategories,
+    setShowHiddenCategories,
     loadCategories,
     reset,
     initializeStore,

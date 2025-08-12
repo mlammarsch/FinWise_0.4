@@ -261,6 +261,15 @@ function getCategoriesForGroup(groupId: string): Category[] {
     .sort((a: Category, b: Category) => a.sortOrder - b.sortOrder);
 }
 
+// Kategorien für eine Gruppe gefiltert nach Sichtbarkeit (für die Anzeige)
+function getVisibleCategoriesForGroup(groupId: string): Category[] {
+  const categories = getCategoriesForGroup(groupId);
+  if (categoryStore.showHiddenCategories) {
+    return categories; // Alle Kategorien anzeigen
+  }
+  return categories.filter(category => !category.isHidden); // Versteckte Kategorien ausblenden
+}
+
 // Editable Budget Functions
 function isEditingBudget(categoryId: string, monthKey: string): boolean {
   const result = activeEditField.value === `${categoryId}-${monthKey}`;
@@ -528,6 +537,22 @@ watch(() => categoryStore.expandedCategoryGroups, () => {
     updateLayoutAfterToggle();
   });
 }, { deep: true });
+
+// Watcher für showHiddenCategories-Änderungen
+watch(() => categoryStore.showHiddenCategories, async () => {
+  debugLog('BudgetCategoriesAndValues', 'showHiddenCategories changed, destroying and recreating grids');
+
+  // Grids komplett zerstören
+  destroyGrids();
+
+  // Kurz warten für DOM-Updates
+  await nextTick();
+
+  // Grids komplett neu initialisieren
+  setTimeout(() => {
+    initializeGrids();
+  }, 100); // Kurze Verzögerung für DOM-Updates
+});
 
 // Watcher für Änderungen der months-Props (PagingYearComponent, Spaltenanzahl)
 watch(() => props.months, async (newMonths, oldMonths) => {
@@ -1370,7 +1395,7 @@ function handleTransactionUpdated() {
             >
               <div class="categories-content">
                 <div
-                  v-for="category in getCategoriesForGroup(group.id)"
+                  v-for="category in getVisibleCategoriesForGroup(group.id)"
                   :key="category.id"
                   class="category-item-extended"
                   :data-category-id="category.id"
@@ -1625,7 +1650,7 @@ function handleTransactionUpdated() {
             >
               <div class="categories-content">
                 <div
-                  v-for="category in getCategoriesForGroup(group.id)"
+                  v-for="category in getVisibleCategoriesForGroup(group.id)"
                   :key="category.id"
                   class="category-item-extended"
                   :data-category-id="category.id"

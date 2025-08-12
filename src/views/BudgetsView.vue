@@ -28,6 +28,13 @@ function toggleAllCategoryGroups() {
   }
 }
 
+// Funktion zum Ein-/Ausblenden versteckter Kategorien
+function toggleShowHiddenCategories() {
+  // Loading aktivieren für Muuri-Neuberechnung
+  isLoading.value = true;
+  categoryStore.toggleShowHiddenCategories();
+}
+
 const localStorageKey = "finwise_budget_months";
 const numMonths = ref<number>(3);
 const monthOffset = ref<number>(0);
@@ -193,6 +200,15 @@ const availableByMonth = computed(() => {
                 class="text-md mr-1"
               />
               <span>{{ allGroupsExpanded ? "alle einklappen" : "alle ausklappen" }}</span>
+            </div>
+            <div class="text-sm flex items-center p-2">
+              <input
+                type="checkbox"
+                :checked="categoryStore.showHiddenCategories"
+                @change="toggleShowHiddenCategories"
+                class="checkbox checkbox-sm mr-2"
+              />
+              <span>versteckte Kategorien anzeigen</span>
             </div>
           </div>
           <!-- Monats-Header (scrollbar) -->
