@@ -1525,8 +1525,10 @@ export const TransactionService = {
     await BalanceService.calculateMonthlyBalances();
 
     if (!this._skipRunningBalanceRecalc) {
+      // KORRIGIERT: Vollständige Neuberechnung aller betroffenen Konten
+      // Besonders wichtig wenn alle Transaktionen gelöscht wurden
       for (const accountId of affectedAccountIds) {
-        BalanceService.triggerRunningBalanceRecalculation(accountId);
+        await BalanceService.recalculateRunningBalancesForAccount(accountId);
       }
     }
 

@@ -138,6 +138,25 @@ const availableByMonth = computed(() => {
     );
   });
 });
+
+const budgetedByMonth = computed(() => {
+  return months.value.map((month) => {
+    // Verwende den BalanceService für die Berechnung der budgetierten Ausgabenkategorien
+    return BalanceService.getTotalBudgetedForMonth(month.start, month.end);
+  });
+});
+
+const toBudgetByMonth = computed(() => {
+  return months.value.map((month, index) => {
+    const available = availableByMonth.value[index] || 0;
+    const overspentPrevMonth = 0; // Statisch auf 0€ gesetzt wie gewünscht
+
+    // "zu budgetieren" = verfügbare Mittel + Defizit/Überschuss Vormonat
+    // Darf nicht negativ werden - bleibt bei 0€ stehen
+    const toBudget = available + overspentPrevMonth;
+    return Math.max(0, toBudget);
+  });
+});
 </script>
 
 <template>
@@ -221,6 +240,11 @@ const availableByMonth = computed(() => {
               <BudgetMonthHeaderCard
                 :label="month.label"
                 :month="month"
+                :available="availableByMonth[i]"
+                :budgeted="budgetedByMonth[i]"
+                :to-budget="toBudgetByMonth[i]"
+                :overspent="0"
+                :next-month="0"
               />
             </div>
           </div>

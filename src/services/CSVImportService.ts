@@ -1616,22 +1616,17 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         }
       }
 
-      // Sequenzielle Neuberechnung für alle betroffenen Konten
+      // KORRIGIERT: Vollständige Neuberechnung aller betroffenen Konten ohne fromDate
+      // Das stellt sicher, dass alle Running Balances korrekt von Grund auf berechnet werden
       for (const accountId of affectedAccountIds) {
         try {
-          // Verwende optimierte Queue-basierte Berechnung für bessere Performance
-          BalanceService.enqueueRunningBalanceRecalculation(accountId, oldestImportDate?.toISOString().split('T')[0]);
-          debugLog('CSVImportService', `Konto ${accountId} zur Running Balance Queue hinzugefügt`, {
-            fromDate: oldestImportDate?.toISOString().split('T')[0] || 'alle Transaktionen'
-          });
+          // WICHTIG: Keine fromDate übergeben - vollständige Neuberechnung des gesamten Kontos
+          await BalanceService.recalculateRunningBalancesForAccount(accountId);
+          debugLog('CSVImportService', `Running Balance für Konto ${accountId} vollständig neu berechnet`);
         } catch (error) {
           warnLog('CSVImportService', `Fehler bei Running Balance Berechnung für Konto ${accountId}`, error);
         }
       }
-
-      // Erzwinge sofortige Verarbeitung der Running Balance Queue für CSV-Import
-      infoLog('CSVImportService', 'Erzwinge sofortige Running Balance Verarbeitung...');
-      await BalanceService.forceProcessRunningBalanceQueue();
 
       infoLog('CSVImportService', 'Running Balance Neuberechnung abgeschlossen', {
         affectedAccounts: affectedAccountIds.length,

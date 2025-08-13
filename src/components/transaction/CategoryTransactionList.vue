@@ -72,12 +72,13 @@ const summaryRef = ref<HTMLElement | null>(null);
 const containerHeight = ref('600px');
 const resizeObserver = ref<ResizeObserver | null>(null);
 
-// Filterung der Transaktionen:
+// Filterung und Sortierung der Transaktionen:
 // ACCOUNTTRANSFER werden aus der Kategorien-Transaktionsliste ausgeblendet.
 const allDisplayTransactions = computed(() => {
   let list = props.transactions.filter(
     (tx) => tx.type !== TransactionType.ACCOUNTTRANSFER
   );
+
   if (props.searchTerm && props.searchTerm.trim() !== "") {
     const term = props.searchTerm.toLowerCase().trim();
     list = list.filter((tx) => {
@@ -92,7 +93,30 @@ const allDisplayTransactions = computed(() => {
       return fields.some((field) => field.toLowerCase().includes(term));
     });
   }
-  return list;
+
+  // KORRIGIERT: Explizite Sortierung für CategoryTransactionList
+  // Sortiert nach valueDate (primär) und updated_at (sekundär) entsprechend sortOrder
+  const sortedList = [...list].sort((a, b) => {
+    // Primär nach valueDate sortieren (für Kategorien ist valueDate maßgeblich)
+    const dateA = a.valueDate;
+    const dateB = b.valueDate;
+    const dateComparison = props.sortOrder === "asc"
+      ? dateA.localeCompare(dateB)
+      : dateB.localeCompare(dateA);
+
+    if (dateComparison !== 0) {
+      return dateComparison;
+    }
+
+    // Sekundär nach createdAt sortieren für korrekte Reihenfolge am gleichen Tag
+    const createdA = (a as any).createdAt || "1970-01-01T00:00:00.000Z";
+    const createdB = (b as any).createdAt || "1970-01-01T00:00:00.000Z";
+    return props.sortOrder === "asc"
+      ? createdA.localeCompare(createdB)
+      : createdB.localeCompare(createdA);
+  });
+
+  return sortedList;
 });
 
 // Lazy Loading: Nur die sichtbaren Transaktionen anzeigen

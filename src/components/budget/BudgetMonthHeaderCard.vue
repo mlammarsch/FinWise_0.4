@@ -7,17 +7,15 @@
 import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
 import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useCategoryStore } from "../../stores/categoryStore";
-import CategoryTransferModal from "../budget/CategoryTransferModal.vue";
 import ConfirmationModal from "../ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
-import { TransactionService } from "@/services/TransactionService";
 import { BudgetService } from "@/services/BudgetService";
 import { debugLog } from "@/utils/logger";
 import { toDateOnlyString } from "@/utils/formatters";
 
 const props = defineProps<{
   label: string;
-  toBudget: number;
+  toBudget?: number;
   available?: number;
   overspent?: number;
   budgeted?: number;
@@ -40,37 +38,6 @@ const isCurrentMonth = computed(() => {
   );
 });
 
-/* ----------------------------------------------------------- */
-/* ---------------- Dropdown / Kontextmenü ------------------- */
-/* ----------------------------------------------------------- */
-const containerRef = ref<HTMLElement | null>(null);
-const showHeaderDropdown = ref(false);
-const headerDropdownX = ref(0);
-const headerDropdownY = ref(0);
-const headerDropdownRef = ref<HTMLElement | null>(null);
-
-function openHeaderDropdown(event: MouseEvent) {
-  event.preventDefault();
-  const targetRect = (
-    event.currentTarget as HTMLElement
-  ).getBoundingClientRect();
-  headerDropdownX.value = event.clientX - targetRect.left;
-  headerDropdownY.value = event.clientY - targetRect.top;
-  debugLog("[BudgetMonthHeaderCard] openHeaderDropdown", {
-    x: headerDropdownX.value,
-    y: headerDropdownY.value,
-  });
-  showHeaderDropdown.value = true;
-  nextTick(() => headerDropdownRef.value?.focus());
-}
-
-function closeHeaderDropdown() {
-  showHeaderDropdown.value = false;
-}
-
-function handleEscHeaderDropdown(event: KeyboardEvent) {
-  if (event.key === "Escape") closeHeaderDropdown();
-}
 
 /* ----------------------------------------------------------- */
 /* ------------------- Budget-Aktions-Menü ------------------- */
@@ -232,54 +199,16 @@ onUnmounted(() => {
   document.removeEventListener("click", handleBudgetMenuClickOutside);
 });
 
-/* ----------------------------------------------------------- */
-/* --------------------- Transfer‑Modal ---------------------- */
-/* ----------------------------------------------------------- */
-const showTransferModal = ref(false);
-const modalData = ref<{ mode: "header" } | null>({ mode: "header" });
 
 /* ------------------- Confirmation Modal -------------------- */
 /* ----------------------------------------------------------- */
 const showConfirmationModal = ref(false);
 
-const availableCategory = computed(() =>
-  categoryStore.categories.find(
-    (cat) => cat.name.trim().toLowerCase() === "verfügbare mittel"
-  )
-);
-
-function openHeaderTransfer() {
-  modalData.value = { mode: "header" };
-  showTransferModal.value = true;
-  closeHeaderDropdown();
-}
-
-function closeModal() {
-  showTransferModal.value = false;
-}
-
-function handleTransfer(data: {
-  fromCategoryId: string;
-  toCategoryId: string;
-  amount: number;
-  date: string;
-  note: string;
-}) {
-  TransactionService.addCategoryTransfer(
-    data.fromCategoryId,
-    data.toCategoryId,
-    data.amount,
-    data.date,
-    data.note
-  );
-  closeModal();
-}
 </script>
 
 <template>
   <!-- (Template unverändert) -->
   <div
-    ref="containerRef"
     :class="[
       'relative min-w-[12rem] border border-accent/50 rounded-lg shadow-md sticky top-0 z-10 m-2',
       isCurrentMonth
@@ -311,7 +240,7 @@ function handleTransfer(data: {
       </button>
     </div>
     <div class="p-2 text-sm space-y-1 flex flex-col items-center">
-      <div @contextmenu.prevent="openHeaderDropdown" class="cursor-pointer">
+      <div>
         <CurrencyDisplay :amount="props.available ?? 0" :as-integer="true" :show-zero="false" />
         verfügbare Mittel
       </div>
@@ -323,6 +252,17 @@ function handleTransfer(data: {
       </div>
       <div>
         <CurrencyDisplay :amount="props.nextMonth ?? 0" :as-integer="true" :show-zero="false" /> Übertrag
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="border-t border-base-300"></div>
+
+    <!-- Footer: Zu budgetieren -->
+    <div class="p-2 text-center">
+      <div class="text-base font-semibold">
+        <CurrencyDisplay :amount="props.toBudget ?? 0" :as-integer="true" :show-zero="false" />
+        zu budgetieren
       </div>
     </div>
   </div>
@@ -364,24 +304,6 @@ function handleTransfer(data: {
       </div>
     </div>
 
-  <!-- Kontext‑Dropdown -->
-  <div
-    v-if="showHeaderDropdown"
-    ref="headerDropdownRef"
-    class="absolute z-40 w-40 bg-base-100 border border-base-300 rounded shadow p-2"
-    :style="{ left: `${headerDropdownX}px`, top: `${headerDropdownY}px` }"
-    tabindex="0"
-    @keydown.escape="closeHeaderDropdown"
-    @click.outside="closeHeaderDropdown"
-  >
-    <ul>
-      <li>
-        <button class="btn btn-ghost btn-sm w-full" @click="openHeaderTransfer">
-          Transfer zu…
-        </button>
-      </li>
-    </ul>
-  </div>
 
   <!-- Budget-Aktions-Menü -->
   <Teleport to="body">
@@ -482,16 +404,6 @@ function handleTransfer(data: {
     </ul>
   </Teleport>
 
-  <!-- Transfer‑Modal -->
-  <CategoryTransferModal
-    v-if="showTransferModal"
-    :is-open="showTransferModal"
-    :month="props.month"
-    mode="transfer"
-    :category="availableCategory"
-    @close="closeModal"
-    @transfer="handleTransfer"
-  />
 
   <!-- Confirmation Modal für Budget Reset -->
   <ConfirmationModal

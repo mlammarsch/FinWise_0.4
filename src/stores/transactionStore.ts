@@ -12,6 +12,7 @@ import { useRecipientStore } from './recipientStore';
 import { debugLog, errorLog, infoLog, warnLog } from '@/utils/logger';
 import { TenantDbService } from '@/services/TenantDbService';
 import { BudgetService } from '@/services/BudgetService';
+import { BalanceService } from '@/services/BalanceService';
 
 export interface ExtendedTransaction extends Transaction {
   tagIds: string[];
@@ -220,6 +221,11 @@ export const useTransactionStore = defineStore('transaction', () => {
       updatedAt: updates.updatedAt || updates.updated_at || now,
     };
 
+    // Bei Sync-Updates: runningBalance ignorieren, da sie lokal berechnet wird
+    if (fromSync && 'runningBalance' in transactionUpdatesWithTimestamp) {
+      delete transactionUpdatesWithTimestamp.runningBalance;
+    }
+
     if (fromSync) {
       const localTransaction = await tenantDbService.getTransactionById(id);
       if (!localTransaction) {
@@ -281,6 +287,15 @@ export const useTransactionStore = defineStore('transaction', () => {
           errorLog('transactionStore', `Fehler beim Hinzufügen von Transaction Update (ID: "${id}") zur Sync Queue.`, e);
         }
       }
+
+      // Bei Sync-Updates: Running Balance für das betroffene Konto neu berechnen
+      if (fromSync) {
+        const transaction = transactions.value.find(t => t.id === id);
+        if (transaction) {
+          BalanceService.enqueueRunningBalanceRecalculation(transaction.accountId, transaction.date);
+        }
+      }
+
       return true;
     }
     if (fromSync) {

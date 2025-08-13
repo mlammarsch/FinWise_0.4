@@ -1,27 +1,107 @@
-# Running Balance - Einfach erklärt
+# Running Balance - Vollständige Erklärung
 
 ## Was ist Running Balance?
 
 Die **Running Balance** (laufender Saldo) zeigt den Kontostand nach jeder Transaktion an. Wenn Sie 100€ auf dem Konto haben und 20€ ausgeben, zeigt die Running Balance 80€ an.
 
-## Wie funktioniert die Berechnung?
+## Kritische Sortierreihenfolge
 
-### Beispiel mit 5 Transaktionen:
+### Das Sortierungsproblem
+Die **korrekte Sortierung** ist entscheidend für die Running Balance-Berechnung. Transaktionen am selben Tag müssen in der richtigen Reihenfolge verarbeitet werden.
+
+### Beispiel: Mehrere Transaktionen am selben Tag
 ```
-Datum       | Beschreibung    | Betrag  | Running Balance
-------------|-----------------|---------|----------------
-01.01.2024  | Gehalt         | +2000€  | 2000€
-05.01.2024  | Miete          | -800€   | 1200€
-10.01.2024  | Einkauf        | -150€   | 1050€
-15.01.2024  | Tankstelle     | -60€    | 990€
-20.01.2024  | Überweisung    | -200€   | 790€
+| Datum      | Created At          | Beschreibung | Betrag | Running Balance |
+| ---------- | ------------------- | ------------ | ------ | --------------- |
+| 01.01.2024 | 2024-01-01 08:15:00 | Gehalt       | +2000€ | 2000€           |
+| 05.01.2024 | 2024-01-05 09:00:00 | Miete        | -800€  | 1200€           |
+| 10.01.2024 | 2024-01-10 14:30:00 | Einkauf      | -150€  | 1050€           |
+| 15.01.2024 | 2024-01-15 11:20:00 | Rossmann     | -20€   | 1030€           |
+| 15.01.2024 | 2024-01-15 15:45:00 | Tankstelle   | -60€   | 970€            |
+| 20.01.2024 | 2024-01-20 10:10:00 | Überweisung  | -200€  | 770€            |
 ```
 
-## Das Performance-Problem (VORHER)
+### Sortierregeln für Berechnung
+**Für die Running Balance-Berechnung** wird IMMER sortiert nach:
+1. **Datum aufsteigend** (älteste zuerst)
+2. **CreatedAt aufsteigend** (früher erstellte zuerst)
 
-### Problem: Einzelberechnung
-Wenn Sie eine alte Transaktion ändern (z.B. vom 05.01.), mussten **ALLE** nachfolgenden Transaktionen **einzeln** neu berechnet werden:
+### Sortierregeln für Anzeige
+**Für die Anzeige in der TransactionList** wird sortiert nach:
+- Bei "Datum aufsteigend": Datum ASC, CreatedAt ASC
+- Bei "Datum absteigend": Datum DESC, CreatedAt DESC
 
+## Architektur der Running Balance-Berechnung
+
+### 1. Verschiedene Berechnungsfunktionen
+
+#### `getRunningBalances()` - Zeitraumansichten
+```typescript
+// Zweck: Berechnet Running Balance für Charts und Reports
+// Verwendung: UI-Komponenten für Visualisierungen
+// Sortierung: Datum ASC, CreatedAt ASC (immer)
+const balances = BalanceService.getRunningBalances('account', accountId, [startDate, endDate]);
+```
+
+#### `getRunningBalancesByAccount()` - Kontoansichten
+```typescript
+// Zweck: Berechnet Running Balance für TransactionList-Anzeige
+// Verwendung: Saldo-Spalte in Transaktionslisten
+// Sortierung: Datum ASC, CreatedAt ASC (immer)
+const balances = BalanceService.getRunningBalancesByAccount(account, transactions);
+```
+
+#### `recalculateRunningBalancesForAccount()` - Persistierung
+```typescript
+// Zweck: Schreibt Running Balance in IndexedDB
+// Verwendung: Nach Transaktionsänderungen
+// Sortierung: Datum ASC, CreatedAt ASC (immer)
+await BalanceService.recalculateRunningBalancesForAccount(accountId, startDate);
+```
+
+### 2. Queue-System mit Debouncing
+
+#### Einzeltransaktion (Normal-Modus)
+```typescript
+// Bei normaler Transaktionsanlage:
+await TransactionService.addTransaction(txData);
+// → Automatisch: BalanceService.enqueueRunningBalanceRecalculation(accountId, date)
+// → Queue sammelt 100ms lang
+// → Batch-Verarbeitung aller betroffenen Konten
+```
+
+#### CSV-Import (Batch-Modus)
+```typescript
+// Bei CSV-Import:
+TransactionService._skipRunningBalanceRecalc = true; // Deaktiviere Queue
+// ... importiere alle Transaktionen ...
+TransactionService._skipRunningBalanceRecalc = false; // Reaktiviere Queue
+
+// Einmalige Neuberechnung für alle betroffenen Konten:
+for (const accountId of affectedAccounts) {
+  await BalanceService.recalculateRunningBalancesForAccount(accountId);
+}
+```
+
+#### Einzeltransaktion löschen
+```typescript
+// Bei normaler Transaktionslöschung:
+await TransactionService.deleteTransaction(transactionId);
+// → Automatisch: BalanceService.recalculateRunningBalancesForAccount(accountId)
+// → Direkte Neuberechnung (kein Queue-System bei Löschung)
+```
+
+#### Batch-Löschung (Mehrere Transaktionen)
+```typescript
+// Bei Bulk-Delete:
+await TransactionService.bulkDeleteTransactions(transactionIds);
+// → _skipRunningBalanceRecalc wird intern berücksichtigt
+// → Einmalige Neuberechnung für alle betroffenen Konten am Ende
+```
+
+## Performance-Optimierungen
+
+### Das ursprüngliche Problem
 ```
 ❌ LANGSAM (alte Methode):
 1. Ändere Miete von -800€ auf -900€
@@ -33,38 +113,94 @@ Wenn Sie eine alte Transaktion ändern (z.B. vom 05.01.), mussten **ALLE** nachf
 = 4 separate Datenbankupdates + 4 UI-Updates = LANGSAM!
 ```
 
-## Die Optimierung (NACHHER)
-
-### Lösung: Batch-Berechnung
-Jetzt werden **alle** Running Balances **im Arbeitsspeicher** berechnet und dann **in einem Zug** aktualisiert:
-
+### Die optimierte Lösung
 ```
 ✅ SCHNELL (neue Methode):
 1. Ändere Miete von -800€ auf -900€
-2. Berechne ALLE im RAM:
+2. Berechne ALLE im RAM (korrekt sortiert):
+   - Sortierung: Datum ASC, CreatedAt ASC
    - 05.01.: 1100€
    - 10.01.: 950€
-   - 15.01.: 890€
-   - 20.01.: 690€
+   - 15.01. (11:20): 890€
+   - 15.01. (15:45): 830€
+   - 20.01.: 630€
 3. Update ALLE auf einmal in Datenbank
 4. Update UI nur EINMAL
 
 = 1 Datenbankupdate + 1 UI-Update = SCHNELL!
 ```
 
-## Technische Verbesserungen
+## Unterschiede zwischen Normal- und Batch-Modus
 
-### 1. Queue-System mit Debouncing
-- **Problem**: Bei schnellen Änderungen wurden mehrere Berechnungen gestartet
-- **Lösung**: Sammelt alle Änderungen 100ms lang und verarbeitet sie dann in einem Batch
+### Normal-Modus (Einzeltransaktionen)
+```typescript
+// Ablauf bei normaler Transaktionsanlage:
+1. addTransaction() wird aufgerufen
+2. Transaktion wird in IndexedDB gespeichert
+3. enqueueRunningBalanceRecalculation() wird aufgerufen
+4. Queue sammelt 100ms lang weitere Änderungen
+5. Batch-Verarbeitung aller gesammelten Konten
+6. UI wird einmalig aktualisiert
+```
 
-### 2. Optimierte Store-Updates
-- **Problem**: Jede Transaktion löste ein separates UI-Update aus
-- **Lösung**: Batch-Modus verhindert UI-Updates bis alle Berechnungen fertig sind
+**Vorteile:**
+- Automatische Optimierung bei schnellen Änderungen
+- Keine redundanten Berechnungen
+- Flüssige UI-Updates
 
-### 3. Effiziente Datenbankoperationen
-- **Problem**: Einzelne `updateTransaction()` Aufrufe für jede Running Balance
-- **Lösung**: Direkte Array-Manipulation + Batch-Datenbankupdate
+### Batch-Modus (CSV-Import)
+```typescript
+// Ablauf bei CSV-Import:
+1. _skipRunningBalanceRecalc = true
+2. Alle Transaktionen werden importiert (ohne Running Balance-Berechnung)
+3. _skipRunningBalanceRecalc = false
+4. Einmalige Neuberechnung für alle betroffenen Konten
+5. UI wird einmalig aktualisiert
+```
+
+**Vorteile:**
+- Maximale Performance bei Massenoperationen
+- Keine Zwischenberechnungen
+- Optimale Ressourcennutzung
+
+### Lösch-Modus (Delete-Operationen)
+```typescript
+// Ablauf bei Einzellöschung:
+1. deleteTransaction() wird aufgerufen
+2. Transaktion wird aus IndexedDB entfernt
+3. recalculateRunningBalancesForAccount() wird DIREKT aufgerufen (kein Queue)
+4. UI wird aktualisiert
+
+// Ablauf bei Bulk-Delete:
+1. bulkDeleteTransactions() wird aufgerufen
+2. Alle Transaktionen werden entfernt
+3. Sammle alle betroffenen Konten
+4. Einmalige Neuberechnung für alle betroffenen Konten
+5. UI wird einmalig aktualisiert
+```
+
+**Besonderheiten bei Löschungen:**
+- **Kein Queue-System**: Löschungen verwenden direkte Neuberechnung
+- **Sofortige Verarbeitung**: Keine 100ms Debouncing-Verzögerung
+- **Batch-Optimierung**: Bei Bulk-Delete wird nur einmal pro Konto neu berechnet
+
+## Sync-Integration
+
+### Backend-Frontend-Synchronisation
+```typescript
+// Problem: Backend sendet runningBalance: 0.0
+// Lösung: Frontend ignoriert Backend-Running-Balance
+
+// In transactionStore.ts:
+if (fromSync && 'runningBalance' in transactionUpdatesWithTimestamp) {
+  delete transactionUpdatesWithTimestamp.runningBalance; // Backend-Wert ignorieren
+}
+
+// Automatische Neuberechnung nach Sync:
+if (fromSync) {
+  BalanceService.enqueueRunningBalanceRecalculation(transaction.accountId, transaction.date);
+}
+```
 
 ## Messbare Verbesserungen
 
@@ -76,26 +212,100 @@ Jetzt werden **alle** Running Balances **im Arbeitsspeicher** berechnet und dann
 - **Vorher**: ~8-10 Sekunden, UI friert ein
 - **Nachher**: ~500-800ms, flüssige Bedienung
 
-## Für Entwickler: Implementierungsdetails
+### Bei CSV-Import (500+ Transaktionen):
+- **Normal-Modus**: Würde mehrere Minuten dauern
+- **Batch-Modus**: ~2-3 Sekunden für kompletten Import
 
-### Neue Methoden:
-- `enqueueRunningBalanceRecalculation()` - Fügt Account zur Queue hinzu
-- `batchUpdateRunningBalances()` - Hochoptimierte Batch-Updates
-- `forceProcessRunningBalanceQueue()` - Sofortige Verarbeitung
+## Für Entwickler: API-Referenz
 
-### Verwendung:
+### Queue-basierte Methoden (Empfohlen für Add/Update)
 ```typescript
-// Alte Methode (deprecated):
-await BalanceService.triggerRunningBalanceRecalculation(accountId, date);
+// Fügt Account zur optimierten Queue hinzu (nur bei Add/Update)
+BalanceService.enqueueRunningBalanceRecalculation(accountId: string, date?: string): void
 
-// Neue optimierte Methode:
-BalanceService.enqueueRunningBalanceRecalculation(accountId, date);
+// Erzwingt sofortige Verarbeitung der Queue
+await BalanceService.forceProcessRunningBalanceQueue(): Promise<void>
+```
+
+### Direkte Berechnungsmethoden (für Delete-Operationen)
+```typescript
+// Berechnet Running Balance für Zeitraumansichten
+BalanceService.getRunningBalances(entityType: EntityType, id: string, range: [Date, Date]): RunningBalance[]
+
+// Berechnet Running Balance für Kontoansichten
+BalanceService.getRunningBalancesByAccount(account: Account, transactions: Transaction[]): BalanceInfo[]
+
+// Persistiert Running Balance in Datenbank (wird bei Delete direkt aufgerufen)
+await BalanceService.recalculateRunningBalancesForAccount(accountId: string, startDate?: Date): Promise<void>
+```
+
+### TransactionService-Methoden
+```typescript
+// Einzeltransaktion löschen (mit automatischer Running Balance-Neuberechnung)
+await TransactionService.deleteTransaction(transactionId: string): Promise<boolean>
+
+// Bulk-Delete mit optimierter Running Balance-Neuberechnung
+await TransactionService.bulkDeleteTransactions(transactionIds: string[]): Promise<{success: boolean, deletedCount: number}>
+
+// Bulk-Delete Alias
+await TransactionService.deleteMultipleTransactions(transactionIds: string[]): Promise<{success: boolean, deletedCount: number}>
+```
+
+### Batch-Modus-Steuerung
+```typescript
+// Aktiviert Batch-Modus (für CSV-Import oder Bulk-Operationen)
+TransactionService._skipRunningBalanceRecalc = true;
+
+// Deaktiviert Batch-Modus
+TransactionService._skipRunningBalanceRecalc = false;
+```
+
+## Debugging und Monitoring
+
+### Debug-Logs aktivieren
+```typescript
+// In Browser-Konsole:
+localStorage.setItem('debug', 'BalanceService');
+
+// Zeigt detaillierte Logs:
+// - Queue-Verarbeitung
+// - Batch-Updates
+// - Performance-Metriken
+```
+
+### Häufige Probleme und Lösungen
+
+#### Problem: Falsche Running Balance-Reihenfolge
+```typescript
+// Ursache: Inkonsistente Sortierung zwischen Berechnung und Anzeige
+// Lösung: Beide verwenden jetzt einheitlich Datum ASC, CreatedAt ASC für Berechnung
+```
+
+#### Problem: Running Balance wird auf 0 gesetzt
+```typescript
+// Ursache: Backend überschreibt lokale Berechnung
+// Lösung: Backend-runningBalance wird bei Sync ignoriert
+```
+
+#### Problem: Performance-Probleme bei vielen Transaktionen
+```typescript
+// Ursache: Einzelberechnungen statt Batch-Verarbeitung
+// Lösung: Queue-System mit Debouncing verwenden (Add/Update) oder Bulk-Methoden (Delete)
+```
+
+#### Problem: Langsame Bulk-Delete-Operationen
+```typescript
+// Ursache: Einzelne deleteTransaction() Aufrufe
+// Lösung: bulkDeleteTransactions() verwenden für optimierte Batch-Verarbeitung
 ```
 
 ## Fazit
 
 Die Running Balance funktioniert jetzt wie ein **intelligenter Taschenrechner**:
-- Sammelt alle Änderungen
-- Berechnet alles im Arbeitsspeicher
-- Aktualisiert die Anzeige in einem Zug
-- Ergebnis: **Sofortige, flüssige Bedienung** auch bei vielen Transaktionen
+- **Korrekte Sortierung**: Datum ASC, CreatedAt ASC für alle Berechnungen
+- **Optimierte Performance**: Queue-System mit Batch-Verarbeitung
+- **Flexible Modi**: Normal-Modus für Einzeltransaktionen, Batch-Modus für Massenoperationen
+- **Sync-Integration**: Ignoriert Backend-Werte und berechnet lokal neu
+- **Ergebnis**: **Sofortige, flüssige Bedienung** auch bei tausenden von Transaktionen
+
+Die Architektur ist darauf ausgelegt, sowohl bei einzelnen Transaktionen als auch bei Massenimporten optimale Performance zu bieten, während die Datenintegrität durch konsistente Sortierung gewährleistet wird.

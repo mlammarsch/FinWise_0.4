@@ -449,10 +449,21 @@ export const BalanceService = {
     });
 
     // 2. Transaktionen nach dem richtigen Datum sortieren
+    // 2. Transaktionen nach dem richtigen Datum und der Erstellungszeit sortieren
     const sortedTxs = [...transactions].sort((a, b) => {
       const dateA = toDateOnlyString(entityType === 'account' ? a.date : a.valueDate);
       const dateB = toDateOnlyString(entityType === 'account' ? b.date : b.valueDate);
-      return dateA.localeCompare(dateB);
+
+      // Primär nach Datum sortieren
+      const dateComparison = dateA.localeCompare(dateB);
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      // Sekundär nach Erstellungszeit für korrekte Reihenfolge am selben Tag
+      const createdA = a.createdAt || '1970-01-01T00:00:00.000Z';
+      const createdB = b.createdAt || '1970-01-01T00:00:00.000Z';
+      return createdA.localeCompare(createdB);
     });
 
     // 3. Startsaldo berechnen
@@ -706,7 +717,17 @@ export const BalanceService = {
     // 1. Transaktionen für das Konto filtern und chronologisch sortieren
     const filteredTransactions = transactions
       .filter(tx => tx.accountId === account.id && tx.type !== TransactionType.CATEGORYTRANSFER)
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      .sort((a, b) => {
+        // Primär nach Datum sortieren (aufsteigend für Berechnung)
+        const dateComparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+        if (dateComparison !== 0) {
+          return dateComparison;
+        }
+        // Sekundär nach createdAt sortieren für korrekte Reihenfolge am selben Tag
+        const createdA = a.createdAt || '1970-01-01T00:00:00.000Z';
+        const createdB = b.createdAt || '1970-01-01T00:00:00.000Z';
+        return createdA.localeCompare(createdB);
+      });
 
     // 2. Nach Datum gruppieren
     const groups = filteredTransactions.reduce((acc, tx) => {
@@ -761,7 +782,7 @@ export const BalanceService = {
    */
   sortTransactionsForRunningBalance(transactions: any[]): any[] {
     return [...transactions].sort((a, b) => {
-      // Primär nach valueDate sortieren
+      // Primär nach valueDate sortieren (aufsteigend für Berechnung)
       const dateA = toDateOnlyString(a.valueDate || a.date);
       const dateB = toDateOnlyString(b.valueDate || b.date);
       const dateComparison = dateA.localeCompare(dateB);
@@ -770,10 +791,9 @@ export const BalanceService = {
         return dateComparison;
       }
 
-      // Sekundär nach updated_at sortieren für korrekte Reihenfolge am gleichen Tag
-      // In IndexedDB steht das Feld als updated_at (snake_case), nicht createdAt
-      const createdA = (a as any).updated_at || '1970-01-01T00:00:00.000Z';
-      const createdB = (b as any).updated_at || '1970-01-01T00:00:00.000Z';
+      // Sekundär nach createdAt sortieren für korrekte Reihenfolge am gleichen Tag
+      const createdA = a.createdAt || '1970-01-01T00:00:00.000Z';
+      const createdB = b.createdAt || '1970-01-01T00:00:00.000Z';
       return createdA.localeCompare(createdB);
     });
   },
@@ -803,13 +823,28 @@ export const BalanceService = {
       return;
     }
 
-    // Transaktionen mit erweiterter Sortierlogik sortieren
-    const sortedTransactions = this.sortTransactionsForRunningBalance(accountTransactions);
+    // KORRIGIERT: Sortierung nach date (nicht valueDate) für Kontosalden
+    // WICHTIG: Für Running Balance-Berechnung IMMER aufsteigend sortieren (älteste zuerst)
+    // Primär nach date, sekundär nach createdAt für korrekte Reihenfolge
+    const sortedTransactions = [...accountTransactions].sort((a, b) => {
+      const dateA = toDateOnlyString(a.date);
+      const dateB = toDateOnlyString(b.date);
+      const dateComparison = dateA.localeCompare(dateB); // IMMER aufsteigend für Berechnung
+
+      if (dateComparison !== 0) {
+        return dateComparison;
+      }
+
+      // Sekundär nach createdAt sortieren für korrekte Reihenfolge am gleichen Tag
+      const createdA = (a as any).createdAt || '1970-01-01T00:00:00.000Z';
+      const createdB = (b as any).createdAt || '1970-01-01T00:00:00.000Z';
+      return createdA.localeCompare(createdB); // IMMER aufsteigend für Berechnung
+    });
 
     // Startdatum bestimmen
     let startDate = fromDate;
     if (!startDate && sortedTransactions.length > 0) {
-      const firstTxDate = toDateOnlyString(sortedTransactions[0].valueDate || sortedTransactions[0].date);
+      const firstTxDate = toDateOnlyString(sortedTransactions[0].date);
       startDate = new Date(firstTxDate);
     }
 
@@ -818,31 +853,35 @@ export const BalanceService = {
       return;
     }
 
-    // Startsaldo berechnen
-    // WICHTIG: Wenn wir ab der ältesten Transaktion rechnen, ist der Startsaldo 0
-    // Nur wenn fromDate explizit gesetzt ist, berechnen wir den Saldo am Tag davor
+    // KORRIGIERT: Startsaldo-Berechnung - IMMER von Grund auf neu berechnen
     let runningBalance = 0;
+
     if (fromDate) {
-      // Explizites fromDate - Saldo am Tag davor berechnen
+      // Explizites fromDate - Berechne Startsaldo durch Summierung ALLER Transaktionen vor fromDate
       const dayBefore = new Date(fromDate);
       dayBefore.setDate(dayBefore.getDate() - 1);
+      const dateStrBefore = toDateOnlyString(dayBefore);
 
-      // WICHTIG: Verwende Fallback-Berechnung statt Cache, um veraltete MonthlyBalance-Daten zu vermeiden
-      const dateStr = toDateOnlyString(dayBefore);
-      const txsBeforeDate = txStore.transactions.filter(
-        tx => tx.accountId === accountId &&
-          tx.type !== TransactionType.CATEGORYTRANSFER &&
-          toDateOnlyString(tx.date) <= dateStr
+      // Finde alle Transaktionen vor dem fromDate (sortiert)
+      const txsBeforeDate = sortedTransactions.filter(tx =>
+        toDateOnlyString(tx.date) <= dateStrBefore
       );
+
+      // WICHTIG: Berechne Startsaldo durch Summierung aller Beträge (nicht runningBalance verwenden!)
       runningBalance = txsBeforeDate.reduce((sum, tx) => sum + tx.amount, 0);
 
-      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Startsaldo aus aktuellen Transaktionen berechnet', {
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Startsaldo durch vollständige Summierung berechnet', {
         accountId,
-        dayBefore: dateStr,
-        transactionsFound: txsBeforeDate.length,
-        calculatedBalance: runningBalance
+        transactionsBeforeDate: txsBeforeDate.length,
+        calculatedBalance: runningBalance,
+        fromDate: toDateOnlyString(fromDate),
+        dayBefore: dateStrBefore
       });
+    } else {
+      // Kein fromDate - beginne bei 0 (älteste Transaktion)
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Kein fromDate, Startsaldo = 0', { accountId });
     }
+
     // Rundung auf 2 Dezimalstellen für Startsaldo
     runningBalance = Math.round(runningBalance * 100) / 100;
 
@@ -856,7 +895,7 @@ export const BalanceService = {
     const transactionsToUpdate: { id: string; runningBalance: number }[] = [];
 
     for (const tx of sortedTransactions) {
-      const txDate = toDateOnlyString(tx.valueDate || tx.date);
+      const txDate = toDateOnlyString(tx.date);
 
       // Nur Transaktionen ab Startdatum berücksichtigen
       if (txDate >= toDateOnlyString(startDate)) {
@@ -873,9 +912,19 @@ export const BalanceService = {
           txId: tx.id,
           date: txDate,
           amount: tx.amount,
+          previousBalance: runningBalance - tx.amount,
           newRunningBalance: runningBalance
         });
       }
+    }
+
+    if (transactionsToUpdate.length === 0) {
+      debugLog('BalanceService', 'recalculateRunningBalancesForAccount - Keine Transaktionen zu aktualisieren', {
+        accountId,
+        startDate: toDateOnlyString(startDate),
+        totalTransactions: sortedTransactions.length
+      });
+      return;
     }
 
     // Batch-Update der running balances im Store
@@ -1032,5 +1081,69 @@ export const BalanceService = {
    */
   isRunningBalanceProcessing(): boolean {
     return runningBalanceQueue.isCurrentlyProcessing();
+  },
+
+  /**
+   * Berechnet die Summe aller budgetierten Ausgabenkategorien für einen Monat
+   * @param monthStart - Startdatum des Monats
+   * @param monthEnd - Enddatum des Monats
+   * @returns Summe der budgetierten Beträge aller Ausgabenkategorien
+   */
+  getTotalBudgetedForMonth(monthStart: Date, monthEnd: Date): number {
+    const categoryStore = useCategoryStore();
+    const transactionStore = useTransactionStore();
+
+    // Hole alle aktiven Ausgabenkategorien (ohne "Verfügbare Mittel")
+    const expenseCategories = categoryStore.categories.filter(cat =>
+      cat.isActive &&
+      !cat.isIncomeCategory &&
+      cat.name.trim().toLowerCase() !== "verfügbare mittel"
+    );
+
+    let totalBudgeted = 0;
+
+    // Berechne für jede Ausgabenkategorie die budgetierten Beträge (CATEGORYTRANSFER)
+    for (const category of expenseCategories) {
+      const categoryTransfers = transactionStore.transactions.filter(tx => {
+        const txDate = new Date(toDateOnlyString(tx.valueDate));
+        return (
+          tx.type === TransactionType.CATEGORYTRANSFER &&
+          tx.categoryId === category.id &&
+          txDate >= monthStart &&
+          txDate <= monthEnd
+        );
+      });
+
+      const categoryBudget = categoryTransfers.reduce((sum, tx) => sum + tx.amount, 0);
+      totalBudgeted += categoryBudget;
+
+      // Berücksichtige auch Kindkategorien rekursiv
+      const childCategories = categoryStore.getChildCategories(category.id);
+      for (const child of childCategories) {
+        if (child.isActive) {
+          const childTransfers = transactionStore.transactions.filter(tx => {
+            const txDate = new Date(toDateOnlyString(tx.valueDate));
+            return (
+              tx.type === TransactionType.CATEGORYTRANSFER &&
+              tx.categoryId === child.id &&
+              txDate >= monthStart &&
+              txDate <= monthEnd
+            );
+          });
+
+          const childBudget = childTransfers.reduce((sum, tx) => sum + tx.amount, 0);
+          totalBudgeted += childBudget;
+        }
+      }
+    }
+
+    debugLog('BalanceService', 'getTotalBudgetedForMonth', {
+      monthStart: monthStart.toISOString().split('T')[0],
+      monthEnd: monthEnd.toISOString().split('T')[0],
+      totalBudgeted,
+      categoriesProcessed: expenseCategories.length
+    });
+
+    return totalBudgeted;
   }
 };

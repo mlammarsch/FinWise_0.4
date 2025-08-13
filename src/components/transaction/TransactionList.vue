@@ -130,10 +130,9 @@ const allSortedDisplayTransactions = computed(() => {
         return dateComparison;
       }
 
-      // Sekundär nach updated_at sortieren für korrekte Running Balance-Reihenfolge
-      // In IndexedDB steht das Feld als updated_at (snake_case), nicht createdAt
-      const createdA = (a as any).updated_at || "1970-01-01T00:00:00.000Z";
-      const createdB = (b as any).updated_at || "1970-01-01T00:00:00.000Z";
+      // Sekundär nach createdAt sortieren für korrekte Running Balance-Reihenfolge
+      const createdA = (a as any).createdAt || "1970-01-01T00:00:00.000Z";
+      const createdB = (b as any).createdAt || "1970-01-01T00:00:00.000Z";
       return props.sortOrder === "asc"
         ? createdA.localeCompare(createdB)
         : createdB.localeCompare(createdA);
