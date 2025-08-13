@@ -2344,8 +2344,17 @@ export const TransactionService = {
       this.startBatchMode();
       transactionStore.startBatchUpdate();
 
+      // Behalte die lokale runningBalance, wenn sie bereits existiert
+      const transactionsWithPreservedBalance = incomingTransactions.map(tx => {
+        const localTx = transactionStore.getTransactionById(tx.id);
+        if (localTx && localTx.runningBalance) {
+          tx.runningBalance = localTx.runningBalance;
+        }
+        return tx;
+      });
+
       // Verwende die neue intelligente Bulk-Operation für maximale Performance
-      const result = await tenantDbService.addTransactionsBatchIntelligent(incomingTransactions);
+      const result = await tenantDbService.addTransactionsBatchIntelligent(transactionsWithPreservedBalance);
 
       // Lade den Store neu, aber nur wenn tatsächlich Änderungen vorgenommen wurden
       if (result.updated > 0) {
