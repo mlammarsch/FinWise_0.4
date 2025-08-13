@@ -17,9 +17,7 @@ const props = defineProps<{
   label: string;
   toBudget?: number;
   available?: number;
-  overspent?: number;
   budgeted?: number;
-  nextMonth?: number;
   month?: { start: Date; end: Date };
 }>();
 
@@ -245,13 +243,7 @@ const showConfirmationModal = ref(false);
         verfügbare Mittel
       </div>
       <div>
-        <CurrencyDisplay :amount="props.overspent ?? 0" :as-integer="true" :show-zero="false" /> Def./Übersch. Vormonat
-      </div>
-      <div>
         <CurrencyDisplay :amount="props.budgeted ?? 0" :as-integer="true" :show-zero="false" /> Budgetiert
-      </div>
-      <div>
-        <CurrencyDisplay :amount="props.nextMonth ?? 0" :as-integer="true" :show-zero="false" /> Übertrag
       </div>
     </div>
 

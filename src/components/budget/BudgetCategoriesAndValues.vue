@@ -1184,8 +1184,25 @@ function optionTransfer() {
   if (!modalData.value?.clickedCategory || !modalData.value?.month) return;
   const cat = modalData.value.clickedCategory;
   const month = modalData.value.month;
-  modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
-  debugLog("BudgetCategoriesAndValues", "optionTransfer", { category: cat });
+
+  // Hole den aktuellen Saldo der Kategorie
+  const categoryData = getCategoryBudgetData(cat.id, month);
+  const currentSaldo = categoryData.saldo;
+
+  // Setze den Betrag nur wenn der Saldo positiv ist
+  const prefillAmount = currentSaldo > 0 ? currentSaldo : 0;
+
+  // Alle Kategorien verwenden "transfer" Modus
+  // Bei Einnahmen-Kategorien wird automatisch "Verfügbare Mittel" als Zielkategorie gesetzt
+  modalData.value = { mode: "transfer", clickedCategory: cat, amount: prefillAmount, month };
+  debugLog("BudgetCategoriesAndValues", "optionTransfer", {
+    category: cat,
+    currentSaldo,
+    prefillAmount,
+    isIncomeCategory: cat.isIncomeCategory,
+    mode: "transfer"
+  });
+
   closeDropdown();
   showTransferModal.value = true;
 }
@@ -1809,6 +1826,7 @@ function handleTransactionUpdated() {
       :mode="modalData.mode"
       :prefillAmount="modalData.amount"
       :preselectedCategoryId="modalData.clickedCategory?.id"
+      :isIncomeCategory="modalData.clickedCategory?.isIncomeCategory || false"
       @close="showTransferModal = false"
       @transfer="executeTransfer"
     />

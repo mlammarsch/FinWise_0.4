@@ -16,6 +16,7 @@
  * - fromCategoryId?: string – "Von"-Kategorie (bei Bearbeitung)
  * - toCategoryId?: string – "Zu"-Kategorie (bei Bearbeitung)
  * - note?: string - Vorhandene Notiz (bei Bearbeitung)
+ * - isIncomeCategory?: boolean – Ob es sich um eine Einnahmen-Kategorie handelt (für automatische Zielkategorie-Auswahl)
  *
  * Emits:
  * - close – Modal schließen
@@ -46,9 +47,11 @@ const props = withDefaults(
     fromCategoryId?: string;
     toCategoryId?: string;
     note?: string;
+    isIncomeCategory?: boolean;
   }>(),
   {
     mode: "transfer",
+    isIncomeCategory: false,
   }
 );
 
@@ -125,7 +128,15 @@ watch(
       } else {
         if (props.mode === "transfer" && props.preselectedCategoryId) {
           fromCategoryIdLocal.value = props.preselectedCategoryId;
-          toCategoryIdLocal.value = "";
+
+          // Bei Einnahmen-Kategorien automatisch "Verfügbare Mittel" als Zielkategorie setzen
+          if (props.isIncomeCategory) {
+            const availableFundsCat =
+              CategoryService.getAvailableFundsCategory().value;
+            toCategoryIdLocal.value = availableFundsCat?.id || "";
+          } else {
+            toCategoryIdLocal.value = "";
+          }
         } else if (props.mode === "fill" && props.preselectedCategoryId) {
           toCategoryIdLocal.value = props.preselectedCategoryId;
           const availableFundsCat =

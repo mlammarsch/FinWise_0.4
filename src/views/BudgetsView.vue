@@ -149,12 +149,10 @@ const budgetedByMonth = computed(() => {
 const toBudgetByMonth = computed(() => {
   return months.value.map((month, index) => {
     const available = availableByMonth.value[index] || 0;
-    const overspentPrevMonth = 0; // Statisch auf 0€ gesetzt wie gewünscht
 
-    // "zu budgetieren" = verfügbare Mittel + Defizit/Überschuss Vormonat
+    // "zu budgetieren" = verfügbare Mittel (nur die monatlichen Einnahmen-Transfers)
     // Darf nicht negativ werden - bleibt bei 0€ stehen
-    const toBudget = available + overspentPrevMonth;
-    return Math.max(0, toBudget);
+    return Math.max(0, available);
   });
 });
 </script>
@@ -243,8 +241,6 @@ const toBudgetByMonth = computed(() => {
                 :available="availableByMonth[i]"
                 :budgeted="budgetedByMonth[i]"
                 :to-budget="toBudgetByMonth[i]"
-                :overspent="0"
-                :next-month="0"
               />
             </div>
           </div>
