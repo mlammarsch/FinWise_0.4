@@ -1596,6 +1596,7 @@ watch(activeTab, (newTab) => {
             @edit="editTransaction"
             @delete="deleteTransaction"
             @toggleReconciliation="toggleTransactionReconciled"
+            @selection-changed="handleSelectionChanged"
           />
         </div>
       </div>
