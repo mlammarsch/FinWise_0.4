@@ -330,6 +330,7 @@ async function startImport() {
     });
 
     // Starte den Import
+    debugLog("TransactionImportModal", "Starte Import mit folgenden Daten:", csvImportService.allParsedData.filter((row: any) => row._selected));
     const importedCount = await csvImportService.startImport(props.accountId);
     emit("imported", importedCount);
   } catch (error) {

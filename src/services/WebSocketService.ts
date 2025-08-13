@@ -12,6 +12,7 @@ import { useTagStore } from '@/stores/tagStore';
 import { useRuleStore } from '@/stores/ruleStore';
 import { usePlanningStore } from '@/stores/planningStore';
 import { useTransactionStore } from '@/stores/transactionStore';
+import { mapToFrontendFormat, mapNotificationDataToFrontendFormat } from '@/utils/fieldMapping';
 
 const RECONNECT_INTERVAL = 5000; // 5 Sekunden
 const MAX_RECONNECT_ATTEMPTS = 10; // Erhöht von 5 auf 10
@@ -175,9 +176,12 @@ export const WebSocketService = {
 
             // Verarbeitung basierend auf entity_type und operation_type
             try {
+              // Mappe die Daten vom Backend-Format zum Frontend-Format
+              const mappedData = mapNotificationDataToFrontendFormat(updateMessage.data);
+
               switch (updateMessage.entity_type) {
                 case EntityTypeEnum.ACCOUNT:
-                  const accountData = updateMessage.data.single_entity as Account | DeletePayload;
+                  const accountData = mappedData.single_entity as Account | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await accountStore.addAccount(accountData as Account, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Account ${(accountData as Account).id} created via WebSocket.`);
@@ -195,7 +199,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.ACCOUNT_GROUP:
-                  const accountGroupData = updateMessage.data.single_entity as AccountGroup | DeletePayload;
+                  const accountGroupData = mappedData.single_entity as AccountGroup | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await accountStore.addAccountGroup(accountGroupData as AccountGroup, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AccountGroup ${(accountGroupData as AccountGroup).id} created via WebSocket.`);
@@ -213,7 +217,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.CATEGORY:
-                  const categoryData = updateMessage.data.single_entity as Category | DeletePayload;
+                  const categoryData = mappedData.single_entity as Category | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await categoryStore.addCategory(categoryData as Category, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Category ${(categoryData as Category).id} created via WebSocket.`);
@@ -231,7 +235,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.CATEGORY_GROUP:
-                  const categoryGroupData = updateMessage.data.single_entity as CategoryGroup | DeletePayload;
+                  const categoryGroupData = mappedData.single_entity as CategoryGroup | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await categoryStore.addCategoryGroup(categoryGroupData as CategoryGroup, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `CategoryGroup ${(categoryGroupData as CategoryGroup).id} created via WebSocket.`);
@@ -249,7 +253,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.RECIPIENT:
-                  const recipientData = updateMessage.data.single_entity as Recipient | DeletePayload;
+                  const recipientData = mappedData.single_entity as Recipient | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await recipientStore.addRecipient(recipientData as Recipient, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Recipient ${(recipientData as Recipient).id} created via WebSocket.`);
@@ -267,7 +271,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.TAG:
-                  const tagData = updateMessage.data.single_entity as Tag | DeletePayload;
+                  const tagData = mappedData.single_entity as Tag | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await tagStore.addTag(tagData as Tag, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Tag ${(tagData as Tag).name} created via WebSocket.`);
@@ -285,7 +289,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.RULE:
-                  const ruleData = updateMessage.data.single_entity as AutomationRule | DeletePayload;
+                  const ruleData = mappedData.single_entity as AutomationRule | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await ruleStore.addRule(ruleData as AutomationRule, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `AutomationRule ${(ruleData as AutomationRule).id} created via WebSocket.`);
@@ -303,7 +307,7 @@ export const WebSocketService = {
                   }
                   break;
                 case EntityTypeEnum.PLANNING_TRANSACTION:
-                  const planningTransactionData = updateMessage.data.single_entity as PlanningTransaction | DeletePayload;
+                  const planningTransactionData = mappedData.single_entity as PlanningTransaction | DeletePayload;
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await planningStore.addPlanningTransaction(planningTransactionData as PlanningTransaction, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `PlanningTransaction ${(planningTransactionData as PlanningTransaction).id} created via WebSocket.`);
@@ -322,7 +326,7 @@ export const WebSocketService = {
                   break;
                 case EntityTypeEnum.TRANSACTION:
                   const transactionStore = useTransactionStore();
-                  const transactionData = updateMessage.data.single_entity as any | DeletePayload; // Using any for ExtendedTransaction compatibility
+                  const transactionData = mappedData.single_entity as any | DeletePayload; // Using any for ExtendedTransaction compatibility
                   if (updateMessage.operation_type === SyncOperationType.CREATE) {
                     await transactionStore.addTransaction(transactionData as any, true); // true für 'fromSync'
                     infoLog('[WebSocketService]', `Transaction ${(transactionData as any).id} created via WebSocket with recipientId: ${(transactionData as any).recipientId || 'none'}.`);
@@ -359,7 +363,10 @@ export const WebSocketService = {
               return;
             }
 
-            const { accounts, account_groups, categories, category_groups, recipients, tags, automation_rules, planning_transactions, transactions } = initialDataMessage.payload;
+            // Mappe die Initial-Data vom Backend-Format zum Frontend-Format
+            const mappedPayload = mapNotificationDataToFrontendFormat(initialDataMessage.payload);
+
+            const { accounts, account_groups, categories, category_groups, recipients, tags, automation_rules, planning_transactions, transactions } = mappedPayload;
             debugLog('[WebSocketService]', 'Initial data payload content:', { accounts, account_groups, categories, category_groups, recipients, tags, automation_rules, planning_transactions, transactions });
 
             // Hole pending DELETE-Operationen um zu vermeiden, dass gelöschte Entitäten wieder hinzugefügt werden

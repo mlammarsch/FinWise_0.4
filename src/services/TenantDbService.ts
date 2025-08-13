@@ -6,6 +6,7 @@ import type { ExtendedTransaction } from '@/stores/transactionStore';
 import { SyncStatus, EntityTypeEnum, SyncOperationType } from '@/types';
 import { errorLog, warnLog, debugLog, infoLog } from '@/utils/logger';
 import { v4 as uuidv4 } from 'uuid';
+import { mapSyncPayloadToBackendFormat } from '@/utils/fieldMapping';
 
 export class TenantDbService {
   private get db(): FinwiseTenantSpecificDB | null {
@@ -315,8 +316,8 @@ export class TenantDbService {
       throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
     }
 
-    // Konvertiere das Payload zu einem plain object, um Klon-Fehler zu vermeiden
-    const plainPayload = this.toPlainObject(entryData.payload);
+    // Konvertiere das Payload zu einem plain object und mappe Felder für Backend
+    const plainPayload = mapSyncPayloadToBackendFormat(this.toPlainObject(entryData.payload));
 
     const newEntry: SyncQueueEntry = {
       ...entryData,

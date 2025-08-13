@@ -529,21 +529,15 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Für jede Zeile Empfänger und Kategorien automatisch zuordnen
     allParsedData.value.forEach((row) => {
-      // Überspringe Empfänger- und Kategorie-Matching für potentielle Account-Transfers
-      if (row._potentialAccountTransfer) {
-        return;
-      }
-
-      // 1. Empfängererkennung
-      if (mappedColumns.value.recipient) {
+      // 1. Empfängererkennung (nur wenn kein Kontotransfer)
+      if (mappedColumns.value.recipient && !row._potentialAccountTransfer) {
         const recipientText = row[mappedColumns.value.recipient];
         if (recipientText) {
           findMatchingRecipient(row, recipientText);
         }
       }
 
-
-      // 2. Kategorieerkennung
+      // 2. Kategorieerkennung (immer durchführen)
       if (mappedColumns.value.category) {
         const categoryText = row[mappedColumns.value.category];
         if (categoryText) {
@@ -664,6 +658,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     if (directMatch) {
       row.categoryId = directMatch.id;
+      debugLog('CSVImportService', `Direkter Kategorie-Match gefunden: "${searchText}" -> ${directMatch.name} (${directMatch.id})`);
       return;
     }
 
@@ -926,7 +921,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           })
         );
 
-        otherRow.categoryId = categoryId;
+        allParsedData.value[index].categoryId = categoryId;
         changedRowsCount++;
         debugChangedRows.push({
           index: otherRow._originalIndex,
