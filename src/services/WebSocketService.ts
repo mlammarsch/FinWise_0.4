@@ -1244,7 +1244,7 @@ export const WebSocketService = {
       socketUrl: socket?.url
     });
     const tenantStore = useTenantStore();
-    const currentTenantId = tenantStore.activeTenantId; // Globale Variable wird hier korrekt verwendet
+    const currentTenantId = tenantStore.activeTenantId;
 
     if (!currentTenantId) {
       warnLog('[WebSocketService]', 'Cannot process sync queue: No active tenant ID.');
@@ -1266,90 +1266,213 @@ export const WebSocketService = {
     }
 
     try {
-      // Schritt 1: Einträge lesen und für die Verarbeitung markieren (in einer DB-Transaktion)
-      const entriesToProcess = await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
+      // Schritt 1: Alle pending Einträge abrufen
+      const allPendingEntries = await activeDB.transaction('r', activeDB.syncQueue, async (tx) => {
         const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
-        const pendingEntries = await syncQueueTable
+        return await syncQueueTable
           .where({ tenantId: currentTenantId, status: SyncStatus.PENDING })
           .sortBy('timestamp');
-
-        if (pendingEntries.length === 0) {
-          infoLog('[WebSocketService]', 'No pending entries in sync queue.');
-          return [];
-        }
-
-        infoLog('[WebSocketService]', `Found ${pendingEntries.length} pending entries. Marking as PROCESSING.`);
-
-        const processingPromises = pendingEntries.map(async (entry) => {
-          await syncQueueTable.update(entry.id, {
-            status: SyncStatus.PROCESSING,
-            attempts: (entry.attempts ?? 0) + 1,
-            lastAttempt: Date.now(),
-          });
-          // Wichtig: Das 'entry'-Objekt mit den neuen Werten aktualisieren
-          return {
-            ...entry,
-            status: SyncStatus.PROCESSING,
-            attempts: (entry.attempts ?? 0) + 1,
-            lastAttempt: Date.now(),
-          };
-        });
-
-        return await Promise.all(processingPromises);
       });
 
-      if (entriesToProcess.length === 0) {
-        debugLog('[WebSocketService]', 'No entries to process after marking phase.');
+      if (allPendingEntries.length === 0) {
+        infoLog('[WebSocketService]', 'No pending entries in sync queue.');
         isSyncProcessRunning = false;
         return;
       }
 
-      // Schritt 2: Einträge außerhalb der DB-Transaktion senden
-      const transactionEntries = entriesToProcess.filter(entry => entry.entityType === EntityTypeEnum.TRANSACTION);
-      const otherEntries = entriesToProcess.filter(entry => entry.entityType !== EntityTypeEnum.TRANSACTION);
+      infoLog('[WebSocketService]', `Found ${allPendingEntries.length} pending entries. Starting chunked processing.`);
 
-      // Verarbeite Transaction-Einträge im Batch-Modus
-      if (transactionEntries.length > 0) {
-        infoLog('[WebSocketService]', `Processing ${transactionEntries.length} transaction entries in batch mode.`);
-        const transactionStore = useTransactionStore();
-        transactionStore.startBatchUpdate();
+      // Schritt 2: Paketbasierte Verarbeitung (30 Einträge pro Paket)
+      const CHUNK_SIZE = 30;
+      const chunks = this.chunkArray(allPendingEntries, CHUNK_SIZE);
 
-        try {
-          for (const entry of transactionEntries) {
-            const messageToSend = { type: 'process_sync_entry', payload: entry };
-            debugLog('[WebSocketService]', `Sending transaction sync entry ${entry.id} (batch mode) to backend.`);
-            const sent = this.sendMessage(messageToSend);
-            if (!sent) {
-              errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. It will be retried later.`);
-              await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
-            }
-            await new Promise(resolve => setTimeout(resolve, 25));
-          }
-        } finally {
-          transactionStore.endBatchUpdate();
-          infoLog('[WebSocketService]', `Batch processing completed for ${transactionEntries.length} transaction entries.`);
+      infoLog('[WebSocketService]', `Processing ${chunks.length} chunks of max ${CHUNK_SIZE} entries each.`);
+
+      for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+        const chunk = chunks[chunkIndex];
+        infoLog('[WebSocketService]', `Processing chunk ${chunkIndex + 1}/${chunks.length} with ${chunk.length} entries.`);
+
+        // Schritt 2a: Chunk-Einträge als PROCESSING markieren
+        const entriesToProcess = await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
+          const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+          const processingPromises = chunk.map(async (entry) => {
+            await syncQueueTable.update(entry.id, {
+              status: SyncStatus.PROCESSING,
+              attempts: (entry.attempts ?? 0) + 1,
+              lastAttempt: Date.now(),
+            });
+            return {
+              ...entry,
+              status: SyncStatus.PROCESSING,
+              attempts: (entry.attempts ?? 0) + 1,
+              lastAttempt: Date.now(),
+            };
+          });
+          return await Promise.all(processingPromises);
+        });
+
+        // Schritt 2b: Chunk senden
+        await this.processSyncChunk(entriesToProcess);
+
+        // Schritt 2c: Auf ACK/NACK für alle Einträge des Chunks warten
+        const success = await this.waitForChunkAcknowledgment(entriesToProcess);
+
+        if (!success) {
+          warnLog('[WebSocketService]', `Chunk ${chunkIndex + 1} processing failed or timed out. Stopping further processing.`);
+          break;
+        }
+
+        infoLog('[WebSocketService]', `Chunk ${chunkIndex + 1}/${chunks.length} processed successfully.`);
+
+        // Kurze Pause zwischen Chunks
+        if (chunkIndex < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
         }
       }
 
-      // Verarbeite andere Einträge normal
-      for (const entry of otherEntries) {
-        const messageToSend = { type: 'process_sync_entry', payload: entry };
-        infoLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
-        const sent = this.sendMessage(messageToSend);
-        if (!sent) {
-          errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. It will be retried later.`);
-          await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
-        }
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
     } catch (error) {
-      errorLog('[WebSocketService]', 'Error processing sync queue with transaction:', error);
-      // Bei einem Fehler in der Transaktion selbst werden die Änderungen zurückgerollt.
-      // isSyncProcessRunning wird im finally Block gesetzt.
+      errorLog('[WebSocketService]', 'Error processing sync queue with chunked approach:', error);
     } finally {
       isSyncProcessRunning = false;
       infoLog('[WebSocketService]', 'Finished processing sync queue attempt.');
     }
+  },
+
+  /**
+   * Teilt ein Array in Chunks der angegebenen Größe auf
+   */
+  chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
+  },
+
+  /**
+   * Verarbeitet einen einzelnen Chunk von Sync-Einträgen
+   */
+  async processSyncChunk(entries: SyncQueueEntry[]): Promise<void> {
+    const transactionEntries = entries.filter(entry => entry.entityType === EntityTypeEnum.TRANSACTION);
+    const otherEntries = entries.filter(entry => entry.entityType !== EntityTypeEnum.TRANSACTION);
+
+    // Verarbeite Transaction-Einträge im Batch-Modus
+    if (transactionEntries.length > 0) {
+      debugLog('[WebSocketService]', `Processing ${transactionEntries.length} transaction entries in chunk.`);
+      const transactionStore = useTransactionStore();
+      transactionStore.startBatchUpdate();
+
+      try {
+        for (const entry of transactionEntries) {
+          const messageToSend = { type: 'process_sync_entry', payload: entry };
+          debugLog('[WebSocketService]', `Sending transaction sync entry ${entry.id} to backend.`);
+          const sent = this.sendMessage(messageToSend);
+          if (!sent) {
+            errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. It will be retried later.`);
+            await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
+          }
+          await new Promise(resolve => setTimeout(resolve, 25));
+        }
+      } finally {
+        transactionStore.endBatchUpdate();
+      }
+    }
+
+    // Verarbeite andere Einträge normal
+    for (const entry of otherEntries) {
+      const messageToSend = { type: 'process_sync_entry', payload: entry };
+      debugLog('[WebSocketService]', `Sending sync entry ${entry.id} (${entry.entityType} ${entry.operationType}) to backend.`);
+      const sent = this.sendMessage(messageToSend);
+      if (!sent) {
+        errorLog('[WebSocketService]', `Failed to send sync entry ${entry.id}. It will be retried later.`);
+        await tenantDbService.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Failed to send to WebSocket');
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+  },
+
+  /**
+   * Wartet auf ACK/NACK für alle Einträge eines Chunks
+   */
+  async waitForChunkAcknowledgment(entries: SyncQueueEntry[]): Promise<boolean> {
+    const TIMEOUT_MS = 30000; // 30 Sekunden Timeout pro Chunk
+    const CHECK_INTERVAL_MS = 500; // Alle 500ms prüfen
+
+    const entryIds = new Set(entries.map(entry => entry.id));
+    const startTime = Date.now();
+
+    infoLog('[WebSocketService]', `Waiting for acknowledgment of ${entryIds.size} entries...`);
+
+    while (entryIds.size > 0 && (Date.now() - startTime) < TIMEOUT_MS) {
+      // Prüfe welche Einträge noch in der Queue sind (nicht ACK'd)
+      const tenantStore = useTenantStore();
+      const activeDB = tenantStore.activeTenantDB as FinwiseTenantSpecificDB | null;
+
+      if (!activeDB) {
+        errorLog('[WebSocketService]', 'No active DB during acknowledgment wait.');
+        return false;
+      }
+
+      try {
+        const remainingEntries = await activeDB.syncQueue
+          .where('id')
+          .anyOf([...entryIds])
+          .toArray();
+
+        // Entferne ACK'd Einträge aus der Warteliste
+        const remainingIds = new Set(remainingEntries.map(entry => entry.id));
+        const acknowledgedCount = entryIds.size - remainingIds.size;
+
+        if (acknowledgedCount > 0) {
+          debugLog('[WebSocketService]', `${acknowledgedCount} entries acknowledged, ${remainingIds.size} still waiting.`);
+        }
+
+        // Aktualisiere die Warteliste
+        entryIds.clear();
+        remainingIds.forEach(id => entryIds.add(id));
+
+        if (entryIds.size === 0) {
+          infoLog('[WebSocketService]', 'All entries in chunk acknowledged successfully.');
+          return true;
+        }
+
+        // Warte vor nächster Prüfung
+        await new Promise(resolve => setTimeout(resolve, CHECK_INTERVAL_MS));
+
+      } catch (error) {
+        errorLog('[WebSocketService]', 'Error checking acknowledgment status:', error);
+        return false;
+      }
+    }
+
+    if (entryIds.size > 0) {
+      warnLog('[WebSocketService]', `Timeout waiting for acknowledgment. ${entryIds.size} entries not acknowledged.`, {
+        timeoutMs: TIMEOUT_MS,
+        remainingEntryIds: [...entryIds]
+      });
+
+      // Setze nicht-ACK'd Einträge zurück auf PENDING für Retry
+      const tenantStore = useTenantStore();
+      const activeDB = tenantStore.activeTenantDB as FinwiseTenantSpecificDB | null;
+      if (activeDB) {
+        try {
+          await activeDB.transaction('rw', activeDB.syncQueue, async (tx) => {
+            const syncQueueTable = tx.table<SyncQueueEntry, string>('syncQueue');
+            for (const entryId of entryIds) {
+              await syncQueueTable.update(entryId, {
+                status: SyncStatus.PENDING
+              });
+            }
+          });
+        } catch (error) {
+          errorLog('[WebSocketService]', 'Error resetting timed-out entries to PENDING:', error);
+        }
+      }
+
+      return false;
+    }
+
+    return true;
   },
 
   checkAndProcessSyncQueue(): void {
@@ -1450,14 +1573,20 @@ export const WebSocketService = {
         return;
       }
 
-      const currentAttempts = entry.attempts ?? 0;
-      const maxRetries = this.getMaxRetriesForReason(nackMessage.reason);
+      // Verwende retryCount (entspricht attempts) für Retry-Logik
+      const retryCount = entry.attempts ?? 0;
+      const maxRetries = 3; // Fest auf 3 Retries gesetzt wie gefordert
 
-      if (currentAttempts >= maxRetries) {
-        // Maximale Anzahl von Versuchen erreicht - aus Queue entfernen
-        const success = await tenantDbService.removeSyncQueueEntry(nackMessage.id);
+      if (retryCount >= maxRetries) {
+        // Maximale Anzahl an Retries erreicht - markiere als FAILED
+        const success = await tenantDbService.updateSyncQueueEntryStatus(
+          nackMessage.id,
+          SyncStatus.FAILED,
+          `Failed after ${retryCount} retry attempts: ${nackMessage.reason} - ${nackMessage.detail || ''}`
+        );
+
         if (success) {
-          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} nach ${currentAttempts} fehlgeschlagenen Versuchen aus Queue entfernt.`, {
+          errorLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} nach ${retryCount} Retry-Versuchen als FAILED markiert.`, {
             reason: nackMessage.reason,
             detail: nackMessage.detail,
             maxRetries,
@@ -1466,32 +1595,41 @@ export const WebSocketService = {
             operationType: nackMessage.operationType
           });
         } else {
-          errorLog('[WebSocketService]', `Konnte dauerhaft fehlgeschlagenen Sync-Queue-Eintrag ${nackMessage.id} nicht aus Queue entfernen.`, {
+          errorLog('[WebSocketService]', `Konnte fehlgeschlagenen Sync-Queue-Eintrag ${nackMessage.id} nicht als FAILED markieren.`, {
             reason: nackMessage.reason,
             detail: nackMessage.detail
           });
         }
       } else {
-        // Retry mit exponential backoff
-        const retryDelay = this.calculateRetryDelay(currentAttempts);
+        // Berechne Verzögerung mit exponentieller Backoff-Formel: (2 ** (attempt - 1)) * 1000
+        const nextAttempt = retryCount + 1;
+        const retryDelay = Math.pow(2, nextAttempt - 1) * 1000; // 1s, 2s, 4s
 
+        // Setze Status zurück auf PENDING für erneute Verarbeitung
         const success = await tenantDbService.updateSyncQueueEntryStatus(
           nackMessage.id,
           SyncStatus.PENDING,
-          `Retry scheduled after NACK: ${nackMessage.reason} - ${nackMessage.detail || ''}`
+          `Retry ${nextAttempt}/${maxRetries} scheduled after NACK: ${nackMessage.reason} - ${nackMessage.detail || ''}`
         );
 
         if (success) {
-          warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für Retry geplant in ${retryDelay}ms (Versuch ${currentAttempts + 1}/${maxRetries}).`, {
+          warnLog('[WebSocketService]', `Sync-Queue-Eintrag ${nackMessage.id} für Retry ${nextAttempt}/${maxRetries} geplant in ${retryDelay}ms.`, {
             reason: nackMessage.reason,
             detail: nackMessage.detail,
-            retryDelay
+            retryDelay,
+            currentRetryCount: retryCount,
+            nextAttempt
           });
 
-          // Retry nach Delay planen
+          // Warte die berechnete Zeit und setze dann den Sync-Prozess fort
           setTimeout(() => {
             this.checkAndProcessSyncQueue();
           }, retryDelay);
+        } else {
+          errorLog('[WebSocketService]', `Konnte Sync-Queue-Eintrag ${nackMessage.id} nicht für Retry zurücksetzen.`, {
+            reason: nackMessage.reason,
+            detail: nackMessage.detail
+          });
         }
       }
     } catch (error) {

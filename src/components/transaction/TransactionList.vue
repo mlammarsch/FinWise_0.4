@@ -441,7 +441,7 @@ watch(
     <div
       ref="summaryRef"
       v-if="hasSelectedTransactions"
-      class="bg-base-100 border-b border-base-300 mb-4 pb-4 text-sm text-base-content/70"
+      class="bg-base-100 border-b border-base-300 mb-1 pb-1 text-sm text-base-content/70"
     >
       <div class="flex flex-wrap gap-4">
         <div class="flex items-center gap-2">

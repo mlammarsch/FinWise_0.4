@@ -46,6 +46,9 @@ export interface ImportRow {
   _recipientMatches: { id: string; name: string; similarity: number }[];
   _categoryMatches: { id: string; name: string; similarity: number }[];
   _uniqueRowIdentifier: string; // Neuer eindeutiger Identifikator
+  _duplicateType?: 'standard' | 'account_transfer'; // Neuer Duplikat-Typ
+  _duplicateConfidence?: number; // Konfidenz-Level für Duplikate
+  _extractedTags?: string[]; // Extrahierte Tag-Namen aus Notizen
   recipientId?: string;
   categoryId?: string;
   tagIds?: string[];
@@ -420,6 +423,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           (h) =>
             h.toLowerCase().includes("empfänger") ||
             h.toLowerCase().includes("recipient") ||
+            h.toLowerCase().includes("payee") ||
             h.toLowerCase().includes("zahler") ||
             h.toLowerCase().includes("kunde") ||
             h.toLowerCase().includes("auftraggeber") ||
@@ -437,6 +441,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           (h) =>
             h.toLowerCase().includes("notiz") ||
             h.toLowerCase().includes("note") ||
+            h.toLowerCase().includes("notes") ||
             h.toLowerCase().includes("verwendungszweck") ||
             h.toLowerCase().includes("buchungstext") ||
             h.toLowerCase().includes("beschreibung") ||
@@ -447,12 +452,14 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       mappedColumns.value.notes = notesHeader;
     }
 
-    // Automatisches Mapping für Kategorie (niedrigste Priorität, oft nicht in Bankdaten)
-    if (possibleMappings.value.category.length > 0) {
+    // Automatisches Mapping für Kategorie (niedrigste Priorität)
+    if (possibleMappings.value.category.length > 0 && !mappedColumns.value.category) {
       const categoryHeader =
         possibleMappings.value.category.find(
           (h) =>
+            h.toLowerCase().includes("kat") ||
             h.toLowerCase().includes("kategorie") ||
+            h.toLowerCase().includes("cat") ||
             h.toLowerCase().includes("category")
         ) || possibleMappings.value.category[0];
 
@@ -522,6 +529,11 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
     // Für jede Zeile Empfänger und Kategorien automatisch zuordnen
     allParsedData.value.forEach((row) => {
+      // Überspringe Empfänger- und Kategorie-Matching für potentielle Account-Transfers
+      if (row._potentialAccountTransfer) {
+        return;
+      }
+
       // 1. Empfängererkennung
       if (mappedColumns.value.recipient) {
         const recipientText = row[mappedColumns.value.recipient];
@@ -530,13 +542,6 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         }
       }
 
-      // Zusätzlich in Notizen nach Empfängern suchen
-      if (mappedColumns.value.notes) {
-        const notesText = row[mappedColumns.value.notes];
-        if (notesText) {
-          findMatchingRecipient(row, notesText);
-        }
-      }
 
       // 2. Kategorieerkennung
       if (mappedColumns.value.category) {
@@ -545,10 +550,45 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           findMatchingCategory(row, categoryText);
         }
       }
+
+      // 3. Tag-Erkennung aus Notizen
+      const extractedTags = _extractTagsFromNotes(row);
+      if (extractedTags.length > 0) {
+        row._extractedTags = extractedTags;
+        debugLog('CSVImportService', `Tags aus Notizen extrahiert für Zeile ${row._originalIndex}:`, extractedTags);
+      }
     });
 
     // Identifiziere potenzielle Duplikate
     identifyPotentialMerges();
+  }
+
+  /**
+   * Extrahiert Tags aus dem Notizfeld einer ImportRow
+   */
+  function _extractTagsFromNotes(row: ImportRow): string[] {
+    if (!mappedColumns.value.notes || !row[mappedColumns.value.notes]) {
+      return [];
+    }
+
+    const notesText = row[mappedColumns.value.notes].toString().trim();
+    if (!notesText) {
+      return [];
+    }
+
+    // Regex zum Finden von Tags (# gefolgt von Zeichen bis zum nächsten Leerzeichen oder Ende)
+    const tagRegex = /#([^\s#]+)/g;
+    const extractedTags: string[] = [];
+    let match;
+
+    while ((match = tagRegex.exec(notesText)) !== null) {
+      const tagName = match[1].trim();
+      if (tagName && !extractedTags.includes(tagName)) {
+        extractedTags.push(tagName);
+      }
+    }
+
+    return extractedTags;
   }
 
   /**
@@ -664,6 +704,46 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
       if (!parsedDate || parsedAmount === null) return;
 
+      // Prüfe zuerst auf AccountTransfer-Duplikate
+      if (row._potentialAccountTransfer) {
+        const accountTransferDuplicate = transactionStore.transactions.find((tx) => {
+          // Muss ein AccountTransfer sein
+          if (tx.type !== TransactionType.ACCOUNTTRANSFER) return false;
+
+          // Gleicher Tag (mit 1-Tag Toleranz für AccountTransfers)
+          const txDate = new Date(tx.date);
+          const importDate = new Date(parsedDate);
+          const dayDiff = Math.abs(txDate.getTime() - importDate.getTime()) / (1000 * 60 * 60 * 24);
+          const similarDate = dayDiff <= 1;
+
+          // Gleicher Betrag (aber entgegengesetzte Richtung)
+          const sameAmount = Math.abs(Math.abs(tx.amount) - Math.abs(parsedAmount)) < 0.01;
+
+          // Entgegengesetzte Richtung prüfen:
+          // - Die bestehende Transaktion ist ein AccountTransfer von tx.accountId zu tx.transferToAccountId
+          // - Die Import-Zeile würde zu row._potentialAccountTransfer.toAccountId gehen
+          // - Für ein Duplikat muss tx.accountId === row._potentialAccountTransfer.toAccountId sein
+          //   (die bestehende Transaktion geht VON dem Konto, zu dem die Import-Zeile gehen würde)
+          const oppositeDirection = tx.accountId === row._potentialAccountTransfer.toAccountId;
+
+          return similarDate && sameAmount && oppositeDirection;
+        });
+
+        if (accountTransferDuplicate) {
+          row._potentialMerge = accountTransferDuplicate;
+          row._duplicateType = 'account_transfer';
+          row._duplicateConfidence = 0.95;
+          debugLog('CSVImportService', `AccountTransfer-Duplikat erkannt mit hoher Sicherheit (${row._duplicateConfidence})`, {
+            importRow: row._uniqueRowIdentifier,
+            existingTransaction: accountTransferDuplicate.id,
+            amount: parsedAmount,
+            date: parsedDate
+          });
+          return; // Früher Ausstieg, da AccountTransfer-Duplikat gefunden
+        }
+      }
+
+      // Standard-Duplikaterkennung für normale Transaktionen
       // Empfänger und Notizen aus der Zeile extrahieren (falls gemappt)
       let recipientName = "";
       let notes = "";
@@ -707,6 +787,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
       if (potentialMatches.length > 0) {
         row._potentialMerge = potentialMatches[0];
+        row._duplicateType = 'standard';
+        row._duplicateConfidence = 0.8; // Standard-Konfidenz für normale Duplikate
       }
     });
   }
@@ -1127,11 +1209,67 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       // Map für bereits erstellte Empfänger, um Duplikate zu vermeiden
       const createdRecipients = new Map<string, string>();  // recipientName -> recipientId
 
+      // Tag-Verarbeitung: Sammle alle einzigartigen Tags und erstelle sie im Batch
+      const allExtractedTags = new Set<string>();
+      const rowTagMapping = new Map<string, string[]>(); // _uniqueRowIdentifier -> tagNames
+
+      // Sammle alle extrahierten Tags aus den zu importierenden Zeilen
+      for (const item of preparedData) {
+        const originalRowData = allParsedData.value.find(row =>
+          row._uniqueRowIdentifier && (item as any)._uniqueRowIdentifier === row._uniqueRowIdentifier
+        );
+
+        if (originalRowData && originalRowData._extractedTags && originalRowData._extractedTags.length > 0) {
+          rowTagMapping.set(originalRowData._uniqueRowIdentifier, originalRowData._extractedTags);
+          originalRowData._extractedTags.forEach(tagName => allExtractedTags.add(tagName));
+        }
+      }
+
+      // Erstelle neue Tags (case-insensitive Prüfung)
+      const tagNameToIdMap = new Map<string, string>(); // tagName (lowercase) -> tagId
+
+      if (allExtractedTags.size > 0) {
+        debugLog('CSVImportService', `Verarbeite ${allExtractedTags.size} einzigartige Tags aus CSV-Import`);
+
+        for (const tagName of allExtractedTags) {
+          const lowerTagName = tagName.toLowerCase();
+
+          // Prüfe ob Tag bereits existiert (case-insensitive)
+          const existingTag = tagStore.tags.find(tag =>
+            tag.name.toLowerCase() === lowerTagName
+          );
+
+          if (existingTag) {
+            tagNameToIdMap.set(lowerTagName, existingTag.id);
+            debugLog('CSVImportService', `Verwende existierendes Tag: "${tagName}" -> ${existingTag.id}`);
+          } else {
+            // Erstelle neues Tag
+            try {
+              const newTag = await tagStore.addTag({
+                name: tagName,
+                parentTagId: null
+              });
+              tagNameToIdMap.set(lowerTagName, newTag.id);
+              infoLog('CSVImportService', `Neues Tag erstellt: "${tagName}" -> ${newTag.id}`);
+            } catch (error) {
+              errorLog('CSVImportService', `Fehler beim Erstellen von Tag "${tagName}"`, error);
+            }
+          }
+        }
+      }
+
       // REGEL-FIRST-ARCHITEKTUR: Zwei-Phasen-Verarbeitung
       const transactionsToImport = [];
 
       // Phase 1: Datenaufbereitung - payee aus CSV setzen, keine IDs zuweisen
       for (const item of preparedData) {
+        // Hole extrahierte Tags für diese Zeile
+        const itemRowIdentifier = (item as any)._uniqueRowIdentifier;
+        const extractedTagNames = rowTagMapping.get(itemRowIdentifier) || [];
+        const extractedTagIds = extractedTagNames.map(tagName =>
+          tagNameToIdMap.get(tagName.toLowerCase())
+        ).filter(Boolean) as string[];
+
         // WICHTIG: Setze payee IMMER aus CSV-Daten, auch wenn potentieller Match existiert
         const transactionData: CSVTransactionData = {
           id: crypto.randomUUID(),
@@ -1151,7 +1289,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           // IDs bleiben zunächst undefined - werden durch Regeln oder Matching gesetzt
           recipientId: undefined,
           categoryId: undefined,
-          tagIds: item.tagIds || [],
+          tagIds: [...(item.tagIds || []), ...extractedTagIds], // Kombiniere bestehende und extrahierte Tags
 
           // Weitere Felder
           type: item.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME,
