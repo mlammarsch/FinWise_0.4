@@ -345,10 +345,10 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         possibleMappings.value.recipient.push(header);
       }
 
-      // Kategorie erkennen (ähnlich wie Empfänger, aber tendenziell kürzer)
+      // Kategorie erkennen (ähnlich wie Empfänger, erweiterte Länge für längere Kategorienamen)
       if (
         value.length > 0 &&
-        value.length < 30 &&
+        value.length < 80 &&
         !/^\d+([,\.]\d+)?$/.test(value) &&
         !/^\d{1,2}[-/\.]\d{1,2}/.test(value)
       ) {
@@ -979,6 +979,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         payee: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : '',
         // Speichere den Original-Empfängernamen für weitere Verarbeitung
         originalRecipientName: mappedColumns.value.recipient ? row[mappedColumns.value.recipient] : null,
+        // Speichere den Original-Kategorienamen für Kategorie-Matching
+        originalCategory: mappedColumns.value.category ? row[mappedColumns.value.category] : null,
         // Eindeutiger Identifikator für Account-Transfer-Erkennung
         _uniqueRowIdentifier: row._uniqueRowIdentifier
       };
@@ -1277,8 +1279,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
           // REGEL-RELEVANTE FELDER - immer aus CSV setzen
           payee: item.originalRecipientName || '', // Aus CSV-Empfänger-Spalte
-          originalCategory: mappedColumns.value.category ?
-            (item as any)[mappedColumns.value.category] : undefined,
+          originalCategory: item.originalCategory, // Aus prepareDataForImport
           originalRecipientName: item.originalRecipientName, // Für Regel-Kompatibilität
 
           // IDs bleiben zunächst undefined - werden durch Regeln oder Matching gesetzt
@@ -1590,7 +1591,13 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
       // Sammle alle betroffenen Konten (normale Transaktionen + Account-Transfers)
       const normalAccountIds = importedTransactions.value.map((tx: any) => tx.accountId).filter(Boolean);
-      const transferAccountIds = accountTransfersToCreate.flatMap(transfer => [transfer.fromAccountId, transfer.toAccountId]);
+
+      // Sammle Account-IDs aus Account-Transfer-Transaktionen (sowohl FROM als auch TO Seiten)
+      const transferAccountIds = importedTransactions.value
+        .filter((tx: any) => tx.type === TransactionType.ACCOUNTTRANSFER)
+        .flatMap((tx: any) => [tx.accountId, tx.transferToAccountId])
+        .filter(Boolean);
+
       const affectedAccountIds = [...new Set([...normalAccountIds, ...transferAccountIds])];
 
       // Ermittle das älteste Datum aller importierten Transaktionen für optimierte Neuberechnung
