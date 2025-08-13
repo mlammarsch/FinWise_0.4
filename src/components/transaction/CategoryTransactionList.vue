@@ -56,6 +56,7 @@ const emit = defineEmits([
   "delete",
   "sort-change",
   "toggleReconciliation",
+  "selection-changed",
 ]);
 
 // Lazy Loading State
@@ -129,6 +130,7 @@ function handleHeaderCheckboxChange(event: Event) {
     );
   }
   lastSelectedIndex.value = null;
+  emit("selection-changed", selectedIds.value.length);
 }
 
 function handleCheckboxClick(
@@ -166,6 +168,7 @@ function handleCheckboxClick(
     }
   }
   lastSelectedIndex.value = index;
+  emit("selection-changed", selectedIds.value.length);
 }
 
 function getSelectedTransactions(): Transaction[] {
@@ -176,6 +179,7 @@ function getSelectedTransactions(): Transaction[] {
 
 function clearSelection() {
   selectedIds.value = [];
+  emit("selection-changed", 0);
 }
 
 defineExpose({ getSelectedTransactions, selectedIds, clearSelection });

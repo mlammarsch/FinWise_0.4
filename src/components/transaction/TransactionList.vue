@@ -53,6 +53,7 @@ const emit = defineEmits([
   "delete",
   "sort-change",
   "toggleReconciliation",
+  "selection-changed",
 ]);
 
 const accountStore = useAccountStore();
@@ -192,6 +193,7 @@ function handleHeaderCheckboxChange(event: Event) {
     selectedIdsAfter: selectedIds.value.length,
     getSelectedTransactionsLength: getSelectedTransactions().length
   });
+  emit("selection-changed", selectedIds.value.length);
 }
 
 function handleCheckboxClick(
@@ -222,6 +224,7 @@ function handleCheckboxClick(
     }
   }
   lastSelectedIndex.value = index;
+  emit("selection-changed", selectedIds.value.length);
 }
 
 function getSelectedTransactions(): Transaction[] {
@@ -239,6 +242,7 @@ function getSelectedTransactions(): Transaction[] {
 
 function clearSelection() {
   selectedIds.value = [];
+  emit("selection-changed", 0);
 }
 
 defineExpose({ getSelectedTransactions, clearSelection });

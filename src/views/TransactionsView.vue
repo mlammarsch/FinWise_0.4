@@ -143,21 +143,12 @@ const showBulkChangeDateModal = ref(false);
 const showBulkDeleteModal = ref(false);
 const bulkDeleteTransactionIds = ref<string[]>([]);
 
-const selectedTransactionCount = computed(() => {
-  let count = 0;
-  if (currentViewMode.value === "account") {
-    count = transactionListRef.value?.getSelectedTransactions()?.length || 0;
-  } else {
-    count = categoryTransactionListRef.value?.getSelectedTransactions()?.length || 0;
-  }
-  console.log('[TransactionsView] selectedTransactionCount computed:', {
-    currentViewMode: currentViewMode.value,
-    count,
-    hasTransactionListRef: !!transactionListRef.value,
-    hasCategoryTransactionListRef: !!categoryTransactionListRef.value
-  });
-  return count;
-});
+const localSelectedCount = ref(0);
+const selectedTransactionCount = computed(() => localSelectedCount.value);
+
+function handleSelectionChanged(count: number) {
+  localSelectedCount.value = count;
+}
 
 // Ansicht / Filter --------------------------------------------------------
 const currentViewMode = computed({
