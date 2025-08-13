@@ -620,24 +620,10 @@ export const useRecipientStore = defineStore('recipient', () => {
   }
 
   async function reset() {
-    try {
-      // Versuche alle Empfänger aus der Datenbank zu löschen
-      const result = await tenantDbService.clearAllRecipients();
-
-      if (!result.success) {
-        warnLog('recipientStore', `Reset fehlgeschlagen: ${result.message}`);
-        throw new Error(result.message);
-      }
-
-      // Lokale Arrays leeren und neu laden
-      recipients.value = [];
-      await loadRecipients();
-
-      infoLog('recipientStore', 'Reset erfolgreich abgeschlossen - alle Empfänger gelöscht');
-    } catch (error) {
-      errorLog('recipientStore', 'Fehler beim Reset der Empfänger', error);
-      throw error;
-    }
+    // Nur lokale Arrays leeren - KEINE DB-Löschung beim Tenant-Switch!
+    recipients.value = [];
+    await loadRecipients();
+    infoLog('recipientStore', 'Reset erfolgreich - Empfänger aus neuer Tenant-DB geladen');
   }
 
   /**

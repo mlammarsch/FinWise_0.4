@@ -282,25 +282,11 @@ export const useTagStore = defineStore('tag', () => {
   }
 
   async function reset() {
-    try {
-      // Versuche alle Tags aus der Datenbank zu löschen
-      const result = await tenantDbService.clearAllTags();
-
-      if (!result.success) {
-        warnLog('tagStore', `Reset fehlgeschlagen: ${result.message}`);
-        throw new Error(result.message);
-      }
-
-      // Lokale Arrays leeren und neu laden
-      tags.value = [];
-      colorHistory.value = [];
-      await loadTags();
-
-      infoLog('tagStore', 'Reset erfolgreich abgeschlossen - alle Tags gelöscht');
-    } catch (error) {
-      errorLog('tagStore', 'Fehler beim Reset der Tags', error);
-      throw error;
-    }
+    // Nur lokale Arrays leeren - KEINE DB-Löschung beim Tenant-Switch!
+    tags.value = [];
+    colorHistory.value = [];
+    await loadTags();
+    infoLog('tagStore', 'Reset erfolgreich - Tags aus neuer Tenant-DB geladen');
   }
 
   // Initialisierung

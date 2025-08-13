@@ -560,25 +560,11 @@ export const useCategoryStore = defineStore('category', () => {
   }
 
   async function reset(): Promise<void> {
-    try {
-      // Versuche alle Kategorien aus der Datenbank zu löschen
-      const result = await tenantDbService.clearAllCategories();
-
-      if (!result.success) {
-        warnLog('categoryStore', `Reset fehlgeschlagen: ${result.message}`);
-        throw new Error(result.message);
-      }
-
-      // Lokale Arrays leeren und neu laden
-      categories.value = [];
-      categoryGroups.value = [];
-      await loadCategories();
-
-      infoLog('categoryStore', 'Reset erfolgreich abgeschlossen - alle Kategorien gelöscht');
-    } catch (error) {
-      errorLog('categoryStore', 'Fehler beim Reset der Kategorien', error);
-      throw error;
-    }
+    // Nur lokale Arrays leeren - KEINE DB-Löschung beim Tenant-Switch!
+    categories.value = [];
+    categoryGroups.value = [];
+    await loadCategories();
+    infoLog('categoryStore', 'Reset erfolgreich - Kategorien aus neuer Tenant-DB geladen');
   }
 
   /** Initialisiert den Store beim Tenantwechsel oder App-Start */

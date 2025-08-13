@@ -1692,6 +1692,7 @@ watch(activeTab, (newTab) => {
             @sort-change="handleSortChange"
             @edit="editTransaction"
             @delete="deleteTransaction"
+            @selection-changed="handleSelectionChanged"
           />
         </div>
       </div>
