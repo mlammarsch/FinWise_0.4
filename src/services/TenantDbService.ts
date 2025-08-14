@@ -2233,4 +2233,51 @@ export class TenantDbService {
       return { success: false, message: 'Fehler beim Löschen der Tags.' };
     }
   }
+
+  // ===== BULK-OPERATIONEN FÜR RUNNING BALANCE OPTIMIERUNG =====
+
+  /**
+   * Holt mehrere Transaktionen anhand ihrer IDs (Bulk-Read)
+   */
+  async getTransactionsByIds(ids: string[]): Promise<ExtendedTransaction[]> {
+    if (!this.db) {
+      return [];
+    }
+    try {
+      if (ids.length === 0) return [];
+
+      // Bulk-Read mit Dexie's bulkGet für optimale Performance
+      const transactions = await this.db.transactions.bulkGet(ids);
+      return transactions.filter(Boolean) as ExtendedTransaction[]; // Filtere undefined-Werte
+    } catch (err) {
+      debugLog('TenantDbService', 'Fehler beim Bulk-Read von Transaktionen', err);
+      return [];
+    }
+  }
+
+  /**
+   * Bulk-Update für Transaktionen (optimiert für Running Balance Updates)
+   */
+  async bulkUpdateTransactions(transactions: ExtendedTransaction[]): Promise<void> {
+    if (!this.db) {
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (transactions.length === 0) {
+      return;
+    }
+
+    try {
+      // Konvertiere zu Plain Objects für Dexie
+      const plainTransactions = transactions.map(tx => this.toPlainObject(tx));
+
+      // Bulk-Update in einer einzigen IndexedDB-Transaktion
+      await this.db.transactions.bulkPut(plainTransactions);
+
+      debugLog('TenantDbService', `Bulk-Update von ${transactions.length} Transaktionen abgeschlossen`);
+    } catch (err) {
+      debugLog('TenantDbService', 'Fehler beim Bulk-Update von Transaktionen', err);
+      throw err;
+    }
+  }
 }

@@ -447,6 +447,7 @@ export const BudgetService = {
    * Setzt das Budget für einen Monat auf 0 zurück, indem alle CATEGORYTRANSFER-Transaktionen
    * des Monats für Ausgabenkategorien (isIncomeCategory: false) gelöscht werden.
    * Einnahme-Kategorietransfers werden ignoriert.
+   * OPTIMIERT: Verwendet Bulk-Löschung für bessere Performance.
    */
   async resetMonthBudget(monthStart: Date, monthEnd: Date): Promise<number> {
     const transactionStore = useTransactionStore();
@@ -485,30 +486,55 @@ export const BudgetService = {
 
     debugLog('[BudgetService]', `Zu löschende Ausgaben-CATEGORYTRANSFER: ${expenseTransfers.length}`);
 
-    let deletedCount = 0;
-
-    // Lösche alle gefilterten Transaktionen
-    for (const transfer of expenseTransfers) {
-      try {
-        // Verwende TransactionService.deleteTransaction für korrekte Behandlung von Gegenbuchungen
-        const success = await TransactionService.deleteTransaction(transfer.id);
-        if (success) {
-          deletedCount++;
-          debugLog('[BudgetService]', `CATEGORYTRANSFER gelöscht: ${transfer.description} (${transfer.amount}€)`);
-        } else {
-          warnLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER: ${transfer.id}`);
-        }
-      } catch (error) {
-        errorLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER ${transfer.id}`, error);
-      }
+    if (expenseTransfers.length === 0) {
+      infoLog('[BudgetService]', 'resetMonthBudget abgeschlossen: Keine Transaktionen zu löschen');
+      return 0;
     }
 
-    // Cache invalidieren
-    this.invalidateCache();
+    // OPTIMIERUNG: Verwende Bulk-Löschung statt einzelner Löschungen
+    try {
+      const transferIds = expenseTransfers.map(tx => tx.id);
+      const result = await TransactionService.bulkDeleteTransactions(transferIds);
 
-    infoLog('[BudgetService]', `resetMonthBudget abgeschlossen: ${deletedCount} Transaktionen gelöscht`);
+      if (result.success) {
+        debugLog('[BudgetService]', `Bulk-Löschung erfolgreich: ${result.deletedCount} Transaktionen gelöscht`);
 
-    return deletedCount;
+        // Cache invalidieren
+        this.invalidateCache();
+
+        infoLog('[BudgetService]', `resetMonthBudget abgeschlossen: ${result.deletedCount} Transaktionen gelöscht`);
+        return result.deletedCount;
+      } else {
+        errorLog('[BudgetService]', 'Bulk-Löschung fehlgeschlagen');
+        return 0;
+      }
+    } catch (error) {
+      errorLog('[BudgetService]', 'Fehler bei Bulk-Löschung von CATEGORYTRANSFER-Transaktionen', error);
+
+      // Fallback: Einzelne Löschungen
+      warnLog('[BudgetService]', 'Fallback auf einzelne Löschungen');
+      let deletedCount = 0;
+
+      for (const transfer of expenseTransfers) {
+        try {
+          const success = await TransactionService.deleteTransaction(transfer.id);
+          if (success) {
+            deletedCount++;
+            debugLog('[BudgetService]', `CATEGORYTRANSFER gelöscht: ${transfer.description} (${transfer.amount}€)`);
+          } else {
+            warnLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER: ${transfer.id}`);
+          }
+        } catch (individualError) {
+          errorLog('[BudgetService]', `Fehler beim Löschen von CATEGORYTRANSFER ${transfer.id}`, individualError);
+        }
+      }
+
+      // Cache invalidieren
+      this.invalidateCache();
+
+      infoLog('[BudgetService]', `resetMonthBudget abgeschlossen (Fallback): ${deletedCount} Transaktionen gelöscht`);
+      return deletedCount;
+    }
   },
 
   /**
@@ -571,8 +597,14 @@ export const BudgetService = {
 
     debugLog('[BudgetService]', `Gefundene Prioritäten: ${priorities.join(', ')}`);
 
-    let transfersCreated = 0;
     const transferDate = toDateOnlyString(monthEnd); // Monatsende für Budget-Transfers
+    const allTransfers: Array<{
+      fromCategoryId: string;
+      toCategoryId: string;
+      amount: number;
+      date: string;
+      note: string;
+    }> = [];
 
     // Durchlauf 1: Kategorien ohne Priorität (Festbeträge)
     const noPriorityCategories = templateCategories.filter(c => !c.priority);
@@ -598,22 +630,16 @@ export const BudgetService = {
           }
         }
 
-        try {
-          await TransactionService.addCategoryTransfer(
-            availableFundsCategory.id,
-            category.id,
-            transferAmount,
-            transferDate,
-            `Budget-Template: ${category.name}`
-          );
+        allTransfers.push({
+          fromCategoryId: availableFundsCategory.id,
+          toCategoryId: category.id,
+          amount: transferAmount,
+          date: transferDate,
+          note: `Budget-Template: ${category.name}`
+        });
 
-          availableFunds -= transferAmount;
-          transfersCreated++;
-
-          debugLog('[BudgetService]', `Transfer erstellt: ${transferAmount}€ für ${category.name} (ohne Priorität)`);
-        } catch (error) {
-          errorLog('[BudgetService]', `Fehler beim Transfer für ${category.name}`, error);
-        }
+        availableFunds -= transferAmount;
+        debugLog('[BudgetService]', `Transfer geplant: ${transferAmount}€ für ${category.name} (ohne Priorität)`);
       }
     }
 
@@ -657,21 +683,45 @@ export const BudgetService = {
         }
 
         if (transferAmount > 0) {
+          allTransfers.push({
+            fromCategoryId: availableFundsCategory.id,
+            toCategoryId: category.id,
+            amount: transferAmount,
+            date: transferDate,
+            note: `Budget-Template: ${category.name} (Priorität ${priority})`
+          });
+
+          availableFunds -= transferAmount;
+          debugLog('[BudgetService]', `Transfer geplant: ${transferAmount}€ für ${category.name} (Priorität ${priority})`);
+        }
+      }
+    }
+
+    // Bulk-Erstellung aller Transfers
+    let transfersCreated = 0;
+    if (allTransfers.length > 0) {
+      try {
+        debugLog('[BudgetService]', `Erstelle ${allTransfers.length} Transfers in Bulk-Operation`);
+        const results = await TransactionService.addMultipleCategoryTransfers(allTransfers);
+        transfersCreated = results.length;
+        debugLog('[BudgetService]', `Bulk-Transfer erfolgreich: ${transfersCreated} Transfers erstellt`);
+      } catch (error) {
+        errorLog('[BudgetService]', 'Fehler bei Bulk-Transfer-Erstellung', error);
+
+        // Fallback: Einzelne Transfers bei Bulk-Fehler
+        debugLog('[BudgetService]', 'Fallback auf einzelne Transfers');
+        for (const transfer of allTransfers) {
           try {
             await TransactionService.addCategoryTransfer(
-              availableFundsCategory.id,
-              category.id,
-              transferAmount,
-              transferDate,
-              `Budget-Template: ${category.name} (Priorität ${priority})`
+              transfer.fromCategoryId,
+              transfer.toCategoryId,
+              transfer.amount,
+              transfer.date,
+              transfer.note
             );
-
-            availableFunds -= transferAmount;
             transfersCreated++;
-
-            debugLog('[BudgetService]', `Transfer erstellt: ${transferAmount}€ für ${category.name} (Priorität ${priority})`);
-          } catch (error) {
-            errorLog('[BudgetService]', `Fehler beim Transfer für ${category.name}`, error);
+          } catch (singleError) {
+            errorLog('[BudgetService]', `Fehler beim einzelnen Transfer für Kategorie ${transfer.toCategoryId}`, singleError);
           }
         }
       }

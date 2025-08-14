@@ -225,6 +225,105 @@ export const TransactionService = {
     return { fromTransaction: newFromTx, toTransaction: newToTx };
   },
 
+  async addMultipleCategoryTransfers(transfers: Array<{
+    fromCategoryId: string;
+    toCategoryId: string;
+    amount: number;
+    date: string;
+    note?: string;
+    recipientId?: string;
+  }>): Promise<Array<{ fromTransaction: Transaction; toTransaction: Transaction }>> {
+    if (transfers.length === 0) return [];
+
+    const categoryStore = useCategoryStore();
+    const transactionStore = useTransactionStore();
+    const results: Array<{ fromTransaction: Transaction; toTransaction: Transaction }> = [];
+
+    // Sammle alle Transaktionen für Bulk-Insert
+    const allTransactions: ExtendedTransaction[] = [];
+    const transferPairs: Array<{ fromIndex: number; toIndex: number; transfer: typeof transfers[0] }> = [];
+
+    transfers.forEach((transfer, i) => {
+      const fromCategoryName = categoryStore.getCategoryById(transfer.fromCategoryId)?.name ?? '';
+      const toCategoryName = categoryStore.getCategoryById(transfer.toCategoryId)?.name ?? '';
+      const normalizedDate = toDateOnlyString(transfer.date);
+      const note = transfer.note || '';
+
+      const fromTx: ExtendedTransaction = {
+        id: '', // Wird von addMultipleTransactions gesetzt
+        runningBalance: 0, // Wird von addMultipleTransactions berechnet
+        type: TransactionType.CATEGORYTRANSFER,
+        date: normalizedDate,
+        valueDate: normalizedDate,
+        accountId: '',
+        categoryId: transfer.fromCategoryId,
+        amount: -Math.abs(transfer.amount),
+        tagIds: [],
+        payee: transfer.recipientId ? this.resolvePayeeFromRecipient(transfer.recipientId) : `Kategorientransfer zu ${toCategoryName}`,
+        note,
+        counterTransactionId: null,
+        planningTransactionId: null,
+        isReconciliation: false,
+        isCategoryTransfer: true,
+        toCategoryId: transfer.toCategoryId,
+        reconciled: false,
+        description: '',
+        recipientId: transfer.recipientId
+      };
+
+      const toTx: ExtendedTransaction = {
+        ...fromTx,
+        id: '', // Wird von addMultipleTransactions gesetzt
+        categoryId: transfer.toCategoryId,
+        amount: Math.abs(transfer.amount),
+        payee: transfer.recipientId ? this.resolvePayeeFromRecipient(transfer.recipientId) : `Kategorientransfer von ${fromCategoryName}`,
+        toCategoryId: transfer.fromCategoryId
+      };
+
+      const fromIndex = allTransactions.length;
+      const toIndex = allTransactions.length + 1;
+
+      allTransactions.push(fromTx, toTx);
+      transferPairs.push({ fromIndex, toIndex, transfer });
+    });
+
+    // Bulk-Insert aller Transaktionen
+    const insertedTransactions = await transactionStore.addMultipleTransactions(allTransactions);
+
+    // Sammle Updates für counterTransactionId - verwende einzelne Updates
+    const affectedCategoryIds = new Set<string>();
+    let earliestDate = transfers[0]?.date;
+
+    for (const { fromIndex, toIndex, transfer } of transferPairs) {
+      const fromTx = insertedTransactions[fromIndex];
+      const toTx = insertedTransactions[toIndex];
+
+      if (fromTx && toTx) {
+        // Einzelne Updates für counterTransactionId
+        await transactionStore.updateTransaction(fromTx.id, { counterTransactionId: toTx.id });
+        await transactionStore.updateTransaction(toTx.id, { counterTransactionId: fromTx.id });
+
+        results.push({ fromTransaction: fromTx, toTransaction: toTx });
+        affectedCategoryIds.add(transfer.fromCategoryId);
+        affectedCategoryIds.add(transfer.toCategoryId);
+
+        if (transfer.date < earliestDate) {
+          earliestDate = transfer.date;
+        }
+      }
+    }
+
+    // Trigger Balance Update für alle betroffenen Kategorien
+    if (affectedCategoryIds.size > 0) {
+      BalanceService.triggerMonthlyBalanceUpdate({
+        categoryIds: Array.from(affectedCategoryIds),
+        fromDate: toDateOnlyString(earliestDate)
+      });
+    }
+
+    return results;
+  },
+
   async updateCategoryTransfer(transactionId: string, gegentransactionId: string, fromCategoryId: string, toCategoryId: string, amount: number, date: string, note: string | undefined = undefined, recipientId?: string) {
     const catStore = useCategoryStore();
     const fromCategoryName = catStore.getCategoryById(fromCategoryId)?.name ?? '';

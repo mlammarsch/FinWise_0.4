@@ -1,5 +1,5 @@
 // src/services/BalanceService.ts
-import { useTransactionStore } from '@/stores/transactionStore';
+import { useTransactionStore, type ExtendedTransaction } from '@/stores/transactionStore';
 import { usePlanningStore } from '@/stores/planningStore';
 import { useMonthlyBalanceStore, MonthlyBalance } from '@/stores/monthlyBalanceStore';
 import { useAccountStore } from '@/stores/accountStore';
@@ -9,6 +9,114 @@ import { toDateOnlyString } from '@/utils/formatters';
 import { PlanningService } from './PlanningService';
 import { debugLog } from '@/utils/logger';
 import dayjs from 'dayjs';
+
+/**
+ * Transaction Cache für optimierte Balance-Berechnungen
+ * Gruppiert Transaktionen nach Monat/Kategorie für schnellere Zugriffe
+ */
+class TransactionCache {
+  private cache = new Map<string, {
+    accountTransactions: Map<string, Transaction[]>;
+    categoryTransactions: Map<string, Transaction[]>;
+    lastUpdate: number;
+  }>();
+
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 Minuten TTL
+
+  /**
+   * Generiert Cache-Key für einen Monat
+   */
+  private getMonthKey(year: number, month: number): string {
+    return `${year}-${month.toString().padStart(2, '0')}`;
+  }
+
+  /**
+   * Holt oder erstellt Cache-Eintrag für einen Monat
+   */
+  private getOrCreateMonthCache(year: number, month: number) {
+    const key = this.getMonthKey(year, month);
+    let monthCache = this.cache.get(key);
+
+    if (!monthCache || (Date.now() - monthCache.lastUpdate) > this.CACHE_TTL) {
+      monthCache = {
+        accountTransactions: new Map(),
+        categoryTransactions: new Map(),
+        lastUpdate: Date.now()
+      };
+      this.cache.set(key, monthCache);
+      this.buildMonthCache(year, month, monthCache);
+    }
+
+    return monthCache;
+  }
+
+  /**
+   * Baut den Cache für einen Monat auf
+   */
+  private buildMonthCache(year: number, month: number, monthCache: any) {
+    const transactionStore = useTransactionStore();
+    const endDate = new Date(year, month + 1, 0);
+    const endDateStr = toDateOnlyString(endDate);
+
+    // Alle Transaktionen bis zum Monatsende
+    const relevantTxs = transactionStore.transactions.filter(tx =>
+      toDateOnlyString(tx.date) <= endDateStr || toDateOnlyString(tx.valueDate) <= endDateStr
+    );
+
+    // Gruppierung nach Accounts (nach date)
+    relevantTxs.forEach(tx => {
+      if (tx.accountId && toDateOnlyString(tx.date) <= endDateStr && tx.type !== TransactionType.CATEGORYTRANSFER) {
+        if (!monthCache.accountTransactions.has(tx.accountId)) {
+          monthCache.accountTransactions.set(tx.accountId, []);
+        }
+        monthCache.accountTransactions.get(tx.accountId)!.push(tx);
+      }
+    });
+
+    // Gruppierung nach Kategorien (nach valueDate)
+    relevantTxs.forEach(tx => {
+      if (tx.categoryId && toDateOnlyString(tx.valueDate) <= endDateStr) {
+        if (!monthCache.categoryTransactions.has(tx.categoryId)) {
+          monthCache.categoryTransactions.set(tx.categoryId, []);
+        }
+        monthCache.categoryTransactions.get(tx.categoryId)!.push(tx);
+      }
+    });
+  }
+
+  /**
+   * Holt Account-Transaktionen für einen Monat
+   */
+  getAccountTransactions(accountId: string, year: number, month: number): Transaction[] {
+    const monthCache = this.getOrCreateMonthCache(year, month);
+    return monthCache.accountTransactions.get(accountId) || [];
+  }
+
+  /**
+   * Holt Kategorie-Transaktionen für einen Monat
+   */
+  getCategoryTransactions(categoryId: string, year: number, month: number): Transaction[] {
+    const monthCache = this.getOrCreateMonthCache(year, month);
+    return monthCache.categoryTransactions.get(categoryId) || [];
+  }
+
+  /**
+   * Invalidiert Cache für bestimmte Monate
+   */
+  invalidateMonths(months: Array<{ year: number; month: number }>) {
+    months.forEach(({ year, month }) => {
+      const key = this.getMonthKey(year, month);
+      this.cache.delete(key);
+    });
+  }
+
+  /**
+   * Leert den gesamten Cache
+   */
+  clear() {
+    this.cache.clear();
+  }
+}
 
 /**
  * Optimierte Running Balance Queue für Batch-Verarbeitung
@@ -115,8 +223,9 @@ class RunningBalanceQueue {
   }
 }
 
-// Globale Queue-Instanz
+// Globale Instanzen
 const runningBalanceQueue = new RunningBalanceQueue();
+const transactionCache = new TransactionCache();
 
 /**
  * Queue für die Aktualisierung der Monatsbilanzen.
@@ -246,6 +355,28 @@ export const BalanceService = {
    */
   triggerMonthlyBalanceUpdate(updates: { accountIds?: string[]; categoryIds?: string[]; fromDate: string }): void {
     monthlyBalanceUpdateQueue.enqueueUpdate(updates);
+
+    // Cache-Invalidierung: Betroffene Monate ermitteln und invalidieren
+    const fromDate = new Date(updates.fromDate);
+    const currentDate = new Date();
+    const monthsToInvalidate: Array<{ year: number; month: number }> = [];
+
+    // Invalidiere alle Monate vom fromDate bis heute
+    let date = new Date(fromDate);
+    while (date <= currentDate) {
+      monthsToInvalidate.push({
+        year: date.getFullYear(),
+        month: date.getMonth()
+      });
+      date.setMonth(date.getMonth() + 1);
+    }
+
+    if (monthsToInvalidate.length > 0) {
+      transactionCache.invalidateMonths(monthsToInvalidate);
+      debugLog('BalanceService', `Cache invalidiert für ${monthsToInvalidate.length} Monate`, {
+        months: monthsToInvalidate.map(m => `${m.year}-${m.month + 1}`).join(', ')
+      });
+    }
   },
 
   /**
@@ -360,32 +491,22 @@ export const BalanceService = {
     const planningStore = usePlanningStore();
     const mbStore = useMonthlyBalanceStore();
 
-    // 1. Transaktionen bis zum Monatsende finden
-    const txsUntilEnd = transactionStore.transactions.filter(tx =>
-      toDateOnlyString(tx.date) <= endDateStr
-    );
-    const categoryTxsUntilEnd = transactionStore.transactions.filter(tx =>
-      toDateOnlyString(tx.valueDate) <= endDateStr
-    );
-
-    // 2. Kontosalden berechnen
+    // 1. Kontosalden berechnen (mit Cache-Optimierung)
     const accountBalances: Record<string, number> = existingBalance?.accountBalances || {};
     const relevantAccountIds = changedAccountIds.length > 0 ? changedAccountIds : accountStore.accounts.map(a => a.id);
 
     relevantAccountIds.forEach(accId => {
-      accountBalances[accId] = txsUntilEnd
-        .filter(tx => tx.accountId === accId && tx.type !== TransactionType.CATEGORYTRANSFER)
-        .reduce((sum, tx) => sum + tx.amount, 0);
+      const accountTxs = transactionCache.getAccountTransactions(accId, year, month);
+      accountBalances[accId] = accountTxs.reduce((sum, tx) => sum + tx.amount, 0);
     });
 
-    // 3. Kategoriesalden berechnen
+    // 2. Kategoriesalden berechnen (mit Cache-Optimierung)
     const categoryBalances: Record<string, number> = existingBalance?.categoryBalances || {};
     const relevantCategoryIds = changedCategoryIds.length > 0 ? changedCategoryIds : categoryStore.categories.map(c => c.id);
 
     relevantCategoryIds.forEach(catId => {
-      categoryBalances[catId] = categoryTxsUntilEnd
-        .filter(tx => tx.categoryId === catId)
-        .reduce((sum, tx) => sum + tx.amount, 0);
+      const categoryTxs = transactionCache.getCategoryTransactions(catId, year, month);
+      categoryBalances[catId] = categoryTxs.reduce((sum, tx) => sum + tx.amount, 0);
     });
 
     // 4. Projizierte Salden = aktuelle Salden
@@ -478,27 +599,21 @@ export const BalanceService = {
       }
     }
 
-    // Fallback: Balance neu berechnen
-    const txStore = useTransactionStore();
+    // Fallback: Balance neu berechnen (mit Cache-Optimierung)
     const dateStr = toDateOnlyString(asOf);
 
     if (entityType === 'account') {
-      // Für Konten: Nach date filtern, CATEGORYTRANSFER ausschließen
-      const txs = txStore.transactions.filter(
-        tx => tx.accountId === id &&
-          tx.type !== TransactionType.CATEGORYTRANSFER &&
-          toDateOnlyString(tx.date) <= dateStr
-      );
-      return txs.reduce((sum, tx) => sum + tx.amount, 0);
+      // Für Konten: Verwende Cache für bessere Performance
+      const accountTxs = transactionCache.getAccountTransactions(id, year, month);
+      return accountTxs
+        .filter(tx => toDateOnlyString(tx.date) <= dateStr)
+        .reduce((sum, tx) => sum + tx.amount, 0);
     } else {
-      // Für Kategorien: Nach valueDate filtern, nur direkte Kategoriezuordnungen berücksichtigen
-      let balance = 0;
-      txStore.transactions.forEach(tx => {
-        if (toDateOnlyString(tx.valueDate) <= dateStr && tx.categoryId === id) {
-          balance += tx.amount;
-        }
-      });
-      return balance;
+      // Für Kategorien: Verwende Cache für bessere Performance
+      const categoryTxs = transactionCache.getCategoryTransactions(id, year, month);
+      return categoryTxs
+        .filter(tx => toDateOnlyString(tx.valueDate) <= dateStr)
+        .reduce((sum, tx) => sum + tx.amount, 0);
     }
   },
 
@@ -1127,28 +1242,72 @@ export const BalanceService = {
     const tenantDbService = new TenantDbService();
 
     try {
-      // Alle Updates in einer einzigen IndexedDB-Transaktion
-      const updatePromises = updates.map(async (update) => {
-        const transaction = await tenantDbService.getTransactionById(update.id);
-        if (transaction) {
-          const updatedTransaction = {
-            ...transaction,
-            runningBalance: update.runningBalance,
-            updated_at: new Date().toISOString()
-          };
-          return tenantDbService.updateTransaction(updatedTransaction);
-        }
+      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - OPTIMIERT Start', {
+        updateCount: updates.length
       });
 
-      await Promise.all(updatePromises);
+      // OPTIMIERT: Bulk-Read aller betroffenen Transaktionen
+      const transactionIds = updates.map(u => u.id);
+      const transactions = await tenantDbService.getTransactionsByIds(transactionIds);
 
-      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Alle DB-Updates abgeschlossen', {
-        updatedCount: updates.length
+      if (transactions.length === 0) {
+        debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Keine Transaktionen gefunden');
+        return;
+      }
+
+      // OPTIMIERT: Erstelle Update-Map für schnelle Zuordnung
+      const updateMap = new Map(updates.map(u => [u.id, u.runningBalance]));
+      const timestamp = new Date().toISOString();
+
+      // OPTIMIERT: Bereite alle Updates vor
+      const updatedTransactions: ExtendedTransaction[] = [];
+
+      for (const transaction of transactions) {
+        const newRunningBalance = updateMap.get(transaction.id);
+        if (newRunningBalance !== undefined) {
+          updatedTransactions.push({
+            ...transaction,
+            runningBalance: newRunningBalance,
+            updated_at: timestamp
+          });
+        }
+      }
+
+      if (updatedTransactions.length === 0) {
+        debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Keine Updates erforderlich');
+        return;
+      }
+
+      // OPTIMIERT: Bulk-Update in einer einzigen IndexedDB-Transaktion
+      await tenantDbService.bulkUpdateTransactions(updatedTransactions);
+
+      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - OPTIMIERT Abgeschlossen', {
+        updatedCount: updatedTransactions.length,
+        performanceGain: `${updates.length} einzelne DB-Operationen → 1 Bulk-Operation`
       });
 
     } catch (error) {
       debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Fehler', error);
-      throw error;
+
+      // Fallback: Einzelne Updates bei Bulk-Fehler
+      debugLog('BalanceService', 'batchUpdateRunningBalancesInDB - Fallback auf einzelne Updates');
+      const updatePromises = updates.map(async (update) => {
+        try {
+          const transaction = await tenantDbService.getTransactionById(update.id);
+          if (transaction) {
+            const updatedTransaction = {
+              ...transaction,
+              runningBalance: update.runningBalance,
+              updated_at: new Date().toISOString()
+            };
+            return tenantDbService.updateTransaction(updatedTransaction);
+          }
+        } catch (singleError) {
+          debugLog('BalanceService', `Fehler bei einzelnem Running Balance Update für ${update.id}`, singleError);
+        }
+      });
+
+      await Promise.all(updatePromises);
     }
   },
 
@@ -1254,5 +1413,13 @@ export const BalanceService = {
     });
 
     return totalBudgeted;
+  },
+
+  /**
+   * Leert den Transaction Cache (für Debugging oder bei größeren Datenänderungen)
+   */
+  clearTransactionCache(): void {
+    transactionCache.clear();
+    debugLog('BalanceService', 'Transaction Cache vollständig geleert');
   }
 };

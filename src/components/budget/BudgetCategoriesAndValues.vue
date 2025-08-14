@@ -226,6 +226,16 @@ const planningModalData = ref<{
 const activeEditField = ref<string | null>(null); // Format: "categoryId-monthKey"
 const processingBudgetUpdate = ref<Set<string>>(new Set()); // Verhindert doppelte Updates
 
+// Debounced Budget Update Queue
+const budgetUpdateQueue = ref<Map<string, {
+  categoryId: string;
+  monthKey: string;
+  newValue: number;
+  timestamp: number;
+}>>(new Map());
+const budgetUpdateTimer = ref<NodeJS.Timeout | null>(null);
+const BUDGET_UPDATE_DEBOUNCE_DELAY = 500;
+
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 
@@ -276,89 +286,134 @@ function isEditingBudget(categoryId: string, monthKey: string): boolean {
   return result;
 }
 
-// Handler für CalculatorInput
-async function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
-  const updateKey = `${categoryId}-${monthKey}`;
-  debugLog('BudgetCategoriesAndValues', `Budget update: ${updateKey} = ${newValue}`);
+// Debounced Budget Update Queue Verarbeitung
+async function processBudgetUpdateQueue() {
+  if (budgetUpdateQueue.value.size === 0) return;
 
-  // Verhindere doppelte Updates für dasselbe Feld
-  if (processingBudgetUpdate.value.has(updateKey)) {
-    debugLog('BudgetCategoriesAndValues', `Budget update bereits in Bearbeitung für ${updateKey}, überspringe`);
+  debugLog('BudgetCategoriesAndValues', `Verarbeite ${budgetUpdateQueue.value.size} Budget-Updates in Batch`);
+
+  const updates = Array.from(budgetUpdateQueue.value.values());
+  const transfers: Array<{
+    fromCategoryId: string;
+    toCategoryId: string;
+    amount: number;
+    date: string;
+    note: string;
+  }> = [];
+
+  // Finde die "Verfügbare Mittel" Kategorie
+  const availableFunds = availableFundsCategory.value;
+  if (!availableFunds) {
+    errorLog('BudgetCategoriesAndValues', 'Kategorie "Verfügbare Mittel" nicht gefunden');
+    budgetUpdateQueue.value.clear();
     return;
   }
 
-  processingBudgetUpdate.value.add(updateKey);
+  // Verarbeite alle Updates und sammle Transfers
+  for (const update of updates) {
+    try {
+      // Finde den entsprechenden Monat
+      const targetMonth = props.months.find(month => month.key === update.monthKey);
+      if (!targetMonth) {
+        errorLog('BudgetCategoriesAndValues', `Monat mit Key ${update.monthKey} nicht gefunden`);
+        continue;
+      }
 
-  try {
-    // Finde den entsprechenden Monat basierend auf monthKey
-    const targetMonth = props.months.find(month => month.key === monthKey);
-    if (!targetMonth) {
-      errorLog('BudgetCategoriesAndValues', `Monat mit Key ${monthKey} nicht gefunden`);
-      return;
-    }
-
-    // Berechne den aktuellen Budgetwert (Summe aller CATEGORYTRANSFER-Buchungen)
-    const currentBudgetData = BudgetService.getSingleCategoryMonthlyBudgetData(
-      categoryId,
-      targetMonth.start,
-      targetMonth.end
-    );
-    const currentBudgetValue = currentBudgetData.budgeted;
-
-    debugLog('BudgetCategoriesAndValues', `Aktueller Budgetwert: ${currentBudgetValue}, Zielwert: ${newValue}`);
-
-    // Berechne die Differenz
-    const difference = newValue - currentBudgetValue;
-
-    if (Math.abs(difference) < 0.01) {
-      debugLog('BudgetCategoriesAndValues', 'Keine Änderung erforderlich - Differenz zu gering');
-      handleBudgetFinish(categoryId, monthKey);
-      return;
-    }
-
-    // Finde die "Verfügbare Mittel" Kategorie
-    const availableFunds = availableFundsCategory.value;
-    if (!availableFunds) {
-      errorLog('BudgetCategoriesAndValues', 'Kategorie "Verfügbare Mittel" nicht gefunden');
-      return;
-    }
-
-    // Erstelle CATEGORYTRANSFER-Buchung basierend auf der Differenz
-    const transferDate = toDateOnlyString(targetMonth.start);
-    const transferNote = `Budget-Anpassung für ${monthKey}`;
-
-    if (difference < 0) {
-      // Negative Differenz: Transfer von Kategorie zu "Verfügbare Mittel"
-      debugLog('BudgetCategoriesAndValues', `Erstelle Transfer von Kategorie zu Verfügbare Mittel: ${Math.abs(difference)}`);
-      await TransactionService.addCategoryTransfer(
-        categoryId,
-        availableFunds.id,
-        Math.abs(difference),
-        transferDate,
-        transferNote
+      // Berechne den aktuellen Budgetwert
+      const currentBudgetData = BudgetService.getSingleCategoryMonthlyBudgetData(
+        update.categoryId,
+        targetMonth.start,
+        targetMonth.end
       );
-    } else {
-      // Positive Differenz: Transfer von "Verfügbare Mittel" zu Kategorie
-      debugLog('BudgetCategoriesAndValues', `Erstelle Transfer von Verfügbare Mittel zu Kategorie: ${difference}`);
-      await TransactionService.addCategoryTransfer(
-        availableFunds.id,
-        categoryId,
-        difference,
-        transferDate,
-        transferNote
-      );
+      const currentBudgetValue = currentBudgetData.budgeted;
+      const difference = update.newValue - currentBudgetValue;
+
+      if (Math.abs(difference) < 0.01) {
+        debugLog('BudgetCategoriesAndValues', `Keine Änderung erforderlich für ${update.categoryId}-${update.monthKey}`);
+        continue;
+      }
+
+      const transferDate = toDateOnlyString(targetMonth.start);
+      const transferNote = `Budget-Anpassung für ${update.monthKey}`;
+
+      if (difference < 0) {
+        // Transfer von Kategorie zu "Verfügbare Mittel"
+        transfers.push({
+          fromCategoryId: update.categoryId,
+          toCategoryId: availableFunds.id,
+          amount: Math.abs(difference),
+          date: transferDate,
+          note: transferNote
+        });
+      } else {
+        // Transfer von "Verfügbare Mittel" zu Kategorie
+        transfers.push({
+          fromCategoryId: availableFunds.id,
+          toCategoryId: update.categoryId,
+          amount: difference,
+          date: transferDate,
+          note: transferNote
+        });
+      }
+
+      debugLog('BudgetCategoriesAndValues', `Transfer geplant: ${Math.abs(difference)}€ für ${update.categoryId}-${update.monthKey}`);
+    } catch (error) {
+      errorLog('BudgetCategoriesAndValues', `Fehler bei Budget-Update für ${update.categoryId}-${update.monthKey}`, error);
     }
-
-    infoLog('BudgetCategoriesAndValues', `Budget-Update abgeschlossen für Kategorie ${categoryId} im Monat ${monthKey}`);
-
-  } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'Fehler beim Budget-Update', error);
-  } finally {
-    // Nach dem Update den Edit-Modus beenden
-    handleBudgetFinish(categoryId, monthKey);
-    // Processing-Flag entfernen
-    processingBudgetUpdate.value.delete(updateKey);
   }
+
+  // Bulk-Erstellung aller Transfers
+  if (transfers.length > 0) {
+    try {
+      debugLog('BudgetCategoriesAndValues', `Erstelle ${transfers.length} Budget-Transfers in Bulk-Operation`);
+      await TransactionService.addMultipleCategoryTransfers(transfers);
+      infoLog('BudgetCategoriesAndValues', `Batch Budget-Update abgeschlossen: ${transfers.length} Transfers erstellt`);
+    } catch (error) {
+      errorLog('BudgetCategoriesAndValues', 'Fehler bei Bulk-Budget-Update', error);
+
+      // Fallback: Einzelne Transfers
+      debugLog('BudgetCategoriesAndValues', 'Fallback auf einzelne Budget-Transfers');
+      for (const transfer of transfers) {
+        try {
+          await TransactionService.addCategoryTransfer(
+            transfer.fromCategoryId,
+            transfer.toCategoryId,
+            transfer.amount,
+            transfer.date,
+            transfer.note
+          );
+        } catch (singleError) {
+          errorLog('BudgetCategoriesAndValues', `Fehler beim einzelnen Budget-Transfer`, singleError);
+        }
+      }
+    }
+  }
+
+  // Queue leeren
+  budgetUpdateQueue.value.clear();
+}
+
+// Handler für CalculatorInput - sammelt Updates in Queue
+function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
+  const updateKey = `${categoryId}-${monthKey}`;
+  debugLog('BudgetCategoriesAndValues', `Budget update queued: ${updateKey} = ${newValue}`);
+
+  // Update in Queue einreihen (überschreibt vorherige Updates für dasselbe Feld)
+  budgetUpdateQueue.value.set(updateKey, {
+    categoryId,
+    monthKey,
+    newValue,
+    timestamp: Date.now()
+  });
+
+  // Debounced Timer zurücksetzen
+  if (budgetUpdateTimer.value) {
+    clearTimeout(budgetUpdateTimer.value);
+  }
+
+  budgetUpdateTimer.value = setTimeout(() => {
+    processBudgetUpdateQueue();
+  }, BUDGET_UPDATE_DEBOUNCE_DELAY);
 }
 
 function handleBudgetFinish(categoryId: string, monthKey: string) {
@@ -526,6 +581,11 @@ onUnmounted(() => {
   }
   if (autoExpandTimer.value) {
     clearTimeout(autoExpandTimer.value);
+  }
+  if (budgetUpdateTimer.value) {
+    clearTimeout(budgetUpdateTimer.value);
+    // Verarbeite noch ausstehende Budget-Updates vor dem Unmount
+    processBudgetUpdateQueue();
   }
   // Remove outside click listener
   document.removeEventListener('click', handleOutsideClick);
