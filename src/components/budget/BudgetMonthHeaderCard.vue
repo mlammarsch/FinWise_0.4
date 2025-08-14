@@ -9,9 +9,9 @@ import { ref, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useCategoryStore } from "../../stores/categoryStore";
 import ConfirmationModal from "../ui/ConfirmationModal.vue";
 import { Icon } from "@iconify/vue";
-import { BudgetService } from "@/services/BudgetService";
-import { debugLog } from "@/utils/logger";
-import { toDateOnlyString } from "@/utils/formatters";
+import { BudgetService } from "../../services/BudgetService";
+import { debugLog } from "../../utils/logger";
+import { toDateOnlyString } from "../../utils/formatters";
 
 const props = defineProps<{
   label: string;
@@ -82,7 +82,7 @@ function handleBudgetMenuClickOutside(event: MouseEvent) {
 }
 
 function handleBudgetAction(action: string) {
-  debugLog("[BudgetMonthHeaderCard] Budget-Aktion ausgeführt", { action });
+  debugLog("[BudgetMonthHeaderCard]", `Budget-Aktion ausgeführt: ${action}`);
 
   if (!props.month) {
     console.warn('Kein Monat definiert für Budget-Aktion');
@@ -126,10 +126,7 @@ async function handleApplyTemplate() {
   if (!props.month) return;
 
   try {
-    debugLog("[BudgetMonthHeaderCard] Wende Budget-Template an", {
-      monthStart: props.month.start.toISOString().split('T')[0],
-      monthEnd: props.month.end.toISOString().split('T')[0]
-    });
+    debugLog("[BudgetMonthHeaderCard]", `Wende Budget-Template an für ${props.month.start.toISOString().split('T')[0]} bis ${props.month.end.toISOString().split('T')[0]}`);
 
     const transfersCreated = await BudgetService.applyBudgetTemplate(
       props.month.start,
@@ -147,10 +144,7 @@ async function handleOverwriteTemplate() {
   if (!props.month) return;
 
   try {
-    debugLog("[BudgetMonthHeaderCard] Überschreibe mit Budget-Template", {
-      monthStart: props.month.start.toISOString().split('T')[0],
-      monthEnd: props.month.end.toISOString().split('T')[0]
-    });
+    debugLog("[BudgetMonthHeaderCard]", `Überschreibe mit Budget-Template für ${props.month.start.toISOString().split('T')[0]} bis ${props.month.end.toISOString().split('T')[0]}`);
 
     const result = await BudgetService.overwriteWithBudgetTemplate(
       props.month.start,
@@ -172,17 +166,28 @@ function handleResetBudget() {
   showConfirmationModal.value = true;
 }
 
-async function confirmResetBudget() {
-  if (!props.month) return;
+function confirmResetBudget() {
+  console.log('[BudgetMonthHeaderCard] confirmResetBudget aufgerufen');
 
-  try {
-    const deletedCount = await BudgetService.resetMonthBudget(props.month.start, props.month.end);
-    console.log(`Budget zurückgesetzt: ${deletedCount} Kategorieumbuchungen gelöscht`);
-    showConfirmationModal.value = false;
-  } catch (error) {
-    console.error('Fehler beim Zurücksetzen des Budgets:', error);
-    showConfirmationModal.value = false;
+  if (!props.month) {
+    return;
   }
+
+  // 1. UI-Aktion sofort ausführen: Das Modal wird direkt geschlossen.
+  showConfirmationModal.value = false;
+
+  // 2. Langlaufende Aufgabe im Hintergrund starten, ohne 'await'.
+  BudgetService.resetMonthBudget(props.month.start, props.month.end)
+    .then((deletedCount: number) => {
+      // 3. Ergebnis verarbeiten, wenn es verfügbar ist (z.B. Logging).
+      //    Dies geschieht, ohne die UI erneut zu beeinflussen.
+      console.log(`Budget zurückgesetzt: ${deletedCount} Kategorieumbuchungen gelöscht`);
+    })
+    .catch((error: any) => {
+      // 4. Fehler behandeln, falls die Hintergrundaufgabe fehlschlägt.
+      console.error('Fehler beim Zurücksetzen des Budgets:', error);
+      // Hier könnte man z.B. eine dezente Fehlermeldung (Toast) anzeigen.
+    });
 }
 
 function cancelResetBudget() {
