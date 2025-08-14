@@ -315,53 +315,92 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       category: [],
     };
 
-    // Erste Zeile für Analyse der Datentypen verwenden
-    const firstRow = allParsedData.value[0];
-
+    // VERBESSERUNG: Header-basierte Erkennung zuerst durchführen
     csvHeaders.value.forEach((header) => {
-      const value = firstRow[header].toString().trim();
+      const headerLower = header.toLowerCase();
 
-      // Datum erkennen (unterschiedliche Formate)
-      if (
-        /^\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}$/.test(value) || // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
-        /^\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4}$/.test(value) || // DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
-        /^\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2}$/.test(value) // DD-MM-YY, DD/MM/YY, DD.MM.YY
-      ) {
-        possibleMappings.value.date.push(header);
-      }
-
-      // Betrag erkennen
-      if (/^-?\d+([,\.]\d+)?$/.test(value)) {
-        possibleMappings.value.amount.push(header);
-      }
-
-      // Empfänger erkennen (Heuristik: längere Texte, normalerweise unter 60 Zeichen)
-      if (
-        value.length > 0 &&
-        value.length < 60 &&
-        !/^\d+([,\.]\d+)?$/.test(value) &&
-        !/^\d{1,2}[-/\.]\d{1,2}/.test(value)
-      ) {
-        possibleMappings.value.recipient.push(header);
-      }
-
-      // Kategorie erkennen (ähnlich wie Empfänger, erweiterte Länge für längere Kategorienamen)
-      if (
-        value.length > 0 &&
-        value.length < 80 &&
-        !/^\d+([,\.]\d+)?$/.test(value) &&
-        !/^\d{1,2}[-/\.]\d{1,2}/.test(value)
-      ) {
+      // Direkte Header-Erkennung für Category
+      if (headerLower.includes("category") || headerLower.includes("kategorie") ||
+        headerLower.includes("cat") || headerLower.includes("kat")) {
         possibleMappings.value.category.push(header);
       }
 
-      // Notizen erkennen (tendenziell längere Texte)
-      if (
+      // Direkte Header-Erkennung für andere Felder
+      if (headerLower.includes("date") || headerLower.includes("datum") ||
+        headerLower.includes("valuta") || headerLower.includes("wert")) {
+        possibleMappings.value.date.push(header);
+      }
+
+      if (headerLower.includes("amount") || headerLower.includes("betrag") ||
+        headerLower.includes("summe")) {
+        possibleMappings.value.amount.push(header);
+      }
+
+      if (headerLower.includes("payee") || headerLower.includes("empfänger") ||
+        headerLower.includes("recipient") || headerLower.includes("zahler")) {
+        possibleMappings.value.recipient.push(header);
+      }
+
+      if (headerLower.includes("notes") || headerLower.includes("notiz") ||
+        headerLower.includes("verwendungszweck") || headerLower.includes("beschreibung")) {
+        possibleMappings.value.notes.push(header);
+      }
+    });
+
+    // VERBESSERUNG: Mehrere Zeilen für Inhaltsanalyse verwenden (bis zu 5 Zeilen)
+    const sampleSize = Math.min(5, allParsedData.value.length);
+    const sampleRows = allParsedData.value.slice(0, sampleSize);
+
+    csvHeaders.value.forEach((header) => {
+      // Sammle Werte aus mehreren Zeilen für bessere Analyse
+      const sampleValues = sampleRows
+        .map(row => row[header]?.toString().trim() || '')
+        .filter(value => value.length > 0); // Nur nicht-leere Werte
+
+      if (sampleValues.length === 0) return; // Keine Werte zum Analysieren
+
+      // Analysiere die gesammelten Werte
+      const hasDatePattern = sampleValues.some(value =>
+        /^\d{4}[-/\.]\d{1,2}[-/\.]\d{1,2}$/.test(value) || // YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+        /^\d{1,2}[-/\.]\d{1,2}[-/\.]\d{4}$/.test(value) || // DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY
+        /^\d{1,2}[-/\.]\d{1,2}[-/\.]\d{2}$/.test(value) // DD-MM-YY, DD/MM/YY, DD.MM.YY
+      );
+
+      const hasAmountPattern = sampleValues.some(value =>
+        /^-?\d+([,\.]\d+)?$/.test(value)
+      );
+
+      const hasTextPattern = sampleValues.some(value =>
         value.length > 0 &&
         !/^\d+([,\.]\d+)?$/.test(value) &&
         !/^\d{1,2}[-/\.]\d{1,2}/.test(value)
-      ) {
-        possibleMappings.value.notes.push(header);
+      );
+
+      // Füge zu entsprechenden Mappings hinzu (nur wenn nicht bereits durch Header-Erkennung hinzugefügt)
+      if (hasDatePattern && !possibleMappings.value.date.includes(header)) {
+        possibleMappings.value.date.push(header);
+      }
+
+      if (hasAmountPattern && !possibleMappings.value.amount.includes(header)) {
+        possibleMappings.value.amount.push(header);
+      }
+
+      if (hasTextPattern) {
+        // Empfänger erkennen (Heuristik: mittlere Textlänge, normalerweise unter 60 Zeichen)
+        const avgLength = sampleValues.reduce((sum, val) => sum + val.length, 0) / sampleValues.length;
+        if (avgLength > 0 && avgLength < 60 && !possibleMappings.value.recipient.includes(header)) {
+          possibleMappings.value.recipient.push(header);
+        }
+
+        // Kategorie erkennen (ähnlich wie Empfänger, erweiterte Länge für längere Kategorienamen)
+        if (avgLength > 0 && avgLength < 80 && !possibleMappings.value.category.includes(header)) {
+          possibleMappings.value.category.push(header);
+        }
+
+        // Notizen erkennen (tendenziell längere Texte oder alle Textfelder)
+        if (!possibleMappings.value.notes.includes(header)) {
+          possibleMappings.value.notes.push(header);
+        }
       }
     });
 
