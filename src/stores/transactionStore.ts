@@ -206,6 +206,87 @@ export const useTransactionStore = defineStore('transaction', () => {
     return transactionWithTimestamp;
   }
 
+  /**
+   * Fügt mehrere Transaktionen in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultipleTransactions(transactions: ExtendedTransaction[], fromSync = false): Promise<ExtendedTransaction[]> {
+    if (transactions.length === 0) {
+      debugLog('transactionStore', 'addMultipleTransactions: Keine Transaktionen zum Hinzufügen');
+      return [];
+    }
+
+    const processedTransactions: ExtendedTransaction[] = [];
+
+    try {
+      // Bereite alle Transaktionen vor
+      const transactionsWithTimestamp = transactions.map(tx => {
+        const resolvedPayee = resolvePayeeFromRecipient(tx.recipientId, tx.payee);
+        const now = new Date().toISOString();
+
+        return {
+          ...tx,
+          payee: resolvedPayee,
+          updated_at: tx.updated_at || now,
+          createdAt: tx.createdAt || now,
+          updatedAt: tx.updatedAt || tx.updated_at || now,
+        };
+      });
+
+      if (fromSync) {
+        // Verwende intelligente Batch-Operation für Sync
+        const result = await tenantDbService.addTransactionsBatchIntelligent(transactionsWithTimestamp);
+        infoLog('transactionStore', `Sync-Batch abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen`);
+
+        // Aktualisiere nur die tatsächlich geänderten Transaktionen im Store
+        for (const tx of transactionsWithTimestamp) {
+          const existingIndex = transactions.value.findIndex((t: ExtendedTransaction) => t.id === tx.id);
+          if (existingIndex === -1) {
+            transactions.value.push(tx);
+            processedTransactions.push(tx);
+          } else if (tx.updated_at && (!transactions.value[existingIndex].updated_at ||
+            new Date(tx.updated_at) > new Date(transactions.value[existingIndex].updated_at!))) {
+            transactions.value[existingIndex] = tx;
+            processedTransactions.push(tx);
+          }
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addTransactionsBatch(transactionsWithTimestamp);
+
+        // Füge alle Transaktionen zum Store hinzu
+        for (const tx of transactionsWithTimestamp) {
+          const existingIndex = transactions.value.findIndex((t: ExtendedTransaction) => t.id === tx.id);
+          if (existingIndex === -1) {
+            transactions.value.push(tx);
+          } else {
+            transactions.value[existingIndex] = tx;
+          }
+          processedTransactions.push(tx);
+        }
+
+        // Füge alle zur Sync-Queue hinzu (Batch-Operation)
+        try {
+          await tenantDbService.addTransactionsBatchToSyncQueue(transactionsWithTimestamp);
+          infoLog('transactionStore', `${transactionsWithTimestamp.length} Transaktionen zur Sync Queue hinzugefügt (Batch)`);
+        } catch (e) {
+          errorLog('transactionStore', 'Fehler beim Batch-Hinzufügen zur Sync Queue', e);
+        }
+      }
+
+      // Cache-Invalidierung nur einmal am Ende
+      if (!isBatchUpdateMode.value) {
+        BudgetService.invalidateCache();
+      }
+
+      infoLog('transactionStore', `${processedTransactions.length} Transaktionen erfolgreich als Batch verarbeitet`);
+      return processedTransactions;
+
+    } catch (error) {
+      errorLog('transactionStore', `Fehler beim Batch-Hinzufügen von ${transactions.length} Transaktionen`, error);
+      throw error;
+    }
+  }
+
   async function updateTransaction(id: string, updates: Partial<ExtendedTransaction>, fromSync = false): Promise<boolean> {
     // Wenn recipientId in den Updates enthalten ist, leite payee ab
     let resolvedPayee = updates.payee;
@@ -378,6 +459,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     getTransactionsByCategory,
     getRecentTransactions,
     addTransaction,
+    addMultipleTransactions,
     updateTransaction,
     deleteTransaction,
     loadTransactions,

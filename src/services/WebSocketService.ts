@@ -422,6 +422,9 @@ export const WebSocketService = {
 
             if (categories && categories.length > 0) {
               infoLog('[WebSocketService]', `Processing ${categories.length} initial categories.`);
+
+              // Filtere Kategorien für Bulk-Operation
+              const categoriesToAdd = [];
               for (const category of categories) {
                 // Prüfe ob diese Kategorie eine pending DELETE-Operation hat
                 if (pendingCategoryDeletes.has(category.id)) {
@@ -436,9 +439,14 @@ export const WebSocketService = {
                   continue;
                 }
 
-                debugLog('[WebSocketService]', 'Attempting to add category from initial load:', category);
-                await categoryStore.addCategory(category, true); // fromSync = true
-                infoLog('[WebSocketService]', `Category ${category.id} added/updated from initial load.`);
+                categoriesToAdd.push(category);
+              }
+
+              // Bulk-Operation für alle gefilterten Kategorien
+              if (categoriesToAdd.length > 0) {
+                debugLog('[WebSocketService]', `Adding ${categoriesToAdd.length} categories via bulk operation`);
+                await categoryStore.addMultipleCategories(categoriesToAdd, true); // fromSync = true
+                infoLog('[WebSocketService]', `${categoriesToAdd.length} categories added/updated from initial load via bulk operation.`);
               }
             } else {
               infoLog('[WebSocketService]', 'No initial categories received or categories array is empty.');
@@ -464,15 +472,23 @@ export const WebSocketService = {
 
             if (recipients && recipients.length > 0) {
               infoLog('[WebSocketService]', `Processing ${recipients.length} initial recipients.`);
+
+              // Filtere Empfänger für Bulk-Operation
+              const recipientsToAdd = [];
               for (const recipient of recipients) {
                 // Prüfe ob dieser Empfänger eine pending DELETE-Operation hat
                 if (pendingRecipientDeletes.has(recipient.id)) {
                   warnLog('[WebSocketService]', `Skipping recipient ${recipient.id} from initial load - pending DELETE operation exists`);
                   continue;
                 }
-                debugLog('[WebSocketService]', 'Attempting to add recipient from initial load:', recipient);
-                await recipientStore.addRecipient(recipient, true); // fromSync = true
-                infoLog('[WebSocketService]', `Recipient ${recipient.id} added/updated from initial load.`);
+                recipientsToAdd.push(recipient);
+              }
+
+              // Bulk-Operation für alle gefilterten Empfänger
+              if (recipientsToAdd.length > 0) {
+                debugLog('[WebSocketService]', `Adding ${recipientsToAdd.length} recipients via bulk operation`);
+                await recipientStore.addMultipleRecipients(recipientsToAdd, true); // fromSync = true
+                infoLog('[WebSocketService]', `${recipientsToAdd.length} recipients added/updated from initial load via bulk operation.`);
               }
             } else {
               infoLog('[WebSocketService]', 'No initial recipients received or recipients array is empty.');
@@ -480,15 +496,23 @@ export const WebSocketService = {
 
             if (tags && tags.length > 0) {
               infoLog('[WebSocketService]', `Processing ${tags.length} initial tags.`);
+
+              // Filtere Tags für Bulk-Operation
+              const tagsToAdd = [];
               for (const tag of tags) {
                 // Prüfe ob dieser Tag eine pending DELETE-Operation hat
                 if (pendingTagDeletes.has(tag.id)) {
                   warnLog('[WebSocketService]', `Skipping tag ${tag.id} from initial load - pending DELETE operation exists`);
                   continue;
                 }
-                debugLog('[WebSocketService]', 'Attempting to add tag from initial load:', tag);
-                await tagStore.addTag(tag, true); // fromSync = true
-                infoLog('[WebSocketService]', `Tag ${tag.id} added/updated from initial load.`);
+                tagsToAdd.push(tag);
+              }
+
+              // Bulk-Operation für alle gefilterten Tags
+              if (tagsToAdd.length > 0) {
+                debugLog('[WebSocketService]', `Adding ${tagsToAdd.length} tags via bulk operation`);
+                await tagStore.addMultipleTags(tagsToAdd, true); // fromSync = true
+                infoLog('[WebSocketService]', `${tagsToAdd.length} tags added/updated from initial load via bulk operation.`);
               }
             } else {
               infoLog('[WebSocketService]', 'No initial tags received or tags array is empty.');
@@ -507,11 +531,11 @@ export const WebSocketService = {
 
             if (planning_transactions && planning_transactions.length > 0) {
               infoLog('[WebSocketService]', `Processing ${planning_transactions.length} initial planning transactions.`);
-              for (const planningTransaction of planning_transactions) {
-                debugLog('[WebSocketService]', 'Attempting to add planning transaction from initial load:', planningTransaction);
-                await planningStore.addPlanningTransaction(planningTransaction, true); // fromSync = true
-                infoLog('[WebSocketService]', `PlanningTransaction ${planningTransaction.id} added/updated from initial load.`);
-              }
+
+              // Bulk-Operation für alle Planning Transactions
+              debugLog('[WebSocketService]', `Adding ${planning_transactions.length} planning transactions via bulk operation`);
+              await planningStore.addMultiplePlanningTransactions(planning_transactions, true); // fromSync = true
+              infoLog('[WebSocketService]', `${planning_transactions.length} planning transactions added/updated from initial load via bulk operation.`);
             } else {
               infoLog('[WebSocketService]', 'No initial planning transactions received or planning_transactions array is empty.');
             }

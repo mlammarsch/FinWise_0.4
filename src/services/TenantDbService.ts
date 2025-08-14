@@ -307,6 +307,120 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Batch-Import für Kategorien - deutlich performanter als einzelne Operationen
+   */
+  async addCategoriesBatch(categories: Category[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addCategoriesBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (categories.length === 0) {
+      debugLog('TenantDbService', 'addCategoriesBatch: Keine Kategorien zum Hinzufügen.');
+      return;
+    }
+
+    try {
+      // Konvertiere alle Kategorien zu plain objects
+      const plainCategories = categories.map(cat => this.toPlainObject(cat));
+
+      // Direkte bulkPut-Operation
+      await this.db.categories.bulkPut(plainCategories);
+
+      infoLog('TenantDbService', `${categories.length} Kategorien erfolgreich als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${categories.length} Kategorien`, { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Intelligente Bulk-Operation für Kategorien - nur neue/geänderte werden geschrieben
+   */
+  async addCategoriesBatchIntelligent(categories: Category[]): Promise<{ updated: number, skipped: number }> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addCategoriesBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (categories.length === 0) {
+      debugLog('TenantDbService', 'addCategoriesBatchIntelligent: Keine Kategorien zum Verarbeiten.');
+      return { updated: 0, skipped: 0 };
+    }
+
+    try {
+      let updated = 0;
+      let skipped = 0;
+      const categoriesToUpdate: Category[] = [];
+
+      // Hole alle existierenden Kategorien in einem Batch
+      const existingIds = categories.map(cat => cat.id);
+      const existingCategories = await this.db.categories.where('id').anyOf(existingIds).toArray();
+      const existingMap = new Map(existingCategories.map(cat => [cat.id, cat]));
+
+      // Prüfe jede Kategorie auf Änderungen
+      for (const category of categories) {
+        const existing = existingMap.get(category.id);
+
+        if (!existing) {
+          // Neue Kategorie - hinzufügen
+          categoriesToUpdate.push(category);
+          updated++;
+        } else if (category.updatedAt && existing.updatedAt) {
+          // Prüfe LWW-Regel
+          if (new Date(category.updatedAt) > new Date(existing.updatedAt)) {
+            categoriesToUpdate.push(category);
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+          categoriesToUpdate.push(category);
+          updated++;
+        }
+      }
+
+      // Bulk-Update nur für tatsächlich zu aktualisierende Kategorien
+      if (categoriesToUpdate.length > 0) {
+        const plainCategories = categoriesToUpdate.map(cat => this.toPlainObject(cat));
+        await this.db.categories.bulkPut(plainCategories);
+      }
+
+      infoLog('TenantDbService', `Intelligente Kategorien-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${categories.length} Kategorien.`);
+      return { updated, skipped };
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler bei intelligenter Kategorien-Batch-Operation für ${categories.length} Kategorien`, { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Batch-Import für Kategoriegruppen - deutlich performanter als einzelne Operationen
+   */
+  async addCategoryGroupsBatch(categoryGroups: CategoryGroup[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addCategoryGroupsBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (categoryGroups.length === 0) {
+      debugLog('TenantDbService', 'addCategoryGroupsBatch: Keine Kategoriegruppen zum Hinzufügen.');
+      return;
+    }
+
+    try {
+      // Direkte bulkPut-Operation
+      await this.db.categoryGroups.bulkPut(categoryGroups);
+
+      infoLog('TenantDbService', `${categoryGroups.length} Kategoriegruppen erfolgreich als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${categoryGroups.length} Kategoriegruppen`, { error: err });
+      throw err;
+    }
+  }
+
   async addSyncQueueEntry(
     entryData: Omit<SyncQueueEntry, 'id' | 'timestamp' | 'status' | 'tenantId'>,
   ): Promise<SyncQueueEntry | null> {
@@ -1148,6 +1262,106 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Batch-Import für Tags - deutlich performanter als einzelne Operationen
+   */
+  async addTagsBatch(tags: Tag[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTagsBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (tags.length === 0) {
+      debugLog('TenantDbService', 'addTagsBatch: Keine Tags zum Hinzufügen.');
+      return;
+    }
+
+    try {
+      // Tags mit Timestamp versehen
+      const tagsWithTimestamp = tags.map(tag => ({
+        ...tag,
+        updatedAt: tag.updatedAt || new Date().toISOString()
+      }));
+
+      // Direkte bulkPut-Operation
+      await this.db.tags.bulkPut(tagsWithTimestamp);
+
+      infoLog('TenantDbService', `${tags.length} Tags erfolgreich als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${tags.length} Tags`, { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Intelligente Bulk-Operation für Tags - nur neue/geänderte werden geschrieben
+   */
+  async addTagsBatchIntelligent(tags: Tag[]): Promise<{ updated: number, skipped: number }> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addTagsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (tags.length === 0) {
+      debugLog('TenantDbService', 'addTagsBatchIntelligent: Keine Tags zum Verarbeiten.');
+      return { updated: 0, skipped: 0 };
+    }
+
+    try {
+      let updated = 0;
+      let skipped = 0;
+      const tagsToUpdate: Tag[] = [];
+
+      // Hole alle existierenden Tags in einem Batch
+      const existingIds = tags.map(tag => tag.id);
+      const existingTags = await this.db.tags.where('id').anyOf(existingIds).toArray();
+      const existingMap = new Map(existingTags.map(tag => [tag.id, tag]));
+
+      // Prüfe jeden Tag auf Änderungen
+      for (const tag of tags) {
+        const existing = existingMap.get(tag.id);
+
+        if (!existing) {
+          // Neuer Tag - hinzufügen
+          tagsToUpdate.push({
+            ...tag,
+            updatedAt: tag.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        } else if (tag.updatedAt && existing.updatedAt) {
+          // Prüfe LWW-Regel
+          if (new Date(tag.updatedAt) > new Date(existing.updatedAt)) {
+            tagsToUpdate.push({
+              ...tag,
+              updatedAt: tag.updatedAt || new Date().toISOString()
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+          tagsToUpdate.push({
+            ...tag,
+            updatedAt: tag.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        }
+      }
+
+      // Bulk-Update nur für tatsächlich zu aktualisierende Tags
+      if (tagsToUpdate.length > 0) {
+        await this.db.tags.bulkPut(tagsToUpdate);
+      }
+
+      infoLog('TenantDbService', `Intelligente Tags-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${tags.length} Tags.`);
+      return { updated, skipped };
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler bei intelligenter Tags-Batch-Operation für ${tags.length} Tags`, { error: err });
+      throw err;
+    }
+  }
+
   async getTags(): Promise<Tag[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getTags: Keine aktive Mandanten-DB verfügbar.');
@@ -1384,6 +1598,109 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Batch-Import für Planungstransaktionen - deutlich performanter als einzelne Operationen
+   */
+  async addPlanningTransactionsBatch(planningTransactions: PlanningTransaction[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addPlanningTransactionsBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (planningTransactions.length === 0) {
+      debugLog('TenantDbService', 'addPlanningTransactionsBatch: Keine Planungstransaktionen zum Hinzufügen.');
+      return;
+    }
+
+    try {
+      // Planungstransaktionen mit Timestamp versehen und zu plain objects konvertieren
+      const planningTransactionsWithTimestamp = planningTransactions.map(ptx => ({
+        ...ptx,
+        updatedAt: ptx.updatedAt || new Date().toISOString()
+      }));
+
+      const plainPlanningTransactions = planningTransactionsWithTimestamp.map(ptx => this.toPlainObject(ptx));
+
+      // Direkte bulkPut-Operation
+      await this.db.planningTransactions.bulkPut(plainPlanningTransactions);
+
+      infoLog('TenantDbService', `${planningTransactions.length} Planungstransaktionen erfolgreich als Batch hinzugefügt.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${planningTransactions.length} Planungstransaktionen`, { error: err });
+      throw err;
+    }
+  }
+
+  /**
+   * Intelligente Bulk-Operation für Planungstransaktionen - nur neue/geänderte werden geschrieben
+   */
+  async addPlanningTransactionsBatchIntelligent(planningTransactions: PlanningTransaction[]): Promise<{ updated: number, skipped: number }> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addPlanningTransactionsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (planningTransactions.length === 0) {
+      debugLog('TenantDbService', 'addPlanningTransactionsBatchIntelligent: Keine Planungstransaktionen zum Verarbeiten.');
+      return { updated: 0, skipped: 0 };
+    }
+
+    try {
+      let updated = 0;
+      let skipped = 0;
+      const planningTransactionsToUpdate: PlanningTransaction[] = [];
+
+      // Hole alle existierenden Planungstransaktionen in einem Batch
+      const existingIds = planningTransactions.map(ptx => ptx.id);
+      const existingPlanningTransactions = await this.db.planningTransactions.where('id').anyOf(existingIds).toArray();
+      const existingMap = new Map(existingPlanningTransactions.map(ptx => [ptx.id, ptx]));
+
+      // Prüfe jede Planungstransaktion auf Änderungen
+      for (const planningTransaction of planningTransactions) {
+        const existing = existingMap.get(planningTransaction.id);
+
+        if (!existing) {
+          // Neue Planungstransaktion - hinzufügen
+          planningTransactionsToUpdate.push({
+            ...planningTransaction,
+            updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        } else if (planningTransaction.updatedAt && existing.updatedAt) {
+          // Prüfe LWW-Regel
+          if (new Date(planningTransaction.updatedAt) > new Date(existing.updatedAt)) {
+            planningTransactionsToUpdate.push({
+              ...planningTransaction,
+              updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+          planningTransactionsToUpdate.push({
+            ...planningTransaction,
+            updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        }
+      }
+
+      // Bulk-Update nur für tatsächlich zu aktualisierende Planungstransaktionen
+      if (planningTransactionsToUpdate.length > 0) {
+        const plainPlanningTransactions = planningTransactionsToUpdate.map(ptx => this.toPlainObject(ptx));
+        await this.db.planningTransactions.bulkPut(plainPlanningTransactions);
+      }
+
+      infoLog('TenantDbService', `Intelligente Planungstransaktionen-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${planningTransactions.length} Planungstransaktionen.`);
+      return { updated, skipped };
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler bei intelligenter Planungstransaktionen-Batch-Operation für ${planningTransactions.length} Planungstransaktionen`, { error: err });
+      throw err;
+    }
+  }
+
   async getPlanningTransactions(): Promise<PlanningTransaction[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getPlanningTransactions: Keine aktive Mandanten-DB verfügbar.');
@@ -1469,6 +1786,34 @@ export class TenantDbService {
   // ============================================================================
   // MONTHLY BALANCE CRUD OPERATIONS
   // ============================================================================
+
+  /**
+   * Batch-Import für MonthlyBalances - deutlich performanter als einzelne Operationen
+   */
+  async saveMonthlyBalancesBatch(monthlyBalances: MonthlyBalance[]): Promise<void> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'saveMonthlyBalancesBatch: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (monthlyBalances.length === 0) {
+      debugLog('TenantDbService', 'saveMonthlyBalancesBatch: Keine MonthlyBalances zum Speichern.');
+      return;
+    }
+
+    try {
+      // Konvertiere alle MonthlyBalances zu plain objects
+      const plainMonthlyBalances = monthlyBalances.map(mb => this.toPlainObject(mb));
+
+      // Direkte bulkPut-Operation
+      await this.db.monthlyBalances.bulkPut(plainMonthlyBalances);
+
+      infoLog('TenantDbService', `${monthlyBalances.length} MonthlyBalances erfolgreich als Batch gespeichert.`);
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler beim Batch-Speichern von ${monthlyBalances.length} MonthlyBalances`, { error: err });
+      throw err;
+    }
+  }
 
   async getAllMonthlyBalances(): Promise<MonthlyBalance[]> {
     if (!this.db) {

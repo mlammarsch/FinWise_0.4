@@ -121,6 +121,100 @@ export const useTagStore = defineStore('tag', () => {
     return tagWithTimestamp;
   }
 
+  /**
+   * Fügt mehrere Tags in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultipleTags(tagsToAdd: Tag[], fromSync = false): Promise<Tag[]> {
+    if (tagsToAdd.length === 0) {
+      debugLog('tagStore', 'addMultipleTags: Keine Tags zum Hinzufügen');
+      return [];
+    }
+
+    const processedTags: Tag[] = [];
+
+    try {
+      // Bereite alle Tags vor
+      const tagsWithTimestamp = tagsToAdd.map(tagData => {
+        const color = tagData.color || getRandomStateColor();
+        return {
+          ...tagData,
+          color,
+          updatedAt: tagData.updatedAt || new Date().toISOString(),
+        };
+      });
+
+      if (fromSync) {
+        // Verwende intelligente Batch-Operation für Sync
+        const result = await tenantDbService.addTagsBatchIntelligent(tagsWithTimestamp);
+        infoLog('tagStore', `Tags Sync-Batch abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen`);
+
+        // Aktualisiere nur die tatsächlich geänderten Tags im Store
+        for (const tag of tagsWithTimestamp) {
+          const existingIndex = tags.value.findIndex(t => t.id === tag.id);
+          if (existingIndex === -1) {
+            tags.value.push(tag);
+            processedTags.push(tag);
+            // ColorHistory-Management für neue Tags
+            await addColorToHistory(tag.color);
+          } else if (tag.updatedAt && (!tags.value[existingIndex].updatedAt ||
+            new Date(tag.updatedAt) > new Date(tags.value[existingIndex].updatedAt!))) {
+            const oldColor = tags.value[existingIndex].color;
+            tags.value[existingIndex] = tag;
+            processedTags.push(tag);
+            // ColorHistory-Management wenn Farbe geändert wurde
+            if (tag.color !== oldColor) {
+              await addColorToHistory(tag.color);
+            }
+          }
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addTagsBatch(tagsWithTimestamp);
+
+        // Füge alle Tags zum Store hinzu
+        for (const tag of tagsWithTimestamp) {
+          const existingIndex = tags.value.findIndex(t => t.id === tag.id);
+          if (existingIndex === -1) {
+            tags.value.push(tag);
+            // ColorHistory-Management für neue Tags
+            await addColorToHistory(tag.color);
+          } else {
+            tags.value[existingIndex] = tag;
+          }
+          processedTags.push(tag);
+        }
+
+        // Füge alle zur Sync-Queue hinzu (einzeln, da keine Batch-Methode existiert)
+        for (const tag of tagsWithTimestamp) {
+          try {
+            const backendPayload = {
+              ...tenantDbService.toPlainObject(tag),
+              updated_at: tag.updatedAt
+            };
+            delete (backendPayload as any).updatedAt;
+
+            await tenantDbService.addSyncQueueEntry({
+              entityType: EntityTypeEnum.TAG,
+              entityId: tag.id,
+              operationType: SyncOperationType.CREATE,
+              payload: backendPayload,
+            });
+          } catch (e) {
+            errorLog('tagStore', `Fehler beim Hinzufügen von Tag "${tag.name}" zur Sync Queue.`, e);
+          }
+        }
+        infoLog('tagStore', `${tagsWithTimestamp.length} Tags zur Sync Queue hinzugefügt`);
+      }
+
+      infoLog('tagStore', `${processedTags.length} Tags erfolgreich als Batch verarbeitet`);
+      return processedTags;
+
+    } catch (error) {
+      errorLog('tagStore', `Fehler beim Batch-Hinzufügen von ${tagsToAdd.length} Tags`, error);
+      throw error;
+    }
+  }
+
   async function updateTag(tagUpdatesData: Tag, fromSync = false): Promise<boolean> {
 
     const tagUpdatesWithTimestamp: Tag = {
@@ -300,6 +394,7 @@ export const useTagStore = defineStore('tag', () => {
     getChildTags,
     getTagsByIds,
     addTag,
+    addMultipleTags,
     updateTag,
     deleteTag,
     loadTags,

@@ -14,7 +14,7 @@ import { useTransactionStore } from "@/stores/transactionStore";
 import { useTagStore } from "@/stores/tagStore";
 import { TransactionService } from "@/services/TransactionService";
 import { BalanceService } from "@/services/BalanceService";
-import { TransactionType, EntityTypeEnum, SyncOperationType, CSVTransactionData } from "@/types";
+import { TransactionType, EntityTypeEnum, SyncOperationType, CSVTransactionData, Tag } from "@/types";
 import { debugLog, infoLog, errorLog, warnLog } from "@/utils/logger";
 import { TenantDbService } from "@/services/TenantDbService";
 import { parseCSV as parseCSVUtil, parseAmount, calculateStringSimilarity } from "@/utils/csvUtils";
@@ -1284,6 +1284,9 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       if (allExtractedTags.size > 0) {
         debugLog('CSVImportService', `Verarbeite ${allExtractedTags.size} einzigartige Tags aus CSV-Import`);
 
+        // Sammle neue Tags für Bulk-Erstellung
+        const newTagsToCreate = [];
+
         for (const tagName of allExtractedTags) {
           const lowerTagName = tagName.toLowerCase();
 
@@ -1296,16 +1299,40 @@ export const useCSVImportService = defineStore('csvImportService', () => {
             tagNameToIdMap.set(lowerTagName, existingTag.id);
             debugLog('CSVImportService', `Verwende existierendes Tag: "${tagName}" -> ${existingTag.id}`);
           } else {
-            // Erstelle neues Tag
-            try {
-              const newTag = await tagStore.addTag({
-                name: tagName,
-                parentTagId: null
-              });
-              tagNameToIdMap.set(lowerTagName, newTag.id);
-              infoLog('CSVImportService', `Neues Tag erstellt: "${tagName}" -> ${newTag.id}`);
-            } catch (error) {
-              errorLog('CSVImportService', `Fehler beim Erstellen von Tag "${tagName}"`, error);
+            // Sammle für Bulk-Erstellung
+            newTagsToCreate.push({
+              id: crypto.randomUUID(),
+              name: tagName,
+              parentTagId: null,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString()
+            });
+          }
+        }
+
+        // Erstelle alle neuen Tags in einem Batch
+        if (newTagsToCreate.length > 0) {
+          try {
+            const createdTags = await tagStore.addMultipleTags(newTagsToCreate);
+
+            // Aktualisiere Mapping mit erstellten Tags
+            for (const tag of createdTags) {
+              tagNameToIdMap.set(tag.name.toLowerCase(), tag.id);
+            }
+
+            infoLog('CSVImportService', `${createdTags.length} neue Tags als Batch erstellt`);
+          } catch (error) {
+            errorLog('CSVImportService', `Fehler beim Batch-Erstellen von Tags`, error);
+
+            // Fallback: Einzelne Tag-Erstellung
+            for (const tagData of newTagsToCreate) {
+              try {
+                const newTag = await tagStore.addTag(tagData);
+                tagNameToIdMap.set(tagData.name.toLowerCase(), newTag.id);
+                infoLog('CSVImportService', `Fallback: Neues Tag erstellt: "${tagData.name}" -> ${newTag.id}`);
+              } catch (individualError) {
+                errorLog('CSVImportService', `Fehler beim Erstellen von Tag "${tagData.name}"`, individualError);
+              }
             }
           }
         }

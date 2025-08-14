@@ -192,13 +192,50 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
         return;
       }
 
-      // Alle MonthlyBalances in IndexedDB speichern
-      for (const balance of monthlyBalances.value) {
-        await tenantDbService.saveMonthlyBalance(balance);
+      // Verwende Bulk-Operation für bessere Performance
+      if (monthlyBalances.value.length > 0) {
+        await tenantDbService.saveMonthlyBalancesBatch(monthlyBalances.value);
+        debugLog('monthlyBalanceStore', `${monthlyBalances.value.length} MonthlyBalances als Batch gespeichert`);
       }
-      // debugLog('monthlyBalanceStore', `${monthlyBalances.value.length} MonthlyBalances gespeichert`);
     } catch (error) {
       errorLog('monthlyBalanceStore', 'Fehler beim Speichern der MonthlyBalances', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Speichert mehrere MonthlyBalances in einem Batch - optimiert für große Datenmengen
+   */
+  async function bulkSaveMonthlyBalances(balancesToSave: MonthlyBalance[]): Promise<void> {
+    if (balancesToSave.length === 0) {
+      debugLog('monthlyBalanceStore', 'bulkSaveMonthlyBalances: Keine MonthlyBalances zum Speichern');
+      return;
+    }
+
+    try {
+      if (!tenantDbService) {
+        warnLog('monthlyBalanceStore', 'Kein TenantDbService verfügbar für bulkSaveMonthlyBalances');
+        return;
+      }
+
+      // Verwende Batch-Operation für optimale Performance
+      await tenantDbService.saveMonthlyBalancesBatch(balancesToSave);
+
+      // Aktualisiere lokalen State
+      for (const balance of balancesToSave) {
+        const idx = monthlyBalances.value.findIndex(
+          mb => mb.year === balance.year && mb.month === balance.month,
+        );
+        if (idx >= 0) {
+          monthlyBalances.value[idx] = balance;
+        } else {
+          monthlyBalances.value.push(balance);
+        }
+      }
+
+      debugLog('monthlyBalanceStore', `${balancesToSave.length} MonthlyBalances erfolgreich als Batch gespeichert`);
+    } catch (error) {
+      errorLog('monthlyBalanceStore', `Fehler beim Batch-Speichern von ${balancesToSave.length} MonthlyBalances`, error);
       throw error;
     }
   }
@@ -227,10 +264,8 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
         if (parsedData.length > 0) {
           infoLog('monthlyBalanceStore', `Migriere ${parsedData.length} MonthlyBalances von localStorage zu IndexedDB`);
 
-          // Daten in IndexedDB speichern
-          for (const balance of parsedData) {
-            await tenantDbService.saveMonthlyBalance(balance);
-          }
+          // Daten in IndexedDB speichern (mit Bulk-Operation für bessere Performance)
+          await tenantDbService.saveMonthlyBalancesBatch(parsedData);
 
           // Legacy-Daten entfernen
           localStorage.removeItem(legacyKey);
@@ -249,6 +284,7 @@ export const useMonthlyBalanceStore = defineStore('monthlyBalance', () => {
     getMonthlyBalance,
     setMonthlyBalance,
     saveMonthlyBalances,
+    bulkSaveMonthlyBalances,
     loadMonthlyBalances,
     reset,
 

@@ -121,6 +121,151 @@ export const useCategoryStore = defineStore('category', () => {
     return categoryWithTimestamp;
   }
 
+  /**
+   * Fügt mehrere Kategorien in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultipleCategories(categoriesToAdd: Category[], fromSync = false): Promise<Category[]> {
+    if (categoriesToAdd.length === 0) {
+      debugLog('categoryStore', 'addMultipleCategories: Keine Kategorien zum Hinzufügen');
+      return [];
+    }
+
+    const processedCategories: Category[] = [];
+
+    try {
+      // Bereite alle Kategorien vor
+      const categoriesWithTimestamp = categoriesToAdd.map(categoryData => {
+        const group = categoryGroups.value.find(g => g.id === categoryData.categoryGroupId);
+        const isIncome = group?.isIncomeGroup ?? false;
+
+        return {
+          ...categoryData,
+          isIncomeCategory: categoryData.isIncomeCategory ?? isIncome,
+          updatedAt: categoryData.updatedAt || new Date().toISOString(),
+        };
+      });
+
+      if (fromSync) {
+        // Verwende intelligente Batch-Operation für Sync
+        const result = await tenantDbService.addCategoriesBatchIntelligent(categoriesWithTimestamp);
+        infoLog('categoryStore', `Kategorien Sync-Batch abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen`);
+
+        // Aktualisiere nur die tatsächlich geänderten Kategorien im Store
+        for (const category of categoriesWithTimestamp) {
+          const existingIndex = categories.value.findIndex(c => c.id === category.id);
+          if (existingIndex === -1) {
+            categories.value.push(category);
+            processedCategories.push(category);
+          } else if (category.updatedAt && (!categories.value[existingIndex].updatedAt ||
+            new Date(category.updatedAt) > new Date(categories.value[existingIndex].updatedAt!))) {
+            categories.value[existingIndex] = category;
+            processedCategories.push(category);
+          }
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addCategoriesBatch(categoriesWithTimestamp);
+
+        // Füge alle Kategorien zum Store hinzu
+        for (const category of categoriesWithTimestamp) {
+          const existingIndex = categories.value.findIndex(c => c.id === category.id);
+          if (existingIndex === -1) {
+            categories.value.push(category);
+          } else {
+            categories.value[existingIndex] = category;
+          }
+          processedCategories.push(category);
+        }
+
+        // Füge alle zur Sync-Queue hinzu (einzeln, da keine Batch-Methode für Categories existiert)
+        for (const category of categoriesWithTimestamp) {
+          try {
+            await tenantDbService.addSyncQueueEntry({
+              entityType: EntityTypeEnum.CATEGORY,
+              entityId: category.id,
+              operationType: SyncOperationType.CREATE,
+              payload: tenantDbService.toPlainObject(category),
+            });
+          } catch (e) {
+            errorLog('categoryStore', `Fehler beim Hinzufügen von Category "${category.name}" zur Sync Queue.`, e);
+          }
+        }
+        infoLog('categoryStore', `${categoriesWithTimestamp.length} Kategorien zur Sync Queue hinzugefügt`);
+      }
+
+      infoLog('categoryStore', `${processedCategories.length} Kategorien erfolgreich als Batch verarbeitet`);
+      return processedCategories;
+
+    } catch (error) {
+      errorLog('categoryStore', `Fehler beim Batch-Hinzufügen von ${categoriesToAdd.length} Kategorien`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Fügt mehrere Kategoriegruppen in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultipleCategoryGroups(categoryGroupsToAdd: CategoryGroup[], fromSync = false): Promise<CategoryGroup[]> {
+    if (categoryGroupsToAdd.length === 0) {
+      debugLog('categoryStore', 'addMultipleCategoryGroups: Keine Kategoriegruppen zum Hinzufügen');
+      return [];
+    }
+
+    const processedCategoryGroups: CategoryGroup[] = [];
+
+    try {
+      // Bereite alle Kategoriegruppen vor
+      const categoryGroupsWithTimestamp = categoryGroupsToAdd.map(categoryGroupData => ({
+        ...categoryGroupData,
+        updatedAt: categoryGroupData.updatedAt || new Date().toISOString(),
+      }));
+
+      if (fromSync) {
+        // Für Sync verwende einzelne Operationen mit LWW-Logik (da keine intelligente Batch-Operation existiert)
+        for (const categoryGroup of categoryGroupsWithTimestamp) {
+          const result = await addCategoryGroup(categoryGroup, true);
+          processedCategoryGroups.push(result);
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addCategoryGroupsBatch(categoryGroupsWithTimestamp);
+
+        // Füge alle Kategoriegruppen zum Store hinzu
+        for (const categoryGroup of categoryGroupsWithTimestamp) {
+          const existingIndex = categoryGroups.value.findIndex(g => g.id === categoryGroup.id);
+          if (existingIndex === -1) {
+            categoryGroups.value.push(categoryGroup);
+          } else {
+            categoryGroups.value[existingIndex] = categoryGroup;
+          }
+          processedCategoryGroups.push(categoryGroup);
+        }
+
+        // Füge alle zur Sync-Queue hinzu
+        for (const categoryGroup of categoryGroupsWithTimestamp) {
+          try {
+            await tenantDbService.addSyncQueueEntry({
+              entityType: EntityTypeEnum.CATEGORY_GROUP,
+              entityId: categoryGroup.id,
+              operationType: SyncOperationType.CREATE,
+              payload: tenantDbService.toPlainObject(categoryGroup),
+            });
+          } catch (e) {
+            errorLog('categoryStore', `Fehler beim Hinzufügen von CategoryGroup "${categoryGroup.name}" zur Sync Queue.`, e);
+          }
+        }
+        infoLog('categoryStore', `${categoryGroupsWithTimestamp.length} Kategoriegruppen zur Sync Queue hinzugefügt`);
+      }
+
+      infoLog('categoryStore', `${processedCategoryGroups.length} Kategoriegruppen erfolgreich als Batch verarbeitet`);
+      return processedCategoryGroups;
+
+    } catch (error) {
+      errorLog('categoryStore', `Fehler beim Batch-Hinzufügen von ${categoryGroupsToAdd.length} Kategoriegruppen`, error);
+      throw error;
+    }
+  }
+
   async function updateCategory(categoryUpdatesData: Category, fromSync = false): Promise<boolean> {
     const categoryUpdatesWithTimestamp: Category = {
       ...categoryUpdatesData,
@@ -599,10 +744,12 @@ export const useCategoryStore = defineStore('category', () => {
     categoriesByGroup,
     activeCategories,
     addCategory,
+    addMultipleCategories,
     updateCategory,
     deleteCategory,
     updateCategoryBalance,
     addCategoryGroup,
+    addMultipleCategoryGroups,
     updateCategoryGroup,
     deleteCategoryGroup,
     setMonthlySnapshot,

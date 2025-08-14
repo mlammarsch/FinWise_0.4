@@ -433,6 +433,90 @@ export const useRecipientStore = defineStore('recipient', () => {
     return recipientWithTimestamp;
   }
 
+  /**
+   * Fügt mehrere Empfänger in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultipleRecipients(recipientsToAdd: Recipient[], fromSync = false): Promise<Recipient[]> {
+    if (recipientsToAdd.length === 0) {
+      debugLog('recipientStore', 'addMultipleRecipients: Keine Empfänger zum Hinzufügen');
+      return [];
+    }
+
+    const processedRecipients: Recipient[] = [];
+
+    try {
+      // Bereite alle Empfänger vor
+      const recipientsWithTimestamp = recipientsToAdd.map(recipientData => ({
+        ...recipientData,
+        updatedAt: recipientData.updatedAt || new Date().toISOString(),
+      }));
+
+      if (fromSync) {
+        // Verwende intelligente Batch-Operation für Sync
+        const result = await tenantDbService.addRecipientsBatchIntelligent(recipientsWithTimestamp);
+        infoLog('recipientStore', `Empfänger Sync-Batch abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen`);
+
+        // Aktualisiere nur die tatsächlich geänderten Empfänger im Store
+        for (const recipient of recipientsWithTimestamp) {
+          const existingIndex = recipients.value.findIndex(r => r.id === recipient.id);
+          if (existingIndex === -1) {
+            recipients.value.push(recipient);
+            processedRecipients.push(recipient);
+          } else {
+            const storeTimestamp = recipients.value[existingIndex].updatedAt || (recipients.value[existingIndex] as any).updated_at;
+            const incomingTimestamp = recipient.updatedAt || (recipient as any).updated_at;
+
+            if (incomingTimestamp && (!storeTimestamp || new Date(incomingTimestamp) > new Date(storeTimestamp))) {
+              recipients.value[existingIndex] = recipient;
+              processedRecipients.push(recipient);
+            }
+          }
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addRecipientsBatch(recipientsWithTimestamp);
+
+        // Füge alle Empfänger zum Store hinzu
+        for (const recipient of recipientsWithTimestamp) {
+          const existingIndex = recipients.value.findIndex(r => r.id === recipient.id);
+          if (existingIndex === -1) {
+            recipients.value.push(recipient);
+          } else {
+            recipients.value[existingIndex] = recipient;
+          }
+          processedRecipients.push(recipient);
+        }
+
+        // Füge alle zur Sync-Queue hinzu (einzeln, da keine Batch-Methode existiert)
+        for (const recipient of recipientsWithTimestamp) {
+          try {
+            const backendPayload = {
+              ...tenantDbService.toPlainObject(recipient),
+              updated_at: recipient.updatedAt
+            };
+
+            await tenantDbService.addSyncQueueEntry({
+              entityType: EntityTypeEnum.RECIPIENT,
+              entityId: recipient.id,
+              operationType: SyncOperationType.CREATE,
+              payload: backendPayload,
+            });
+          } catch (e) {
+            errorLog('recipientStore', `Fehler beim Hinzufügen von Recipient "${recipient.name}" zur Sync Queue.`, e);
+          }
+        }
+        infoLog('recipientStore', `${recipientsWithTimestamp.length} Empfänger zur Sync Queue hinzugefügt`);
+      }
+
+      infoLog('recipientStore', `${processedRecipients.length} Empfänger erfolgreich als Batch verarbeitet`);
+      return processedRecipients;
+
+    } catch (error) {
+      errorLog('recipientStore', `Fehler beim Batch-Hinzufügen von ${recipientsToAdd.length} Empfängern`, error);
+      throw error;
+    }
+  }
+
   async function updateRecipient(recipientUpdatesData: Recipient, fromSync = false): Promise<boolean> {
 
     const recipientUpdatesWithTimestamp: Recipient = {
@@ -2224,6 +2308,7 @@ export const useRecipientStore = defineStore('recipient', () => {
     recipients,
     getRecipientById,
     addRecipient,
+    addMultipleRecipients,
     updateRecipient,
     deleteRecipient,
     loadRecipients,

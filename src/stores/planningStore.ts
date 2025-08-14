@@ -34,9 +34,9 @@ dayjs.extend(isSameOrAfter);
 export const usePlanningStore = defineStore('planning', () => {
   /* ------------------------------------------------ State */
   const planningTransactions = ref<PlanningTransaction[]>([]);
-  const transactionStore    = useTransactionStore();
-  const ruleStore           = useRuleStore();
-  const tenantDbService     = new TenantDbService();
+  const transactionStore = useTransactionStore();
+  const ruleStore = useRuleStore();
+  const tenantDbService = new TenantDbService();
 
   /* ---------------------------------------------- Getters */
   const getPlanningTransactionById = computed(() => (id: string) =>
@@ -79,14 +79,14 @@ export const usePlanningStore = defineStore('planning', () => {
       transferToCategoryId: p.transferToCategoryId,
       counterPlanningTransactionId: p.counterPlanningTransactionId || null,
       autoExecute: p.autoExecute || false,
-      updated_at: p.updated_at || new Date().toISOString(),
+      updatedAt: p.updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localPlanningTransaction = await tenantDbService.getPlanningTransactionById(planningTransactionWithTimestamp.id);
-      if (localPlanningTransaction && localPlanningTransaction.updated_at && planningTransactionWithTimestamp.updated_at &&
-          new Date(localPlanningTransaction.updated_at) >= new Date(planningTransactionWithTimestamp.updated_at)) {
+      if (localPlanningTransaction && localPlanningTransaction.updatedAt && planningTransactionWithTimestamp.updatedAt &&
+        new Date(localPlanningTransaction.updatedAt) >= new Date(planningTransactionWithTimestamp.updatedAt)) {
         debugLog('PlanningStore', `addPlanningTransaction (fromSync): Lokale Planungstransaktion ${localPlanningTransaction.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localPlanningTransaction; // Gib die lokale, "gewinnende" Planungstransaktion zurück
       }
@@ -107,7 +107,7 @@ export const usePlanningStore = defineStore('planning', () => {
         // Sync-Queue hinzufügen
         await tenantDbService.addToSyncQueue('planningTransactions', 'create', savedTx);
 
-        BalanceService.calculateMonthlyBalances();
+        BalanceService.calculateAllMonthlyBalances();
         // TransactionService.schedule(tx); // Kommentiert aus, da Methode nicht existiert
         // ruleStore.evaluateRules(); // Kommentiert aus, da Methode nicht existiert
       }
@@ -120,17 +120,119 @@ export const usePlanningStore = defineStore('planning', () => {
     }
   }
 
+  /**
+   * Fügt mehrere Planungstransaktionen in einem Batch hinzu - optimiert für große Datenmengen
+   */
+  async function addMultiplePlanningTransactions(planningTransactionsToAdd: Partial<PlanningTransaction>[], fromSync = false): Promise<PlanningTransaction[]> {
+    if (planningTransactionsToAdd.length === 0) {
+      debugLog('PlanningStore', 'addMultiplePlanningTransactions: Keine Planungstransaktionen zum Hinzufügen');
+      return [];
+    }
+
+    const processedPlanningTransactions: PlanningTransaction[] = [];
+
+    try {
+      // Bereite alle Planungstransaktionen vor
+      const planningTransactionsWithTimestamp = planningTransactionsToAdd.map(p => {
+        const planningTransactionWithTimestamp: PlanningTransaction = {
+          id: p.id || uuidv4(),
+          name: p.name || '',
+          accountId: p.accountId || '',
+          categoryId: p.categoryId ?? null,
+          tagIds: Array.isArray(p.tagIds) ? [...p.tagIds] : [],
+          recipientId: p.recipientId ?? null,
+          amount: p.amount || 0,
+          amountType: p.amountType || AmountType.EXACT,
+          approximateAmount: p.approximateAmount,
+          minAmount: p.minAmount,
+          maxAmount: p.maxAmount,
+          note: p.note || '',
+          startDate: p.startDate || new Date().toISOString(),
+          valueDate: p.valueDate || p.startDate || new Date().toISOString(),
+          endDate: p.endDate ?? null,
+          recurrencePattern: p.recurrencePattern || RecurrencePattern.ONCE,
+          recurrenceEndType: p.recurrenceEndType || RecurrenceEndType.NEVER,
+          recurrenceCount: p.recurrenceCount ?? null,
+          executionDay: p.executionDay ?? null,
+          weekendHandling: p.weekendHandling || WeekendHandlingType.NONE,
+          isActive: p.isActive !== undefined ? p.isActive : true,
+          forecastOnly: p.forecastOnly !== undefined ? p.forecastOnly : false,
+          transactionType: p.transactionType!,
+          transferToAccountId: p.transferToAccountId,
+          transferToCategoryId: p.transferToCategoryId,
+          counterPlanningTransactionId: p.counterPlanningTransactionId || null,
+          autoExecute: p.autoExecute || false,
+          updatedAt: p.updatedAt || new Date().toISOString(),
+        };
+        return planningTransactionWithTimestamp;
+      });
+
+      if (fromSync) {
+        // Verwende intelligente Batch-Operation für Sync
+        const result = await tenantDbService.addPlanningTransactionsBatchIntelligent(planningTransactionsWithTimestamp);
+        debugLog('PlanningStore', `PlanningTransactions Sync-Batch abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen`);
+
+        // Aktualisiere nur die tatsächlich geänderten Planungstransaktionen im Store
+        for (const ptx of planningTransactionsWithTimestamp) {
+          const existingIndex = planningTransactions.value.findIndex(p => p.id === ptx.id);
+          if (existingIndex === -1) {
+            planningTransactions.value.push(ptx);
+            processedPlanningTransactions.push(ptx);
+          } else if (ptx.updatedAt && (!planningTransactions.value[existingIndex].updatedAt ||
+            new Date(ptx.updatedAt) > new Date(planningTransactions.value[existingIndex].updatedAt!))) {
+            planningTransactions.value[existingIndex] = ptx;
+            processedPlanningTransactions.push(ptx);
+          }
+        }
+      } else {
+        // Normale Batch-Operation für lokale Änderungen
+        await tenantDbService.addPlanningTransactionsBatch(planningTransactionsWithTimestamp);
+
+        // Füge alle Planungstransaktionen zum Store hinzu
+        for (const ptx of planningTransactionsWithTimestamp) {
+          const existingIndex = planningTransactions.value.findIndex(p => p.id === ptx.id);
+          if (existingIndex === -1) {
+            planningTransactions.value.push(ptx);
+          } else {
+            planningTransactions.value[existingIndex] = ptx;
+          }
+          processedPlanningTransactions.push(ptx);
+        }
+
+        // Füge alle zur Sync-Queue hinzu (einzeln, da keine Batch-Methode existiert)
+        for (const ptx of planningTransactionsWithTimestamp) {
+          try {
+            await tenantDbService.addToSyncQueue('planningTransactions', 'create', ptx);
+          } catch (e) {
+            debugLog('PlanningStore', `Fehler beim Hinzufügen von PlanningTransaction "${ptx.name}" zur Sync Queue.`, String(e));
+          }
+        }
+        debugLog('PlanningStore', `${planningTransactionsWithTimestamp.length} Planungstransaktionen zur Sync Queue hinzugefügt`);
+
+        // Trigger Balance-Berechnung nur einmal am Ende
+        BalanceService.calculateAllMonthlyBalances();
+      }
+
+      debugLog('PlanningStore', `${processedPlanningTransactions.length} Planungstransaktionen erfolgreich als Batch verarbeitet`);
+      return processedPlanningTransactions;
+
+    } catch (error) {
+      debugLog('PlanningStore', `Fehler beim Batch-Hinzufügen von ${planningTransactionsToAdd.length} Planungstransaktionen`, String(error));
+      throw error;
+    }
+  }
+
   async function updatePlanningTransaction(id: string, upd: Partial<PlanningTransaction>, fromSync = false): Promise<boolean> {
     const updatesWithTimestamp = {
       ...upd,
-      updated_at: upd.updated_at || new Date().toISOString()
+      updatedAt: upd.updatedAt || new Date().toISOString()
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (UPDATE)
       const localPlanningTransaction = await tenantDbService.getPlanningTransactionById(id);
-      if (localPlanningTransaction && localPlanningTransaction.updated_at && updatesWithTimestamp.updated_at &&
-          new Date(localPlanningTransaction.updated_at) >= new Date(updatesWithTimestamp.updated_at)) {
+      if (localPlanningTransaction && localPlanningTransaction.updatedAt && updatesWithTimestamp.updatedAt &&
+        new Date(localPlanningTransaction.updatedAt) >= new Date(updatesWithTimestamp.updatedAt)) {
         debugLog('PlanningStore', `updatePlanningTransaction (fromSync): Lokale Planungstransaktion ${id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true; // Erfolgreich, aber keine Änderung
       }
@@ -157,7 +259,7 @@ export const usePlanningStore = defineStore('planning', () => {
       }
 
       if (!fromSync) {
-        BalanceService.calculateMonthlyBalances();
+        BalanceService.calculateAllMonthlyBalances();
         // TransactionService.reschedule(planningTransactions.value[idx]); // Kommentiert aus, da Methode nicht existiert
       }
 
@@ -184,7 +286,7 @@ export const usePlanningStore = defineStore('planning', () => {
         planningTransactions.value = planningTransactions.value.filter(p => p.id !== id);
 
         if (!fromSync) {
-          BalanceService.calculateMonthlyBalances();
+          BalanceService.calculateAllMonthlyBalances();
           // TransactionService.cancel(id); // Kommentiert aus, da Methode nicht existiert
         }
 
@@ -302,6 +404,7 @@ export const usePlanningStore = defineStore('planning', () => {
     getPlanningTransactionById,
     getUpcomingTransactions,
     addPlanningTransaction,
+    addMultiplePlanningTransactions,
     updatePlanningTransaction,
     deletePlanningTransaction,
     loadPlanningTransactions,
