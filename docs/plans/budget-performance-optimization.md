@@ -1,60 +1,92 @@
-# Plan zur Performance-Optimierung der Budget-Funktion
+# Umsetzungsplan: Performance-Optimierung Budget-Modul
 
-## Problembeschreibung
+Dieses Dokument beschreibt den Plan zur Behebung von Performance-Engpässen im Budget-Modul, die bei einer großen Anzahl von Kategorien (>50) auftreten.
 
-Die Analyse der Logs und der Architektur hat die Ursache für das Performance-Problem bei der Budget-Bearbeitung bestätigt. Jede einzelne Budget-Anpassung löst eine Kaskade von teuren Operationen aus, die sich bei mehreren Änderungen schnell aufsummieren und die Anwendung erheblich verlangsamen.
+## Analyse der Engpässe
 
-- **Kaskadierende Updates:** Jede Budgetänderung in `BudgetCategoriesAndValues.vue` erzeugt zwei Transaktionen über `TransactionService.addCategoryTransfer()`.
-- **Intensive Neuberechnungen:** Jede dieser Transaktionen löst eine sofortige, aufwändige Neuberechnung aller Monatsbilanzen durch `BalanceService.calculateMonthlyBalances()` aus.
-- **"Chatty" Synchronisation:** Jede Transaktion wird einzeln in die Sync Queue gestellt, was den `WebSocketService` zu häufig und ineffizient anstößt.
+Die Hauptursachen für die Performance-Probleme sind:
 
-Bei 5 Budgetänderungen führt dies zu 10 Transaktionen, 10 kompletten Saldo-Neuberechnungen und 10 separaten Sync-Vorgängen. Dies blockiert die UI und verzögert die Synchronisation erheblich.
+1.  **Redundante Daten-Aggregation:** Bei jeder Budget-Änderung werden die Salden und Zusammenfassungen für **alle** Kategorien und Monate neu berechnet, anstatt nur die geänderten Daten zu aktualisieren.
+2.  **Kaskadierende Neuberechnungen:** Eine einzelne Änderung löst eine Kaskade von Neuberechnungen aus, die von der UI (`BudgetCategoriesAndValues.vue`) über die Services (`BudgetService`, `TransactionService`, `BalanceService`) bis hin zur Datenbank reicht.
+3.  **Häufige DB- und Sync-Operationen:** Jede Budget-Anpassung erzeugt mindestens zwei Transaktionen, die sofort einzeln in IndexedDB geschrieben und für die Synchronisation vorgemerkt werden, was bei schnellen Änderungen zu einem "I/O-Stau" führt.
 
-## Lösungsstrategie: Entkopplung und Batch-Verarbeitung
+## Umsetzungsplan
 
-Ich schlage vor, die Interaktionen zwischen der UI, den Services und den Stores zu entkoppeln und die Berechnungen zu optimieren.
-
-### 1. `BudgetCategoriesAndValues.vue`: Batch-Verarbeitung einführen
-
-- Wir führen einen **Batch-Modus** ein. Anstatt jede Budget-Änderung sofort zu verarbeiten, sammeln wir sie in einer lokalen Liste (`pendingBudgetUpdates`).
-- Die Verarbeitung wird durch einen `debounce`-Mechanismus ausgelöst, d.h., sie startet erst, wenn der Benutzer für kurze Zeit keine neuen Eingaben macht.
-- Dies reduziert die Anzahl der Aufrufe an den `TransactionService` von N auf 1 pro Bearbeitungssitzung.
-
-### 2. `TransactionService`: Optimierung der Transaktionserstellung
-
-- Ich werde eine neue Methode `addBulkCategoryTransfers` hinzufügen, die eine Liste von Budget-Änderungen in einer einzigen, performanten Operation verarbeiten kann.
-- Diese Methode wird einen Batch-Update-Modus im `transactionStore` nutzen, um UI-Updates während der Massenverarbeitung zu verhindern.
-
-### 3. `BalanceService`: Intelligente und verzögerte Neuberechnung
-
-- Die sofortige und wiederholte Ausführung von `calculateMonthlyBalances()` wird entfernt.
-- Stattdessen wird die Neuberechnung der Salden ebenfalls über einen `debounce`-Mechanismus gesteuert und nur einmal nach Abschluss aller Änderungen ausgeführt. Dies reduziert die Last auf die IndexedDB erheblich.
-
-### 4. `WebSocketService`: Effizientere Synchronisation
-
-- Die Logik zur Verarbeitung der `SyncQueue` wird nicht mehr durch jede einzelne Transaktion getriggert, sondern durch einen `watch`-Mechanismus auf der `syncQueue` selbst.
-- Dieser Watcher wird ebenfalls einen `debounce` verwenden, um sicherzustellen, dass nicht zu viele Sync-Prozesse gleichzeitig gestartet werden. Das "Chattern" wird unterbunden.
-
-## Visueller Vergleich: Vorher vs. Nachher
+Der Plan ist in drei Phasen unterteilt, um die Probleme gezielt zu adressieren.
 
 ```mermaid
 graph TD
-    subgraph Vorher: N-fache Kaskade
-        A[UI: 1. Budget-Änderung] --> B{Transaktion erstellen};
-        B --> C{Salden neu berechnen};
-        C --> D{Sync anstoßen};
-        A2[UI: 2. Budget-Änderung] --> B2{Transaktion erstellen};
-        B2 --> C2{Salden neu berechnen};
-        C2 --> D2{Sync anstoßen};
-        A3[...] --> B3[...];
+    subgraph "Phase 1: Inkrementelle und entkoppelte Berechnungen"
+        A[BalanceService optimieren] --> B(Inkrementelle Monatsbilanz);
+        A --> C(Debounced Balance-Updates);
     end
 
-    subgraph Nachher: Entkoppelte Batch-Verarbeitung
-        E[UI: Budget-Änderungen sammeln] -- debounce --> F{1x Batch-Transaktion erstellen};
-        F --> G((Store Updates));
-        H[Store: State geändert] -- debounce --> I{1x Salden neu berechnen};
-        J[SyncQueue: Neue Einträge] -- debounce --> K{1x Sync anstoßen};
+    subgraph "Phase 2: Reduzierung der DB- und Sync-Last"
+        D[TransactionService optimieren] --> E(Gepufferte DB-Schreibvorgänge);
+        D --> F(Gesteuerter Sync-Prozess);
     end
+
+    subgraph "Phase 3: UI-Entkopplung"
+        G[BudgetCategoriesAndValues.vue optimieren] --> H(Intelligentere Caching-Strategie);
+    end
+
+    A --> D;
+    D --> G;
 ```
 
-Dieser Plan sorgt dafür, dass die UI reaktionsschnell bleibt, die Datenbanklast minimiert und die Synchronisation effizient und gebündelt abläuft.
+---
+
+### **Phase 1: Inkrementelle und entkoppelte Berechnungen (`BalanceService`)**
+
+**Ziel:** Die teure `calculateMonthlyBalances`-Funktion durch eine intelligente, inkrementelle Aktualisierung ersetzen.
+
+**1.1. Inkrementelle Monatsbilanz-Aktualisierung:**
+*   **Aktion:** Neue Methode `BalanceService.updateMonthlyBalancesForChanges(changes: { accountIds?: string[], categoryIds?: string[], fromDate: string })` erstellen.
+*   **Logik:**
+    *   Die Methode iteriert von `fromDate` bis zum letzten bekannten Planungsmonat.
+    *   In jeder Iteration (pro Monat) berechnet sie **nur** die Salden für die übergebenen `accountIds` und `categoryIds` neu.
+    *   Bestehende, unberührte Salden in diesem Monat werden beibehalten.
+*   **Vorteil:** Drastische Reduktion des Berechnungsaufwands (>98%).
+
+**1.2. Debounced Balance-Updates:**
+*   **Aktion:** Eine neue Klasse `MonthlyBalanceUpdateQueue` in `BalanceService.ts` implementieren, analog zur bestehenden `RunningBalanceQueue`.
+*   **Logik:**
+    *   Die Queue sammelt geänderte `accountId`s, `categoryId`s und das früheste `fromDate`.
+    *   Ein Debounce-Timer (z.B. 200ms) bündelt die Aufrufe.
+    *   Nach Ablauf wird `updateMonthlyBalancesForChanges` einmalig mit allen gesammelten Änderungen aufgerufen.
+*   **Integration:** Alle Aufrufe von `BalanceService.calculateMonthlyBalances()` im `TransactionService` werden durch `monthlyBalanceUpdateQueue.enqueueUpdate(...)` ersetzt.
+
+---
+
+### **Phase 2: Reduzierung der DB- und Sync-Last (`TransactionService`)**
+
+**Ziel:** Die Last auf IndexedDB und das Netzwerk bei schnellen, aufeinanderfolgenden Aktionen reduzieren.
+
+**2.1. Gepufferte IndexedDB-Schreibvorgänge:**
+*   **Aktion:** Den `transactionStore` und `TenantDbService` anpassen.
+*   **Logik:**
+    1.  `transactionStore.addTransaction` fügt neue Transaktionen einem temporären In-Memory-Array (`pendingTransactions`) hinzu. Die UI ist sofort aktuell.
+    2.  Ein Debouncer (z.B. 1-3 Sekunden) sammelt diese.
+    3.  Eine neue Methode `TenantDbService.bulkAddTransactions(pendingTransactions)` schreibt alle wartenden Transaktionen in einer einzigen DB-Transaktion.
+*   **Vorteil:** Reduziert den "I/O-Stau" durch Bündelung vieler kleiner Schreiboperationen.
+
+**2.2. Gesteuerter Synchronisationsprozess:**
+*   **Aktion:** Den `WebSocketService` anpassen.
+*   **Logik:**
+    1.  Ein `setInterval` (z.B. alle 10-30 Sekunden) prüft die `SyncQueue` in IndexedDB.
+    2.  Wenn Einträge vorhanden sind, werden sie paketiert (z.B. 10-20 pro Paket) und an das Backend gesendet.
+*   **Vorteil:** Entkoppelt den Sync von der UI-Interaktion und macht die Netzwerklast planbarer.
+
+---
+
+### **Phase 3: UI-Entkopplung (`BudgetCategoriesAndValues.vue`)**
+
+**Ziel:** Die rechenintensive Neuberechnung des `typeSummaryCache` verhindern.
+
+**3.1. Intelligentere Caching-Strategie:**
+*   **Aktion:** Die `computed` Property `typeSummaryCache` durch eine reaktive `ref` und einen `watch`-Hook ersetzen.
+*   **Logik:**
+    1.  Der Cache wird als `ref(new Map())` initialisiert.
+    2.  Ein `watch` beobachtet den `monthlyBalanceStore`.
+    3.  Bei Änderungen wird **nur der Cache-Eintrag für den spezifischen Monat** aktualisiert. Die Daten werden direkt aus dem `monthlyBalanceStore` bezogen, nicht neu aggregiert.
+*   **Vorteil:** Verhindert das teure Neurendern der gesamten Ansicht bei kleinen Datenänderungen.
