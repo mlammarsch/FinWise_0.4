@@ -428,6 +428,14 @@ export const WebSocketService = {
                   warnLog('[WebSocketService]', `Skipping category ${category.id} from initial load - pending DELETE operation exists`);
                   continue;
                 }
+
+                // Prüfe ob die Kategorie bereits im Store existiert
+                const existingCategory = categoryStore.findCategoryById(category.id);
+                if (existingCategory) {
+                  debugLog('[WebSocketService]', `Category ${category.id} already exists in store, skipping initial load`);
+                  continue;
+                }
+
                 debugLog('[WebSocketService]', 'Attempting to add category from initial load:', category);
                 await categoryStore.addCategory(category, true); // fromSync = true
                 infoLog('[WebSocketService]', `Category ${category.id} added/updated from initial load.`);

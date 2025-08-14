@@ -541,7 +541,9 @@ export const useCategoryStore = defineStore('category', () => {
 
   async function ensureAvailableFundsCategory() {
     if (!categories.value.find(c => c.name === 'Verfügbare Mittel')) {
-      await addCategory({
+      // Erstelle die Kategorie direkt ohne Sync-Queue zu triggern
+      const availableFundsCategory: Category = {
+        id: uuidv4(),
         name: 'Verfügbare Mittel',
         parentCategoryId: undefined,
         sortOrder: 9999,
@@ -554,8 +556,16 @@ export const useCategoryStore = defineStore('category', () => {
         available: 0,
         isIncomeCategory: false,
         isHidden: false,
-      });
-      debugLog('categoryStore', 'ensureAvailableFundsCategory - created AvailableFundsCategory');
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Direkt in IndexedDB speichern ohne Sync-Queue
+      await tenantDbService.addCategory(availableFundsCategory);
+
+      // Zum lokalen Store hinzufügen
+      categories.value.push(availableFundsCategory);
+
+      debugLog('categoryStore', 'ensureAvailableFundsCategory - created AvailableFundsCategory without triggering sync');
     }
   }
 
