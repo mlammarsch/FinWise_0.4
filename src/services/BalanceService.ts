@@ -118,6 +118,69 @@ class RunningBalanceQueue {
 // Globale Queue-Instanz
 const runningBalanceQueue = new RunningBalanceQueue();
 
+/**
+ * Queue für die Aktualisierung der Monatsbilanzen.
+ * Sammelt Änderungen und stößt eine inkrementelle Neuberechnung an.
+ */
+class MonthlyBalanceUpdateQueue {
+  private pendingUpdates = {
+    accountIds: new Set<string>(),
+    categoryIds: new Set<string>(),
+    fromDate: ''
+  };
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private isProcessing = false;
+  private readonly DEBOUNCE_DELAY = 200; // 200ms Debounce
+
+  enqueueUpdate(updates: { accountIds?: string[]; categoryIds?: string[]; fromDate: string }): void {
+    updates.accountIds?.forEach(id => this.pendingUpdates.accountIds.add(id));
+    updates.categoryIds?.forEach(id => this.pendingUpdates.categoryIds.add(id));
+
+    if (!this.pendingUpdates.fromDate || updates.fromDate < this.pendingUpdates.fromDate) {
+      this.pendingUpdates.fromDate = updates.fromDate;
+    }
+
+    this.scheduleProcessing();
+  }
+
+  private scheduleProcessing(): void {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+
+    this.debounceTimer = setTimeout(() => {
+      this.processQueue();
+    }, this.DEBOUNCE_DELAY);
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.isProcessing || (this.pendingUpdates.accountIds.size === 0 && this.pendingUpdates.categoryIds.size === 0)) {
+      return;
+    }
+
+    this.isProcessing = true;
+    const updatesToProcess = {
+      accountIds: Array.from(this.pendingUpdates.accountIds),
+      categoryIds: Array.from(this.pendingUpdates.categoryIds),
+      fromDate: this.pendingUpdates.fromDate
+    };
+
+    this.pendingUpdates.accountIds.clear();
+    this.pendingUpdates.categoryIds.clear();
+    this.pendingUpdates.fromDate = '';
+
+    try {
+      await BalanceService.updateMonthlyBalancesForChanges(updatesToProcess);
+    } catch (error) {
+      debugLog('BalanceService', 'MonthlyBalanceUpdateQueue - Fehler bei der Verarbeitung', error);
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+}
+
+const monthlyBalanceUpdateQueue = new MonthlyBalanceUpdateQueue();
+
 export type EntityType = 'account' | 'category';
 
 export interface RunningBalance {
@@ -155,7 +218,7 @@ export const BalanceService = {
 
     if (existingBalances.length === 0) {
       debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - No existing balances, calculating all');
-      await this.calculateMonthlyBalances();
+      await this.calculateAllMonthlyBalances();
       return;
     }
 
@@ -175,75 +238,117 @@ export const BalanceService = {
     }
 
     debugLog('BalanceService', 'calculateMonthlyBalancesIfNeeded - New data detected, recalculating');
-    await this.calculateMonthlyBalances();
+    await this.calculateAllMonthlyBalances();
+  },
+
+  /**
+   * Stößt die Neuberechnung der Monatsbilanzen über die Queue an.
+   */
+  triggerMonthlyBalanceUpdate(updates: { accountIds?: string[]; categoryIds?: string[]; fromDate: string }): void {
+    monthlyBalanceUpdateQueue.enqueueUpdate(updates);
+  },
+
+  /**
+   * Führt eine inkrementelle Aktualisierung der Monatsbilanzen durch.
+   * Berechnet nur die betroffenen Entitäten ab einem bestimmten Datum neu.
+   */
+  async updateMonthlyBalancesForChanges(updates: { accountIds?: string[]; categoryIds?: string[]; fromDate: string }): Promise<void> {
+    const { accountIds, categoryIds, fromDate } = updates;
+    if ((!accountIds || accountIds.length === 0) && (!categoryIds || categoryIds.length === 0)) {
+      return;
+    }
+
+    debugLog('BalanceService', 'updateMonthlyBalancesForChanges - Start', { updates });
+    const mbStore = useMonthlyBalanceStore();
+
+    const startMonth = dayjs(fromDate).startOf('month');
+    const end = dayjs().add(2, 'year').endOf('month'); // Bis in 2 Jahren rechnen
+    let currentMonth = startMonth;
+
+    const calculationTimestamp = new Date().toISOString();
+
+    while (currentMonth.isBefore(end) || currentMonth.isSame(end)) {
+      const year = currentMonth.year();
+      const month = currentMonth.month();
+
+      const existingBalance = mbStore.getMonthlyBalance(year, month) || {
+        year,
+        month,
+        accountBalances: {},
+        categoryBalances: {},
+        projectedAccountBalances: {},
+        projectedCategoryBalances: {},
+      };
+
+      const newBalanceData = this.calculateBalanceForMonth(year, month, accountIds, categoryIds, existingBalance);
+
+      const mergedBalance: MonthlyBalance = {
+        ...existingBalance,
+        ...newBalanceData,
+        year,
+        month,
+        lastCalculated: calculationTimestamp,
+      };
+
+      await mbStore.setMonthlyBalance(year, month, mergedBalance);
+      currentMonth = currentMonth.add(1, 'month');
+    }
   },
 
   /**
    * Berechnet alle Monatsbilanzen und speichert sie im Store.
-   * Diese Methode sollte aufgerufen werden, wenn sich Transaktionen oder Planungen ändern.
+   * Wird für die Erstberechnung verwendet.
    */
-  async calculateMonthlyBalances(): Promise<void> {
-    debugLog('BalanceService', 'calculateMonthlyBalances - Start calculation');
-
+  async calculateAllMonthlyBalances(): Promise<void> {
+    debugLog('BalanceService', 'calculateAllMonthlyBalances - Start full calculation');
     const transactionStore = useTransactionStore();
+    const planningStore = usePlanningStore();
     const mbStore = useMonthlyBalanceStore();
 
-    try {
-      // Stelle sicher, dass der Store geladen ist
-      await mbStore.loadMonthlyBalances();
+    await mbStore.loadMonthlyBalances();
+    const months = new Set<string>();
 
-      // 1. Sammle alle relevanten Monate
-      const months: Set<string> = new Set();
+    transactionStore.transactions.forEach(tx => {
+      months.add(dayjs(tx.date).format('YYYY-M'));
+      if (tx.valueDate) months.add(dayjs(tx.valueDate).format('YYYY-M'));
+    });
+    // Planungstransaktionen werden über calculateNextOccurrences berechnet
+    // und müssen nicht separat zu den Monaten hinzugefügt werden
 
-      if (transactionStore.transactions && transactionStore.transactions.length > 0) {
-        transactionStore.transactions.forEach(tx => {
-          const date = new Date(tx.date);
-          const key = `${date.getFullYear()}-${date.getMonth()}`;
-          months.add(key);
+    let current = dayjs().startOf('month');
+    const end = dayjs().add(2, 'year').endOf('month');
+    while (current.isBefore(end)) {
+      months.add(current.format('YYYY-M'));
+      current = current.add(1, 'month');
+    }
 
-          // Für Kategorietransaktionen auch das ValueDate berücksichtigen
-          if (tx.type === TransactionType.CATEGORYTRANSFER || tx.categoryId) {
-            const valueDate = new Date(tx.valueDate);
-            const valueDateKey = `${valueDate.getFullYear()}-${valueDate.getMonth()}`;
-            months.add(valueDateKey);
-          }
-        });
-      } else {
-        debugLog('BalanceService', 'Keine Transaktionen gefunden - Erstelle nur Zukunftsmonate');
-      }
-
-      // 2. Füge die nächsten 24 Monate hinzu
-      const now = new Date();
-      for (let i = 0; i < 24; i++) {
-        const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-        const key = `${date.getFullYear()}-${date.getMonth()}`;
-        months.add(key);
-      }
-
-      // 3. Berechne alle Monatsbilanzen
-      const calculationTimestamp = new Date().toISOString();
-      for (const key of Array.from(months).sort()) {
-        const [year, month] = key.split('-').map(Number);
-        const balanceData = this.calculateBalanceForMonth(year, month);
-        // Füge Timestamp hinzu
-        const balanceDataWithTimestamp = {
-          ...balanceData,
-          lastCalculated: calculationTimestamp
-        };
-        await mbStore.setMonthlyBalance(year, month, balanceDataWithTimestamp);
-      }
-
-      debugLog('BalanceService', `calculateMonthlyBalances - Calculated balances for ${months.size} months`);
-    } catch (error) {
-      debugLog('BalanceService', 'Fehler bei calculateMonthlyBalances', error);
-      throw error;
+    const calculationTimestamp = new Date().toISOString();
+    for (const key of Array.from(months).sort()) {
+      const [year, monthIndex] = key.split('-').map(Number);
+      const balanceData = this.calculateBalanceForMonth(year, monthIndex - 1);
+      const monthlyBalance: MonthlyBalance = {
+        accountBalances: balanceData.accountBalances || {},
+        categoryBalances: balanceData.categoryBalances || {},
+        projectedAccountBalances: balanceData.projectedAccountBalances || {},
+        projectedCategoryBalances: balanceData.projectedCategoryBalances || {},
+        year,
+        month: monthIndex - 1,
+        lastCalculated: calculationTimestamp
+      };
+      await mbStore.setMonthlyBalance(year, monthIndex - 1, monthlyBalance);
     }
   },
 
   /**
  * Berechnet die Bilanz für einen bestimmten Monat
  */
-  calculateBalanceForMonth(year: number, month: number): Omit<MonthlyBalance, 'year' | 'month'> {
+  calculateBalanceForMonth(
+    year: number,
+    month: number,
+    changedAccountIds: string[] = [],
+    changedCategoryIds: string[] = [],
+    existingBalance?: MonthlyBalance
+  ): Partial<Omit<MonthlyBalance, 'year' | 'month'>> {
     const startDate = new Date(year, month, 1);
     const endDate = new Date(year, month + 1, 0);
     const startDateStr = toDateOnlyString(startDate);
@@ -264,18 +369,22 @@ export const BalanceService = {
     );
 
     // 2. Kontosalden berechnen
-    const accountBalances: Record<string, number> = {};
-    accountStore.accounts.forEach(acc => {
-      accountBalances[acc.id] = txsUntilEnd
-        .filter(tx => tx.accountId === acc.id && tx.type !== TransactionType.CATEGORYTRANSFER)
+    const accountBalances: Record<string, number> = existingBalance?.accountBalances || {};
+    const relevantAccountIds = changedAccountIds.length > 0 ? changedAccountIds : accountStore.accounts.map(a => a.id);
+
+    relevantAccountIds.forEach(accId => {
+      accountBalances[accId] = txsUntilEnd
+        .filter(tx => tx.accountId === accId && tx.type !== TransactionType.CATEGORYTRANSFER)
         .reduce((sum, tx) => sum + tx.amount, 0);
     });
 
     // 3. Kategoriesalden berechnen
-    const categoryBalances: Record<string, number> = {};
-    categoryStore.categories.forEach(cat => {
-      categoryBalances[cat.id] = categoryTxsUntilEnd
-        .filter(tx => tx.categoryId === cat.id)
+    const categoryBalances: Record<string, number> = existingBalance?.categoryBalances || {};
+    const relevantCategoryIds = changedCategoryIds.length > 0 ? changedCategoryIds : categoryStore.categories.map(c => c.id);
+
+    relevantCategoryIds.forEach(catId => {
+      categoryBalances[catId] = categoryTxsUntilEnd
+        .filter(tx => tx.categoryId === catId)
         .reduce((sum, tx) => sum + tx.amount, 0);
     });
 
@@ -293,10 +402,10 @@ export const BalanceService = {
       projectedCategoryBalances: {} as Record<string, number>
     };
 
-    // 6. Kategorie-Projektion
-    categoryStore.categories.forEach(cat => {
+    // 6. Kategorie-Projektion - nur für geänderte Kategorien
+    relevantCategoryIds.forEach(catId => {
       const plannedAmount = planningStore.planningTransactions
-        .filter(pt => pt.isActive && pt.categoryId === cat.id)
+        .filter(pt => pt.isActive && pt.categoryId === catId)
         .reduce((sum, pt) => {
           const occ = PlanningService
             .calculateNextOccurrences(pt, startDateStr, endDateStr)
@@ -304,16 +413,16 @@ export const BalanceService = {
           return sum + pt.amount * occ;
         }, 0);
 
-      const prevRaw = prevMb.categoryBalances[cat.id] ?? 0;
-      const prevProj = prevMb.projectedCategoryBalances[cat.id] ?? 0;
-      const currentRaw = categoryBalances[cat.id] ?? 0;
+      const prevRaw = prevMb.categoryBalances[catId] ?? 0;
+      const prevProj = prevMb.projectedCategoryBalances[catId] ?? 0;
+      const currentRaw = categoryBalances[catId] ?? 0;
 
-      projectedCategoryBalances[cat.id] =
+      projectedCategoryBalances[catId] =
         prevProj + (currentRaw - prevRaw) + plannedAmount;
     });
 
-    // 7. Konto-Projektion
-    Object.keys(prevMb.projectedAccountBalances).forEach(accId => {
+    // 7. Konto-Projektion - nur für geänderte Konten
+    relevantAccountIds.forEach(accId => {
       if (projectedAccountBalances[accId] !== undefined) {
         const plannedAmount = planningStore.planningTransactions
           .filter(pt =>
