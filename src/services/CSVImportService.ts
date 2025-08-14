@@ -750,7 +750,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           const dayDiff = Math.abs(txDate.getTime() - importDate.getTime()) / (1000 * 60 * 60 * 24);
           const similarDate = dayDiff <= 1;
 
-          // Gleicher Betrag (aber entgegengesetzte Richtung)
+          // Gleicher Betrag (aber entgegengesetzte Richtung für Account-Transfers)
           const sameAmount = Math.abs(Math.abs(tx.amount) - Math.abs(parsedAmount)) < 0.01;
 
           // Entgegengesetzte Richtung prüfen:
@@ -793,7 +793,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         // Gleicher Tag
         const sameDate = tx.date.substring(0, 10) === parsedDate.substring(0, 10);
 
-        // Ungefähr gleicher Betrag (Toleranz von 0.01)
+        // KORRIGIERT: Exakte Betragsübereinstimmung inkl. Vorzeichen (Toleranz von 0.01)
         const sameAmount = Math.abs(tx.amount - parsedAmount) < 0.01;
 
         // Ähnlicher Empfänger oder Notiz, falls verfügbar
@@ -1170,7 +1170,8 @@ export const useCSVImportService = defineStore('csvImportService', () => {
       // Suche nach existierenden Transaktionen
       const existingTransactions = transactionStore.transactions.filter(tx => {
         const sameDate = tx.date === date;
-        const sameAmount = Math.abs(tx.amount) === Math.abs(amount);
+        // KORRIGIERT: Vorzeichen muss bei Duplikatsprüfung berücksichtigt werden
+        const sameAmount = tx.amount === amount; // Exakte Übereinstimmung inkl. Vorzeichen
 
         if (!sameDate || !sameAmount) return false;
 
@@ -1381,18 +1382,33 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           );
 
           if (matchingAccount && matchingAccount.id !== tx.accountId) {
-            // Account-Transfer erkannt
-            debugLog('CSVImportService', `Account-Transfer erkannt: ${tx.payee} -> Konto ${matchingAccount.name} (${matchingAccount.id})`);
+            // Account-Transfer erkannt - KORRIGIERT: Vorzeichen beachten
+            debugLog('CSVImportService', `Account-Transfer erkannt: ${tx.payee} -> Konto ${matchingAccount.name} (${matchingAccount.id}), Betrag: ${tx.amount}`);
 
-            accountTransfersToCreate.push({
-              fromAccountId: tx.accountId,
-              toAccountId: matchingAccount.id,
-              amount: Math.abs(tx.amount), // Immer positiver Betrag für Transfer
-              date: tx.date,
-              valueDate: tx.valueDate,
-              note: tx.note || `Transfer zu ${matchingAccount.name}`,
-              originalTxIndex: i
-            });
+            // WICHTIG: Vorzeichen bestimmt die Richtung des Transfers
+            if (tx.amount < 0) {
+              // Negativer Betrag = Geld geht VOM aktuellen Konto ZUM Zielkonto
+              accountTransfersToCreate.push({
+                fromAccountId: tx.accountId,
+                toAccountId: matchingAccount.id,
+                amount: Math.abs(tx.amount), // Positiver Betrag für Transfer-Logik
+                date: tx.date,
+                valueDate: tx.valueDate,
+                note: tx.note || `Transfer zu ${matchingAccount.name}`,
+                originalTxIndex: i
+              });
+            } else {
+              // Positiver Betrag = Geld kommt VOM Zielkonto ZUM aktuellen Konto
+              accountTransfersToCreate.push({
+                fromAccountId: matchingAccount.id,
+                toAccountId: tx.accountId,
+                amount: Math.abs(tx.amount), // Positiver Betrag für Transfer-Logik
+                date: tx.date,
+                valueDate: tx.valueDate,
+                note: tx.note || `Transfer von ${matchingAccount.name}`,
+                originalTxIndex: i
+              });
+            }
 
             // Markiere diese Transaktion als Account-Transfer (wird später übersprungen)
             (tx as any)._isAccountTransfer = true;
@@ -1409,18 +1425,33 @@ export const useCSVImportService = defineStore('csvImportService', () => {
           const potentialTransfer = (originalRowData as any)._potentialAccountTransfer;
 
           if (potentialTransfer.toAccountId !== tx.accountId) {
-            // Account-Transfer aus findMatchingRecipient erkannt
-            debugLog('CSVImportService', `Account-Transfer aus Matching erkannt: ${tx.payee} -> Konto ${potentialTransfer.toAccountName} (${potentialTransfer.toAccountId})`);
+            // Account-Transfer aus findMatchingRecipient erkannt - KORRIGIERT: Vorzeichen beachten
+            debugLog('CSVImportService', `Account-Transfer aus Matching erkannt: ${tx.payee} -> Konto ${potentialTransfer.toAccountName} (${potentialTransfer.toAccountId}), Betrag: ${tx.amount}`);
 
-            accountTransfersToCreate.push({
-              fromAccountId: tx.accountId,
-              toAccountId: potentialTransfer.toAccountId,
-              amount: Math.abs(tx.amount),
-              date: tx.date,
-              valueDate: tx.valueDate,
-              note: tx.note || `Transfer zu ${potentialTransfer.toAccountName}`,
-              originalTxIndex: i
-            });
+            // WICHTIG: Vorzeichen bestimmt die Richtung des Transfers
+            if (tx.amount < 0) {
+              // Negativer Betrag = Geld geht VOM aktuellen Konto ZUM Zielkonto
+              accountTransfersToCreate.push({
+                fromAccountId: tx.accountId,
+                toAccountId: potentialTransfer.toAccountId,
+                amount: Math.abs(tx.amount),
+                date: tx.date,
+                valueDate: tx.valueDate,
+                note: tx.note || `Transfer zu ${potentialTransfer.toAccountName}`,
+                originalTxIndex: i
+              });
+            } else {
+              // Positiver Betrag = Geld kommt VOM Zielkonto ZUM aktuellen Konto
+              accountTransfersToCreate.push({
+                fromAccountId: potentialTransfer.toAccountId,
+                toAccountId: tx.accountId,
+                amount: Math.abs(tx.amount),
+                date: tx.date,
+                valueDate: tx.valueDate,
+                note: tx.note || `Transfer von ${potentialTransfer.toAccountName}`,
+                originalTxIndex: i
+              });
+            }
 
             // Markiere diese Transaktion als Account-Transfer
             (tx as any)._isAccountTransfer = true;
@@ -1740,7 +1771,7 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         // TransactionStore wurde bereits in Phase 2.5 geladen - nicht nochmal laden
         // Nur noch Monatsbilanzen neu berechnen (kann asynchron erfolgen)
         infoLog('CSVImportService', 'Starte asynchrone Monatsbilanzen-Neuberechnung...');
-        BalanceService.calculateMonthlyBalances().catch(error => {
+        BalanceService.calculateAllMonthlyBalances().catch((error: any) => {
           warnLog('CSVImportService', 'Fehler bei asynchroner Monatsbilanzen-Berechnung', error);
         });
 
