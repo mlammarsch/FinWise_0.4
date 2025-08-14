@@ -10,6 +10,7 @@ import { Transaction, TransactionType, Category, PlanningTransaction } from '@/t
 import { type ExtendedTransaction } from '@/stores/transactionStore';
 import { v4 as uuidv4 } from 'uuid';
 import { debugLog, infoLog, errorLog, warnLog } from '@/utils/logger';
+import dayjs from 'dayjs'; // Import dayjs
 import { toDateOnlyString } from '@/utils/formatters';
 import { useRuleStore } from '@/stores/ruleStore';
 import { BalanceService } from './BalanceService';
@@ -481,6 +482,40 @@ export const TransactionService = {
     });
     summary.balance = summary.income + summary.expense;
     return summary;
+  },
+
+  getMonthlyTrend(months: number = 6): { month: string; income: number; expense: number }[] {
+    const txStore = useTransactionStore();
+    const today = dayjs();
+    const monthlyData: { [key: string]: { income: number; expense: number } } = {};
+
+    // Initialisiere Daten für die letzten 'months' Monate
+    for (let i = 0; i < months; i++) {
+      const monthKey = today.subtract(i, 'month').format('YYYY-MM');
+      monthlyData[monthKey] = { income: 0, expense: 0 };
+    }
+
+    txStore.transactions.forEach(tx => {
+      const txMonth = dayjs(tx.date).format('YYYY-MM');
+      if (monthlyData[txMonth]) {
+        if (tx.type === TransactionType.INCOME) {
+          monthlyData[txMonth].income += tx.amount;
+        } else if (tx.type === TransactionType.EXPENSE || tx.type === TransactionType.RECONCILE) {
+          monthlyData[txMonth].expense += tx.amount;
+        }
+      }
+    });
+
+    // Konvertiere zu Array und sortiere chronologisch
+    const result = Object.keys(monthlyData)
+      .sort()
+      .map(monthKey => ({
+        month: dayjs(monthKey).format('MMM YY'), // z.B. Jan 23
+        income: monthlyData[monthKey].income,
+        expense: monthlyData[monthKey].expense,
+      }));
+
+    return result;
   },
 };
 
