@@ -526,46 +526,115 @@ export const TransactionService = {
     incomingTransactions: any[]
   ): Promise<{ processed: number; skipped: number; updated: number }> {
     if (!incomingTransactions || incomingTransactions.length === 0) {
-      debugLog('[TransactionService]', 'processTransactionsIntelligently: Keine Transaktionen zum Verarbeiten.');
+      debugLog('[TransactionService]', 'processTransactionsIntelligently: Keine Transaktionen zu verarbeiten');
       return { processed: 0, skipped: 0, updated: 0 };
     }
 
+    const transactionStore = useTransactionStore();
+    const tenantDbService = new TenantDbService();
+
     try {
-      // Konvertiere eingehende Transaktionen zu ExtendedTransaction Format
-      const extendedTransactions: ExtendedTransaction[] = incomingTransactions.map(tx => ({
-        ...tx,
-        tagIds: tx.tagIds || [],
-        counterTransactionId: tx.counterTransactionId || null,
-        planningTransactionId: tx.planningTransactionId || null,
-        isReconciliation: tx.isReconciliation || false,
-        isCategoryTransfer: tx.isCategoryTransfer || false,
-        reconciled: tx.reconciled || false,
-        transferToAccountId: tx.transferToAccountId || undefined,
-        toCategoryId: tx.toCategoryId || undefined,
-        runningBalance: tx.runningBalance || 0,
-        payee: tx.payee || '',
-        description: tx.description || '',
-      }));
+      // Aktiviere Batch-Modus für bessere Performance
+      this.startBatchMode();
+      transactionStore.startBatchUpdate();
 
-      // Nutze TenantDbService für intelligente Batch-Operation
-      const tenantDbService = new TenantDbService();
-      const result = await tenantDbService.addTransactionsBatchIntelligent(extendedTransactions);
+      // Behalte die lokale runningBalance, wenn sie bereits existiert
+      const transactionsWithPreservedBalance = incomingTransactions.map(tx => {
+        const localTx = transactionStore.getTransactionById(tx.id);
+        if (localTx && localTx.runningBalance) {
+          tx.runningBalance = localTx.runningBalance;
+        }
+        return tx;
+      });
 
-      // Aktualisiere den Store mit den neuen/aktualisierten Transaktionen
-      const txStore = useTransactionStore();
-      await txStore.loadTransactions();
+      // Verwende die neue intelligente Bulk-Operation für maximale Performance
+      const result = await tenantDbService.addTransactionsBatchIntelligent(transactionsWithPreservedBalance);
 
-      debugLog('[TransactionService]', `processTransactionsIntelligently abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen von ${incomingTransactions.length} Transaktionen.`);
+      // Lade den Store neu, aber nur wenn tatsächlich Änderungen vorgenommen wurden
+      if (result.updated > 0) {
+        await transactionStore.loadTransactions();
+      }
+
+      infoLog('[TransactionService]', `Intelligente Bulk-Transaktionsverarbeitung abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen von ${incomingTransactions.length} Transaktionen`);
 
       return {
-        processed: result.updated,
+        processed: result.updated, // Neue Transaktionen sind in "updated" enthalten
         skipped: result.skipped,
         updated: result.updated
       };
+
     } catch (error) {
-      errorLog('[TransactionService]', 'Fehler bei processTransactionsIntelligently', error);
+      errorLog('[TransactionService]', 'Fehler bei intelligenter Bulk-Transaktionsverarbeitung', {
+        error: error instanceof Error ? error.message : String(error),
+        transactionCount: incomingTransactions.length
+      });
       throw error;
+    } finally {
+      // Deaktiviere Batch-Modi
+      this.endBatchMode();
+      transactionStore.endBatchUpdate();
     }
+  },
+
+  /**
+   * Wendet PRE und DEFAULT Stage Regeln auf eine Liste von Transaktionen an
+   * Speziell für CSV-Import optimiert - alle Regeln außer POST werden vor dem Speichern angewendet
+   */
+  async applyPreAndDefaultRulesToTransactions(transactions: any[]): Promise<any[]> {
+    const ruleStore = useRuleStore();
+    let processedTransactions = [...transactions];
+
+    debugLog('[TransactionService]', `Applying PRE and DEFAULT stage rules to ${transactions.length} transactions`);
+
+    // Erst PRE-Stage Regeln anwenden
+    for (let i = 0; i < processedTransactions.length; i++) {
+      try {
+        processedTransactions[i] = await ruleStore.applyRulesToTransaction(processedTransactions[i], 'PRE');
+        debugLog('[TransactionService]', `PRE-stage rules applied to transaction ${processedTransactions[i].id}`);
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying PRE-stage rules to transaction ${processedTransactions[i].id}`, error);
+      }
+    }
+
+    // Dann DEFAULT-Stage Regeln anwenden
+    for (let i = 0; i < processedTransactions.length; i++) {
+      try {
+        processedTransactions[i] = await ruleStore.applyRulesToTransaction(processedTransactions[i], 'DEFAULT');
+        debugLog('[TransactionService]', `DEFAULT-stage rules applied to transaction ${processedTransactions[i].id}`);
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying DEFAULT-stage rules to transaction ${processedTransactions[i].id}`, error);
+      }
+    }
+
+    debugLog('[TransactionService]', `PRE and DEFAULT stage rules applied to ${processedTransactions.length} transactions`);
+    return processedTransactions;
+  },
+
+  /**
+   * Wendet POST-Stage Regeln auf gespeicherte Transaktionen an
+   * Wird nach dem Speichern und Running Balance Berechnung aufgerufen
+   */
+  async applyPostStageRulesToTransactions(transactionIds: string[]): Promise<void> {
+    const ruleStore = useRuleStore();
+    const txStore = useTransactionStore();
+
+    debugLog('[TransactionService]', `Applying POST-stage rules to ${transactionIds.length} saved transactions`);
+
+    for (const transactionId of transactionIds) {
+      try {
+        const transaction = txStore.getTransactionById(transactionId);
+        if (transaction) {
+          await ruleStore.applyRulesToTransaction(transaction, 'POST');
+          debugLog('[TransactionService]', `POST-stage rules applied to transaction ${transactionId}`);
+        } else {
+          warnLog('[TransactionService]', `Transaction ${transactionId} not found for POST-stage rules`);
+        }
+      } catch (error) {
+        errorLog('[TransactionService]', `Error applying POST-stage rules to transaction ${transactionId}`, error);
+      }
+    }
+
+    debugLog('[TransactionService]', `POST-stage rules applied to ${transactionIds.length} transactions`);
   },
 };
 
