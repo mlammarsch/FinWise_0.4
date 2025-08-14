@@ -980,6 +980,76 @@ export class TenantDbService {
     }
   }
 
+  /**
+   * Intelligente Bulk-Operation für Empfänger - nur neue/geänderte werden geschrieben
+   * Optimiert für Initial Data Load Performance
+   */
+  async addRecipientsBatchIntelligent(recipients: Recipient[]): Promise<{ updated: number, skipped: number }> {
+    if (!this.db) {
+      warnLog('TenantDbService', 'addRecipientsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+      throw new Error('Keine aktive Mandanten-DB verfügbar.');
+    }
+
+    if (recipients.length === 0) {
+      debugLog('TenantDbService', 'addRecipientsBatchIntelligent: Keine Empfänger zum Verarbeiten.');
+      return { updated: 0, skipped: 0 };
+    }
+
+    try {
+      let updated = 0;
+      let skipped = 0;
+      const recipientsToUpdate: Recipient[] = [];
+
+      // Hole alle existierenden Empfänger in einem Batch
+      const existingIds = recipients.map(r => r.id);
+      const existingRecipients = await this.db.recipients.where('id').anyOf(existingIds).toArray();
+      const existingMap = new Map(existingRecipients.map(r => [r.id, r]));
+
+      // Prüfe jeden Empfänger auf Änderungen
+      for (const recipient of recipients) {
+        const existing = existingMap.get(recipient.id);
+
+        if (!existing) {
+          // Neuer Empfänger - hinzufügen
+          recipientsToUpdate.push({
+            ...recipient,
+            updatedAt: recipient.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        } else if (recipient.updatedAt && existing.updatedAt) {
+          // Prüfe LWW-Regel
+          if (new Date(recipient.updatedAt) > new Date(existing.updatedAt)) {
+            recipientsToUpdate.push({
+              ...recipient,
+              updatedAt: recipient.updatedAt || new Date().toISOString()
+            });
+            updated++;
+          } else {
+            skipped++;
+          }
+        } else {
+          // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+          recipientsToUpdate.push({
+            ...recipient,
+            updatedAt: recipient.updatedAt || new Date().toISOString()
+          });
+          updated++;
+        }
+      }
+
+      // Bulk-Update nur für tatsächlich zu aktualisierende Empfänger
+      if (recipientsToUpdate.length > 0) {
+        await this.db.recipients.bulkPut(recipientsToUpdate);
+      }
+
+      infoLog('TenantDbService', `Intelligente Empfänger-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${recipients.length} Empfängern.`);
+      return { updated, skipped };
+    } catch (err) {
+      errorLog('TenantDbService', `Fehler bei intelligenter Empfänger-Batch-Operation für ${recipients.length} Empfänger`, { error: err });
+      throw err;
+    }
+  }
+
   async getRecipients(): Promise<Recipient[]> {
     if (!this.db) {
       warnLog('TenantDbService', 'getRecipients: Keine aktive Mandanten-DB verfügbar.');

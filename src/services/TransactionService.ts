@@ -157,6 +157,9 @@ export const TransactionService = {
       type: TransactionType.ACCOUNTTRANSFER, date: vdt, valueDate: vdt, categoryId: undefined, tagIds: [], payee: '', note, counterTransactionId: null, planningTransactionId, isReconciliation: false, isCategoryTransfer: false, reconciled: false, transferToAccountId: undefined, accountId: '', amount: 0, description: '', recipientId,
     };
 
+    // KORRIGIERT: Verwende das ursprüngliche Vorzeichen für die Richtungsbestimmung
+    // Positiver amount = Transfer von fromAccount zu toAccount (fromAccount verliert Geld)
+    // Negativer amount würde bedeuten, dass die Parameter vertauscht wurden
     const fromTx = await this.addTransaction({ ...base, accountId: fromAccountId, amount: -abs, payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer zu ${toName}`, transferToAccountId: toAccountId }, false);
     const toTx = await this.addTransaction({ ...base, accountId: toAccountId, amount: abs, payee: recipientId ? this.resolvePayeeFromRecipient(recipientId) : `Transfer von ${fromName}`, transferToAccountId: fromAccountId }, false);
 

@@ -638,12 +638,28 @@ export const useCSVImportService = defineStore('csvImportService', () => {
     );
 
     if (matchingAccount) {
-      // Markiere als potentieller Account-Transfer (wird später in der Import-Logik behandelt)
-      (row as any)._potentialAccountTransfer = {
-        toAccountId: matchingAccount.id,
-        toAccountName: matchingAccount.name
-      };
-      debugLog('CSVImportService', `Potentieller Account-Transfer erkannt: "${searchText}" -> Konto ${matchingAccount.name} (${matchingAccount.id})`);
+      // Hole den Betrag aus der Zeile für die Richtungsbestimmung
+      const amountStr = mappedColumns.value.amount ? row[mappedColumns.value.amount] : null;
+      const parsedAmount = amountStr ? parseAmount(amountStr) : null;
+
+      if (parsedAmount !== null) {
+        // Markiere als potentieller Account-Transfer mit Richtungsinformation
+        (row as any)._potentialAccountTransfer = {
+          targetAccountId: matchingAccount.id,
+          targetAccountName: matchingAccount.name,
+          amount: parsedAmount,
+          // Bestimme die Richtung basierend auf dem Vorzeichen
+          direction: parsedAmount < 0 ? 'outgoing' : 'incoming'
+        };
+        debugLog('CSVImportService', `Potentieller Account-Transfer erkannt: "${searchText}" -> Konto ${matchingAccount.name} (${matchingAccount.id}), Betrag: ${parsedAmount}, Richtung: ${parsedAmount < 0 ? 'ausgehend' : 'eingehend'}`);
+      } else {
+        // Fallback ohne Betragsinfo
+        (row as any)._potentialAccountTransfer = {
+          targetAccountId: matchingAccount.id,
+          targetAccountName: matchingAccount.name
+        };
+        debugLog('CSVImportService', `Potentieller Account-Transfer erkannt: "${searchText}" -> Konto ${matchingAccount.name} (${matchingAccount.id}) - Betrag nicht verfügbar`);
+      }
       return;
     }
 
@@ -755,10 +771,10 @@ export const useCSVImportService = defineStore('csvImportService', () => {
 
           // Entgegengesetzte Richtung prüfen:
           // - Die bestehende Transaktion ist ein AccountTransfer von tx.accountId zu tx.transferToAccountId
-          // - Die Import-Zeile würde zu row._potentialAccountTransfer.toAccountId gehen
-          // - Für ein Duplikat muss tx.accountId === row._potentialAccountTransfer.toAccountId sein
+          // - Die Import-Zeile würde zu row._potentialAccountTransfer.targetAccountId gehen
+          // - Für ein Duplikat muss tx.accountId === row._potentialAccountTransfer.targetAccountId sein
           //   (die bestehende Transaktion geht VON dem Konto, zu dem die Import-Zeile gehen würde)
-          const oppositeDirection = tx.accountId === row._potentialAccountTransfer.toAccountId;
+          const oppositeDirection = tx.accountId === (row._potentialAccountTransfer as any).targetAccountId;
 
           return similarDate && sameAmount && oppositeDirection;
         });
@@ -1424,31 +1440,31 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         if (originalRowData && (originalRowData as any)._potentialAccountTransfer) {
           const potentialTransfer = (originalRowData as any)._potentialAccountTransfer;
 
-          if (potentialTransfer.toAccountId !== tx.accountId) {
-            // Account-Transfer aus findMatchingRecipient erkannt - KORRIGIERT: Vorzeichen beachten
-            debugLog('CSVImportService', `Account-Transfer aus Matching erkannt: ${tx.payee} -> Konto ${potentialTransfer.toAccountName} (${potentialTransfer.toAccountId}), Betrag: ${tx.amount}`);
+          if (potentialTransfer.targetAccountId !== tx.accountId) {
+            // Account-Transfer aus findMatchingRecipient erkannt - KORRIGIERT: Richtung aus findMatchingRecipient verwenden
+            debugLog('CSVImportService', `Account-Transfer aus Matching erkannt: ${tx.payee} -> Konto ${potentialTransfer.targetAccountName} (${potentialTransfer.targetAccountId}), Betrag: ${tx.amount}, Richtung: ${potentialTransfer.direction || 'unbekannt'}`);
 
-            // WICHTIG: Vorzeichen bestimmt die Richtung des Transfers
-            if (tx.amount < 0) {
-              // Negativer Betrag = Geld geht VOM aktuellen Konto ZUM Zielkonto
+            // Verwende die bereits in findMatchingRecipient bestimmte Richtung
+            if (potentialTransfer.direction === 'outgoing' || (!potentialTransfer.direction && tx.amount < 0)) {
+              // Ausgehender Transfer: VOM aktuellen Konto ZUM Zielkonto
               accountTransfersToCreate.push({
                 fromAccountId: tx.accountId,
-                toAccountId: potentialTransfer.toAccountId,
+                toAccountId: potentialTransfer.targetAccountId,
                 amount: Math.abs(tx.amount),
                 date: tx.date,
                 valueDate: tx.valueDate,
-                note: tx.note || `Transfer zu ${potentialTransfer.toAccountName}`,
+                note: tx.note || `Transfer zu ${potentialTransfer.targetAccountName}`,
                 originalTxIndex: i
               });
             } else {
-              // Positiver Betrag = Geld kommt VOM Zielkonto ZUM aktuellen Konto
+              // Eingehender Transfer: VOM Zielkonto ZUM aktuellen Konto
               accountTransfersToCreate.push({
-                fromAccountId: potentialTransfer.toAccountId,
+                fromAccountId: potentialTransfer.targetAccountId,
                 toAccountId: tx.accountId,
                 amount: Math.abs(tx.amount),
                 date: tx.date,
                 valueDate: tx.valueDate,
-                note: tx.note || `Transfer von ${potentialTransfer.toAccountName}`,
+                note: tx.note || `Transfer von ${potentialTransfer.targetAccountName}`,
                 originalTxIndex: i
               });
             }
@@ -1540,10 +1556,12 @@ export const useCSVImportService = defineStore('csvImportService', () => {
         for (const transfer of validTransfers) {
           try {
             // Erstelle Account-Transfer mit Gegenbuchung
+            // WICHTIG: addAccountTransfer erwartet immer einen positiven Betrag und FROM->TO Richtung
+            // Die Richtung wurde bereits in der Account-Transfer-Erkennung korrekt bestimmt
             const { fromTransaction, toTransaction } = await TransactionService.addAccountTransfer(
               transfer.fromAccountId,
               transfer.toAccountId,
-              transfer.amount,
+              transfer.amount, // Bereits als positiver Betrag übergeben
               transfer.date,
               transfer.valueDate,
               transfer.note,
