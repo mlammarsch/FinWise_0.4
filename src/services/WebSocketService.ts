@@ -28,6 +28,7 @@ let isSyncProcessRunning = false; // Verhindert mehrfache Ausführung
 let longTermReconnectTimer: NodeJS.Timeout | null = null;
 let backendHealthCheckTimer: NodeJS.Timeout | null = null;
 let isReconnecting = false;
+let initialDataLoadProcessed = false; // Verhindert doppelte Verarbeitung von initial_data_load
 
 let autoSyncInterval: NodeJS.Timeout | null = null;
 let queueWatcher: (() => void) | null = null;
@@ -116,6 +117,7 @@ export const WebSocketService = {
         const previousAttempts = reconnectAttempts;
         reconnectAttempts = 0;
         isReconnecting = false;
+        initialDataLoadProcessed = false; // Reset für neue Verbindung
 
         debugLog('[WebSocketService]', 'Connection state updated', {
           newConnectionStatus: WebSocketConnectionStatus.CONNECTED,
@@ -358,10 +360,18 @@ export const WebSocketService = {
             const initialDataMessage = message as InitialDataLoadMessage; // Type assertion ist hier immer noch wichtig
             infoLog('[WebSocketService]', 'InitialDataLoadMessage received (matched on event_type):', initialDataMessage);
 
+            if (initialDataLoadProcessed) {
+              warnLog('[WebSocketService]', 'Initial data load already processed, ignoring duplicate message.');
+              return;
+            }
+
             if (initialDataMessage.tenant_id !== tenantStore.activeTenantId) {
               warnLog('[WebSocketService]', `Received InitialDataLoadMessage for tenant ${initialDataMessage.tenant_id}, but active tenant is ${tenantStore.activeTenantId}. Ignoring.`);
               return;
             }
+
+            // Markiere als verarbeitet
+            initialDataLoadProcessed = true;
 
             // Mappe die Initial-Data vom Backend-Format zum Frontend-Format
             const mappedPayload = mapNotificationDataToFrontendFormat(initialDataMessage.payload);
@@ -435,6 +445,8 @@ export const WebSocketService = {
                   continue;
                 }
                 debugLog('[WebSocketService]', 'Attempting to add category group from initial load:', categoryGroup);
+                const localCategoryGroup = await tenantDbService.getCategoryGroupById(categoryGroup.id);
+                debugLog('[WebSocketService]', `Initial load: CategoryGroup ${categoryGroup.id} - Incoming updatedAt: ${categoryGroup.updatedAt}, Local updatedAt: ${localCategoryGroup?.updatedAt}`);
                 await categoryStore.addCategoryGroup(categoryGroup, true); // fromSync = true
                 infoLog('[WebSocketService]', `CategoryGroup ${categoryGroup.id} added/updated from initial load.`);
               }

@@ -517,6 +517,56 @@ export const TransactionService = {
 
     return result;
   },
+
+  /**
+   * Intelligente Verarbeitung von eingehenden Transaktionen für Initial Data Load
+   * Nutzt TenantDbService für optimierte Batch-Operationen
+   */
+  async processTransactionsIntelligently(
+    incomingTransactions: any[]
+  ): Promise<{ processed: number; skipped: number; updated: number }> {
+    if (!incomingTransactions || incomingTransactions.length === 0) {
+      debugLog('[TransactionService]', 'processTransactionsIntelligently: Keine Transaktionen zum Verarbeiten.');
+      return { processed: 0, skipped: 0, updated: 0 };
+    }
+
+    try {
+      // Konvertiere eingehende Transaktionen zu ExtendedTransaction Format
+      const extendedTransactions: ExtendedTransaction[] = incomingTransactions.map(tx => ({
+        ...tx,
+        tagIds: tx.tagIds || [],
+        counterTransactionId: tx.counterTransactionId || null,
+        planningTransactionId: tx.planningTransactionId || null,
+        isReconciliation: tx.isReconciliation || false,
+        isCategoryTransfer: tx.isCategoryTransfer || false,
+        reconciled: tx.reconciled || false,
+        transferToAccountId: tx.transferToAccountId || undefined,
+        toCategoryId: tx.toCategoryId || undefined,
+        runningBalance: tx.runningBalance || 0,
+        payee: tx.payee || '',
+        description: tx.description || '',
+      }));
+
+      // Nutze TenantDbService für intelligente Batch-Operation
+      const tenantDbService = new TenantDbService();
+      const result = await tenantDbService.addTransactionsBatchIntelligent(extendedTransactions);
+
+      // Aktualisiere den Store mit den neuen/aktualisierten Transaktionen
+      const txStore = useTransactionStore();
+      await txStore.loadTransactions();
+
+      debugLog('[TransactionService]', `processTransactionsIntelligently abgeschlossen: ${result.updated} aktualisiert, ${result.skipped} übersprungen von ${incomingTransactions.length} Transaktionen.`);
+
+      return {
+        processed: result.updated,
+        skipped: result.skipped,
+        updated: result.updated
+      };
+    } catch (error) {
+      errorLog('[TransactionService]', 'Fehler bei processTransactionsIntelligently', error);
+      throw error;
+    }
+  },
 };
 
 interface RecipientValidationResult {

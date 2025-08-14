@@ -492,9 +492,9 @@ onMounted(async () => {
   // Add outside click listener
   document.addEventListener('click', handleOutsideClick);
   debugLog('BudgetCategoriesAndValues', 'Component mounted, starting initialization');
-
+  debugLog('BudgetCategoriesAndValues', 'Calling CategoryService.loadCategories()');
   await CategoryService.loadCategories();
-  debugLog('BudgetCategoriesAndValues', 'Categories loaded successfully');
+  debugLog('BudgetCategoriesAndValues', 'CategoryService.loadCategories() completed successfully');
 
   // Batch-Expansion aller Gruppen über CategoryService
   const groupsToExpand = categoryGroups.value

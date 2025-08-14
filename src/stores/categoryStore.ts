@@ -67,7 +67,7 @@ export const useCategoryStore = defineStore('category', () => {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
-  async function addCategory(categoryData: Omit<Category, 'id' | 'updated_at'> | Category, fromSync = false): Promise<Category> {
+  async function addCategory(categoryData: Omit<Category, 'id' | 'updatedAt'> | Category, fromSync = false): Promise<Category> {
     const group = categoryGroups.value.find(g => g.id === categoryData.categoryGroupId);
     const isIncome = group?.isIncomeGroup ?? false;
 
@@ -77,13 +77,13 @@ export const useCategoryStore = defineStore('category', () => {
       id: (categoryData as any).id || uuidv4(),
       isIncomeCategory: (categoryData as any).isIncomeCategory ?? isIncome,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (categoryData as any).updated_at || new Date().toISOString(),
+      updatedAt: (categoryData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       const localCategory = await tenantDbService.getCategoryById(categoryWithTimestamp.id);
-      if (localCategory && localCategory.updated_at && categoryWithTimestamp.updated_at &&
-        new Date(localCategory.updated_at) >= new Date(categoryWithTimestamp.updated_at)) {
+      if (localCategory && localCategory.updatedAt && categoryWithTimestamp.updatedAt &&
+        new Date(localCategory.updatedAt) >= new Date(categoryWithTimestamp.updatedAt)) {
         infoLog('categoryStore', `addCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localCategory;
       }
@@ -97,7 +97,7 @@ export const useCategoryStore = defineStore('category', () => {
     if (existingCategoryIndex === -1) {
       categories.value.push(categoryWithTimestamp);
     } else {
-      if (!fromSync || (categoryWithTimestamp.updated_at && (!categories.value[existingCategoryIndex].updated_at || new Date(categoryWithTimestamp.updated_at) > new Date(categories.value[existingCategoryIndex].updated_at!)))) {
+      if (!fromSync || (categoryWithTimestamp.updatedAt && (!categories.value[existingCategoryIndex].updatedAt || new Date(categoryWithTimestamp.updatedAt) > new Date(categories.value[existingCategoryIndex].updatedAt!)))) {
         categories.value[existingCategoryIndex] = categoryWithTimestamp;
       } else if (fromSync) {
         warnLog('categoryStore', `addCategory (fromSync): Store-Kategorie ${categories.value[existingCategoryIndex].id} war neuer als eingehende ${categoryWithTimestamp.id}. Store nicht geändert.`);
@@ -124,7 +124,7 @@ export const useCategoryStore = defineStore('category', () => {
   async function updateCategory(categoryUpdatesData: Category, fromSync = false): Promise<boolean> {
     const categoryUpdatesWithTimestamp: Category = {
       ...categoryUpdatesData,
-      updated_at: categoryUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: categoryUpdatesData.updatedAt || new Date().toISOString(),
     };
 
     if (categoryUpdatesWithTimestamp.categoryGroupId) {
@@ -140,8 +140,8 @@ export const useCategoryStore = defineStore('category', () => {
         return true;
       }
 
-      if (localCategory.updated_at && categoryUpdatesWithTimestamp.updated_at &&
-        new Date(localCategory.updated_at) >= new Date(categoryUpdatesWithTimestamp.updated_at)) {
+      if (localCategory.updatedAt && categoryUpdatesWithTimestamp.updatedAt &&
+        new Date(localCategory.updatedAt) >= new Date(categoryUpdatesWithTimestamp.updatedAt)) {
         infoLog('categoryStore', `updateCategory (fromSync): Lokale Kategorie ${localCategory.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -153,7 +153,7 @@ export const useCategoryStore = defineStore('category', () => {
 
     const idx = categories.value.findIndex(c => c.id === categoryUpdatesWithTimestamp.id);
     if (idx !== -1) {
-      if (!fromSync || (categoryUpdatesWithTimestamp.updated_at && (!categories.value[idx].updated_at || new Date(categoryUpdatesWithTimestamp.updated_at) > new Date(categories.value[idx].updated_at!)))) {
+      if (!fromSync || (categoryUpdatesWithTimestamp.updatedAt && (!categories.value[idx].updatedAt || new Date(categoryUpdatesWithTimestamp.updatedAt) > new Date(categories.value[idx].updatedAt!)))) {
         categories.value[idx] = { ...categories.value[idx], ...categoryUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('categoryStore', `updateCategory (fromSync): Store-Kategorie ${categories.value[idx].id} war neuer als eingehende ${categoryUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -212,27 +212,27 @@ export const useCategoryStore = defineStore('category', () => {
 
     // Update activity (equivalent to balance in the new schema)
     category.activity += amount;
-    category.updated_at = new Date().toISOString();
+    category.updatedAt = new Date().toISOString();
 
     await tenantDbService.updateCategory(category);
     debugLog('categoryStore', `updateCategoryBalance für Kategorie ${id}`, { amount, newActivity: category.activity });
     return true;
   }
 
-  async function addCategoryGroup(categoryGroupData: Omit<CategoryGroup, 'id' | 'updated_at'> | CategoryGroup, fromSync = false): Promise<CategoryGroup> {
+  async function addCategoryGroup(categoryGroupData: Omit<CategoryGroup, 'id' | 'updatedAt'> | CategoryGroup, fromSync = false): Promise<CategoryGroup> {
     const categoryGroupWithTimestamp: CategoryGroup = {
       ...categoryGroupData,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       id: (categoryGroupData as any).id || uuidv4(),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (categoryGroupData as any).updated_at || new Date().toISOString(),
+      updatedAt: (categoryGroupData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localGroup = await tenantDbService.getCategoryGroupById(categoryGroupWithTimestamp.id);
-      if (localGroup && localGroup.updated_at && categoryGroupWithTimestamp.updated_at &&
-        new Date(localGroup.updated_at) >= new Date(categoryGroupWithTimestamp.updated_at)) {
+      if (localGroup && localGroup.updatedAt && categoryGroupWithTimestamp.updatedAt &&
+        new Date(localGroup.updatedAt) >= new Date(categoryGroupWithTimestamp.updatedAt)) {
         infoLog('categoryStore', `addCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localGroup;
       }
@@ -246,7 +246,7 @@ export const useCategoryStore = defineStore('category', () => {
     if (existingGroupIndex === -1) {
       categoryGroups.value.push(categoryGroupWithTimestamp);
     } else {
-      if (!fromSync || (categoryGroupWithTimestamp.updated_at && (!categoryGroups.value[existingGroupIndex].updated_at || new Date(categoryGroupWithTimestamp.updated_at) > new Date(categoryGroups.value[existingGroupIndex].updated_at!)))) {
+      if (!fromSync || (categoryGroupWithTimestamp.updatedAt && (!categoryGroups.value[existingGroupIndex].updatedAt || new Date(categoryGroupWithTimestamp.updatedAt) > new Date(categoryGroups.value[existingGroupIndex].updatedAt!)))) {
         categoryGroups.value[existingGroupIndex] = categoryGroupWithTimestamp;
       } else if (fromSync) {
         warnLog('categoryStore', `addCategoryGroup (fromSync): Store-Gruppe ${categoryGroups.value[existingGroupIndex].id} war neuer als eingehende ${categoryGroupWithTimestamp.id}. Store nicht geändert.`);
@@ -274,7 +274,7 @@ export const useCategoryStore = defineStore('category', () => {
   async function updateCategoryGroup(categoryGroupUpdatesData: CategoryGroup, fromSync = false): Promise<boolean> {
     const categoryGroupUpdatesWithTimestamp: CategoryGroup = {
       ...categoryGroupUpdatesData,
-      updated_at: categoryGroupUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: categoryGroupUpdatesData.updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
@@ -286,8 +286,8 @@ export const useCategoryStore = defineStore('category', () => {
         return true;
       }
 
-      if (localGroup.updated_at && categoryGroupUpdatesWithTimestamp.updated_at &&
-        new Date(localGroup.updated_at) >= new Date(categoryGroupUpdatesWithTimestamp.updated_at)) {
+      if (localGroup.updatedAt && categoryGroupUpdatesWithTimestamp.updatedAt &&
+        new Date(localGroup.updatedAt) >= new Date(categoryGroupUpdatesWithTimestamp.updatedAt)) {
         infoLog('categoryStore', `updateCategoryGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -299,7 +299,7 @@ export const useCategoryStore = defineStore('category', () => {
 
     const idx = categoryGroups.value.findIndex(g => g.id === categoryGroupUpdatesWithTimestamp.id);
     if (idx !== -1) {
-      if (!fromSync || (categoryGroupUpdatesWithTimestamp.updated_at && (!categoryGroups.value[idx].updated_at || new Date(categoryGroupUpdatesWithTimestamp.updated_at) > new Date(categoryGroups.value[idx].updated_at!)))) {
+      if (!fromSync || (categoryGroupUpdatesWithTimestamp.updatedAt && (!categoryGroups.value[idx].updatedAt || new Date(categoryGroupUpdatesWithTimestamp.updatedAt) > new Date(categoryGroups.value[idx].updatedAt!)))) {
         categoryGroups.value[idx] = { ...categoryGroups.value[idx], ...categoryGroupUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('categoryStore', `updateCategoryGroup (fromSync): Store-Gruppe ${categoryGroups.value[idx].id} war neuer als eingehende ${categoryGroupUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -362,7 +362,7 @@ export const useCategoryStore = defineStore('category', () => {
     for (const category of categories.value) {
       // Reset activity to 0 for new month (equivalent to startBalance logic)
       category.activity = 0;
-      category.updated_at = new Date().toISOString();
+      category.updatedAt = new Date().toISOString();
       await tenantDbService.updateCategory(category);
       debugLog('categoryStore', `setMonthlySnapshot für Kategorie ${category.id}`, { resetActivity: category.activity });
     }
@@ -517,7 +517,7 @@ export const useCategoryStore = defineStore('category', () => {
         const derived = group?.isIncomeGroup ?? false;
         if (category.isIncomeCategory !== derived) {
           category.isIncomeCategory = derived;
-          category.updated_at = new Date().toISOString();
+          category.updatedAt = new Date().toISOString();
           await tenantDbService.updateCategory(category);
           migrated = true;
         }
