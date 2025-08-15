@@ -11,6 +11,7 @@ import { debugLog, errorLog, infoLog } from '../../utils/logger';
 import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
 import CalculatorInput from '../ui/CalculatorInput.vue';
 import { BudgetService } from '../../services/BudgetService';
+import { optimizedBudgetService } from '../../services/OptimizedBudgetService';
 import { BalanceService } from '../../services/BalanceService';
 import { toDateOnlyString } from '../../utils/formatters';
 import CategoryTransferModal from './CategoryTransferModal.vue';
@@ -37,6 +38,9 @@ const emit = defineEmits<{
   muuriReady: []
 }>();
 
+// Store-Initialisierung - muss vor der Verwendung stehen
+const categoryStore = useCategoryStore();
+
 // Interface für Budget-Daten
 interface MonthlyBudgetData {
   budgeted: number;
@@ -46,11 +50,69 @@ interface MonthlyBudgetData {
 }
 
 // Berechnungsfunktionen für echte Budget-Daten
+// Cache für einzelne Kategorie-Budget-Daten
+const categoryBudgetCache = ref(new Map<string, MonthlyBudgetData>());
+
+// Reaktiver Trigger für UI-Updates - wird bei Cache-Invalidierung erhöht
+const cacheInvalidationCounter = ref(0);
+
+// Hauptfunktion - synchron für Kompatibilität, aber mit optimiertem Backend
 function getCategoryBudgetData(categoryId: string, month: { start: Date; end: Date }): MonthlyBudgetData {
   const normalizedStart = new Date(toDateOnlyString(month.start));
   const normalizedEnd = new Date(toDateOnlyString(month.end));
 
-  return BudgetService.getAggregatedMonthlyBudgetData(categoryId, normalizedStart, normalizedEnd);
+  const cacheKey = `${categoryId}-${toDateOnlyString(normalizedStart)}-${toDateOnlyString(normalizedEnd)}`;
+
+  // Prüfe Cache - WICHTIG: Reaktive Abhängigkeit hier für Cache-Invalidierung
+  // Verwende den Cache nur wenn er existiert UND der Counter sich nicht geändert hat
+  const cachedData = categoryBudgetCache.value.get(cacheKey);
+  if (cachedData && cacheInvalidationCounter.value >= 0) {
+    // Für UI-Reaktivität: Immer neu berechnen wenn sich Transaktionen geändert haben
+    const freshResult = BudgetService.getSingleCategoryMonthlyBudgetData(categoryId, normalizedStart, normalizedEnd);
+
+    // Vergleiche ob sich die Werte geändert haben
+    if (Math.abs(cachedData.budgeted - freshResult.budgeted) < 0.01 &&
+        Math.abs(cachedData.spent - freshResult.spent) < 0.01 &&
+        Math.abs(cachedData.saldo - freshResult.saldo) < 0.01) {
+      return cachedData; // Cache ist noch aktuell
+    }
+
+    // Cache ist veraltet, aktualisiere ihn
+    categoryBudgetCache.value.set(cacheKey, freshResult);
+    return freshResult;
+  }
+
+  // KRITISCH: Verwende getSingleCategoryMonthlyBudgetData statt getAggregatedMonthlyBudgetData
+  // getAggregated summiert Unterkategorien, getSingle berechnet nur die einzelne Kategorie
+  const result = BudgetService.getSingleCategoryMonthlyBudgetData(categoryId, normalizedStart, normalizedEnd);
+
+  // Cache das Ergebnis
+  categoryBudgetCache.value.set(cacheKey, result);
+
+  // Starte asynchrone Optimierung im Hintergrund
+  preloadOptimizedData(categoryId, normalizedStart, normalizedEnd, cacheKey);
+
+  return result;
+}
+
+// Asynchrone Vorab-Optimierung im Hintergrund
+async function preloadOptimizedData(categoryId: string, monthStart: Date, monthEnd: Date, cacheKey: string) {
+  try {
+    const optimizedResult = await optimizedBudgetService.getOptimizedBudgetData(categoryId, monthStart, monthEnd);
+
+    const budgetData: MonthlyBudgetData = {
+      budgeted: optimizedResult.budgeted,
+      forecast: optimizedResult.forecast,
+      spent: optimizedResult.spent,
+      saldo: optimizedResult.saldo
+    };
+
+    // Aktualisiere Cache mit optimiertem Ergebnis
+    categoryBudgetCache.value.set(cacheKey, budgetData);
+  } catch (error) {
+    // Ignoriere Fehler bei Background-Optimierung
+    console.debug(`Background optimization failed for ${categoryId}:`, error);
+  }
 }
 
 function calculateGroupSummary(groupId: string, month: { start: Date; end: Date }) {
@@ -62,6 +124,7 @@ function calculateGroupSummary(groupId: string, month: { start: Date; end: Date 
     saldo: 0
   };
 
+  // Reaktive Abhängigkeit durch getCategoryBudgetData - kein separater Zugriff nötig
   categories.forEach(category => {
     const data = getCategoryBudgetData(category.id, month);
     summary.budgeted += data.budgeted;
@@ -73,68 +136,172 @@ function calculateGroupSummary(groupId: string, month: { start: Date; end: Date 
   return summary;
 }
 
-const typeSummaryCache = computed(() => {
-  // Abhängigkeiten zu Stores hinzufügen für Reaktivität
+// Optimierter asynchroner Cache für Type-Summaries
+const typeSummaryCache = ref(new Map<string, any>());
+const isLoadingTypeSummary = ref(false);
+
+// Reaktive Abhängigkeiten für Cache-Invalidierung
+const cacheInvalidationTrigger = computed(() => {
   const transactionStore = useTransactionStore();
   const planningStore = usePlanningStore();
 
-  // Diese Abhängigkeiten sorgen dafür, dass der Cache neu berechnet wird
-  // wenn sich Transaktionen oder Planungen ändern
-  const _ = [
+  return [
     transactionStore.transactions.length,
     planningStore.planningTransactions.length,
-    // Zusätzlich auf Änderungen der Kategorien reagieren
     categoryStore.categories.length,
-    // Wichtig: Auch auf Transaktionsinhalte reagieren (für Budgettemplate-Anwendung)
-    // Erstelle einen Hash aus allen relevanten Transaktionsdaten
-    transactionStore.transactions.map(t => `${t.id}-${t.amount}-${t.categoryId}-${t.type}-${t.valueDate}`).join('|'),
-    planningStore.planningTransactions.map(p => `${p.id}-${p.amount}-${p.categoryId}-${p.isActive}`).join('|')
-  ];
-
-  const cache = new Map<string, any>();
-
-  props.months.forEach((month: { key: string; start: Date; end: Date }) => {
-    const normalizedStart = new Date(toDateOnlyString(month.start));
-    const normalizedEnd = new Date(toDateOnlyString(month.end));
-
-    // Cache für Expense-Kategorien
-    const expenseSummary = BudgetService.getMonthlySummary(
-      normalizedStart,
-      normalizedEnd,
-      "expense"
-    );
-    cache.set(`expense-${month.key}`, {
-      budgeted: expenseSummary.budgeted,
-      forecast: expenseSummary.forecast,
-      spent: expenseSummary.spentMiddle,
-      saldo: expenseSummary.saldoFull
-    });
-
-    // Cache für Income-Kategorien
-    const incomeSummary = BudgetService.getMonthlySummary(
-      normalizedStart,
-      normalizedEnd,
-      "income"
-    );
-    cache.set(`income-${month.key}`, {
-      budgeted: incomeSummary.budgeted,
-      forecast: incomeSummary.forecast,
-      spent: incomeSummary.spentMiddle,
-      saldo: incomeSummary.saldoFull
-    });
-  });
-
-  return cache;
+    // Vereinfachter Hash nur der IDs
+    transactionStore.transactions.map(t => t.id).join(',').slice(0, 100), // Begrenzt für Performance
+    planningStore.planningTransactions.map(p => p.id).join(',').slice(0, 100)
+  ].join('|');
 });
+
+// Asynchrone Berechnung der Type-Summaries
+async function updateTypeSummaryCache() {
+  if (isLoadingTypeSummary.value) return;
+
+  isLoadingTypeSummary.value = true;
+  const newCache = new Map<string, any>();
+
+  try {
+    // Batch-Requests für alle Monate und Typen erstellen
+    const batchRequests: Array<{
+      categoryIds: string[];
+      monthStart: Date;
+      monthEnd: Date;
+      type: 'expense' | 'income';
+      cacheKey: string;
+    }> = [];
+
+    props.months.forEach((month: { key: string; start: Date; end: Date }) => {
+      const normalizedStart = new Date(toDateOnlyString(month.start));
+      const normalizedEnd = new Date(toDateOnlyString(month.end));
+
+      // Expense-Kategorien
+      const expenseCategories = categoryStore.categories
+        .filter(cat => !cat.isIncomeCategory)
+        .map(cat => cat.id);
+
+      batchRequests.push({
+        categoryIds: expenseCategories,
+        monthStart: normalizedStart,
+        monthEnd: normalizedEnd,
+        type: 'expense',
+        cacheKey: `expense-${month.key}`
+      });
+
+      // Income-Kategorien
+      const incomeCategories = categoryStore.categories
+        .filter(cat => cat.isIncomeCategory)
+        .map(cat => cat.id);
+
+      batchRequests.push({
+        categoryIds: incomeCategories,
+        monthStart: normalizedStart,
+        monthEnd: normalizedEnd,
+        type: 'income',
+        cacheKey: `income-${month.key}`
+      });
+    });
+
+    // Verarbeite Requests in kleineren Batches für bessere Performance
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < batchRequests.length; i += BATCH_SIZE) {
+      const batch = batchRequests.slice(i, i + BATCH_SIZE);
+
+      await Promise.all(batch.map(async (request) => {
+        try {
+          const result = await optimizedBudgetService.calculateTypeSummary(
+            request.categoryIds,
+            request.monthStart,
+            request.monthEnd,
+            request.type
+          );
+
+          newCache.set(request.cacheKey, {
+            budgeted: result.summary.budgeted,
+            forecast: result.summary.forecast,
+            spent: result.summary.spentMiddle,
+            saldo: result.summary.saldoFull
+          });
+        } catch (error) {
+          // Fallback auf alten Service bei Fehlern
+          console.warn(`Fallback to old service for ${request.cacheKey}:`, error);
+          const fallbackSummary = BudgetService.getMonthlySummary(
+            request.monthStart,
+            request.monthEnd,
+            request.type
+          );
+          newCache.set(request.cacheKey, {
+            budgeted: fallbackSummary.budgeted,
+            forecast: fallbackSummary.forecast,
+            spent: fallbackSummary.spentMiddle,
+            saldo: fallbackSummary.saldoFull
+          });
+        }
+      }));
+
+      // Kurze Pause zwischen Batches für UI-Responsiveness
+      if (i + BATCH_SIZE < batchRequests.length) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+
+    typeSummaryCache.value = newCache;
+  } catch (error) {
+    errorLog('[BudgetCategoriesAndValues]', 'Failed to update type summary cache', error);
+  } finally {
+    isLoadingTypeSummary.value = false;
+  }
+}
+
+// Watcher für Cache-Invalidierung mit Debouncing für bessere Performance
+let cacheInvalidationTimer: NodeJS.Timeout | null = null;
+const CACHE_INVALIDATION_DEBOUNCE = 500; // 500ms Debounce
+
+watch(cacheInvalidationTrigger, () => {
+  // Debounce Cache-Invalidierung um excessive Updates zu vermeiden
+  if (cacheInvalidationTimer) {
+    clearTimeout(cacheInvalidationTimer);
+  }
+
+  cacheInvalidationTimer = setTimeout(() => {
+    // Invalidiere beide Caches
+    categoryBudgetCache.value.clear();
+    updateTypeSummaryCache();
+
+    // KRITISCH: Erhöhe Counter für UI-Reaktivität
+    cacheInvalidationCounter.value++;
+    debugLog('BudgetCategoriesAndValues', `Cache invalidated, UI trigger updated: ${cacheInvalidationCounter.value}`);
+  }, CACHE_INVALIDATION_DEBOUNCE);
+}, { immediate: true });
+
+// Watcher für Props-Änderungen
+watch(() => props.months, () => {
+  categoryBudgetCache.value.clear();
+  updateTypeSummaryCache();
+
+  // KRITISCH: Erhöhe Counter für UI-Reaktivität
+  cacheInvalidationCounter.value++;
+  debugLog('BudgetCategoriesAndValues', `Props changed, UI trigger updated: ${cacheInvalidationCounter.value}`);
+}, { deep: true });
 
 function calculateTypeSummary(isIncomeType: boolean, month: { key?: string; start: Date; end: Date }) {
   const key = `${isIncomeType ? 'income' : 'expense'}-${month.key || toDateOnlyString(month.start)}`;
-  return typeSummaryCache.value.get(key) || {
+
+  // Reaktive Abhängigkeit durch typeSummaryCache und cacheInvalidationCounter
+  const result = typeSummaryCache.value.get(key) || {
     budgeted: 0,
     forecast: 0,
     spent: 0,
     saldo: 0
   };
+
+  // Trigger reaktive Abhängigkeit für Cache-Invalidierung
+  if (cacheInvalidationCounter.value >= 0) {
+    return result;
+  }
+
+  return result;
 }
 
 // Drag Container
@@ -152,8 +319,7 @@ const incomeSubGrids = ref<Muuri[]>([]);
 const categoryGroups = CategoryService.getCategoryGroups();
 const categoriesByGroup = CategoryService.getCategoriesByGroup();
 
-// CategoryStore für globalen Expand/Collapse-Zustand
-const categoryStore = useCategoryStore();
+// CategoryStore bereits oben initialisiert
 
 // Reaktive Kategorie „Verfügbare Mittel"
 const availableFundsCategory = computed(() =>
@@ -234,14 +400,14 @@ const budgetUpdateQueue = ref<Map<string, {
   timestamp: number;
 }>>(new Map());
 const budgetUpdateTimer = ref<NodeJS.Timeout | null>(null);
-const BUDGET_UPDATE_DEBOUNCE_DELAY = 500;
+const BUDGET_UPDATE_DEBOUNCE_DELAY = 1500; // Erhöht von 500ms auf 1500ms für bessere Performance
 
 // Auto-Expand Timer für Drag-Over
 const autoExpandTimer = ref<NodeJS.Timeout | null>(null);
 
 // Debouncing für Sort Order Updates
 const sortOrderUpdateTimer = ref<NodeJS.Timeout | null>(null);
-const SORT_ORDER_DEBOUNCE_DELAY = 500;
+const SORT_ORDER_DEBOUNCE_DELAY = 1000; // Erhöht von 500ms auf 1000ms für bessere Performance
 
 // Getrennte Lebensbereiche nach Typ
 const expenseGroups = computed(() => {

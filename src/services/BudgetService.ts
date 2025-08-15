@@ -4,7 +4,7 @@ import { useTransactionStore } from "@/stores/transactionStore";
 import { usePlanningStore } from "@/stores/planningStore";
 import { PlanningService } from "./PlanningService";
 import { TransactionService } from "./TransactionService";
-import { Category, TransactionType } from "@/types";
+import { Category, Transaction, TransactionType } from "@/types";
 import { toDateOnlyString } from "@/utils/formatters";
 import { debugLog, infoLog, warnLog, errorLog } from "@/utils/logger";
 import { BalanceService } from "./BalanceService";
@@ -12,8 +12,61 @@ import { BalanceService } from "./BalanceService";
 // Performance-Cache für BudgetService
 const summaryCache = new Map<string, { data: any; timestamp: number }>();
 const categoryCache = new Map<string, { data: any; timestamp: number }>();
-const CACHE_TTL = 5000; // 5 Sekunden Cache-Zeit (länger für bessere Performance)
+const CACHE_TTL = 30000; // 30 Sekunden Cache-Zeit (deutlich länger für bessere Performance)
 let lastCacheClean = 0;
+
+// Transaktions-Index für O(1) Zugriff - Performance-Optimierung
+class TransactionIndex {
+  private categoryMonthIndex = new Map<string, Transaction[]>();
+  private lastIndexUpdate = 0;
+  private readonly INDEX_TTL = 10000; // 10 Sekunden Index-Gültigkeit
+
+  private getIndexKey(categoryId: string, monthStart: Date, monthEnd: Date): string {
+    return `${categoryId}-${monthStart.toISOString().split('T')[0]}-${monthEnd.toISOString().split('T')[0]}`;
+  }
+
+  getTransactions(categoryId: string, monthStart: Date, monthEnd: Date): Transaction[] {
+    const key = this.getIndexKey(categoryId, monthStart, monthEnd);
+    const now = Date.now();
+
+    // Prüfe ob Index noch gültig ist
+    if (now - this.lastIndexUpdate > this.INDEX_TTL) {
+      this.rebuildIndex();
+    }
+
+    return this.categoryMonthIndex.get(key) || [];
+  }
+
+  private rebuildIndex(): void {
+    this.categoryMonthIndex.clear();
+    const transactionStore = useTransactionStore();
+
+    // Gruppiere Transaktionen nach Kategorie und Monat
+    transactionStore.transactions.forEach(tx => {
+      const txDate = new Date(toDateOnlyString(tx.valueDate));
+      const monthStart = new Date(txDate.getFullYear(), txDate.getMonth(), 1);
+      const monthEnd = new Date(txDate.getFullYear(), txDate.getMonth() + 1, 0);
+
+      if (tx.categoryId) {
+        const key = this.getIndexKey(tx.categoryId, monthStart, monthEnd);
+        if (!this.categoryMonthIndex.has(key)) {
+          this.categoryMonthIndex.set(key, []);
+        }
+        this.categoryMonthIndex.get(key)!.push(tx);
+      }
+    });
+
+    this.lastIndexUpdate = Date.now();
+    debugLog("[BudgetService] Transaction index rebuilt", `${this.categoryMonthIndex.size} category-month combinations indexed`);
+  }
+
+  invalidateIndex(): void {
+    this.categoryMonthIndex.clear();
+    this.lastIndexUpdate = 0;
+  }
+}
+
+const transactionIndex = new TransactionIndex();
 
 function getCacheKey(monthStart: Date, monthEnd: Date, type: "expense" | "income"): string {
   return `${type}-${monthStart.toISOString().split('T')[0]}-${monthEnd.toISOString().split('T')[0]}`;
@@ -43,6 +96,7 @@ function cleanExpiredCache() {
 function invalidateCache() {
   summaryCache.clear();
   categoryCache.clear();
+  transactionIndex.invalidateIndex();
 }
 
 // Granulare Cache-Invalidierung für spezifische Kategorien und Monate
@@ -69,6 +123,9 @@ function invalidateCacheForTransaction(transaction: { categoryId?: string; date:
   const incomeKey = getCacheKey(monthStart, monthEnd, "income");
   summaryCache.delete(expenseKey);
   summaryCache.delete(incomeKey);
+
+  // Invalidiere auch den Transaktions-Index für bessere Performance
+  transactionIndex.invalidateIndex();
 
   debugLog("[BudgetService] Cache invalidated", `Month summaries for ${monthStart.toISOString().split('T')[0]}`);
 }
@@ -144,9 +201,13 @@ function computeExpenseCategoryDataSingle(
     return tx.categoryId === categoryId && d >= monthStart && d <= monthEnd;
   });
 
-  // Budget-Transfers (nur Quelle)
+  // Budget-Transfers - nur positive Beträge zählen (Geld das in die Kategorie fließt)
   const budgetAmount = txs
-    .filter(tx => tx.type === TransactionType.CATEGORYTRANSFER && tx.categoryId === categoryId)
+    .filter(tx =>
+      tx.type === TransactionType.CATEGORYTRANSFER &&
+      tx.categoryId === categoryId &&
+      tx.amount > 0  // Nur positive Beträge (Geld das in die Kategorie kommt)
+    )
     .reduce((s, tx) => s + tx.amount, 0);
 
   // echte Ausgaben UND Einnahmen für diese Kategorie
@@ -197,15 +258,16 @@ function computeExpenseCategoryData(
   prev.setDate(prev.getDate() - 1);
   const previousSaldo = BalanceService.getProjectedBalance('category', categoryId, prev);
 
-  // Buchungen dieses Monats nach valueDate
-  const txs = transactionStore.transactions.filter(tx => {
-    const d = new Date(toDateOnlyString(tx.valueDate));
-    return tx.categoryId === categoryId && d >= monthStart && d <= monthEnd;
-  });
+  // Buchungen dieses Monats nach valueDate - Optimiert mit Index für O(1) Zugriff
+  const txs = transactionIndex.getTransactions(categoryId, monthStart, monthEnd);
 
-  // Budget-Transfers (nur Quelle)
+  // Budget-Transfers - nur positive Beträge zählen (Geld das in die Kategorie fließt)
   const budgetAmount = txs
-    .filter(tx => tx.type === TransactionType.CATEGORYTRANSFER && tx.categoryId === categoryId)
+    .filter(tx =>
+      tx.type === TransactionType.CATEGORYTRANSFER &&
+      tx.categoryId === categoryId &&
+      tx.amount > 0  // Nur positive Beträge (Geld das in die Kategorie kommt)
+    )
     .reduce((s, tx) => s + tx.amount, 0);
 
   // echte Ausgaben UND Einnahmen für diese Kategorie

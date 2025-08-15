@@ -209,8 +209,8 @@ export const useTransactionStore = defineStore('transaction', () => {
   /**
    * Fügt mehrere Transaktionen in einem Batch hinzu - optimiert für große Datenmengen
    */
-  async function addMultipleTransactions(transactions: ExtendedTransaction[], fromSync = false): Promise<ExtendedTransaction[]> {
-    if (transactions.length === 0) {
+  async function addMultipleTransactions(inputTransactions: ExtendedTransaction[], fromSync = false): Promise<ExtendedTransaction[]> {
+    if (inputTransactions.length === 0) {
       debugLog('transactionStore', 'addMultipleTransactions: Keine Transaktionen zum Hinzufügen');
       return [];
     }
@@ -219,7 +219,7 @@ export const useTransactionStore = defineStore('transaction', () => {
 
     try {
       // Bereite alle Transaktionen vor
-      const transactionsWithTimestamp = transactions.map(tx => {
+      const transactionsWithTimestamp = inputTransactions.map(tx => {
         const resolvedPayee = resolvePayeeFromRecipient(tx.recipientId, tx.payee);
         const now = new Date().toISOString();
 
@@ -239,6 +239,11 @@ export const useTransactionStore = defineStore('transaction', () => {
 
         // Aktualisiere nur die tatsächlich geänderten Transaktionen im Store
         for (const tx of transactionsWithTimestamp) {
+          if (!transactions.value) {
+            errorLog('transactionStore', 'transactions.value ist undefined - Store nicht korrekt initialisiert');
+            throw new Error('Transaction store not properly initialized');
+          }
+
           const existingIndex = transactions.value.findIndex((t: ExtendedTransaction) => t.id === tx.id);
           if (existingIndex === -1) {
             transactions.value.push(tx);
@@ -253,8 +258,13 @@ export const useTransactionStore = defineStore('transaction', () => {
         // Normale Batch-Operation für lokale Änderungen
         await tenantDbService.addTransactionsBatch(transactionsWithTimestamp);
 
-        // Füge alle Transaktionen zum Store hinzu
+        // Füge alle Transaktionen zum Store hinzu - mit Null-Check
         for (const tx of transactionsWithTimestamp) {
+          if (!transactions.value) {
+            errorLog('transactionStore', 'transactions.value ist undefined - Store nicht korrekt initialisiert');
+            throw new Error('Transaction store not properly initialized');
+          }
+
           const existingIndex = transactions.value.findIndex((t: ExtendedTransaction) => t.id === tx.id);
           if (existingIndex === -1) {
             transactions.value.push(tx);
@@ -282,7 +292,7 @@ export const useTransactionStore = defineStore('transaction', () => {
       return processedTransactions;
 
     } catch (error) {
-      errorLog('transactionStore', `Fehler beim Batch-Hinzufügen von ${transactions.length} Transaktionen`, error);
+      errorLog('transactionStore', `Fehler beim Batch-Hinzufügen von ${inputTransactions.length} Transaktionen`, error);
       throw error;
     }
   }
@@ -415,6 +425,57 @@ export const useTransactionStore = defineStore('transaction', () => {
     return true;
   }
 
+  /**
+   * Echte Bulk-Löschung für bessere Performance bei Budget-Reset
+   */
+  async function bulkDeleteTransactions(ids: string[], fromSync = false): Promise<boolean> {
+    if (ids.length === 0) {
+      debugLog('transactionStore', 'bulkDeleteTransactions: Keine IDs zum Löschen');
+      return true;
+    }
+
+    debugLog('transactionStore', `Bulk-Löschung gestartet: ${ids.length} Transaktionen`);
+
+    // Aktiviere Batch-Mode für Performance
+    isBatchUpdateMode.value = true;
+
+    try {
+      // 1. Sammle alle zu löschenden Transaktionen für Logging
+      const transactionsToDelete = ids.map(id => transactions.value.find(t => t.id === id)).filter(Boolean);
+
+      // 2. Bulk-Löschung aus IndexedDB (Fallback auf einzelne Löschungen)
+      await Promise.all(ids.map(id => tenantDbService.deleteTransaction(id)));
+
+      // 3. Entferne aus Store (einmalige Operation)
+      const idsSet = new Set(ids);
+      transactions.value = transactions.value.filter(t => !idsSet.has(t.id));
+
+      // 4. Bulk-Sync-Queue-Einträge (nur wenn nicht von Sync)
+      if (!fromSync) {
+        const syncEntries = ids.map(id => ({
+          entityType: EntityTypeEnum.TRANSACTION,
+          entityId: id,
+          operationType: SyncOperationType.DELETE,
+          payload: { id }
+        }));
+
+        await Promise.all(syncEntries.map(entry => tenantDbService.addSyncQueueEntry(entry)));
+        infoLog('transactionStore', `${ids.length} Transaktionen zur Sync Queue hinzugefügt (BULK DELETE)`);
+      }
+
+      infoLog('transactionStore', `Bulk-Löschung abgeschlossen: ${ids.length} Transaktionen entfernt`);
+      return true;
+
+    } catch (error) {
+      errorLog('transactionStore', `Fehler bei Bulk-Löschung von ${ids.length} Transaktionen`, error);
+      return false;
+    } finally {
+      // Deaktiviere Batch-Mode und triggere einmalige Cache-Invalidierung
+      isBatchUpdateMode.value = false;
+      BudgetService.invalidateCache();
+    }
+  }
+
   /* ----------------------------------------------- Persistence */
   async function loadTransactions(): Promise<void> {
     try {
@@ -462,6 +523,7 @@ export const useTransactionStore = defineStore('transaction', () => {
     addMultipleTransactions,
     updateTransaction,
     deleteTransaction,
+    bulkDeleteTransactions,
     loadTransactions,
     reset,
     initializeStore,

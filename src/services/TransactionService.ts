@@ -438,29 +438,43 @@ export const TransactionService = {
   },
 
   async bulkDeleteTransactions(ids: string[]): Promise<{ success: boolean; deletedCount: number }> {
+    if (ids.length === 0) {
+      return { success: true, deletedCount: 0 };
+    }
+
     const txStore = useTransactionStore();
     const allIdsToDelete = new Set(ids);
     const deletedTransactions: Transaction[] = [];
+
+    // Sammle alle zu löschenden Transaktionen (inklusive Counter-Transaktionen)
     ids.forEach(id => {
       const tx = txStore.getTransactionById(id);
       if (tx?.counterTransactionId) allIdsToDelete.add(tx.counterTransactionId);
       if (tx) deletedTransactions.push(tx);
     });
 
-    const results = await Promise.all(Array.from(allIdsToDelete).map(id => txStore.deleteTransaction(id)));
-    const success = results.every(Boolean);
+    // Verwende die optimierte Bulk-Delete-Funktion aus dem Store
+    const success = await txStore.bulkDeleteTransactions(Array.from(allIdsToDelete));
 
-    if (deletedTransactions.length > 0) {
+    // Trigger Balance-Updates nur einmal am Ende
+    if (success && deletedTransactions.length > 0) {
       const accountIds = new Set<string>();
       const categoryIds = new Set<string>();
       let fromDate = deletedTransactions[0].date;
+
       deletedTransactions.forEach(tx => {
         if (tx.accountId) accountIds.add(tx.accountId);
         if (tx.categoryId) categoryIds.add(tx.categoryId);
         if (tx.date < fromDate) fromDate = tx.date;
       });
-      BalanceService.triggerMonthlyBalanceUpdate({ accountIds: Array.from(accountIds), categoryIds: Array.from(categoryIds), fromDate });
+
+      BalanceService.triggerMonthlyBalanceUpdate({
+        accountIds: Array.from(accountIds),
+        categoryIds: Array.from(categoryIds),
+        fromDate
+      });
     }
+
     return { success, deletedCount: allIdsToDelete.size };
   },
 
