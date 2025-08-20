@@ -547,9 +547,10 @@ onMounted(async () => {
   // Add outside click listener
   document.addEventListener('click', handleOutsideClick);
   debugLog('BudgetCategoriesAndValues', 'Component mounted, starting initialization');
-  debugLog('BudgetCategoriesAndValues', 'Calling CategoryService.loadCategories()');
-  await CategoryService.loadCategories();
-  debugLog('BudgetCategoriesAndValues', 'CategoryService.loadCategories() completed successfully');
+
+  // Kategorien sind bereits durch Store-Initialisierung geladen
+  // Warte nur auf Reaktivität der categoryGroups
+  await nextTick();
 
   // Batch-Expansion aller Gruppen über CategoryService
   const groupsToExpand = categoryGroups.value
@@ -636,8 +637,9 @@ watch(() => props.months, async (newMonths, oldMonths) => {
   }
 }, { deep: true });
 
-function initializeGrids() {
-  debugLog('BudgetCategoriesAndValues', 'initializeGrids() function called');
+// Optimierte Muuri-Grid-Initialisierung mit Chunking für bessere Performance
+async function initializeGrids() {
+  debugLog('BudgetCategoriesAndValues', 'initializeGrids() function called - starting chunked initialization');
 
   try {
     let completedLayouts = 0;
@@ -652,89 +654,149 @@ function initializeGrids() {
       }
     };
 
-    // Expense Sub-Grids initialisieren
-    const expenseSubGridElements = document.querySelectorAll('#expense-categories .categories-content') as NodeListOf<HTMLElement>;
-    expenseSubGridElements.forEach(el => {
-      const grid = createSubGrid(el, expenseSubGrids);
-      expenseSubGrids.value.push(grid);
-    });
+    // Schritt 1: Sub-Grids in Chunks initialisieren
+    await initializeSubGridsInChunks();
 
-    // Income Sub-Grids initialisieren
-    const incomeSubGridElements = document.querySelectorAll('#income-categories .categories-content') as NodeListOf<HTMLElement>;
-    incomeSubGridElements.forEach(el => {
-      const grid = createSubGrid(el, incomeSubGrids);
-      incomeSubGrids.value.push(grid);
-    });
-
-    // Meta-Grids mit längeren Delays für bessere Animation-Performance
-    setTimeout(() => {
-      try {
-        debugLog('BudgetCategoriesAndValues', 'Initializing Expense Meta-Grid');
-        // Expense Meta-Grid initialisieren
-        expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
-
-        // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
-        if (expenseMetaGrid.value.getItems().length === 0) {
-          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
-          checkAllLayoutsComplete();
-        } else {
-          expenseMetaGrid.value.on('layoutEnd', () => {
-            debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via event');
-            checkAllLayoutsComplete();
-          });
-          // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
-          setTimeout(() => {
-            if (completedLayouts < 1) {
-              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
-              checkAllLayoutsComplete();
-            }
-          }, 200);
-        }
-
-        // Längerer Delay für Income Meta-Grid um Spinner-Animation zu ermöglichen
-        setTimeout(() => {
-          try {
-            debugLog('BudgetCategoriesAndValues', 'Initializing Income Meta-Grid');
-            // Income Meta-Grid initialisieren
-            incomeMetaGrid.value = createMetaGrid('#income-categories', true);
-
-            // Prüfe sofort, ob Layout bereits abgeschlossen ist, oder warte auf layoutEnd
-            if (incomeMetaGrid.value.getItems().length === 0) {
-              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
-              checkAllLayoutsComplete();
-            } else {
-              incomeMetaGrid.value.on('layoutEnd', () => {
-                debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via event');
-                checkAllLayoutsComplete();
-              });
-              // Fallback: Prüfe nach kurzer Zeit, ob Layout abgeschlossen ist
-              setTimeout(() => {
-                if (completedLayouts < 2) {
-                  debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
-                  checkAllLayoutsComplete();
-                }
-              }, 200);
-            }
-
-            debugLog('BudgetCategoriesAndValues', 'Muuri grids initialized, waiting for layouts to complete');
-
-          } catch (error) {
-            errorLog('BudgetCategoriesAndValues', 'Failed to initialize Income Meta-Grid', error);
-            emit('muuriReady'); // Trotzdem Event emittieren
-          }
-        }, 100); // Erhöht von 50ms auf 100ms für bessere Animation
-
-      } catch (error) {
-        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Expense Meta-Grid', error);
-        emit('muuriReady'); // Trotzdem Event emittieren
-      }
-    }, 150); // Erhöht von 100ms auf 150ms für bessere Animation
+    // Schritt 2: Meta-Grids mit gestaffelten Delays
+    await initializeMetaGridsSequentially(checkAllLayoutsComplete);
 
   } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'Failed to initialize Sub-Grids', error);
+    errorLog('BudgetCategoriesAndValues', 'Failed to initialize grids with chunking', error);
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
     emit('muuriReady');
   }
+}
+
+// Initialisiert Sub-Grids in kleineren Chunks für bessere Performance
+async function initializeSubGridsInChunks() {
+  debugLog('BudgetCategoriesAndValues', 'Starting chunked sub-grid initialization');
+
+  // Expense Sub-Grids in Chunks
+  const expenseSubGridElements = document.querySelectorAll('#expense-categories .categories-content') as NodeListOf<HTMLElement>;
+  await processElementsInChunks(Array.from(expenseSubGridElements), expenseSubGrids, 'expense');
+
+  // Kurze Pause zwischen Expense und Income
+  await new Promise(resolve => setTimeout(resolve, 50));
+
+  // Income Sub-Grids in Chunks
+  const incomeSubGridElements = document.querySelectorAll('#income-categories .categories-content') as NodeListOf<HTMLElement>;
+  await processElementsInChunks(Array.from(incomeSubGridElements), incomeSubGrids, 'income');
+
+  debugLog('BudgetCategoriesAndValues', 'Chunked sub-grid initialization completed');
+}
+
+// Verarbeitet Elemente in kleineren Chunks
+async function processElementsInChunks(elements: HTMLElement[], subGridsArray: typeof expenseSubGrids, type: string) {
+  const CHUNK_SIZE = 5; // Maximal 5 Grids pro Chunk
+
+  for (let i = 0; i < elements.length; i += CHUNK_SIZE) {
+    const chunk = elements.slice(i, i + CHUNK_SIZE);
+    debugLog('BudgetCategoriesAndValues', `Processing ${type} sub-grid chunk ${Math.floor(i/CHUNK_SIZE) + 1}: ${chunk.length} elements`);
+
+    // Verarbeite Chunk
+    chunk.forEach(el => {
+      try {
+        const grid = createSubGrid(el, subGridsArray);
+        subGridsArray.value.push(grid);
+      } catch (error) {
+        errorLog('BudgetCategoriesAndValues', `Failed to create ${type} sub-grid`, error);
+      }
+    });
+
+    // Kurze Pause zwischen Chunks für bessere UI-Responsivität
+    if (i + CHUNK_SIZE < elements.length) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  }
+}
+
+// Initialisiert Meta-Grids sequenziell mit optimierten Delays
+async function initializeMetaGridsSequentially(checkAllLayoutsComplete: () => void) {
+  debugLog('BudgetCategoriesAndValues', 'Starting sequential meta-grid initialization');
+
+  // Schritt 1: Expense Meta-Grid
+  await new Promise<void>((resolve) => {
+    setTimeout(() => {
+      try {
+        debugLog('BudgetCategoriesAndValues', 'Initializing Expense Meta-Grid');
+        expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
+
+        if (expenseMetaGrid.value.getItems().length === 0) {
+          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
+          checkAllLayoutsComplete();
+          resolve();
+        } else {
+          let layoutCompleted = false;
+
+          expenseMetaGrid.value.on('layoutEnd', () => {
+            if (!layoutCompleted) {
+              layoutCompleted = true;
+              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via event');
+              checkAllLayoutsComplete();
+              resolve();
+            }
+          });
+
+          // Fallback-Timer
+          setTimeout(() => {
+            if (!layoutCompleted) {
+              layoutCompleted = true;
+              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
+              checkAllLayoutsComplete();
+              resolve();
+            }
+          }, 300);
+        }
+      } catch (error) {
+        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Expense Meta-Grid', error);
+        checkAllLayoutsComplete(); // Trotzdem als abgeschlossen markieren
+        resolve();
+      }
+    }, 100); // Reduziert von 150ms auf 100ms
+  });
+
+  // Schritt 2: Income Meta-Grid
+  await new Promise<void>((resolve) => {
+    setTimeout(() => {
+      try {
+        debugLog('BudgetCategoriesAndValues', 'Initializing Income Meta-Grid');
+        incomeMetaGrid.value = createMetaGrid('#income-categories', true);
+
+        if (incomeMetaGrid.value.getItems().length === 0) {
+          debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
+          checkAllLayoutsComplete();
+          resolve();
+        } else {
+          let layoutCompleted = false;
+
+          incomeMetaGrid.value.on('layoutEnd', () => {
+            if (!layoutCompleted) {
+              layoutCompleted = true;
+              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via event');
+              checkAllLayoutsComplete();
+              resolve();
+            }
+          });
+
+          // Fallback-Timer
+          setTimeout(() => {
+            if (!layoutCompleted) {
+              layoutCompleted = true;
+              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
+              checkAllLayoutsComplete();
+              resolve();
+            }
+          }, 300);
+        }
+      } catch (error) {
+        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Income Meta-Grid', error);
+        checkAllLayoutsComplete(); // Trotzdem als abgeschlossen markieren
+        resolve();
+      }
+    }, 75); // Reduziert von 100ms auf 75ms
+  });
+
+  debugLog('BudgetCategoriesAndValues', 'Sequential meta-grid initialization completed');
 }
 
 function createSubGrid(element: HTMLElement, subGridsArray: typeof expenseSubGrids): Muuri {

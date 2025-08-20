@@ -29,6 +29,8 @@ let longTermReconnectTimer: NodeJS.Timeout | null = null;
 let backendHealthCheckTimer: NodeJS.Timeout | null = null;
 let isReconnecting = false;
 let initialDataLoadProcessed = false; // Verhindert doppelte Verarbeitung von initial_data_load
+let initialDataRequested = false; // Verhindert mehrfache Initial Data Requests
+let currentRequestedTenantId: string | null = null; // Aktuell angefragter Tenant
 
 let autoSyncInterval: NodeJS.Timeout | null = null;
 let queueWatcher: (() => void) | null = null;
@@ -561,6 +563,10 @@ export const WebSocketService = {
             } else {
               infoLog('[WebSocketService]', 'No initial transactions received or transactions array is empty.');
             }
+            // Reset der Request-Flags nach erfolgreicher Verarbeitung
+            initialDataRequested = false;
+            currentRequestedTenantId = null;
+
             infoLog('[WebSocketService]', 'Finished processing InitialDataLoadMessage.');
           } else if (message.type === 'sync_ack') {
             const ackMessage = message as SyncAckMessage;
@@ -1245,9 +1251,27 @@ export const WebSocketService = {
   },
 
   requestInitialData(tenantId: string): void {
+    // Deduplizierung: Verhindere mehrfache Requests für denselben Tenant
+    if (initialDataRequested && currentRequestedTenantId === tenantId) {
+      debugLog('[WebSocketService]', `Initial data already requested for tenant ${tenantId}, skipping duplicate request`);
+      return;
+    }
+
+    // Wenn für einen anderen Tenant bereits angefragt wurde, erlaube neuen Request
+    if (currentRequestedTenantId && currentRequestedTenantId !== tenantId) {
+      debugLog('[WebSocketService]', `Switching initial data request from tenant ${currentRequestedTenantId} to ${tenantId}`);
+      initialDataRequested = false;
+      initialDataLoadProcessed = false;
+    }
+
     const webSocketStore = useWebSocketStore();
     if (socket && socket.readyState === WebSocket.OPEN && webSocketStore.backendStatus === BackendStatus.ONLINE) {
       infoLog('[WebSocketService]', `Requesting initial data for tenant ${tenantId}`);
+
+      // Markiere Request als gesendet
+      initialDataRequested = true;
+      currentRequestedTenantId = tenantId;
+
       const message: RequestInitialDataMessage = {
         type: 'request_initial_data',
         tenant_id: tenantId,
@@ -1260,22 +1284,29 @@ export const WebSocketService = {
         tenantId: tenantId
       });
 
-      // Retry-Mechanismus: Versuche es in 1 Sekunde erneut
-      setTimeout(() => {
-        if (socket && socket.readyState === WebSocket.OPEN && webSocketStore.backendStatus === BackendStatus.ONLINE) {
-          infoLog('[WebSocketService]', `Retrying initial data request for tenant ${tenantId}`);
-          const retryMessage: RequestInitialDataMessage = {
-            type: 'request_initial_data',
-            tenant_id: tenantId,
-          };
-          this.sendMessage(retryMessage);
-        } else {
-          errorLog('[WebSocketService]', `Failed to request initial data for tenant ${tenantId} after retry`, {
-            connected: socket?.readyState === WebSocket.OPEN,
-            backendStatus: webSocketStore.backendStatus,
-          });
-        }
-      }, 1000);
+      // Retry-Mechanismus: Versuche es in 1 Sekunde erneut (nur wenn noch nicht angefragt)
+      if (!initialDataRequested || currentRequestedTenantId !== tenantId) {
+        setTimeout(() => {
+          if (socket && socket.readyState === WebSocket.OPEN && webSocketStore.backendStatus === BackendStatus.ONLINE) {
+            infoLog('[WebSocketService]', `Retrying initial data request for tenant ${tenantId}`);
+
+            // Markiere Request als gesendet
+            initialDataRequested = true;
+            currentRequestedTenantId = tenantId;
+
+            const retryMessage: RequestInitialDataMessage = {
+              type: 'request_initial_data',
+              tenant_id: tenantId,
+            };
+            this.sendMessage(retryMessage);
+          } else {
+            errorLog('[WebSocketService]', `Failed to request initial data for tenant ${tenantId} after retry`, {
+              connected: socket?.readyState === WebSocket.OPEN,
+              backendStatus: webSocketStore.backendStatus,
+            });
+          }
+        }, 1000);
+      }
     }
   },
 

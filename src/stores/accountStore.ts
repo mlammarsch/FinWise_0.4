@@ -13,8 +13,12 @@ import { TenantDbService } from '@/services/TenantDbService';
 export const useAccountStore = defineStore('account', () => {
   const tenantDbService = new TenantDbService();
 
-  const accounts      = ref<Account[]>([]);
+  const accounts = ref<Account[]>([]);
   const accountGroups = ref<AccountGroup[]>([]);
+
+  // Loading Guards
+  const isLoading = ref<boolean>(false);
+  const isLoaded = ref<boolean>(false);
 
   const activeAccounts = computed(() =>
     accounts.value.filter(a => a.isActive)
@@ -54,7 +58,7 @@ export const useAccountStore = defineStore('account', () => {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localAccount = await tenantDbService.getAccountById(accountWithTimestamp.id);
       if (localAccount && localAccount.updated_at && accountWithTimestamp.updated_at &&
-          new Date(localAccount.updated_at) >= new Date(accountWithTimestamp.updated_at)) {
+        new Date(localAccount.updated_at) >= new Date(accountWithTimestamp.updated_at)) {
         infoLog('accountStore', `addAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localAccount; // Gib das lokale, "gewinnende" Konto zurück
       }
@@ -72,7 +76,7 @@ export const useAccountStore = defineStore('account', () => {
       if (!fromSync || (accountWithTimestamp.updated_at && (!accounts.value[existingAccountIndex].updated_at || new Date(accountWithTimestamp.updated_at) > new Date(accounts.value[existingAccountIndex].updated_at!)))) {
         accounts.value[existingAccountIndex] = accountWithTimestamp;
       } else if (fromSync) {
-         warnLog('accountStore', `addAccount (fromSync): Store-Konto ${accounts.value[existingAccountIndex].id} war neuer als eingehendes ${accountWithTimestamp.id}. Store nicht geändert.`);
+        warnLog('accountStore', `addAccount (fromSync): Store-Konto ${accounts.value[existingAccountIndex].id} war neuer als eingehendes ${accountWithTimestamp.id}. Store nicht geändert.`);
       }
     }
     infoLog('accountStore', `Account "${accountWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountWithTimestamp.id}).`);
@@ -123,7 +127,7 @@ export const useAccountStore = defineStore('account', () => {
       }
 
       if (localAccount.updated_at && accountUpdatesWithTimestamp.updated_at &&
-          new Date(localAccount.updated_at) >= new Date(accountUpdatesWithTimestamp.updated_at)) {
+        new Date(localAccount.updated_at) >= new Date(accountUpdatesWithTimestamp.updated_at)) {
         infoLog('accountStore', `updateAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -218,7 +222,7 @@ export const useAccountStore = defineStore('account', () => {
     if (fromSync) {
       const localGroup = await tenantDbService.getAccountGroupById(accountGroupWithTimestamp.id);
       if (localGroup && localGroup.updated_at && accountGroupWithTimestamp.updated_at &&
-          new Date(localGroup.updated_at) >= new Date(accountGroupWithTimestamp.updated_at)) {
+        new Date(localGroup.updated_at) >= new Date(accountGroupWithTimestamp.updated_at)) {
         infoLog('accountStore', `addAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localGroup;
       }
@@ -235,7 +239,7 @@ export const useAccountStore = defineStore('account', () => {
       if (!fromSync || (accountGroupWithTimestamp.updated_at && (!accountGroups.value[existingGroupIndex].updated_at || new Date(accountGroupWithTimestamp.updated_at) > new Date(accountGroups.value[existingGroupIndex].updated_at!)))) {
         accountGroups.value[existingGroupIndex] = accountGroupWithTimestamp;
       } else if (fromSync) {
-         warnLog('accountStore', `addAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[existingGroupIndex].id} war neuer als eingehende ${accountGroupWithTimestamp.id}. Store nicht geändert.`);
+        warnLog('accountStore', `addAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[existingGroupIndex].id} war neuer als eingehende ${accountGroupWithTimestamp.id}. Store nicht geändert.`);
       }
     }
     infoLog('accountStore', `AccountGroup "${accountGroupWithTimestamp.name}" im Store hinzugefügt/aktualisiert (ID: ${accountGroupWithTimestamp.id}).`);
@@ -284,7 +288,7 @@ export const useAccountStore = defineStore('account', () => {
       }
 
       if (localGroup.updated_at && accountGroupUpdatesWithTimestamp.updated_at &&
-          new Date(localGroup.updated_at) >= new Date(accountGroupUpdatesWithTimestamp.updated_at)) {
+        new Date(localGroup.updated_at) >= new Date(accountGroupUpdatesWithTimestamp.updated_at)) {
         infoLog('accountStore', `updateAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -404,20 +408,48 @@ export const useAccountStore = defineStore('account', () => {
 
 
   async function loadAccounts(): Promise<void> {
+    // Loading Guard: Verhindere mehrfaches gleichzeitiges Laden
+    if (isLoading.value) {
+      debugLog('accountStore', 'loadAccounts: Bereits am Laden, überspringe redundanten Aufruf');
+      return;
+    }
+
+    // Wenn bereits geladen und Daten vorhanden, überspringe
+    if (isLoaded.value && accounts.value.length > 0 && accountGroups.value.length > 0) {
+      debugLog('accountStore', 'loadAccounts: Bereits geladen, überspringe redundanten Aufruf');
+      return;
+    }
+
+    isLoading.value = true;
+
     try {
+      debugLog('accountStore', 'loadAccounts: Starte Laden der Konten und Gruppen');
+
       const dbAccounts = await tenantDbService.getAllAccounts();
       const dbAccountGroups = await tenantDbService.getAllAccountGroups();
       accounts.value = dbAccounts;
       accountGroups.value = dbAccountGroups;
+
+      isLoaded.value = true;
       infoLog('accountStore', `Konten (${dbAccounts.length}) und Gruppen (${dbAccountGroups.length}) aus der Mandanten-DB geladen.`);
     } catch (e) {
       errorLog('accountStore', 'Fehler beim Laden der Konten aus der Mandanten-DB.', e);
+      accounts.value = [];
+      accountGroups.value = [];
+      isLoaded.value = false;
+    } finally {
+      isLoading.value = false;
     }
   }
 
   async function reset(): Promise<void> {
     accounts.value = [];
     accountGroups.value = [];
+
+    // Loading-Status zurücksetzen für neuen Tenant
+    isLoading.value = false;
+    isLoaded.value = false;
+
     await loadAccounts(); // Daten nach dem Zurücksetzen neu laden
     infoLog('accountStore', 'Account-Store zurückgesetzt und neu geladen.');
   }
@@ -433,6 +465,8 @@ export const useAccountStore = defineStore('account', () => {
     accounts,
     accountGroups,
     activeAccounts,
+    isLoading,
+    isLoaded,
     getAccountById,
     getAccountGroupById,
     addAccount,

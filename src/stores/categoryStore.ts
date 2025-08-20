@@ -17,6 +17,10 @@ export const useCategoryStore = defineStore('category', () => {
   const expandedCategoryGroups = ref<Set<string>>(new Set());
   const showHiddenCategories = ref<boolean>(false);
 
+  // Loading Guards
+  const isLoading = ref<boolean>(false);
+  const isLoaded = ref<boolean>(false);
+
   /* ----------------------------------------------- Getters */
   const getCategoryById = computed(() => (id: string) =>
     categories.value.find(c => c.id === id),
@@ -646,7 +650,23 @@ export const useCategoryStore = defineStore('category', () => {
 
   /* ----------------------------------------------- Persistence */
   async function loadCategories(): Promise<void> {
+    // Loading Guard: Verhindere mehrfaches gleichzeitiges Laden
+    if (isLoading.value) {
+      debugLog('categoryStore', 'loadCategories: Bereits am Laden, überspringe redundanten Aufruf');
+      return;
+    }
+
+    // Wenn bereits geladen und Daten vorhanden, überspringe
+    if (isLoaded.value && categories.value.length > 0 && categoryGroups.value.length > 0) {
+      debugLog('categoryStore', 'loadCategories: Bereits geladen, überspringe redundanten Aufruf');
+      return;
+    }
+
+    isLoading.value = true;
+
     try {
+      debugLog('categoryStore', 'loadCategories: Starte Laden der Kategorien und Gruppen');
+
       const [loadedCategories, loadedCategoryGroups] = await Promise.all([
         tenantDbService.getAllCategories(),
         tenantDbService.getAllCategoryGroups(),
@@ -672,6 +692,7 @@ export const useCategoryStore = defineStore('category', () => {
       loadExpandedCategoryGroups();
       loadShowHiddenCategories();
 
+      isLoaded.value = true;
       debugLog('categoryStore', 'loadCategories completed', {
         categories: categories.value.length,
         groups: categoryGroups.value.length,
@@ -681,6 +702,9 @@ export const useCategoryStore = defineStore('category', () => {
       errorLog('categoryStore', 'Fehler beim Laden der Kategorien', error);
       categories.value = [];
       categoryGroups.value = [];
+      isLoaded.value = false;
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -718,6 +742,11 @@ export const useCategoryStore = defineStore('category', () => {
     // Nur lokale Arrays leeren - KEINE DB-Löschung beim Tenant-Switch!
     categories.value = [];
     categoryGroups.value = [];
+
+    // Loading-Status zurücksetzen für neuen Tenant
+    isLoading.value = false;
+    isLoaded.value = false;
+
     await loadCategories();
     infoLog('categoryStore', 'Reset erfolgreich - Kategorien aus neuer Tenant-DB geladen');
   }
@@ -735,6 +764,8 @@ export const useCategoryStore = defineStore('category', () => {
     expandedCategories,
     expandedCategoryGroups,
     showHiddenCategories,
+    isLoading,
+    isLoaded,
     getCategoryById,
     findCategoryById,
     getCategoriesByParentId,
