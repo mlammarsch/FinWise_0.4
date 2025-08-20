@@ -1433,7 +1433,7 @@ watch(activeTab, (newTab) => {
     <div v-if="activeTab === 'account'">
       <div class="card bg-base-100 shadow-md border border-base-300 p-4">
         <div
-          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-30"
         >
           <div class="flex flex-wrap items-end gap-3">
             <fieldset class="fieldset pt-0">
@@ -1604,7 +1604,7 @@ watch(activeTab, (newTab) => {
     <div v-else-if="activeTab === 'category'">
       <div class="card bg-base-100 shadow-md border border-base-300 p-4">
         <div
-          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+          class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-30"
         >
           <div class="flex flex-wrap items-end gap-3">
             <fieldset class="fieldset pt-0">
@@ -1706,7 +1706,7 @@ watch(activeTab, (newTab) => {
       class="card bg-base-100 shadow-md border border-base-300 p-4"
     >
       <div
-        class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-10"
+        class="card-title flex flex-wrap items-end justify-between gap-3 mx-2 pt-2 relative z-30"
       >
         <div class="flex flex-wrap items-end gap-3">
           <fieldset class="fieldset pt-0">
