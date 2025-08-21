@@ -40,6 +40,12 @@ const transactionLimit = ref(5);
 // Anzahl der anzuzeigenden geplanten Transaktionen
 const planningLimit = ref(3);
 
+// Anzahl der anzuzeigenden Top-Ausgaben
+const expensesLimit = ref(5);
+
+// Anzahl der anzuzeigenden Sparziele
+const savingsGoalsLimit = ref(5);
+
 const accounts = computed(() => accountStore.activeAccounts);
 
 // Verwende BalanceService für konsistente Saldoberechnungen
@@ -136,6 +142,72 @@ const topExpensesWithBudget = computed(() => {
   .slice(0, 5); // Top 5
 
   return categoryData;
+});
+
+// Sparziele mit Fortschrittsdaten
+const savingsGoalsWithProgress = computed(() => {
+  const savingsCategories = categoryStore.savingsGoals.filter(cat =>
+    cat.isActive && cat.isSavingsGoal && cat.targetAmount && cat.targetAmount > 0
+  );
+
+  const today = dayjs();
+
+  const goalsData = savingsCategories.map(category => {
+    // Verwende BalanceService für tagesgenauen Saldo
+    const currentAmount = Math.abs(BalanceService.getTodayBalance("category", category.id));
+    const targetAmount = category.targetAmount || 0;
+    const progress = targetAmount > 0 ? (currentAmount / targetAmount) * 100 : 0;
+
+    // Berechne Soll-Sparbetrag basierend auf Zieldatum
+    let shouldHaveSaved = 0;
+    let barColor = 'bg-warning'; // Standard: gelb
+
+    if (category.goalDate) {
+      const goalDate = dayjs(category.goalDate);
+      const startDate = today.startOf('month'); // Annahme: Sparziel startet am Monatsanfang
+
+      // Berechne Gesamtdauer in Monaten
+      const totalMonths = goalDate.diff(startDate, 'month', true);
+
+      if (totalMonths > 0) {
+        // Monatsregelrate
+        const monthlyRate = targetAmount / totalMonths;
+
+        // Vergangene Zeit seit Start in Monaten
+        const elapsedMonths = today.diff(startDate, 'month', true);
+
+        // Soll-Sparbetrag bis heute
+        shouldHaveSaved = monthlyRate * elapsedMonths;
+
+        // Bestimme Balkenfarbe basierend auf Soll-Ist-Vergleich
+        const tolerance = monthlyRate * 0.05; // 5% Toleranz für "gelb"
+
+        if (currentAmount >= shouldHaveSaved + tolerance) {
+          barColor = 'bg-success'; // Grün: Überschritten
+        } else if (currentAmount >= shouldHaveSaved - tolerance) {
+          barColor = 'bg-warning'; // Gelb: Im Toleranzbereich
+        } else {
+          barColor = 'bg-error'; // Rot: Unterschritten
+        }
+      }
+    }
+
+    return {
+      categoryId: category.id,
+      name: category.name,
+      currentAmount,
+      targetAmount,
+      progress: Math.min(progress, 100), // Max 100%
+      goalDate: category.goalDate,
+      shouldHaveSaved,
+      barColor,
+      category
+    };
+  })
+  .sort((a, b) => b.progress - a.progress) // Nach Fortschritt sortieren
+  .slice(0, savingsGoalsLimit.value);
+
+  return goalsData;
 });
 
 const topExpenses = computed(() =>
@@ -316,6 +388,16 @@ const setTransactionLimit = (limit: number) => {
 // Funktionen für Planungslimit-Buttons
 const setPlanningLimit = (limit: number) => {
   planningLimit.value = limit;
+};
+
+// Funktionen für Ausgabenlimit-Buttons
+const setExpensesLimit = (limit: number) => {
+  expensesLimit.value = limit;
+};
+
+// Funktionen für Sparziele-Limit-Buttons
+const setSavingsGoalsLimit = (limit: number) => {
+  savingsGoalsLimit.value = limit;
 };
 
 // Hilfsfunktionen für Budget-Balken-Visualisierung
@@ -966,21 +1048,56 @@ onMounted(() => {
                 <h3 class="card-title text-lg">Top-Ausgaben</h3>
                 <p class="text-sm opacity-60">Aktueller Monat (MTD)</p>
               </div>
-              <button
-                class="btn btn-sm btn-ghost"
-                @click="navigateToBudgets"
-              >
-                Budgets verwalten
-                <span
-                  class="iconify ml-1"
-                  data-icon="mdi:chevron-right"
-                ></span>
-              </button>
+              <!-- Buttons für Ausgabenlimit und Navigation -->
+              <div class="flex gap-2 items-center">
+                <div class="flex gap-2">
+                  <button
+                    :class="
+                      expensesLimit === 3
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setExpensesLimit(3)"
+                  >
+                    3
+                  </button>
+                  <button
+                    :class="
+                      expensesLimit === 5
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setExpensesLimit(5)"
+                  >
+                    5
+                  </button>
+                  <button
+                    :class="
+                      expensesLimit === 10
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setExpensesLimit(10)"
+                  >
+                    10
+                  </button>
+                </div>
+                <button
+                  class="btn btn-sm btn-ghost"
+                  @click="navigateToBudgets"
+                >
+                  Budgets verwalten
+                  <span
+                    class="iconify ml-1"
+                    data-icon="mdi:chevron-right"
+                  ></span>
+                </button>
+              </div>
             </div>
 
-            <div v-if="topExpensesWithBudget.length > 0" class="space-y-2">
+            <div v-if="topExpensesWithBudget.slice(0, expensesLimit).length > 0" class="space-y-2">
               <div
-                v-for="expense in topExpensesWithBudget"
+                v-for="expense in topExpensesWithBudget.slice(0, expensesLimit)"
                 :key="expense.categoryId"
                 class="relative"
               >
@@ -1046,12 +1163,6 @@ onMounted(() => {
                       :asInteger="true"
                     /> über Budget
                   </span>
-                  <span v-else-if="expense.budgeted > 0" class="text-success">
-                    <CurrencyDisplay
-                      :amount="expense.budgeted - expense.spent"
-                      :asInteger="true"
-                    /> verfügbar
-                  </span>
                 </div>
               </div>
             </div>
@@ -1069,43 +1180,129 @@ onMounted(() => {
           class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
         >
           <div class="card-body">
-            <h3 class="card-title text-lg mb-4">Sparziele</h3>
-            <div v-if="savingsGoals.length > 0">
-              <div
-                v-for="goal in savingsGoals"
-                :key="goal.id"
-                class="mb-4"
-              >
-                <div class="flex justify-between items-center mb-1">
-                  <span>{{ goal.name }}</span>
-                  <span>{{ goal.progress }}%</span>
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h3 class="card-title text-lg">Sparziele</h3>
+                <p class="text-sm opacity-60">Fortschritt der Sparziele</p>
+              </div>
+              <!-- Buttons für Sparziele-Limit -->
+              <div class="flex gap-2 items-center">
+                <div class="flex gap-2">
+                  <button
+                    :class="
+                      savingsGoalsLimit === 3
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setSavingsGoalsLimit(3)"
+                  >
+                    3
+                  </button>
+                  <button
+                    :class="
+                      savingsGoalsLimit === 5
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setSavingsGoalsLimit(5)"
+                  >
+                    5
+                  </button>
+                  <button
+                    :class="
+                      savingsGoalsLimit === 10
+                        ? 'btn btn-xs btn-primary'
+                        : 'btn btn-xs btn-outline'
+                    "
+                    @click="setSavingsGoalsLimit(10)"
+                  >
+                    10
+                  </button>
                 </div>
-                <progress
-                  class="progress progress-accent w-full"
-                  :value="goal.progress"
-                  max="100"
-                ></progress>
-                <div class="flex justify-between text-xs mt-1">
-                  <span>
-                    <CurrencyDisplay
-                      :amount="goal.currentAmount"
-                      :asInteger="true"
-                    />
+              </div>
+            </div>
+
+            <div v-if="savingsGoalsWithProgress.length > 0" class="space-y-2">
+              <div
+                v-for="goal in savingsGoalsWithProgress"
+                :key="goal.categoryId"
+                class="relative"
+              >
+                <!-- Kategorie-Name und Beträge -->
+                <div class="flex justify-left items-center mb-2">
+                  <span class="font-medium mr-1">{{ goal.name }} -</span>
+                  <div class="text-right">
+                    <div class="text-sm font-semibold">
+                      <CurrencyDisplay
+                        :amount="goal.targetAmount"
+                        :asInteger="true"
+                      />
+                    </div>
+                  </div>
+                  <span v-if="goal.goalDate" class="text-xs opacity-60 ml-2">
+                    bis {{ new Date(goal.goalDate).toLocaleDateString('de-DE') }}
                   </span>
+                </div>
+
+                <!-- Fortschritts-Balken mit Marker -->
+                <div class="relative">
+                  <!-- Haupt-Balken (grau für 100%) -->
+                  <div class="w-full bg-base-300 rounded-full h-1.5 relative overflow-hidden">
+                    <!-- Fortschritts-Balken (dynamische Farbe) -->
+                    <div
+                      :class="[
+                        'h-full rounded-full transition-all duration-300',
+                        goal.barColor
+                      ]"
+                      :style="{
+                        width: goal.progress + '%'
+                      }"
+                    ></div>
+                  </div>
+
+                  <!-- Gesparter Betrag-Marker (Badge) -->
+                  <div
+                    class="absolute -top-1 transform -translate-x-1/2 -translate-y-full"
+                    :style="{
+                      left: goal.progress + '%'
+                    }"
+                  >
+                    <!-- Badge mit gespartem Betrag -->
+                    <div class="flex flex-col items-center">
+                      <div class="text-xs font-medium mb-0 bg-base-300 px-1 border border-neutral rounded">
+                        <CurrencyDisplay
+                          :amount="goal.currentAmount"
+                          :asInteger="true"
+                        />
+                      </div>
+                      <div class="w-0 h-0 border-l-2 border-r-2 border-t-4 border-l-transparent border-r-transparent border-t-base-content opacity-70"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Fortschritts-Info -->
+                <div class="flex justify-between text-xs opacity-60 mt-1">
                   <span>
-                    <CurrencyDisplay
-                      :amount="goal.targetAmount"
+                    {{ Math.round(goal.progress) }}% vom Ziel angespart
+                  </span>
+                  <span v-if="goal.progress >= 100" class="text-success">
+                    Ziel erreicht!
+                  </span>
+                  <span v-else class="text-info">
+                    Noch <CurrencyDisplay
+                      :amount="goal.targetAmount - goal.currentAmount"
                       :asInteger="true"
-                    />
+                    /> benötigt
                   </span>
                 </div>
               </div>
             </div>
+
             <div
               v-else
               class="text-center py-4"
             >
-              <p class="text-sm italic">Keine Sparziele definiert</p>
+              <p class="text-sm italic opacity-60">Keine Sparziele definiert</p>
             </div>
           </div>
         </div>
