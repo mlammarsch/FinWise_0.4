@@ -468,14 +468,14 @@ const chartOptions = computed(() => {
           show: true,
           color: themeColors.success,
         },
-        // Bessere Skalierung für Ein-/Ausgaben mit Nulllinie in der Mitte
-        min: function (min: number, max: number) {
-          const absMax = Math.max(Math.abs(min), Math.abs(max));
-          return -absMax * 1.2; // 20% Puffer nach unten
+        // Bessere Skalierung für Ein-/Ausgaben mit automatischer Berechnung
+        min: function (min: number) {
+          // Für negative Werte (Ausgaben) 20% Puffer nach unten
+          return min < 0 ? min * 1.2 : min * 0.8;
         },
-        max: function (min: number, max: number) {
-          const absMax = Math.max(Math.abs(min), Math.abs(max));
-          return absMax * 1.2; // 20% Puffer nach oben
+        max: function (max: number) {
+          // Für positive Werte (Einnahmen) 20% Puffer nach oben
+          return max > 0 ? max * 1.2 : max * 0.8;
         },
       },
     ],
