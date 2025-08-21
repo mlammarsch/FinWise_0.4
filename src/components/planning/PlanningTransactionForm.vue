@@ -555,7 +555,14 @@ function closeValidationAlert() {
  * Speichert Planungstransaktion.
  */
 function savePlanningTransaction() {
-  if (!validateForm()) return;
+  debugLog("[PlanningTransactionForm] savePlanningTransaction called");
+
+  if (!validateForm()) {
+    debugLog("[PlanningTransactionForm] Form validation failed, not saving");
+    return;
+  }
+
+  debugLog("[PlanningTransactionForm] Form validation passed, proceeding with save");
 
   const weekendHandlingValue = moveScheduleEnabled.value
     ? weekendHandlingDirection.value === "before"
@@ -638,7 +645,9 @@ function savePlanningTransaction() {
   }
 
   debugLog("[PlanningTransactionForm] Final data for save:", finalData);
+  debugLog("[PlanningTransactionForm] Emitting save event");
   emit("save", finalData);
+  debugLog("[PlanningTransactionForm] Save event emitted successfully");
 }
 
 /**

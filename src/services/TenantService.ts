@@ -3,18 +3,18 @@
  * TenantService – zentrale API für Mandanten-Management.
  */
 
-import { useTenantStore }   from '@/stores/tenantStore';
+import { useTenantStore } from '@/stores/tenantStore';
 import { useCategoryStore } from '@/stores/categoryStore';
-import { useSessionStore }  from '@/stores/sessionStore';
+import { useSessionStore } from '@/stores/sessionStore';
 
-import { CategoryService }  from '@/services/CategoryService';
-import { AccountService }   from '@/services/AccountService';
-import { BalanceService }   from '@/services/BalanceService';
-import { SessionService }   from '@/services/SessionService';
+import { CategoryService } from '@/services/CategoryService';
+import { AccountService } from '@/services/AccountService';
+import { BalanceService } from '@/services/BalanceService';
+import { SessionService } from '@/services/SessionService';
 
 import { infoLog, debugLog, errorLog, warnLog } from '@/utils/logger';
-import { DataService }      from './DataService';
-import { apiService }       from './apiService';
+import { DataService } from './DataService';
+import { apiService } from './apiService';
 
 export const TenantService = {
   /**
@@ -54,14 +54,14 @@ export const TenantService = {
       ?? await catStore.addCategoryGroup({ name: 'Ausgaben', sortOrder: 1, isIncomeGroup: false });
 
     for (const dc of [
-      { name: 'Gehalt',             groupId: incomeGroup.id },
+      { name: 'Gehalt', groupId: incomeGroup.id },
       { name: 'Sonstige Einnahmen', groupId: incomeGroup.id },
-      { name: 'Freier Verbrauch',   groupId: expenseGroup.id },
-      { name: 'Gesundheitswesen',   groupId: expenseGroup.id },
-      { name: 'Haushalt',           groupId: expenseGroup.id },
-      { name: 'Hobby',              groupId: expenseGroup.id },
-      { name: 'Fuhrpark',           groupId: expenseGroup.id },
-      { name: 'Versicherung',       groupId: expenseGroup.id },
+      { name: 'Freier Verbrauch', groupId: expenseGroup.id },
+      { name: 'Gesundheitswesen', groupId: expenseGroup.id },
+      { name: 'Haushalt', groupId: expenseGroup.id },
+      { name: 'Hobby', groupId: expenseGroup.id },
+      { name: 'Fuhrpark', groupId: expenseGroup.id },
+      { name: 'Versicherung', groupId: expenseGroup.id },
     ]) {
       if (!catStore.categories.some(c => c.name === dc.name)) {
         CategoryService.addCategory({
@@ -85,7 +85,7 @@ export const TenantService = {
       errorLog('[TenantService]', 'Fehler bei der Initialisierung der Standardkonten und -gruppen.', { error: err });
     }
 
-    BalanceService.calculateMonthlyBalances();
+    BalanceService.calculateAllMonthlyBalances();
 
     infoLog('[TenantService]', 'Tenant angelegt & initialisiert', {
       tenantId: tenant.uuid,

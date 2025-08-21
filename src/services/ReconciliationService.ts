@@ -76,7 +76,7 @@ export const ReconciliationService = {
     });
 
     // Monats­salden neu berechnen
-    BalanceService.calculateMonthlyBalances();
+    BalanceService.calculateAllMonthlyBalances();
     // store.reset(); // Reset erfolgt im Modal oder wenn nötig
     return true;
   },

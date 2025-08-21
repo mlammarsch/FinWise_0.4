@@ -4,7 +4,7 @@
  * Pfad zur Komponente: src/views/PlanningView.vue
  * Hauptansicht für Finanzplanung und Prognose.
  */
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
 import dayjs from "dayjs";
 import { Icon } from "@iconify/vue";
 import { useRoute, useRouter } from "vue-router";
@@ -88,7 +88,6 @@ const lastUpdateDate = computed(() => {
 // Zeitraum‑Update durch MonthSelector
 function handleDateRangeUpdate(payload: { start: string; end: string }) {
   dateRange.value = payload;
-  debugLog("[PlanningView] Date range updated", payload);
 }
 
 // Navigation methods for chevron buttons
@@ -226,38 +225,41 @@ function createPlanning() {
 function editPlanning(planning: PlanningTransaction) {
   selectedPlanning.value = planning;
   showEditPlanningModal.value = true;
-  debugLog("[PlanningView] Edit planning", planning);
 }
 
 function savePlanning(data: any) {
-  if (selectedPlanning.value) {
-    PlanningService.updatePlanningTransaction(selectedPlanning.value.id, data);
-    debugLog("[PlanningView] Updated planning", data);
-  } else {
-    PlanningService.addPlanningTransaction(data);
-    debugLog("[PlanningView] Added planning", data);
-  }
+  // Sofort das Modal schließen
   showNewPlanningModal.value = false;
   showEditPlanningModal.value = false;
-  BalanceService.calculateMonthlyBalances();
+
+  // Dann asynchron die Daten speichern
+  (async () => {
+    try {
+      if (selectedPlanning.value) {
+        await PlanningService.updatePlanningTransaction(selectedPlanning.value.id, data);
+      } else {
+        await PlanningService.addPlanningTransaction(data);
+      }
+    } catch (error) {
+      console.error("Fehler beim Speichern der Planung:", error);
+      showToastMessage("Fehler beim Speichern der Planung", "error");
+    }
+  })();
 }
 
 function deletePlanning(planning: PlanningTransaction) {
   if (confirm("Möchten Sie diese geplante Transaktion wirklich löschen?")) {
     PlanningService.deletePlanningTransaction(planning.id);
-    debugLog("[PlanningView] Deleted planning", planning.id);
-    BalanceService.calculateMonthlyBalances();
+    BalanceService.calculateAllMonthlyBalances();
   }
 }
 
 function executePlanning(planningId: string, date: string) {
   PlanningService.executePlanningTransaction(planningId, date);
-  debugLog("[PlanningView] Executed planning", { planningId, date });
 }
 
 function skipPlanning(planningId: string, date: string) {
   PlanningService.skipPlanningTransaction(planningId, date);
-  debugLog("[PlanningView] Skipped planning", { planningId, date });
 }
 
 // Neue Methoden für die Anzeige von Transaktionstypen
@@ -340,12 +342,10 @@ function clearFilters() {
 // Chart-Detail-Funktionen
 function showAccountDetail(accountId: string) {
   selectedAccountForDetail.value = accountId;
-  debugLog("[PlanningView] Show account detail", { accountId });
 }
 
 function showCategoryDetail(categoryId: string) {
   selectedCategoryForDetail.value = categoryId;
-  debugLog("[PlanningView] Show category detail", { categoryId });
 }
 
 function hideAccountDetail() {
@@ -791,7 +791,6 @@ onMounted(() => {
   if (editId) {
     const planningToEdit = planningStore.getPlanningTransactionById(editId);
     if (planningToEdit) {
-      debugLog("[PlanningView] Auto-opening edit mode for planning", editId);
       editPlanning(planningToEdit);
       // Query-Parameter nach dem Öffnen entfernen
       router.replace({ query: {} });

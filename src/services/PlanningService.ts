@@ -165,154 +165,154 @@ export const PlanningService = {
       });
     }
 
-    BalanceService.calculateMonthlyBalances();
+    BalanceService.calculateAllMonthlyBalances();
     return newPlanning;
   },
 
-    /**
-   * Berechnet zukünftige Ausführungstermine einer Planungstransaktion.
-   */
-    calculateNextOccurrences(
-      planTx: PlanningTransaction,
-      startDate: string,
-      endDate: string
-    ): string[] {
-      if (!planTx.isActive) return [];
+  /**
+ * Berechnet zukünftige Ausführungstermine einer Planungstransaktion.
+ */
+  calculateNextOccurrences(
+    planTx: PlanningTransaction,
+    startDate: string,
+    endDate: string
+  ): string[] {
+    if (!planTx.isActive) return [];
 
-      const repeatsEnabled = planTx.recurrencePattern !== RecurrencePattern.ONCE;
+    const repeatsEnabled = planTx.recurrencePattern !== RecurrencePattern.ONCE;
 
-      const occurrences: string[] = [];
-      const start = dayjs(startDate);
-      const end = dayjs(endDate);
-      const txStart = dayjs(toDateOnlyString(planTx.startDate));
+    const occurrences: string[] = [];
+    const start = dayjs(startDate);
+    const end = dayjs(endDate);
+    const txStart = dayjs(toDateOnlyString(planTx.startDate));
 
-      if (txStart.isAfter(end)) return [];
-      if (planTx.endDate && dayjs(toDateOnlyString(planTx.endDate)).isBefore(start))
-        return [];
+    if (txStart.isAfter(end)) return [];
+    if (planTx.endDate && dayjs(toDateOnlyString(planTx.endDate)).isBefore(start))
+      return [];
 
-      let currentDate = txStart;
-      // Zähler beginnt bei 1, damit die erste Instanz bereits mitgezählt wird
-      let count = 1;
-      const maxIterations = 1000;
+    let currentDate = txStart;
+    // Zähler beginnt bei 1, damit die erste Instanz bereits mitgezählt wird
+    let count = 1;
+    const maxIterations = 1000;
 
-      // Einmalige Buchung
-      if (!repeatsEnabled || planTx.recurrencePattern === RecurrencePattern.ONCE) {
-        let adjustedDate = PlanningService.applyWeekendHandling(
-          currentDate,
-          planTx.weekendHandling
-        );
-        if (
-          adjustedDate.isSameOrAfter(start) &&
-          adjustedDate.isSameOrBefore(end)
-        ) {
-          occurrences.push(toDateOnlyString(adjustedDate.toDate()));
-        }
-        return occurrences;
+    // Einmalige Buchung
+    if (!repeatsEnabled || planTx.recurrencePattern === RecurrencePattern.ONCE) {
+      let adjustedDate = PlanningService.applyWeekendHandling(
+        currentDate,
+        planTx.weekendHandling
+      );
+      if (
+        adjustedDate.isSameOrAfter(start) &&
+        adjustedDate.isSameOrBefore(end)
+      ) {
+        occurrences.push(toDateOnlyString(adjustedDate.toDate()));
       }
-
-      debugLog("PlanningService", "calculateNextOccurrences - Parameter", {
-        planId: planTx.id,
-        name: planTx.name,
-        recurrenceEndType: planTx.recurrenceEndType,
-        recurrenceCount: planTx.recurrenceCount,
-        startDate,
-        endDate
-      });
-
-      while (currentDate.isSameOrBefore(end) && count < maxIterations) {
-        let adjustedDate = PlanningService.applyWeekendHandling(
-          currentDate,
-          planTx.weekendHandling
-        );
-
-        if (
-          adjustedDate.isSameOrAfter(start) &&
-          adjustedDate.isSameOrBefore(end)
-        ) {
-          occurrences.push(toDateOnlyString(adjustedDate.toDate()));
-
-          debugLog("PlanningService", "calculateNextOccurrences - Occurrence added", {
-            date: toDateOnlyString(adjustedDate.toDate()),
-            currentCount: count,
-            recurrenceEndType: planTx.recurrenceEndType,
-            recurrenceCount: planTx.recurrenceCount
-          });
-        }
-
-        if (planTx.recurrenceEndType === RecurrenceEndType.NEVER) {
-          const maxEndDate = dayjs(start).add(24, "months");
-          if (adjustedDate.isAfter(maxEndDate)) break;
-        }
-
-        // Geänderte Break-Bedingung: Wir brechen ab, wenn wir die gewünschte Anzahl erreicht haben
-        if (
-          planTx.recurrenceEndType === RecurrenceEndType.COUNT &&
-          planTx.recurrenceCount !== null &&
-          planTx.recurrenceCount !== undefined &&
-          count >= planTx.recurrenceCount
-        ) {
-          debugLog("PlanningService", "calculateNextOccurrences - Breaking after count limit", {
-            currentCount: count,
-            maxCount: planTx.recurrenceCount
-          });
-          break;
-        }
-
-        count++;
-
-        switch (planTx.recurrencePattern) {
-          case RecurrencePattern.DAILY:
-            currentDate = currentDate.add(1, "day");
-            break;
-          case RecurrencePattern.WEEKLY:
-            currentDate = currentDate.add(1, "week");
-            break;
-          case RecurrencePattern.BIWEEKLY:
-            currentDate = currentDate.add(2, "weeks");
-            break;
-          case RecurrencePattern.MONTHLY:
-            if (
-              planTx.executionDay &&
-              planTx.executionDay > 0 &&
-              planTx.executionDay <= 31
-            ) {
-              const nextMonth = currentDate.add(1, "month");
-              const year = nextMonth.year();
-              const month = nextMonth.month() + 1;
-              const maxDay = new Date(year, month, 0).getDate();
-              const day = Math.min(planTx.executionDay, maxDay);
-              currentDate = dayjs(new Date(year, month - 1, day));
-            } else {
-              currentDate = currentDate.add(1, "month");
-            }
-            break;
-          case RecurrencePattern.QUARTERLY:
-            currentDate = currentDate.add(3, "months");
-            break;
-          case RecurrencePattern.YEARLY:
-            currentDate = currentDate.add(1, "year");
-            break;
-          default:
-            return occurrences;
-        }
-
-        if (
-          planTx.recurrenceEndType === RecurrenceEndType.DATE &&
-          planTx.endDate &&
-          currentDate.isAfter(dayjs(toDateOnlyString(planTx.endDate)))
-        )
-          break;
-      }
-
-      debugLog("PlanningService", "calculateNextOccurrences - Result", {
-        planId: planTx.id,
-        name: planTx.name,
-        totalOccurrences: occurrences.length,
-        dates: occurrences
-      });
-
       return occurrences;
-    },
+    }
+
+    debugLog("PlanningService", "calculateNextOccurrences - Parameter", {
+      planId: planTx.id,
+      name: planTx.name,
+      recurrenceEndType: planTx.recurrenceEndType,
+      recurrenceCount: planTx.recurrenceCount,
+      startDate,
+      endDate
+    });
+
+    while (currentDate.isSameOrBefore(end) && count < maxIterations) {
+      let adjustedDate = PlanningService.applyWeekendHandling(
+        currentDate,
+        planTx.weekendHandling
+      );
+
+      if (
+        adjustedDate.isSameOrAfter(start) &&
+        adjustedDate.isSameOrBefore(end)
+      ) {
+        occurrences.push(toDateOnlyString(adjustedDate.toDate()));
+
+        debugLog("PlanningService", "calculateNextOccurrences - Occurrence added", {
+          date: toDateOnlyString(adjustedDate.toDate()),
+          currentCount: count,
+          recurrenceEndType: planTx.recurrenceEndType,
+          recurrenceCount: planTx.recurrenceCount
+        });
+      }
+
+      if (planTx.recurrenceEndType === RecurrenceEndType.NEVER) {
+        const maxEndDate = dayjs(start).add(24, "months");
+        if (adjustedDate.isAfter(maxEndDate)) break;
+      }
+
+      // Geänderte Break-Bedingung: Wir brechen ab, wenn wir die gewünschte Anzahl erreicht haben
+      if (
+        planTx.recurrenceEndType === RecurrenceEndType.COUNT &&
+        planTx.recurrenceCount !== null &&
+        planTx.recurrenceCount !== undefined &&
+        count >= planTx.recurrenceCount
+      ) {
+        debugLog("PlanningService", "calculateNextOccurrences - Breaking after count limit", {
+          currentCount: count,
+          maxCount: planTx.recurrenceCount
+        });
+        break;
+      }
+
+      count++;
+
+      switch (planTx.recurrencePattern) {
+        case RecurrencePattern.DAILY:
+          currentDate = currentDate.add(1, "day");
+          break;
+        case RecurrencePattern.WEEKLY:
+          currentDate = currentDate.add(1, "week");
+          break;
+        case RecurrencePattern.BIWEEKLY:
+          currentDate = currentDate.add(2, "weeks");
+          break;
+        case RecurrencePattern.MONTHLY:
+          if (
+            planTx.executionDay &&
+            planTx.executionDay > 0 &&
+            planTx.executionDay <= 31
+          ) {
+            const nextMonth = currentDate.add(1, "month");
+            const year = nextMonth.year();
+            const month = nextMonth.month() + 1;
+            const maxDay = new Date(year, month, 0).getDate();
+            const day = Math.min(planTx.executionDay, maxDay);
+            currentDate = dayjs(new Date(year, month - 1, day));
+          } else {
+            currentDate = currentDate.add(1, "month");
+          }
+          break;
+        case RecurrencePattern.QUARTERLY:
+          currentDate = currentDate.add(3, "months");
+          break;
+        case RecurrencePattern.YEARLY:
+          currentDate = currentDate.add(1, "year");
+          break;
+        default:
+          return occurrences;
+      }
+
+      if (
+        planTx.recurrenceEndType === RecurrenceEndType.DATE &&
+        planTx.endDate &&
+        currentDate.isAfter(dayjs(toDateOnlyString(planTx.endDate)))
+      )
+        break;
+    }
+
+    debugLog("PlanningService", "calculateNextOccurrences - Result", {
+      planId: planTx.id,
+      name: planTx.name,
+      totalOccurrences: occurrences.length,
+      dates: occurrences
+    });
+
+    return occurrences;
+  },
 
   /**
    * Verschiebt das Datum, falls es auf ein Wochenende fällt.
@@ -348,7 +348,7 @@ export const PlanningService = {
 
     // Prüfen, ob es sich um eine Transferbuchung handelt und ob die Gegenbuchung existiert
     const isTransfer = planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
-                       planning.transactionType === TransactionType.CATEGORYTRANSFER;
+      planning.transactionType === TransactionType.CATEGORYTRANSFER;
 
     const counterPlanningId = planning.counterPlanningTransactionId;
     const counterPlanning = counterPlanningId
@@ -363,13 +363,13 @@ export const PlanningService = {
       if (planning.amount === 0) throw new Error("Betrag 0 ist nicht zulässig.");
 
       if (planning.transactionType !== TransactionType.CATEGORYTRANSFER &&
-          !planning.accountId) {
+        !planning.accountId) {
         throw new Error("Quellkonto fehlt.");
       }
 
       if (planning.transactionType !== TransactionType.ACCOUNTTRANSFER &&
-          planning.transactionType !== TransactionType.CATEGORYTRANSFER &&
-          !planning.categoryId) {
+        planning.transactionType !== TransactionType.CATEGORYTRANSFER &&
+        !planning.categoryId) {
         throw new Error("Kategorie muss gesetzt sein.");
       }
 
@@ -479,16 +479,16 @@ export const PlanningService = {
     const shouldDelete =
       planning.recurrencePattern === RecurrencePattern.ONCE ||
       (planning.recurrenceEndType === RecurrenceEndType.DATE &&
-       planning.endDate &&
-       dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
+        planning.endDate &&
+        dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
       (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
-       planning.recurrenceCount !== null &&
-       planning.recurrenceCount !== undefined &&
-       PlanningService.calculateNextOccurrences(
-         planning,
-         dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
-         dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')
-       ).length === 0);
+        planning.recurrenceCount !== null &&
+        planning.recurrenceCount !== undefined &&
+        PlanningService.calculateNextOccurrences(
+          planning,
+          dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
+          dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')
+        ).length === 0);
 
     // Update der Planung und eventuell Gegenbuchung durchführen
     if (shouldDelete) {
@@ -523,7 +523,7 @@ export const PlanningService = {
     }
 
     // Bilanzen aktualisieren
-    await BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateAllMonthlyBalances();
 
     debugLog('PlanningService', 'executePlanningTransaction - Abgeschlossen', {
       planningId: planning.id,
@@ -562,16 +562,16 @@ export const PlanningService = {
     const shouldDelete =
       planning.recurrencePattern === RecurrencePattern.ONCE ||
       (planning.recurrenceEndType === RecurrenceEndType.DATE &&
-       planning.endDate &&
-       dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
+        planning.endDate &&
+        dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
       (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
-       planning.recurrenceCount !== null &&
-       planning.recurrenceCount !== undefined &&
-       PlanningService.calculateNextOccurrences(
-         planning,
-         dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
-         dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')
-       ).length === 0);
+        planning.recurrenceCount !== null &&
+        planning.recurrenceCount !== undefined &&
+        PlanningService.calculateNextOccurrences(
+          planning,
+          dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'),
+          dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')
+        ).length === 0);
 
     // Update der Planung und eventuell Gegenbuchung durchführen
     if (shouldDelete) {
@@ -637,7 +637,7 @@ export const PlanningService = {
     }
 
     // Bilanzen aktualisieren
-    await BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateAllMonthlyBalances();
 
     debugLog('PlanningService', 'skipPlanningTransaction - Abgeschlossen', {
       planningId: planning.id,
@@ -675,7 +675,7 @@ export const PlanningService = {
     await planningStore.deletePlanningTransaction(id);
     debugLog("PlanningService", "deletePlanningTransaction - Hauptbuchung gelöscht", { id });
 
-    await BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateAllMonthlyBalances();
     return true;
   },
 
@@ -740,7 +740,7 @@ export const PlanningService = {
           type: planning.transactionType,
           occurrences: overdueOccurrences,
           isTransfer: planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
-                      planning.transactionType === TransactionType.CATEGORYTRANSFER
+            planning.transactionType === TransactionType.CATEGORYTRANSFER
         });
 
         // Für jeden fälligen Termin ausführen
@@ -753,8 +753,8 @@ export const PlanningService = {
 
               // Bei Transfers: Gegenbuchung als verarbeitet markieren
               if ((planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
-                  planning.transactionType === TransactionType.CATEGORYTRANSFER) &&
-                  planning.counterPlanningTransactionId) {
+                planning.transactionType === TransactionType.CATEGORYTRANSFER) &&
+                planning.counterPlanningTransactionId) {
                 processedPlanningIds.add(planning.counterPlanningTransactionId);
               }
             }
@@ -778,7 +778,7 @@ export const PlanningService = {
    * Aktualisiert die Prognosen, indem die Monatsbilanzen neu berechnet werden.
    */
   async updateForecasts() {
-    await BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateAllMonthlyBalances();
     localStorage.setItem('finwise_last_forecast_update', Date.now().toString());
     debugLog("PlanningService", "updateForecasts - Monatsbilanzen aktualisiert");
     return true;
@@ -800,15 +800,15 @@ export const PlanningService = {
 
       // Bei Gegenbuchungen: Überprüfung überspringen, wird mit Hauptbuchung behandelt
       if (plan.counterPlanningTransactionId &&
-          (plan.transactionType === TransactionType.ACCOUNTTRANSFER ||
-           plan.transactionType === TransactionType.CATEGORYTRANSFER)) {
+        (plan.transactionType === TransactionType.ACCOUNTTRANSFER ||
+          plan.transactionType === TransactionType.CATEGORYTRANSFER)) {
         continue;
       }
 
       // Nur Planungen prüfen, die nicht enden oder deren Enddatum in der Zukunft liegt
       if (plan.recurrenceEndType === RecurrenceEndType.DATE &&
-          plan.endDate &&
-          dayjs(plan.endDate).isBefore(today)) {
+        plan.endDate &&
+        dayjs(plan.endDate).isBefore(today)) {
         continue;
       }
 
@@ -849,7 +849,7 @@ export const PlanningService = {
 
     // Monatsbilanzen neu berechnen, wenn Änderungen vorgenommen wurden
     if (updatedForecastsCount > 0) {
-      await BalanceService.calculateMonthlyBalances();
+      await BalanceService.calculateAllMonthlyBalances();
       infoLog("PlanningService", `${updatedForecastsCount} Prognosebuchungen für zukünftige Perioden aktualisiert`);
     } else {
       infoLog("PlanningService", "Keine Aktualisierung der Prognosebuchungen erforderlich");
@@ -875,7 +875,7 @@ export const PlanningService = {
     debugLog("PlanningService", "updatePlanningTransaction - Aktualisiert", { result });
 
     // Balance neu berechnen
-    await BalanceService.calculateMonthlyBalances();
+    await BalanceService.calculateAllMonthlyBalances();
 
     return result;
   },

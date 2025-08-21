@@ -97,11 +97,22 @@ const updateScreenSize = () => {
   isSmallScreen.value = window.innerWidth < 640;
 };
 
+// Hilfsfunktion für Datumsformatierung basierend auf Zeitraum
+const getDateFormat = (days: number) => {
+  if (days <= 30) {
+    return "DD.MM";
+  } else {
+    return "DD.MM.YYYY";
+  }
+};
+
 // Daten berechnen
 const chartData = computed(() => {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - props.days);
+
+  const dateFormat = getDateFormat(props.days);
 
   let series: Array<{
     name: string;
@@ -124,7 +135,7 @@ const chartData = computed(() => {
       );
 
       const data = balances.map((balance) => ({
-        x: dayjs(balance.date).format("DD.MM"),
+        x: dayjs(balance.date).format(dateFormat),
         y: Math.round(balance.balance),
       }));
 
@@ -171,7 +182,7 @@ const chartData = computed(() => {
       const data = Object.entries(combinedBalances)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, balance]) => ({
-          x: dayjs(date).format("DD.MM"),
+          x: dayjs(date).format(dateFormat),
           y: Math.round(balance),
         }));
 
@@ -193,14 +204,14 @@ const chartData = computed(() => {
       );
 
       const actualData = balances.map((balance) => ({
-        x: dayjs(balance.date).format("DD.MM"),
+        x: dayjs(balance.date).format(dateFormat),
         y: Math.round(balance.balance),
       }));
 
       const projectedData = balances
         .filter((balance) => balance.projected !== undefined)
         .map((balance) => ({
-          x: dayjs(balance.date).format("DD.MM"),
+          x: dayjs(balance.date).format(dateFormat),
           y: Math.round(balance.projected!),
         }));
 
@@ -299,6 +310,36 @@ const chartOptions = computed(() => {
           fontFamily: themeColors.fontFamily,
         },
         rotate: isSmallScreen.value ? -45 : 0,
+        formatter: (value: string, timestamp?: number, opts?: any) => {
+          // Ab 90 Tagen nur Monatsbeschriftungen anzeigen
+          if (props.days >= 90) {
+            // Parse das Datum - versuche verschiedene Formate
+            let date = dayjs(value, "DD.MM.YYYY");
+            if (!date.isValid()) {
+              date = dayjs(value, "DD.MM");
+            }
+
+            if (date.isValid()) {
+              // Zeige jeden Monatsersten
+              if (date.date() === 1) {
+                return date.format("MM YYYY");
+              }
+              // Für bessere Verteilung auch Mitte des Monats bei sehr langen Zeiträumen
+              if (props.days >= 365 && (date.date() === 15)) {
+                return "";
+              }
+            }
+            return "";
+          }
+          return value;
+        },
+        showDuplicates: false,
+        maxHeight: props.days >= 90 ? 60 : undefined,
+        // Reduziere die Anzahl der Labels bei längeren Zeiträumen
+        ...(props.days >= 90 && {
+          hideOverlappingLabels: true,
+          trim: false,
+        }),
       },
       axisBorder: {
         show: true,
@@ -308,6 +349,10 @@ const chartOptions = computed(() => {
         show: true,
         color: themeColors.base300,
       },
+      // Bessere Tick-Verteilung für längere Zeiträume
+      ...(props.days >= 90 && {
+        tickAmount: Math.min(12, Math.ceil(props.days / 30)),
+      }),
     },
     yaxis: {
       title: {
@@ -387,6 +432,17 @@ const chartOptions = computed(() => {
           show: true,
         },
       },
+      position: 'back',
+      ...(props.days >= 90 && {
+        row: {
+          colors: ['transparent'],
+          opacity: 0.5
+        },
+        column: {
+          colors: ['transparent'],
+          opacity: 0.1
+        }
+      })
     },
     responsive: [
       {
