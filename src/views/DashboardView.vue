@@ -30,7 +30,7 @@ const currentDate = dayjs();
 const startDate = ref(currentDate.subtract(30, "day").format("YYYY-MM-DD"));
 const endDate = ref(currentDate.format("YYYY-MM-DD"));
 
-// MTD (Month-to-Date) Zeitraum für Top-Ausgaben
+// MTD (Month-to-Date) Zeitraum für Top Budgets
 const currentMonthStart = dayjs().startOf('month');
 const currentMonthEnd = dayjs().endOf('month');
 
@@ -40,7 +40,7 @@ const transactionLimit = ref(5);
 // Anzahl der anzuzeigenden geplanten Transaktionen
 const planningLimit = ref(3);
 
-// Anzahl der anzuzeigenden Top-Ausgaben
+// Anzahl der anzuzeigenden Top Budgets
 const expensesLimit = ref(5);
 
 // Anzahl der anzuzeigenden Sparziele
@@ -108,15 +108,16 @@ const incomeSummary = computed(() => {
   );
 });
 
-// Neue Top-Ausgaben mit Budget-Daten für aktuellen Monat (MTD)
+// Top Budgets mit Budget-Daten für aktuellen Monat (MTD)
 const topExpensesWithBudget = computed(() => {
   const monthStart = currentMonthStart.toDate();
   const monthEnd = currentMonthEnd.toDate();
 
-  // Hole alle Ausgaben-Kategorien (keine Einnahmen)
+  // Hole alle Ausgaben-Kategorien (keine Einnahmen, keine Sparziele)
   const expenseCategories = categoryStore.categories.filter(cat =>
     cat.isActive &&
     !cat.isIncomeCategory &&
+    !cat.isSavingsGoal && // Keine Sparzielkategorien
     cat.name !== 'Verfügbare Mittel' &&
     !cat.parentCategoryId // Nur Root-Kategorien
   );
@@ -128,17 +129,22 @@ const topExpensesWithBudget = computed(() => {
       monthEnd
     );
 
+    const spent = Math.abs(budgetData.spent);
+    const budgeted = Math.abs(budgetData.budgeted);
+    const budgetPercentage = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 999 : 0);
+
     return {
       categoryId: category.id,
       name: category.name,
-      spent: Math.abs(budgetData.spent), // Positive Darstellung für Ausgaben
-      budgeted: Math.abs(budgetData.budgeted), // Budget als positiver Wert
+      spent: spent, // Positive Darstellung für Ausgaben (ohne Planbuchungen)
+      budgeted: budgeted, // Budget als positiver Wert
       available: budgetData.saldo,
+      budgetPercentage: budgetPercentage, // Prozentsatz des verbrauchten Budgets
       budgetData
     };
   })
-  .filter(item => item.spent > 0 || item.budgeted > 0) // Nur Kategorien mit Aktivität oder Budget
-  .sort((a, b) => b.spent - a.spent) // Nach tatsächlichen Ausgaben sortieren
+  .filter(item => item.budgeted > 0 && item.spent > 0) // Nur Kategorien mit Budget UND tatsächlichen Ausgaben
+  .sort((a, b) => b.budgetPercentage - a.budgetPercentage) // Nach prozentualem Budget-Verbrauch sortieren (absteigend)
   .slice(0, 5); // Top 5
 
   return categoryData;
@@ -390,7 +396,7 @@ const setPlanningLimit = (limit: number) => {
   planningLimit.value = limit;
 };
 
-// Funktionen für Ausgabenlimit-Buttons
+// Funktionen für Top Budgets Limit-Buttons
 const setExpensesLimit = (limit: number) => {
   expensesLimit.value = limit;
 };
@@ -1045,7 +1051,7 @@ onMounted(() => {
           <div class="card-body">
             <div class="flex justify-between items-center mb-4">
               <div>
-                <h3 class="card-title text-lg">Top-Ausgaben</h3>
+                <h3 class="card-title text-lg">Top Budgets</h3>
                 <p class="text-sm opacity-60">Aktueller Monat (MTD)</p>
               </div>
               <!-- Buttons für Ausgabenlimit und Navigation -->
