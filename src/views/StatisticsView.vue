@@ -150,25 +150,20 @@ const setTimeRange = (range: string) => {
     </div>
 
 
-    <!-- Top-Kategorien Listen -->
+    <!-- Charts in geordneten Zeilen/Spalten -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
       <TopExpenseCategoriesChart
         :start-date="startDate"
         :end-date="endDate"
         :show-header="true"
       />
-
       <TopIncomeCategoriesChart
         :start-date="startDate"
         :end-date="endDate"
         :show-header="true"
       />
+      <NetWorthChart :months="trendMonths" />
+      <AccountTrendChart :show-header="true" />
     </div>
-
-    <!-- Monatlicher Trend -->
-    <NetWorthChart :months="trendMonths" />
-
-    <!-- Kontoentwicklung -->
-    <AccountTrendChart :show-header="true" />
   </div>
 </template>
