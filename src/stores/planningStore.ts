@@ -43,11 +43,244 @@ export const usePlanningStore = defineStore('planning', () => {
     planningTransactions.value.find(tx => tx.id === id),
   );
 
-  const getUpcomingTransactions = computed(() => (days = 30) =>
-    planningTransactions.value
-      .filter(tx => tx.isActive)
-      .sort((a, b) => a.startDate.localeCompare(b.startDate)),
-  );
+  const getUpcomingTransactions = computed(() => (days = 30, startDate?: string) => {
+    // Verwende das übergebene Startdatum oder heute als Fallback
+    const start = startDate || dayjs().format('YYYY-MM-DD');
+    const endDate = dayjs(start).add(days, 'days').format('YYYY-MM-DD');
+
+    const upcomingTransactions: Array<{
+      date: string;
+      transaction: PlanningTransaction;
+    }> = [];
+
+    // Für jede aktive Planning-Transaktion die zukünftigen Termine berechnen
+    for (const planTx of planningTransactions.value.filter(tx => tx.isActive)) {
+      try {
+        // Berechne Termine für einen größeren Zeitraum (2 Jahre) um sicherzustellen,
+        // dass wir alle relevanten Termine erfassen
+        const extendedEndDate = dayjs(start).add(730, 'days').format('YYYY-MM-DD'); // 2 Jahre
+        const allOccurrences = calculateNextOccurrences(planTx, start, extendedEndDate);
+
+        // Filtere nur die Termine im gewünschten Zeitraum
+        const relevantOccurrences = allOccurrences.filter(date => {
+          const occurrenceDate = dayjs(date);
+          return occurrenceDate.isSameOrAfter(dayjs(start)) && occurrenceDate.isSameOrBefore(dayjs(endDate));
+        });
+
+        // Für jeden berechneten Termin ein Upcoming-Transaction-Objekt erstellen
+        for (const date of relevantOccurrences) {
+          upcomingTransactions.push({
+            date,
+            transaction: planTx
+          });
+        }
+      } catch (error) {
+        debugLog('PlanningStore', `Fehler beim Berechnen der Termine für Planning ${planTx.id}:`, error);
+      }
+    }
+
+    // Nach Datum sortieren
+    return upcomingTransactions.sort((a, b) => a.date.localeCompare(b.date));
+  });
+
+  /**
+   * Berechnet zukünftige Ausführungstermine einer Planungstransaktion.
+   * Diese Funktion ist eine Kopie der PlanningService.calculateNextOccurrences Logik
+   * um Circular Dependencies zu vermeiden.
+   */
+  function calculateNextOccurrences(
+    planTx: PlanningTransaction,
+    startDate: string,
+    endDate: string
+  ): string[] {
+    if (!planTx.isActive) return [];
+
+    const repeatsEnabled = planTx.recurrencePattern !== RecurrencePattern.ONCE;
+
+    const occurrences: string[] = [];
+    const start = dayjs(startDate);
+    const end = dayjs(endDate);
+    const txStart = dayjs(toDateOnlyString(planTx.startDate));
+
+    if (txStart.isAfter(end)) return [];
+    if (planTx.endDate && dayjs(toDateOnlyString(planTx.endDate)).isBefore(start))
+      return [];
+
+    // Wenn das Planning-Startdatum in der Vergangenheit liegt,
+    // berechne das nächste relevante Datum ab dem gewünschten Startdatum
+    let currentDate = txStart;
+    let count = 1;
+    const maxIterations = 1000;
+
+    // Wenn txStart vor dem gewünschten Startdatum liegt, springe zum nächsten relevanten Termin
+    if (txStart.isBefore(start) && planTx.recurrencePattern !== RecurrencePattern.ONCE) {
+      // Berechne wie viele Wiederholungen seit txStart vergangen sind
+      let tempDate = txStart;
+      let tempCount = 1;
+
+      while (tempDate.isBefore(start) && tempCount < maxIterations) {
+        switch (planTx.recurrencePattern) {
+          case RecurrencePattern.DAILY:
+            tempDate = tempDate.add(1, "day");
+            break;
+          case RecurrencePattern.WEEKLY:
+            tempDate = tempDate.add(1, "week");
+            break;
+          case RecurrencePattern.BIWEEKLY:
+            tempDate = tempDate.add(2, "weeks");
+            break;
+          case RecurrencePattern.MONTHLY:
+            if (
+              planTx.executionDay &&
+              planTx.executionDay > 0 &&
+              planTx.executionDay <= 31
+            ) {
+              const nextMonth = tempDate.add(1, "month");
+              const year = nextMonth.year();
+              const month = nextMonth.month() + 1;
+              const maxDay = new Date(year, month, 0).getDate();
+              const day = Math.min(planTx.executionDay, maxDay);
+              tempDate = dayjs(new Date(year, month - 1, day));
+            } else {
+              tempDate = tempDate.add(1, "month");
+            }
+            break;
+          case RecurrencePattern.QUARTERLY:
+            tempDate = tempDate.add(3, "months");
+            break;
+          case RecurrencePattern.YEARLY:
+            tempDate = tempDate.add(1, "year");
+            break;
+          default:
+            break;
+        }
+        tempCount++;
+
+        // Prüfe End-Bedingungen
+        if (
+          planTx.recurrenceEndType === RecurrenceEndType.COUNT &&
+          planTx.recurrenceCount !== null &&
+          planTx.recurrenceCount !== undefined &&
+          tempCount > planTx.recurrenceCount
+        ) {
+          return []; // Keine weiteren Termine
+        }
+
+        if (
+          planTx.recurrenceEndType === RecurrenceEndType.DATE &&
+          planTx.endDate &&
+          tempDate.isAfter(dayjs(toDateOnlyString(planTx.endDate)))
+        ) {
+          return []; // Keine weiteren Termine
+        }
+      }
+
+      currentDate = tempDate;
+      count = tempCount;
+    }
+
+    // Einmalige Buchung
+    if (!repeatsEnabled || planTx.recurrencePattern === RecurrencePattern.ONCE) {
+      let adjustedDate = applyWeekendHandling(currentDate, planTx.weekendHandling);
+      if (
+        adjustedDate.isSameOrAfter(start) &&
+        adjustedDate.isSameOrBefore(end)
+      ) {
+        occurrences.push(toDateOnlyString(adjustedDate.toDate()));
+      }
+      return occurrences;
+    }
+
+    while (currentDate.isSameOrBefore(end) && count < maxIterations) {
+      let adjustedDate = applyWeekendHandling(currentDate, planTx.weekendHandling);
+
+      if (
+        adjustedDate.isSameOrAfter(start) &&
+        adjustedDate.isSameOrBefore(end)
+      ) {
+        occurrences.push(toDateOnlyString(adjustedDate.toDate()));
+      }
+
+      if (planTx.recurrenceEndType === RecurrenceEndType.NEVER) {
+        const maxEndDate = dayjs(start).add(24, "months");
+        if (adjustedDate.isAfter(maxEndDate)) break;
+      }
+
+      if (
+        planTx.recurrenceEndType === RecurrenceEndType.COUNT &&
+        planTx.recurrenceCount !== null &&
+        planTx.recurrenceCount !== undefined &&
+        count >= planTx.recurrenceCount
+      ) {
+        break;
+      }
+
+      count++;
+
+      switch (planTx.recurrencePattern) {
+        case RecurrencePattern.DAILY:
+          currentDate = currentDate.add(1, "day");
+          break;
+        case RecurrencePattern.WEEKLY:
+          currentDate = currentDate.add(1, "week");
+          break;
+        case RecurrencePattern.BIWEEKLY:
+          currentDate = currentDate.add(2, "weeks");
+          break;
+        case RecurrencePattern.MONTHLY:
+          if (
+            planTx.executionDay &&
+            planTx.executionDay > 0 &&
+            planTx.executionDay <= 31
+          ) {
+            const nextMonth = currentDate.add(1, "month");
+            const year = nextMonth.year();
+            const month = nextMonth.month() + 1;
+            const maxDay = new Date(year, month, 0).getDate();
+            const day = Math.min(planTx.executionDay, maxDay);
+            currentDate = dayjs(new Date(year, month - 1, day));
+          } else {
+            currentDate = currentDate.add(1, "month");
+          }
+          break;
+        case RecurrencePattern.QUARTERLY:
+          currentDate = currentDate.add(3, "months");
+          break;
+        case RecurrencePattern.YEARLY:
+          currentDate = currentDate.add(1, "year");
+          break;
+        default:
+          return occurrences;
+      }
+
+      if (
+        planTx.recurrenceEndType === RecurrenceEndType.DATE &&
+        planTx.endDate &&
+        currentDate.isAfter(dayjs(toDateOnlyString(planTx.endDate)))
+      )
+        break;
+    }
+
+    return occurrences;
+  }
+
+  /**
+   * Verschiebt das Datum, falls es auf ein Wochenende fällt.
+   */
+  function applyWeekendHandling(date: dayjs.Dayjs, handling: WeekendHandlingType): dayjs.Dayjs {
+    const day = date.day();
+    if ((day !== 0 && day !== 6) || handling === WeekendHandlingType.NONE)
+      return date;
+    const isSaturday = day === 6;
+    switch (handling) {
+      case WeekendHandlingType.BEFORE:
+        return isSaturday ? date.subtract(1, 'day') : date.subtract(2, 'day');
+      case WeekendHandlingType.AFTER:
+        return isSaturday ? date.add(2, 'day') : date.add(1, 'day');
+      default:
+        return date;
+    }
+  }
 
   /* ---------------------------------------------- Actions */
   async function addPlanningTransaction(p: Partial<PlanningTransaction>, fromSync = false): Promise<PlanningTransaction> {

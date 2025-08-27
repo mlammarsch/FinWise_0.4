@@ -495,7 +495,7 @@ function generateForecastData() {
           1
         );
         const transactions = planningStore
-          .getUpcomingTransactions(35)
+          .getUpcomingTransactions(365) // 365 Tage statt 35, um alle 6 Monate abzudecken
           .filter((tx: any) => {
             const txDate = new Date(tx.date);
             return (
@@ -574,7 +574,7 @@ function generateForecastData() {
           1
         );
         const transactions = planningStore
-          .getUpcomingTransactions(35)
+          .getUpcomingTransactions(365) // 365 Tage statt 35, um alle 6 Monate abzudecken
           .filter((tx: any) => {
             const txDate = new Date(tx.date);
             return (

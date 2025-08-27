@@ -16,8 +16,12 @@ dayjs.locale("de");
 
 // Props
 const props = defineProps<{
-  months: number | string;
+  months?: number | string;
+  showHeader?: boolean;
 }>();
+
+// Interne State für eigenständige Komponente
+const trendMonths = ref(props.months || 3);
 
 // Stores
 const themeStore = useThemeStore();
@@ -31,6 +35,11 @@ let themeObserver: MutationObserver | null = null;
 
 // Responsive
 const isSmallScreen = ref(false);
+
+// Zoom-Funktionalität
+const zoomLevel = ref(1);
+const minZoom = 0.1;
+const maxZoom = 10;
 
 // DaisyUI Theme-Integration
 const getCSSVariableValue = (variableName: string): string => {
@@ -111,8 +120,80 @@ const getAxisInterval = (totalMonths: number) => {
   return 12; // Jährlich
 };
 
+// Y-Achsen-Zoom-State
+const yAxisZoom = ref(1);
+
+// Zoom-Funktionen für vertikale Y-Achsen-Skalierung
+const zoomIn = () => {
+  if (zoomLevel.value < maxZoom) {
+    zoomLevel.value = Math.min(zoomLevel.value * 1.2, maxZoom);
+    yAxisZoom.value = Math.min(yAxisZoom.value * 1.2, maxZoom);
+    updateChart();
+  }
+};
+
+const zoomOut = () => {
+  if (zoomLevel.value > minZoom) {
+    zoomLevel.value = Math.max(zoomLevel.value / 1.2, minZoom);
+    yAxisZoom.value = Math.max(yAxisZoom.value / 1.2, minZoom);
+    updateChart();
+  }
+};
+
+// Intelligente Y-Achsen-Skalierung für rechte Achse mit 0-Zentrierung
+const calculateYAxisTicks = (min: number, max: number, zoomFactor: number = 1) => {
+  // Bestimme den größeren Absolutwert für symmetrische Skalierung um 0
+  const maxAbsValue = Math.max(Math.abs(min), Math.abs(max));
+
+  // Wende Zoom-Faktor an, aber mit erweiterten Mindestbereichen
+  const zoomedMaxAbs = Math.max(maxAbsValue / zoomFactor, 200); // Mindestens 200€ Bereich
+
+  // Bestimme Tick-Intervall basierend auf gezoomtem Bereich
+  let tickInterval: number;
+  if (zoomedMaxAbs <= 500) {
+    tickInterval = 50;   // 50er Schritte bis 500€
+  } else if (zoomedMaxAbs <= 1000) {
+    tickInterval = 100;  // 100er Schritte bis 1k
+  } else if (zoomedMaxAbs <= 5000) {
+    tickInterval = 500;  // 500er Schritte bis 5k
+  } else if (zoomedMaxAbs <= 10000) {
+    tickInterval = 1000; // 1k Schritte bis 10k
+  } else {
+    tickInterval = 10000; // 10k Schritte darüber
+  }
+
+  // Berechne symmetrische Min/Max um 0 herum mit ausreichend Puffer
+  const steps = Math.ceil(zoomedMaxAbs / tickInterval);
+  const symmetricMax = Math.max(steps * tickInterval, tickInterval * 2); // Mindestens 2 Tick-Intervalle
+  const symmetricMin = -symmetricMax;
+
+  // Stelle sicher, dass die ursprünglichen Daten immer sichtbar sind
+  const dataMax = Math.max(Math.abs(min), Math.abs(max));
+  if (symmetricMax < dataMax * 1.1) { // 10% Puffer über den Daten
+    const adjustedSteps = Math.ceil((dataMax * 1.1) / tickInterval);
+    const adjustedMax = adjustedSteps * tickInterval;
+    return {
+      min: -adjustedMax,
+      max: adjustedMax,
+      tickAmount: Math.ceil((adjustedMax * 2) / tickInterval),
+      tickInterval
+    };
+  }
+
+  return {
+    min: symmetricMin,
+    max: symmetricMax,
+    tickAmount: Math.ceil((symmetricMax - symmetricMin) / tickInterval),
+    tickInterval
+  };
+};
+
 // NetWorth-Daten berechnen
 const chartData = computed(() => {
+  // Cache für aktuellen Monat invalidieren, um aktuelle Daten zu gewährleisten
+  // Dies stellt sicher, dass bei jeder Neuberechnung die neuesten Transaktionen berücksichtigt werden
+  BalanceService.invalidateCurrentMonthCache();
+
   const now = dayjs();
   const todayMonth = now.startOf("month");
 
@@ -120,8 +201,8 @@ const chartData = computed(() => {
   let endMonth: dayjs.Dayjs;
   let showProjection = false;
 
-  // Bestimme Zeitraum basierend auf props.months
-  if (props.months === "all") {
+  // Bestimme Zeitraum basierend auf trendMonths
+  if (trendMonths.value === "all") {
     // Alle verfügbaren Daten - nur Vergangenheit
     // Finde älteste Transaktion für Startdatum
     const oldestDate = dayjs().subtract(60, "month"); // Fallback: 5 Jahre zurück
@@ -129,7 +210,7 @@ const chartData = computed(() => {
     endMonth = todayMonth;
   } else {
     const monthsNum =
-      typeof props.months === "string" ? parseInt(props.months) : props.months;
+      typeof trendMonths.value === "string" ? parseInt(trendMonths.value) : trendMonths.value;
 
     if (monthsNum < 0) {
       // Negative Werte: Nur Vergangenheit
@@ -170,9 +251,14 @@ const chartData = computed(() => {
     const monthEndStr = currentMonth.endOf("month").format("YYYY-MM-DD");
     const monthEnd = currentMonth.endOf("month").toDate();
 
+    // Für aktuellen Monat: Verwende heutiges Datum als Stichtag für NetWorth
+    // Für vergangene/zukünftige Monate: Verwende Monatsende
+    const isCurrentMonth = currentMonth.isSame(todayMonth, 'month');
+    const netWorthStichtag = isCurrentMonth ? now.toDate() : monthEnd;
+
     // Berechne NetWorth (Gesamtsaldo aller aktiven Konten außer Offline-Budget)
-    const actualNetWorth = BalanceService.getTotalBalance(monthEnd, false);
-    const projectedNetWorth = BalanceService.getTotalBalance(monthEnd, true);
+    const actualNetWorth = BalanceService.getTotalBalance(netWorthStichtag, false);
+    const projectedNetWorth = BalanceService.getTotalBalance(netWorthStichtag, true);
 
     // Berechne Einnahmen/Ausgaben für diesen Monat
     const monthSummary = TransactionService.getIncomeExpenseSummary(
@@ -322,9 +408,24 @@ const chartOptions = computed(() => {
         show: false,
       },
       animations: {
-        enabled: true,
-        easing: "easeinout",
-        speed: 800,
+        enabled: false, // Animationen deaktiviert für bessere Zoom-Performance
+      },
+      zoom: {
+        enabled: false, // ApexCharts Zoom deaktiviert, wir verwenden eigene Implementierung
+      },
+      events: {
+        mounted: (chartContext: any, config: any) => {
+          // Custom Zoom-Implementierung nach Chart-Mount
+        },
+        wheel: (event: any, chartContext: any, config: any) => {
+          event.preventDefault();
+          const delta = event.deltaY;
+          if (delta < 0) {
+            zoomIn();
+          } else {
+            zoomOut();
+          }
+        },
       },
     },
     colors: data.showProjection
@@ -353,12 +454,12 @@ const chartOptions = computed(() => {
     plotOptions: {
       bar: {
         columnWidth: isSmallScreen.value ? "70%" : "50%",
-        borderRadius: 4,
+        borderRadius: 0,
       },
     },
     labels: data.labels,
     markers: {
-      size: data.showProjection ? [0, 0, 5, 0, 0, 5] : [0, 0, 5], // Nur Linien haben Marker
+      size: data.showProjection ? [0, 0, 0, 0, 0, 0] : [0, 0, 0], // Keine Marker für Linien
       strokeColors: data.showProjection
         ? [
             themeColors.primary,
@@ -404,7 +505,7 @@ const chartOptions = computed(() => {
     },
     yaxis: [
       {
-        // Y1-Achse für NetWorth-Linien
+        // Y1-Achse für NetWorth-Linien - KEIN ZOOM
         seriesName: data.showProjection
           ? ["NetWorth (Ist)", "NetWorth (Prognose)"]
           : ["NetWorth (Ist)"],
@@ -432,6 +533,8 @@ const chartOptions = computed(() => {
           show: true,
           color: themeColors.primary,
         },
+        // NetWorth-Achse wird NICHT gezoomed - automatische Skalierung
+        forceNiceScale: true,
       },
       {
         // Y2-Achse für Einnahmen/Ausgaben-Balken
@@ -468,57 +571,70 @@ const chartOptions = computed(() => {
           show: true,
           color: themeColors.success,
         },
-        // Bessere Skalierung für Ein-/Ausgaben mit automatischer Berechnung
-        min: function (min: number) {
-          // Für negative Werte (Ausgaben) 20% Puffer nach unten
-          return min < 0 ? min * 1.2 : min * 0.8;
-        },
-        max: function (max: number) {
-          // Für positive Werte (Einnahmen) 20% Puffer nach oben
-          return max > 0 ? max * 1.2 : max * 0.8;
-        },
+        // Intelligente Skalierung mit 0-Zentrierung und Zoom-Integration
+        ...(() => {
+          // Berechne Min/Max aus den Daten
+          const allValues = [
+            ...data.incomeData,
+            ...data.expenseData,
+            ...data.plannedIncomeData,
+            ...data.plannedExpenseData
+          ].filter(val => val !== 0);
+
+          if (allValues.length === 0) {
+            // Fallback: Symmetrische Skalierung um 0
+            const ticks = calculateYAxisTicks(-1000, 1000, yAxisZoom.value);
+            return {
+              min: ticks.min,
+              max: ticks.max,
+              tickAmount: Math.min(ticks.tickAmount, 10),
+              forceNiceScale: false,
+            };
+          }
+
+          const min = Math.min(...allValues);
+          const max = Math.max(...allValues);
+          const ticks = calculateYAxisTicks(min, max, yAxisZoom.value);
+
+          return {
+            min: ticks.min,
+            max: ticks.max,
+            tickAmount: Math.min(ticks.tickAmount, 10), // Maximal 10 Ticks
+            forceNiceScale: false,
+          };
+        })(),
       },
     ],
     legend: {
-      show: true,
-      clusterGroupedSeries: false,
-      clusterGroupedSeriesOrientation: "horizontal",
-      position: isSmallScreen.value ? "bottom" : "top",
-      horizontalAlign: "center",
-      floating: false,
-      fontSize: isSmallScreen.value ? "11px" : "12px",
-      fontFamily: themeColors.fontFamily,
-      fontWeight: 400,
-      itemMargin: {
-        horizontal: isSmallScreen.value ? 12 : 20,
-        vertical: isSmallScreen.value ? 6 : 8,
-      },
-      offsetY: isSmallScreen.value ? 5 : 0,
-      labels: {
-        colors: themeColors.baseContent,
-        useSeriesColors: false,
-      },
-      markers: {
-        width: isSmallScreen.value ? 10 : 12,
-        height: isSmallScreen.value ? 10 : 12,
-        radius: 2,
-        strokeWidth: 0,
-        strokeColor: "transparent",
-      },
-      onItemClick: {
-        toggleDataSeries: true,
-      },
-      onItemHover: {
-        highlightDataSeries: true,
-      },
+      show: false, // Legende entfernt für mehr Platz
     },
     tooltip: {
       theme: themeStore.isDarkMode ? "dark" : "light",
       shared: true,
       intersect: false,
       y: {
-        formatter: (val: number) =>
-          val ? formatChartCurrency(val) : "Keine Daten",
+        formatter: (val: number, opts: any) => {
+          // Filtere null/undefined Werte
+          if (val === null || val === undefined) {
+            return undefined; // Eintrag wird nicht angezeigt
+          }
+
+          const seriesName = opts.w.globals.seriesNames[opts.seriesIndex];
+
+          // Filtere 0-Werte bei Einnahmen/Ausgaben (aber nicht bei NetWorth)
+          if (val === 0 && (seriesName.includes('Einnahmen') || seriesName.includes('Ausgaben'))) {
+            return undefined;
+          }
+
+          // Filtere basierend auf Serie-Namen für bessere Trennung
+          // Vergangenheit: Keine geplanten Werte anzeigen
+          // Zukunft: Keine Ist-Werte anzeigen (außer NetWorth Ist für Kontinuität)
+          if (seriesName.includes('geplant') && val === 0) {
+            return undefined;
+          }
+
+          return formatChartCurrency(val);
+        },
       },
     },
     grid: {
@@ -631,7 +747,7 @@ const setupThemeObserver = () => {
 
 // Watchers
 watch(
-  () => props.months,
+  () => trendMonths.value,
   () => {
     updateChart();
   }
@@ -681,20 +797,70 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full">
-    <div
-      v-if="!chartData.hasData"
-      class="flex items-center justify-center h-full text-base-content/70"
-    >
-      <div class="text-center">
-        <div class="text-lg mb-2">💰</div>
-        <div>Keine NetWorth-Daten verfügbar</div>
+  <div class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150">
+    <div class="card-body">
+      <!-- Header mit Überschrift, Zoom-Controls und Dropdown -->
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+        <h3 class="card-title text-lg">Nettovermögensentwicklung</h3>
+
+        <div class="flex items-center gap-2">
+          <!-- Zoom Controls - kleinere Buttons mittig positioniert -->
+          <button
+            @click="zoomOut"
+            :disabled="zoomLevel <= minZoom"
+            class="btn btn-xs btn-ghost btn-circle"
+            :class="{ 'opacity-50 cursor-not-allowed': zoomLevel <= minZoom }"
+            title="Herauszoomen"
+          >
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path>
+            </svg>
+          </button>
+          <button
+            @click="zoomIn"
+            :disabled="zoomLevel >= maxZoom"
+            class="btn btn-xs btn-ghost btn-circle"
+            :class="{ 'opacity-50 cursor-not-allowed': zoomLevel >= maxZoom }"
+            title="Hineinzoomen"
+          >
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+          </button>
+
+          <!-- Zeitraum-Auswahl -->
+          <select
+            v-model="trendMonths"
+            class="select select-bordered select-xs"
+          >
+            <option value="all">Alle</option>
+            <option :value="-3">3 Monate</option>
+            <option :value="-6">6 Monate</option>
+            <option :value="-12">12 Monate</option>
+            <option :value="3">+ 3 Monate</option>
+            <option :value="6">+ 6 Monate</option>
+            <option :value="12">+ 12 Monate</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Chart Container -->
+      <div class="h-64">
+        <div
+          v-if="!chartData.hasData"
+          class="flex items-center justify-center h-full text-base-content/70"
+        >
+          <div class="text-center">
+            <div class="text-lg mb-2">💰</div>
+            <div>Keine NetWorth-Daten verfügbar</div>
+          </div>
+        </div>
+        <div
+          v-else
+          ref="chartContainer"
+          class="w-full h-full"
+        ></div>
       </div>
     </div>
-    <div
-      v-else
-      ref="chartContainer"
-      class="w-full h-full"
-    ></div>
   </div>
 </template>

@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from "vue";
 import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import { TransactionService } from "@/services/TransactionService";
+import { BalanceService } from "@/services/BalanceService";
 import { formatCurrency } from "@/utils/formatters";
 import dayjs from "dayjs";
 
@@ -21,13 +22,13 @@ const startDate = ref(dayjs().startOf("month").format("YYYY-MM-DD"));
 const endDate = ref(dayjs().endOf("month").format("YYYY-MM-DD"));
 
 // Filter-Optionen
-const selectedAccountId = ref("all"); // "all", "grouped", oder spezifische Account-ID
-const accountGrouping = ref("all"); // "all" oder "grouped"
 const trendMonths = ref(3);
-const accountTrendDays = ref(30);
 
 // Zusammenfassung für den ausgewählten Zeitraum
 const summary = computed(() => {
+  // Cache für aktuellen Monat invalidieren, um aktuelle Daten zu gewährleisten
+  BalanceService.invalidateCurrentMonthCache();
+
   return TransactionService.getIncomeExpenseSummary(
     startDate.value,
     endDate.value
@@ -102,27 +103,6 @@ const topIncomeCategories = computed(() => {
     .slice(0, 10);
 });
 
-// Konten für das Dropdown
-const accounts = computed(() => {
-  const activeAccounts = accountStore.activeAccounts.filter(
-    (acc) => !acc.isOfflineBudget
-  );
-  const accountTypes = [
-    ...new Set(activeAccounts.map((acc) => acc.accountType)),
-  ];
-
-  return {
-    all: activeAccounts,
-    types: accountTypes,
-  };
-});
-
-// Setze das erste aktive Konto als Standard
-onMounted(() => {
-  if (accounts.value.all.length > 0) {
-    selectedAccountId.value = accounts.value.all[0].id;
-  }
-});
 
 // Zeitraum ändern
 const setTimeRange = (range: string) => {
@@ -164,14 +144,6 @@ const setTimeRange = (range: string) => {
   }
 };
 
-// Account-Filter-Optionen
-const getAccountFilterLabel = (accountId: string) => {
-  if (accountId === "all") return "Alle Konten";
-  if (accountId === "grouped") return "Nach Typ gruppiert";
-
-  const account = accountStore.getAccountById(accountId);
-  return account ? account.name : "Unbekanntes Konto";
-};
 </script>
 
 <template>
@@ -386,89 +358,9 @@ const getAccountFilterLabel = (accountId: string) => {
     </div>
 
     <!-- Monatlicher Trend -->
-    <div
-      class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150 mb-6"
-    >
-      <div class="card-body">
-        <div class="flex justify-between items-center mb-4">
-          <h3 class="card-title text-lg">Nettovermögensentwicklung</h3>
-          <select
-            v-model="trendMonths"
-            class="select select-bordered select-sm"
-          >
-            <option value="all">Alle</option>
-            <option :value="-3">3 Monate</option>
-            <option :value="-6">6 Monate</option>
-            <option :value="-12">12 Monate</option>
-            <option :value="3">+ 3 Monate</option>
-            <option :value="6">+ 6 Monate</option>
-            <option :value="12">+ 12 Monate</option>
-          </select>
-        </div>
-
-        <div class="h-64">
-          <NetWorthChart :months="trendMonths" />
-        </div>
-      </div>
-    </div>
+    <NetWorthChart :months="trendMonths" />
 
     <!-- Kontoentwicklung -->
-    <div
-      class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-    >
-      <div class="card-body">
-        <div
-          class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4"
-        >
-          <h3 class="card-title text-lg">Kontoentwicklung</h3>
-
-          <div class="flex flex-wrap gap-2">
-            <!-- Konto-Auswahl -->
-            <select
-              v-model="selectedAccountId"
-              class="select select-bordered select-sm"
-            >
-              <option value="all">Alle Konten</option>
-              <option value="grouped">Nach Typ gruppiert</option>
-              <optgroup
-                v-for="accountType in accounts.types"
-                :key="accountType"
-                :label="`${accountType} Konten`"
-              >
-                <option
-                  v-for="account in accounts.all.filter(
-                    (acc) => acc.accountType === accountType
-                  )"
-                  :key="account.id"
-                  :value="account.id"
-                >
-                  {{ account.name }}
-                </option>
-              </optgroup>
-            </select>
-
-            <!-- Zeitraum-Auswahl -->
-            <select
-              v-model="accountTrendDays"
-              class="select select-bordered select-sm"
-            >
-              <option :value="7">7 Tage</option>
-              <option :value="30">30 Tage</option>
-              <option :value="90">90 Tage</option>
-              <option :value="180">180 Tage</option>
-              <option :value="365">1 Jahr</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="h-64">
-          <AccountTrendChart
-            :account-id="selectedAccountId"
-            :days="accountTrendDays"
-            :account-grouping="accountGrouping"
-          />
-        </div>
-      </div>
-    </div>
+    <AccountTrendChart :show-header="true" />
   </div>
 </template>
