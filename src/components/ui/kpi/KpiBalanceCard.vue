@@ -73,7 +73,7 @@ const amountClass = computed(() => (value.value >= 0 ? 'text-success' : 'text-er
           </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-1">
-          <span class="text-xs opacity-70 mb-2">vs. Vorperiode</span>
+          <span class="text-xs opacity-70 mb-2 ">vs. Vorperiode</span>
           <span
             class="badge badge-soft badge-sm rounded-full border-0"
             :class="badgeClass"
