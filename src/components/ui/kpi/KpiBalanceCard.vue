@@ -55,8 +55,8 @@ const percent = computed(() => {
 
 const isUp = computed(() => value.value - prevValue.value >= 0);
 const badgeClass = computed(() => {
-  if (percent.value === null) return 'bg-base-200 text-base-content/70';
-  return isUp.value ? 'bg-success/15 text-success' : 'bg-error/15 text-error';
+  if (percent.value === null) return 'badge-ghost';
+  return isUp.value ? 'badge-success' : 'badge-error';
 });
 const arrow = computed(() => (percent.value === null ? '' : (isUp.value ? '▲' : '▼')));
 const amountClass = computed(() => (value.value >= 0 ? 'text-success' : 'text-error'));
@@ -73,9 +73,9 @@ const amountClass = computed(() => (value.value >= 0 ? 'text-success' : 'text-er
           </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-1">
-          <span class="text-xs opacity-70">vs. Vorperiode</span>
+          <span class="text-xs opacity-70 mb-2">vs. Vorperiode</span>
           <span
-            class="badge badge-soft rounded-full border-0"
+            class="badge badge-soft badge-sm rounded-full border-0"
             :class="badgeClass"
             aria-label="Bilanz-Trend"
           >

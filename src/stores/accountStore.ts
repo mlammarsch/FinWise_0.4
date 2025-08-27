@@ -50,15 +50,15 @@ export const useAccountStore = defineStore('account', () => {
     const accountWithTimestamp: Account = {
       ...accountData,
       sortOrder: sortOrder || 0,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      updated_at: (accountData as any).updated_at || new Date().toISOString(),
+      // FE-Timestamp in camelCase setzen (Backend-Mapping erfolgt später)
+      updatedAt: (accountData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       // LWW-Logik für eingehende Sync-Daten (CREATE)
       const localAccount = await tenantDbService.getAccountById(accountWithTimestamp.id);
-      if (localAccount && localAccount.updated_at && accountWithTimestamp.updated_at &&
-        new Date(localAccount.updated_at) >= new Date(accountWithTimestamp.updated_at)) {
+      if (localAccount && localAccount.updatedAt && accountWithTimestamp.updatedAt &&
+        new Date(localAccount.updatedAt) >= new Date(accountWithTimestamp.updatedAt)) {
         infoLog('accountStore', `addAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localAccount; // Gib das lokale, "gewinnende" Konto zurück
       }
@@ -73,7 +73,7 @@ export const useAccountStore = defineStore('account', () => {
     if (existingAccountIndex === -1) {
       accounts.value.push(accountWithTimestamp);
     } else {
-      if (!fromSync || (accountWithTimestamp.updated_at && (!accounts.value[existingAccountIndex].updated_at || new Date(accountWithTimestamp.updated_at) > new Date(accounts.value[existingAccountIndex].updated_at!)))) {
+      if (!fromSync || (accountWithTimestamp.updatedAt && (!accounts.value[existingAccountIndex].updatedAt || new Date(accountWithTimestamp.updatedAt) > new Date(accounts.value[existingAccountIndex].updatedAt!)))) {
         accounts.value[existingAccountIndex] = accountWithTimestamp;
       } else if (fromSync) {
         warnLog('accountStore', `addAccount (fromSync): Store-Konto ${accounts.value[existingAccountIndex].id} war neuer als eingehendes ${accountWithTimestamp.id}. Store nicht geändert.`);
@@ -89,10 +89,15 @@ export const useAccountStore = defineStore('account', () => {
           ...accountWithTimestamp,
         };
 
+        // LWW: FE führt updatedAt (camelCase); Backend-Mapping setzt updated_at automatisch
+        if (!cleanAccountForSync.updatedAt) {
+          cleanAccountForSync.updatedAt = new Date().toISOString();
+        }
+
         // Entferne undefined-Werte
         Object.keys(cleanAccountForSync).forEach(key => {
-          if (cleanAccountForSync[key as keyof Account] === undefined) {
-            delete cleanAccountForSync[key as keyof Account];
+          if ((cleanAccountForSync as any)[key] === undefined) {
+            delete (cleanAccountForSync as any)[key];
           }
         });
 
@@ -114,7 +119,8 @@ export const useAccountStore = defineStore('account', () => {
 
     const accountUpdatesWithTimestamp: Account = {
       ...accountUpdatesData,
-      updated_at: accountUpdatesData.updated_at || new Date().toISOString(),
+      // FE verwendet updatedAt; Mapping zu updated_at erfolgt bei SyncQueue
+      updatedAt: (accountUpdatesData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
@@ -126,8 +132,8 @@ export const useAccountStore = defineStore('account', () => {
         return true;
       }
 
-      if (localAccount.updated_at && accountUpdatesWithTimestamp.updated_at &&
-        new Date(localAccount.updated_at) >= new Date(accountUpdatesWithTimestamp.updated_at)) {
+      if (localAccount.updatedAt && accountUpdatesWithTimestamp.updatedAt &&
+        new Date(localAccount.updatedAt) >= new Date(accountUpdatesWithTimestamp.updatedAt)) {
         infoLog('accountStore', `updateAccount (fromSync): Lokales Konto ${localAccount.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -139,7 +145,7 @@ export const useAccountStore = defineStore('account', () => {
 
     const idx = accounts.value.findIndex(a => a.id === accountUpdatesWithTimestamp.id);
     if (idx !== -1) {
-      if (!fromSync || (accountUpdatesWithTimestamp.updated_at && (!accounts.value[idx].updated_at || new Date(accountUpdatesWithTimestamp.updated_at) > new Date(accounts.value[idx].updated_at!)))) {
+      if (!fromSync || (accountUpdatesWithTimestamp.updatedAt && (!accounts.value[idx].updatedAt || new Date(accountUpdatesWithTimestamp.updatedAt) > new Date(accounts.value[idx].updatedAt!)))) {
         accounts.value[idx] = { ...accounts.value[idx], ...accountUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('accountStore', `updateAccount (fromSync): Store-Konto ${accounts.value[idx].id} war neuer als eingehendes ${accountUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -155,10 +161,15 @@ export const useAccountStore = defineStore('account', () => {
             ...fullAccountForSync,
           };
 
+          // LWW: FE-feld updatedAt setzen; Backend-Mapping kümmert sich um updated_at
+          if (!cleanAccountForSync.updatedAt) {
+            cleanAccountForSync.updatedAt = accountUpdatesWithTimestamp.updatedAt || new Date().toISOString();
+          }
+
           // Entferne undefined-Werte
           Object.keys(cleanAccountForSync).forEach(key => {
-            if (cleanAccountForSync[key as keyof Account] === undefined) {
-              delete cleanAccountForSync[key as keyof Account];
+            if ((cleanAccountForSync as any)[key] === undefined) {
+              delete (cleanAccountForSync as any)[key];
             }
           });
 
@@ -216,13 +227,13 @@ export const useAccountStore = defineStore('account', () => {
     const accountGroupWithTimestamp: AccountGroup = {
       ...accountGroupData,
       sortOrder,
-      updatedAt: (accountGroupData as any).updated_at || new Date().toISOString(),
+      updatedAt: (accountGroupData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
       const localGroup = await tenantDbService.getAccountGroupById(accountGroupWithTimestamp.id);
-      if (localGroup && localGroup.updated_at && accountGroupWithTimestamp.updated_at &&
-        new Date(localGroup.updated_at) >= new Date(accountGroupWithTimestamp.updated_at)) {
+      if (localGroup && localGroup.updatedAt && accountGroupWithTimestamp.updatedAt &&
+        new Date(localGroup.updatedAt) >= new Date(accountGroupWithTimestamp.updatedAt)) {
         infoLog('accountStore', `addAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return localGroup;
       }
@@ -236,7 +247,7 @@ export const useAccountStore = defineStore('account', () => {
     if (existingGroupIndex === -1) {
       accountGroups.value.push(accountGroupWithTimestamp);
     } else {
-      if (!fromSync || (accountGroupWithTimestamp.updated_at && (!accountGroups.value[existingGroupIndex].updated_at || new Date(accountGroupWithTimestamp.updated_at) > new Date(accountGroups.value[existingGroupIndex].updated_at!)))) {
+      if (!fromSync || (accountGroupWithTimestamp.updatedAt && (!accountGroups.value[existingGroupIndex].updatedAt || new Date(accountGroupWithTimestamp.updatedAt) > new Date(accountGroups.value[existingGroupIndex].updatedAt!)))) {
         accountGroups.value[existingGroupIndex] = accountGroupWithTimestamp;
       } else if (fromSync) {
         warnLog('accountStore', `addAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[existingGroupIndex].id} war neuer als eingehende ${accountGroupWithTimestamp.id}. Store nicht geändert.`);
@@ -251,10 +262,15 @@ export const useAccountStore = defineStore('account', () => {
           ...accountGroupWithTimestamp,
         };
 
+        // LWW: updatedAt sicherstellen (Mapping zu updated_at erfolgt später)
+        if (!(cleanGroupForSync as any).updatedAt) {
+          (cleanGroupForSync as any).updatedAt = accountGroupWithTimestamp.updatedAt || new Date().toISOString();
+        }
+
         // Entferne undefined-Werte
         Object.keys(cleanGroupForSync).forEach(key => {
-          if (cleanGroupForSync[key as keyof AccountGroup] === undefined) {
-            delete cleanGroupForSync[key as keyof AccountGroup];
+          if ((cleanGroupForSync as any)[key] === undefined) {
+            delete (cleanGroupForSync as any)[key];
           }
         });
 
@@ -276,7 +292,7 @@ export const useAccountStore = defineStore('account', () => {
 
     const accountGroupUpdatesWithTimestamp: AccountGroup = {
       ...accountGroupUpdatesData,
-      updated_at: accountGroupUpdatesData.updated_at || new Date().toISOString(),
+      updatedAt: (accountGroupUpdatesData as any).updatedAt || new Date().toISOString(),
     };
 
     if (fromSync) {
@@ -287,8 +303,8 @@ export const useAccountStore = defineStore('account', () => {
         return true;
       }
 
-      if (localGroup.updated_at && accountGroupUpdatesWithTimestamp.updated_at &&
-        new Date(localGroup.updated_at) >= new Date(accountGroupUpdatesWithTimestamp.updated_at)) {
+      if (localGroup.updatedAt && accountGroupUpdatesWithTimestamp.updatedAt &&
+        new Date(localGroup.updatedAt) >= new Date(accountGroupUpdatesWithTimestamp.updatedAt)) {
         infoLog('accountStore', `updateAccountGroup (fromSync): Lokale Gruppe ${localGroup.id} ist neuer oder gleich aktuell. Eingehende Änderung verworfen.`);
         return true;
       }
@@ -300,7 +316,7 @@ export const useAccountStore = defineStore('account', () => {
 
     const idx = accountGroups.value.findIndex(g => g.id === accountGroupUpdatesWithTimestamp.id);
     if (idx !== -1) {
-      if (!fromSync || (accountGroupUpdatesWithTimestamp.updated_at && (!accountGroups.value[idx].updated_at || new Date(accountGroupUpdatesWithTimestamp.updated_at) > new Date(accountGroups.value[idx].updated_at!)))) {
+      if (!fromSync || (accountGroupUpdatesWithTimestamp.updatedAt && (!accountGroups.value[idx].updatedAt || new Date(accountGroupUpdatesWithTimestamp.updatedAt) > new Date(accountGroups.value[idx].updatedAt!)))) {
         accountGroups.value[idx] = { ...accountGroups.value[idx], ...accountGroupUpdatesWithTimestamp };
       } else if (fromSync) {
         warnLog('accountStore', `updateAccountGroup (fromSync): Store-Gruppe ${accountGroups.value[idx].id} war neuer als eingehende ${accountGroupUpdatesWithTimestamp.id}. Store nicht geändert.`);
@@ -314,10 +330,15 @@ export const useAccountStore = defineStore('account', () => {
             ...accountGroupUpdatesWithTimestamp,
           };
 
+          // LWW: updatedAt sicherstellen (Mapping zu updated_at erfolgt später)
+          if (!(cleanGroupForSync as any).updatedAt) {
+            (cleanGroupForSync as any).updatedAt = accountGroupUpdatesWithTimestamp.updatedAt || new Date().toISOString();
+          }
+
           // Entferne undefined-Werte
           Object.keys(cleanGroupForSync).forEach(key => {
-            if (cleanGroupForSync[key as keyof AccountGroup] === undefined) {
-              delete cleanGroupForSync[key as keyof AccountGroup];
+            if ((cleanGroupForSync as any)[key] === undefined) {
+              delete (cleanGroupForSync as any)[key];
             }
           });
 
@@ -382,7 +403,7 @@ export const useAccountStore = defineStore('account', () => {
       const updatedAccount: Account = {
         ...account,
         logo_path: newLogoPath,
-        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       await updateAccount(updatedAccount);
       infoLog('accountStore', `Logo für Account ${accountId} aktualisiert.`);
@@ -397,7 +418,7 @@ export const useAccountStore = defineStore('account', () => {
       const updatedGroup: AccountGroup = {
         ...group,
         logo_path: newLogoPath,
-        updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       await updateAccountGroup(updatedGroup);
       infoLog('accountStore', `Logo für AccountGroup ${accountGroupId} aktualisiert.`);

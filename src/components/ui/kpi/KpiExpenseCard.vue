@@ -59,8 +59,8 @@ const percent = computed(() => {
 
 const isIncrease = computed(() => absCurr.value - absPrev.value > 0); // mehr Ausgaben = schlechter
 const badgeClass = computed(() => {
-  if (percent.value === null) return 'bg-base-200 text-base-content/70';
-  return isIncrease.value ? 'bg-error/15 text-error' : 'bg-success/15 text-success';
+  if (percent.value === null) return 'badge-ghost';
+  return isIncrease.value ? 'badge-error' : 'badge-success';
 });
 const arrow = computed(() => (percent.value === null ? '' : (isIncrease.value ? '▲' : '▼')));
 </script>
@@ -76,9 +76,9 @@ const arrow = computed(() => (percent.value === null ? '' : (isIncrease.value ? 
           </p>
         </div>
         <div class="flex flex-col items-start md:items-end gap-1">
-          <span class="text-xs opacity-70">vs. Vorperiode</span>
+          <span class="text-xs opacity-70 mb-2">vs. Vorperiode</span>
           <span
-            class="badge badge-soft rounded-full border-0"
+            class="badge badge-soft badge-sm rounded-full border-0"
             :class="badgeClass"
             aria-label="Ausgaben-Trend"
           >
