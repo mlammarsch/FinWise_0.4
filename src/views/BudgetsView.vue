@@ -160,7 +160,7 @@ const toBudgetByMonth = computed(() => {
 <template>
   <div class="h-[calc(100vh-189px)] flex flex-col overflow-hidden relative">
     <!-- Loading Overlay - wird über den Inhalt gelegt -->
-    <div v-if="isLoading" class="absolute inset-0 z-50 flex items-center justify-center bg-base-100" style="will-change: transform;">
+    <div v-if="isLoading" class="fixed inset-0 z-[1000] flex items-center justify-center bg-base-100" style="will-change: transform; transform: translateZ(0);">
       <div class="flex flex-col items-center space-y-4">
         <!-- Loading Spinner mit Hardware-Beschleunigung -->
         <div class="loading loading-spinner loading-lg text-primary" style="will-change: transform; transform: translateZ(0);"></div>

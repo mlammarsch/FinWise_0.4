@@ -687,26 +687,19 @@ async function initializeSubGridsInChunks() {
 
 // Verarbeitet Elemente in kleineren Chunks
 async function processElementsInChunks(elements: HTMLElement[], subGridsArray: typeof expenseSubGrids, type: string) {
-  const CHUNK_SIZE = 5; // Maximal 5 Grids pro Chunk
-
-  for (let i = 0; i < elements.length; i += CHUNK_SIZE) {
-    const chunk = elements.slice(i, i + CHUNK_SIZE);
-    debugLog('BudgetCategoriesAndValues', `Processing ${type} sub-grid chunk ${Math.floor(i/CHUNK_SIZE) + 1}: ${chunk.length} elements`);
-
-    // Verarbeite Chunk
-    chunk.forEach(el => {
-      try {
-        const grid = createSubGrid(el, subGridsArray);
-        subGridsArray.value.push(grid);
-      } catch (error) {
-        errorLog('BudgetCategoriesAndValues', `Failed to create ${type} sub-grid`, error);
-      }
-    });
-
-    // Kurze Pause zwischen Chunks für bessere UI-Responsivität
-    if (i + CHUNK_SIZE < elements.length) {
-      await new Promise(resolve => setTimeout(resolve, 25));
+  // Frame-by-Frame Initialisierung: nach jedem Grid an den Browser yielden,
+  // damit der Spinner/Skeleton flüssig animieren kann.
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    debugLog('BudgetCategoriesAndValues', `Initializing ${type} sub-grid ${i + 1}/${elements.length}`);
+    try {
+      const grid = createSubGrid(el, subGridsArray);
+      subGridsArray.value.push(grid);
+    } catch (error) {
+      errorLog('BudgetCategoriesAndValues', `Failed to create ${type} sub-grid`, error);
     }
+    // Yield bis zum nächsten Animation-Frame (rAF), um den Main-Thread freizugeben
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
   }
 }
 
@@ -1987,6 +1980,9 @@ function handleTransactionUpdated() {
 .muuri-container {
   position: relative;
   min-height: 100px;
+  /* Isoliert Layout-/Paint-Berechnungen und erstellt eine eigene Compositor-Layer */
+  contain: layout paint;
+  will-change: transform;
 }
 
 .group-wrapper {
