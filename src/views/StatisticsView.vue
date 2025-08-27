@@ -149,11 +149,6 @@ const setTimeRange = (range: string) => {
       <KpiNetWorthCard :start-date="startDate" :end-date="endDate" />
     </div>
 
-    <!-- Einnahmen vs. Ausgaben Chart -->
-    <div class="grid grid-cols-1 md:grid-cols-1 gap-6 mb-6 h-80">
-      <FinancialTrendChart :show-header="true" />
-
-    </div>
 
     <!-- Top-Kategorien Listen -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
