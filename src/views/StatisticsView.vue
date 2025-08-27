@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
-import { BalanceService } from "@/services/BalanceService";
-import { TransactionService } from "@/services/TransactionService";
-import { formatCurrency } from "@/utils/formatters";
+import { ref, watch } from "vue";
 import dayjs from "dayjs";
+import KpiIncomeCard from "../components/ui/kpi/KpiIncomeCard.vue";
+import KpiExpenseCard from "../components/ui/kpi/KpiExpenseCard.vue";
+import KpiBalanceCard from "../components/ui/kpi/KpiBalanceCard.vue";
+import KpiNetWorthCard from "../components/ui/kpi/KpiNetWorthCard.vue";
 
 // Chart-Komponenten
-import ExpenseIncomeSummaryChart from "@/components/ui/charts/ExpenseIncomeSummaryChart.vue";
-import CategoryExpensesChart from "@/components/ui/charts/CategoryExpensesChart.vue";
-import NetWorthChart from "@/components/ui/charts/NetWorthChart.vue";
-import AccountTrendChart from "@/components/ui/charts/AccountTrendChart.vue";
-import TopExpenseCategoriesChart from "@/components/ui/charts/TopExpenseCategoriesChart.vue";
-import TopIncomeCategoriesChart from "@/components/ui/charts/TopIncomeCategoriesChart.vue";
+import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
+import CategoryExpensesChart from "../components/ui/charts/CategoryExpensesChart.vue";
+import NetWorthChart from "../components/ui/charts/NetWorthChart.vue";
+import AccountTrendChart from "../components/ui/charts/AccountTrendChart.vue";
+import TopExpenseCategoriesChart from "../components/ui/charts/TopExpenseCategoriesChart.vue";
+import TopIncomeCategoriesChart from "../components/ui/charts/TopIncomeCategoriesChart.vue";
+import DateRangePicker from "../components/ui/DateRangePicker.vue";
 
 
 // Zeitraum für die Statistiken
@@ -21,19 +23,22 @@ const endDate = ref(dayjs().endOf("month").format("YYYY-MM-DD"));
 // Filter-Optionen
 const trendMonths = ref(3);
 
-// Zusammenfassung für den ausgewählten Zeitraum
-const summary = computed(() => {
-  // Cache für aktuellen Monat invalidieren, um aktuelle Daten zu gewährleisten
-  BalanceService.invalidateCurrentMonthCache();
-
-  return TransactionService.getIncomeExpenseSummary(
-    startDate.value,
-    endDate.value
-  );
+// Gemeinsamer Range-State für den DateRangePicker (hält Picker-UI synchron)
+const dateRange = ref<{ start: string; end: string }>({
+  start: startDate.value,
+  end: endDate.value,
 });
 
+// Wenn der Picker geändert wird, auf startDate/endDate spiegeln
+watch(dateRange, (range: { start: string; end: string }) => {
+  if (!range?.start || !range?.end) return;
+  startDate.value = range.start;
+  endDate.value = range.end;
+});
 
-// Zeitraum ändern
+// KPI Cards berechnen intern ihre Werte basierend auf startDate/endDate
+
+// Zeitraum ändern (Buttons steuern weiterhin und synchronisieren den Picker)
 const setTimeRange = (range: string) => {
   const today = dayjs();
 
@@ -53,8 +58,14 @@ const setTimeRange = (range: string) => {
         .format("YYYY-MM-DD");
       break;
     case "thisQuarter":
-      startDate.value = today.startOf("quarter").format("YYYY-MM-DD");
-      endDate.value = today.endOf("quarter").format("YYYY-MM-DD");
+      startDate.value = dayjs(today)
+        .month(Math.floor(today.month() / 3) * 3)
+        .startOf("month")
+        .format("YYYY-MM-DD");
+      endDate.value = dayjs(today)
+        .month(Math.floor(today.month() / 3) * 3 + 2)
+        .endOf("month")
+        .format("YYYY-MM-DD");
       break;
     case "thisYear":
       startDate.value = today.startOf("year").format("YYYY-MM-DD");
@@ -71,6 +82,9 @@ const setTimeRange = (range: string) => {
         .format("YYYY-MM-DD");
       break;
   }
+
+  // Picker-Range mit Buttons synchronisieren
+  dateRange.value = { start: startDate.value, end: endDate.value };
 };
 
 </script>
@@ -122,73 +136,23 @@ const setTimeRange = (range: string) => {
         </div>
 
         <div class="flex gap-2">
-          <input
-            type="date"
-            v-model="startDate"
-            class="input input-bordered input-sm"
-          />
-          <span class="self-center">bis</span>
-          <input
-            type="date"
-            v-model="endDate"
-            class="input input-bordered input-sm"
-          />
+          <DateRangePicker v-model="dateRange" />
         </div>
       </div>
     </div>
 
     <!-- Zusammenfassung -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Einnahmen</h3>
-          <p class="text-2xl font-bold text-success">
-            {{ formatCurrency(summary.income) }}
-          </p>
-        </div>
-      </div>
-
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Ausgaben</h3>
-          <p class="text-2xl font-bold text-error">
-            {{ formatCurrency(summary.expense) }}
-          </p>
-        </div>
-      </div>
-
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Bilanz</h3>
-          <p
-            class="text-2xl font-bold"
-            :class="summary.balance >= 0 ? 'text-success' : 'text-error'"
-          >
-            {{ formatCurrency(summary.balance) }}
-          </p>
-        </div>
-      </div>
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <KpiIncomeCard :start-date="startDate" :end-date="endDate" />
+      <KpiExpenseCard :start-date="startDate" :end-date="endDate" />
+      <KpiBalanceCard :start-date="startDate" :end-date="endDate" />
+      <KpiNetWorthCard :start-date="startDate" :end-date="endDate" />
     </div>
 
     <!-- Einnahmen vs. Ausgaben Chart -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <ExpenseIncomeSummaryChart
-        :start-date="startDate"
-        :end-date="endDate"
-        :show-header="true"
-      />
+    <div class="grid grid-cols-1 md:grid-cols-1 gap-6 mb-6 h-80">
+      <FinancialTrendChart :show-header="true" />
 
-      <CategoryExpensesChart
-        :start-date="startDate"
-        :end-date="endDate"
-        :show-header="true"
-      />
     </div>
 
     <!-- Top-Kategorien Listen -->

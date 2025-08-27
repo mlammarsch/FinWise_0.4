@@ -13,7 +13,7 @@ import { PlanningService } from "../services/PlanningService";
 import { BudgetService } from "../services/BudgetService";
 import { TransactionType, PlanningTransaction } from "../types";
 import { formatCurrency, formatDate } from "../utils/formatters";
-import FinancialTrendChart from "../components/ui/charts/FinancialTrendChart.vue";
+import ExpenseIncomeSummaryChart from "../components/ui/charts/ExpenseIncomeSummaryChart.vue";
 import CurrencyDisplay from "../components/ui/CurrencyDisplay.vue";
 import { Icon } from "@iconify/vue";
 import dayjs from "dayjs";
@@ -605,7 +605,11 @@ onMounted(() => {
         </div>
       </div>
 
-      <FinancialTrendChart />
+      <ExpenseIncomeSummaryChart
+        :start-date="startDate"
+        :end-date="endDate"
+        :show-header="true"
+      />
     </div>
 
     <!-- Main Content -->

@@ -196,14 +196,14 @@ const chartData = computed(() => {
     const endOfMonth = month.endOf("month").toDate();
     const monthBalance = BalanceService.getTotalBalance(endOfMonth, false);
 
-    // Transaktionen für diesen Monat filtern (ohne CATEGORYTRANSFER)
+    // Transaktionen für diesen Monat filtern (nur INCOME/EXPENSE; Transfers komplett ausschließen)
     const monthTransactions = transactionStore.transactions.filter(
       (tx: Transaction) => {
         const txDate = dayjs(tx.date);
         return (
           txDate.isAfter(dayjs(startOfMonth).subtract(1, "day")) &&
           txDate.isBefore(dayjs(endOfMonthStr).add(1, "day")) &&
-          tx.type !== TransactionType.CATEGORYTRANSFER
+          (tx.type === TransactionType.INCOME || tx.type === TransactionType.EXPENSE)
         );
       }
     );
@@ -699,7 +699,7 @@ onUnmounted(() => {
           <span class="iconify ml-1" data-icon="mdi:chevron-right"></span>
         </button>
       </div>
-      <div class="h-64 w-full">
+      <div class="h-80 w-full">
         <div
           ref="chartContainer"
           class="w-full h-full min-h-0"

@@ -331,8 +331,34 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    ref="chartContainer"
-    class="w-full h-180"
-  ></div>
+  <div class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150">
+    <div class="card-body">
+      <!-- Header -->
+      <div
+        v-if="showHeader"
+        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4"
+      >
+        <h3 class="card-title text-lg">Einnahmen vs. Ausgaben</h3>
+
+        <!-- Link-Button -->
+        <RouterLink
+          :to="{ name: 'transactions' }"
+          class="btn btn-sm btn-ghost"
+        >
+          Zu Transaktionen
+        </RouterLink>
+      </div>
+
+      <!-- Titel wenn kein Header -->
+      <h3 v-else class="card-title text-lg mb-4">
+        Einnahmen vs. Ausgaben
+      </h3>
+
+      <!-- Chart -->
+      <div
+        ref="chartContainer"
+        class="w-full h-full"
+      ></div>
+    </div>
+  </div>
 </template>
