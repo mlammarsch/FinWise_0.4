@@ -53,22 +53,33 @@ const accountTrendMode = ref(props.mode || "history");
 // Konten für das Dropdown
 const accounts = computed(() => {
   const activeAccounts = accountStore.activeAccounts.filter(
-    (acc) => !acc.isOfflineBudget
+    (acc) => !acc.isOfflineBudget && acc.isActive
   );
   const accountTypes = [
     ...new Set(activeAccounts.map((acc) => acc.accountType)),
   ];
+  const groupsWithActiveAccounts = accountStore.accountGroups
+    .filter(g => activeAccounts.some(acc => acc.accountGroupId === g.id));
 
   return {
     all: activeAccounts,
     types: accountTypes,
+    groups: groupsWithActiveAccounts,
   };
 });
 
 // Account-Filter-Optionen
 const getAccountFilterLabel = (accountId: string) => {
   if (accountId === "all") return "Alle Konten";
-  if (accountId === "grouped") return "Nach Typ gruppiert";
+  if (accountId.startsWith("type:")) {
+    const type = accountId.substring("type:".length);
+    return `Konto-Typ: ${type}`;
+  }
+  if (accountId.startsWith("group:")) {
+    const groupId = accountId.substring("group:".length);
+    const group = accountStore.accountGroups.find(g => g.id === groupId);
+    return group ? `Konto-Gruppe: ${group.name}` : "Konto-Gruppe";
+  }
 
   const account = accountStore.getAccountById(accountId);
   return account ? account.name : "Unbekanntes Konto";
@@ -180,125 +191,63 @@ const chartData = computed(() => {
       id: string;
     }> = [];
 
-  if (currentAccountId === "all") {
-    // Alle Konten einzeln anzeigen
-    const activeAccounts = accountStore.activeAccounts.filter(
-      (acc) => !acc.isOfflineBudget
-    );
-
-    activeAccounts.forEach((account) => {
-      if (currentMode === "forecast") {
-        // Prognose: Verwende getRunningBalances für tagesgenaue Prognosen
-        const balances = BalanceService.getRunningBalances(
-          "account",
-          account.id,
-          [startDate, endDate],
-          { includeProjection: true }
-        );
-
-        const forecastData = balances
-          .filter((balance) => balance.projected !== undefined)
-          .map((balance) => ({
-            x: dayjs(balance.date).valueOf(),
-            y: Math.round(balance.projected!),
-          }));
-
-        if (forecastData.length > 0) {
-          series.push({
-            name: `${account.name} (Prognose)`,
-            data: forecastData,
-            id: `${account.id}_forecast`,
+  // Hilfsfunktion: Aggregierte Serie über mehrere Konten
+  const buildAggregatedSeries = (name: string, accountIds: string[], isForecast: boolean) => {
+    const combined: Record<string, number> = {};
+    accountIds.forEach((accId) => {
+      const balances = BalanceService.getRunningBalances(
+        "account",
+        accId,
+        [startDate, endDate],
+        { includeProjection: isForecast }
+      );
+      if (isForecast) {
+        balances
+          .filter((b) => b.projected !== undefined)
+          .forEach((b) => {
+            const k = b.date;
+            if (!combined[k]) combined[k] = 0;
+            combined[k] += b.projected!;
           });
-        }
       } else {
-        // Vergangenheit: Verwende BalanceService für echte Kontostände
-        const balances = BalanceService.getRunningBalances(
-          "account",
-          account.id,
-          [startDate, endDate],
-          { includeProjection: false }
-        );
-
-        const data = balances.map((balance) => ({
-          x: dayjs(balance.date).valueOf(),
-          y: Math.round(balance.balance),
-        }));
-
-        series.push({
-          name: account.name,
-          data,
-          id: account.id,
+        balances.forEach((b) => {
+          const k = b.date;
+          if (!combined[k]) combined[k] = 0;
+          combined[k] += b.balance;
         });
       }
     });
-  } else if (currentAccountId === "grouped") {
-    // Nach AccountType gruppiert
+    const data = Object.entries(combined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, sum]) => ({
+        x: dayjs(date).valueOf(),
+        y: Math.round(sum),
+      }));
+    series.push({ name, data, id: `agg_${name.replace(/\s+/g, "_").toLowerCase()}` });
+  };
+
+  if (currentAccountId === "all") {
+    // Gesamtentwicklung aller aktiven Konten (Netto)
     const activeAccounts = accountStore.activeAccounts.filter(
-      (acc) => !acc.isOfflineBudget
+      (acc) => !acc.isOfflineBudget && acc.isActive
     );
-    const accountTypes = [
-      ...new Set(activeAccounts.map((acc) => acc.accountType)),
-    ];
-
-    accountTypes.forEach((accountType) => {
-      const typeAccounts = activeAccounts.filter(
-        (acc) => acc.accountType === accountType
-      );
-
-      // Berechne Gesamtsaldo für diesen Typ pro Tag
-      const combinedBalances: Record<string, number> = {};
-
-      typeAccounts.forEach((account) => {
-        if (currentMode === "forecast") {
-          // Prognose: Verwende getRunningBalances für tagesgenaue Prognosen
-          const balances = BalanceService.getRunningBalances(
-            "account",
-            account.id,
-            [startDate, endDate],
-            { includeProjection: true }
-          );
-
-          balances
-            .filter((balance) => balance.projected !== undefined)
-            .forEach((balance) => {
-              const dateKey = balance.date;
-              if (!combinedBalances[dateKey]) {
-                combinedBalances[dateKey] = 0;
-              }
-              combinedBalances[dateKey] += balance.projected!;
-            });
-        } else {
-          // Vergangenheit: Verwende BalanceService
-          const balances = BalanceService.getRunningBalances(
-            "account",
-            account.id,
-            [startDate, endDate],
-            { includeProjection: false }
-          );
-
-          balances.forEach((balance) => {
-            const dateKey = balance.date;
-            if (!combinedBalances[dateKey]) {
-              combinedBalances[dateKey] = 0;
-            }
-            combinedBalances[dateKey] += balance.balance;
-          });
-        }
-      });
-
-      const data = Object.entries(combinedBalances)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, balance]) => ({
-          x: dayjs(date).valueOf(),
-          y: Math.round(balance),
-        }));
-
-      series.push({
-        name: `${accountType} (${typeAccounts.length} Konten)`,
-        data,
-        id: `type_${accountType}`,
-      });
-    });
+    const ids = activeAccounts.map(a => a.id);
+    buildAggregatedSeries("Alle Konten", ids, currentMode === "forecast");
+  } else if (typeof currentAccountId === "string" && currentAccountId.startsWith("type:")) {
+    // Aggregation nach Konto-Typ
+    const type = currentAccountId.substring("type:".length);
+    const activeTypeAccounts = accountStore.activeAccounts.filter(
+      (acc) => !acc.isOfflineBudget && acc.isActive && String(acc.accountType) === type
+    );
+    buildAggregatedSeries(`Typ ${type}`, activeTypeAccounts.map(a => a.id), currentMode === "forecast");
+  } else if (typeof currentAccountId === "string" && currentAccountId.startsWith("group:")) {
+    // Aggregation nach Konto-Gruppe
+    const groupId = currentAccountId.substring("group:".length);
+    const groupAccounts = accountStore.activeAccounts.filter(
+      (acc) => !acc.isOfflineBudget && acc.isActive && acc.accountGroupId === groupId
+    );
+    const groupName = accountStore.accountGroups.find(g => g.id === groupId)?.name || "Konto-Gruppe";
+    buildAggregatedSeries(`${groupName}`, groupAccounts.map(a => a.id), currentMode === "forecast");
   } else {
     // Einzelnes Konto
     const account = accountStore.getAccountById(currentAccountId);
@@ -385,6 +334,30 @@ const chartOptions = computed(() => {
 
   if (!data.hasData) {
     return null;
+  }
+
+  // Zeitraum bestimmen und Y-Achse für kurze Zeiträume stabilisieren
+  const daysVal = (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
+  const isShortRange = daysVal < 90;
+
+  let yAxisMin: number | undefined;
+  let yAxisMax: number | undefined;
+
+  if (isShortRange) {
+    const allY = data.series
+      .flatMap((s) => s.data.map((p) => p.y))
+      .filter((v): v is number => typeof v === "number" && isFinite(v));
+
+    if (allY.length > 0) {
+      const minY = Math.min(...allY);
+      const maxY = Math.max(...allY);
+      const rawRange = maxY - minY;
+      const base = Math.max(Math.abs(maxY), Math.abs(minY), 1);
+      const safeRange = rawRange === 0 ? Math.max(1, Math.round(base * 0.02)) : rawRange;
+      const pad = Math.max(1, Math.round(safeRange * 0.1));
+      yAxisMin = Math.floor(minY - pad);
+      yAxisMax = Math.ceil(maxY + pad);
+    }
   }
 
   // Bestimme Farben basierend auf Anzahl der Serien
@@ -510,11 +483,16 @@ const chartOptions = computed(() => {
         show: true,
         color: themeColors.base300,
       },
+      logarithmic: false,
       // Bessere Skalierung je nach Zeitraum
       forceNiceScale: true,
       floating: false,
+      ...(isShortRange && typeof yAxisMin === "number" && typeof yAxisMax === "number" ? {
+        min: yAxisMin,
+        max: yAxisMax,
+      } : {}),
       // Für kürzere Zeiträume mehr Kontrolle über die Tick-Anzahl
-      ...((props.showHeader ? accountTrendDays.value : props.days) < 90 && {
+      ...(isShortRange && {
         tickAmount: 6,
         decimalsInFloat: 0,
       }),
@@ -736,20 +714,31 @@ onUnmounted(() => {
             class="select select-bordered select-xs"
           >
             <option value="all">Alle Konten</option>
-            <option value="grouped">Nach Typ gruppiert</option>
-            <optgroup
-              v-for="accountType in accounts.types"
-              :key="accountType"
-              :label="`${accountType} Konten`"
-            >
+            <optgroup label="Konten">
               <option
-                v-for="account in accounts.all.filter(
-                  (acc) => acc.accountType === accountType
-                )"
+                v-for="account in accounts.all"
                 :key="account.id"
                 :value="account.id"
               >
                 {{ account.name }}
+              </option>
+            </optgroup>
+            <optgroup label="Konto-Typ">
+              <option
+                v-for="accountType in accounts.types"
+                :key="`type-${accountType}`"
+                :value="`type:${accountType}`"
+              >
+                {{ accountType }}
+              </option>
+            </optgroup>
+            <optgroup label="Konto-Gruppen">
+              <option
+                v-for="group in accounts.groups"
+                :key="`group-${group.id}`"
+                :value="`group:${group.id}`"
+              >
+                {{ group.name }}
               </option>
             </optgroup>
           </select>
@@ -784,10 +773,7 @@ onUnmounted(() => {
         >
           <div class="text-center">
             <div class="text-lg mb-2">💰</div>
-            <div v-if="selectedAccountId === 'all' || selectedAccountId === 'grouped'">
-              Bitte wählen Sie ein Konto aus
-            </div>
-            <div v-else>Keine Kontodaten verfügbar</div>
+            <div>Keine Kontodaten verfügbar</div>
           </div>
         </div>
         <div
@@ -807,10 +793,7 @@ onUnmounted(() => {
     >
       <div class="text-center">
         <div class="text-lg mb-2">💰</div>
-        <div v-if="(showHeader ? selectedAccountId : accountId) === 'all' || (showHeader ? selectedAccountId : accountId) === 'grouped'">
-          Bitte wählen Sie ein Konto aus
-        </div>
-        <div v-else>Keine Kontodaten verfügbar</div>
+        <div>Keine Kontodaten verfügbar</div>
       </div>
     </div>
     <div
