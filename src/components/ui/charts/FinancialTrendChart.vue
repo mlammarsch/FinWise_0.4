@@ -12,6 +12,7 @@ import "dayjs/locale/de";
 
 // ApexCharts importieren
 import ApexCharts from "apexcharts";
+import { useRouter } from "vue-router";
 
 dayjs.locale("de");
 
@@ -79,6 +80,15 @@ const transactionStore = useTransactionStore();
 const accountStore = useAccountStore();
 const monthlyBalanceStore = useMonthlyBalanceStore();
 const themeStore = useThemeStore();
+
+// Props
+const props = withDefaults(defineProps<{ showHeader?: boolean }>(), { showHeader: true });
+
+// Router for Details navigation
+const router = useRouter();
+const navigateToStatistics = () => {
+  router.push("/statistics");
+};
 
 // Formatierungsfunktion für kompakte Darstellung (3k€ statt 3.000,00€)
 const formatCurrency = (value: number): string => {
@@ -680,8 +690,21 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    ref="chartContainer"
-    class="w-full h-full min-h-0"
-  ></div>
+  <div class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150">
+    <div class="card-body">
+      <div v-if="showHeader" class="flex justify-between items-center mb-4">
+        <h3 class="card-title text-lg">Finanztrend (6 Monate)</h3>
+        <button class="btn btn-sm btn-ghost" @click="navigateToStatistics">
+          Details
+          <span class="iconify ml-1" data-icon="mdi:chevron-right"></span>
+        </button>
+      </div>
+      <div class="h-64 w-full">
+        <div
+          ref="chartContainer"
+          class="w-full h-full min-h-0"
+        ></div>
+      </div>
+    </div>
+  </div>
 </template>
