@@ -1,21 +1,18 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
-import { useAccountStore } from "@/stores/accountStore";
-import { useCategoryStore } from "@/stores/categoryStore";
-import { TransactionService } from "@/services/TransactionService";
+import { ref, computed } from "vue";
 import { BalanceService } from "@/services/BalanceService";
+import { TransactionService } from "@/services/TransactionService";
 import { formatCurrency } from "@/utils/formatters";
 import dayjs from "dayjs";
 
 // Chart-Komponenten
-import IncomeExpenseChart from "@/components/ui/charts/IncomeExpenseChart.vue";
+import ExpenseIncomeSummaryChart from "@/components/ui/charts/ExpenseIncomeSummaryChart.vue";
 import CategoryExpensesChart from "@/components/ui/charts/CategoryExpensesChart.vue";
 import NetWorthChart from "@/components/ui/charts/NetWorthChart.vue";
 import AccountTrendChart from "@/components/ui/charts/AccountTrendChart.vue";
+import TopExpenseCategoriesChart from "@/components/ui/charts/TopExpenseCategoriesChart.vue";
+import TopIncomeCategoriesChart from "@/components/ui/charts/TopIncomeCategoriesChart.vue";
 
-// Stores
-const accountStore = useAccountStore();
-const categoryStore = useCategoryStore();
 
 // Zeitraum für die Statistiken
 const startDate = ref(dayjs().startOf("month").format("YYYY-MM-DD"));
@@ -33,74 +30,6 @@ const summary = computed(() => {
     startDate.value,
     endDate.value
   );
-});
-
-// Top-Ausgabenkategorien für die Liste
-const topExpenseCategories = computed(() => {
-  const transactions = TransactionService.getAllTransactions();
-  const start = new Date(startDate.value);
-  const end = new Date(endDate.value);
-
-  // Gruppiere Ausgaben nach Kategorien
-  const categoryExpenses: Record<
-    string,
-    { name: string; amount: number; categoryId: string }
-  > = {};
-
-  transactions.forEach((tx) => {
-    const txDate = new Date(tx.date);
-    if (txDate >= start && txDate <= end && tx.amount < 0 && tx.categoryId) {
-      const category = categoryStore.getCategoryById(tx.categoryId);
-      if (category) {
-        if (!categoryExpenses[tx.categoryId]) {
-          categoryExpenses[tx.categoryId] = {
-            name: category.name,
-            amount: 0,
-            categoryId: tx.categoryId,
-          };
-        }
-        categoryExpenses[tx.categoryId].amount += Math.abs(tx.amount);
-      }
-    }
-  });
-
-  return Object.values(categoryExpenses)
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 10);
-});
-
-// Top-Einnahmenkategorien für die Liste
-const topIncomeCategories = computed(() => {
-  const transactions = TransactionService.getAllTransactions();
-  const start = new Date(startDate.value);
-  const end = new Date(endDate.value);
-
-  // Gruppiere Einnahmen nach Kategorien
-  const categoryIncome: Record<
-    string,
-    { name: string; amount: number; categoryId: string }
-  > = {};
-
-  transactions.forEach((tx) => {
-    const txDate = new Date(tx.date);
-    if (txDate >= start && txDate <= end && tx.amount > 0 && tx.categoryId) {
-      const category = categoryStore.getCategoryById(tx.categoryId);
-      if (category && category.isIncomeCategory) {
-        if (!categoryIncome[tx.categoryId]) {
-          categoryIncome[tx.categoryId] = {
-            name: category.name,
-            amount: 0,
-            categoryId: tx.categoryId,
-          };
-        }
-        categoryIncome[tx.categoryId].amount += tx.amount;
-      }
-    }
-  });
-
-  return Object.values(categoryIncome)
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 10);
 });
 
 
@@ -249,112 +178,32 @@ const setTimeRange = (range: string) => {
 
     <!-- Einnahmen vs. Ausgaben Chart -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Einnahmen vs. Ausgaben</h3>
-          <div class="h-64">
-            <IncomeExpenseChart
-              :start-date="startDate"
-              :end-date="endDate"
-            />
-          </div>
-        </div>
-      </div>
+      <ExpenseIncomeSummaryChart
+        :start-date="startDate"
+        :end-date="endDate"
+        :show-header="true"
+      />
 
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Ausgaben nach Kategorien</h3>
-          <div class="h-64">
-            <CategoryExpensesChart
-              :start-date="startDate"
-              :end-date="endDate"
-            />
-          </div>
-        </div>
-      </div>
+      <CategoryExpensesChart
+        :start-date="startDate"
+        :end-date="endDate"
+        :show-header="true"
+      />
     </div>
 
     <!-- Top-Kategorien Listen -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Top-Ausgabenkategorien</h3>
+      <TopExpenseCategoriesChart
+        :start-date="startDate"
+        :end-date="endDate"
+        :show-header="true"
+      />
 
-          <div
-            v-if="topExpenseCategories.length > 0"
-            class="space-y-3"
-          >
-            <div
-              v-for="category in topExpenseCategories"
-              :key="category.categoryId"
-              class="space-y-1"
-            >
-              <div class="flex justify-between items-center">
-                <span>{{ category.name }}</span>
-                <span class="font-medium">{{
-                  formatCurrency(category.amount)
-                }}</span>
-              </div>
-              <progress
-                class="progress progress-error w-full"
-                :value="category.amount"
-                :max="topExpenseCategories[0].amount"
-              ></progress>
-            </div>
-          </div>
-
-          <div
-            v-else
-            class="text-center py-4 text-base-content/70"
-          >
-            Keine Ausgaben in diesem Zeitraum
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-lg">Top-Einnahmenkategorien</h3>
-
-          <div
-            v-if="topIncomeCategories.length > 0"
-            class="space-y-3"
-          >
-            <div
-              v-for="category in topIncomeCategories"
-              :key="category.categoryId"
-              class="space-y-1"
-            >
-              <div class="flex justify-between items-center">
-                <span>{{ category.name }}</span>
-                <span class="font-medium">{{
-                  formatCurrency(category.amount)
-                }}</span>
-              </div>
-              <progress
-                class="progress progress-success w-full"
-                :value="category.amount"
-                :max="topIncomeCategories[0].amount"
-              ></progress>
-            </div>
-          </div>
-
-          <div
-            v-else
-            class="text-center py-4 text-base-content/70"
-          >
-            Keine Einnahmen in diesem Zeitraum
-          </div>
-        </div>
-      </div>
+      <TopIncomeCategoriesChart
+        :start-date="startDate"
+        :end-date="endDate"
+        :show-header="true"
+      />
     </div>
 
     <!-- Monatlicher Trend -->
