@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
-import { useThemeStore } from "@/stores/themeStore";
-import { TransactionService } from "@/services/TransactionService";
+import { useThemeStore } from "../../../stores/themeStore";
+import { TransactionService } from "../../../services/TransactionService";
 import ApexCharts from "apexcharts";
 
 // Props
-const props = withDefaults(defineProps<{
-  startDate: string;
-  endDate: string;
-  showHeader?: boolean;
-}>(), {
-  showHeader: true
-});
+const props = withDefaults(
+  defineProps<{
+    startDate: string;
+    endDate: string;
+    showHeader?: boolean;
+  }>(),
+  {
+    showHeader: true,
+  }
+);
 
 // Stores
 const themeStore = useThemeStore();
@@ -20,6 +23,9 @@ const themeStore = useThemeStore();
 const chartContainer = ref<HTMLElement>();
 let chart: ApexCharts | null = null;
 let themeObserver: MutationObserver | null = null;
+let resizeObserver: ResizeObserver | null = null;
+const cardBodyRef = ref<HTMLElement>();
+const headerRef = ref<HTMLElement | null>(null);
 
 // Responsive
 const isSmallScreen = ref(false);
@@ -27,7 +33,7 @@ const isSmallScreen = ref(false);
 // Formatiert Währungsbeträge als vollständige Integer-Werte
 const formatFullCurrency = (value: number): string => {
   if (value === 0) return "0€";
-  return Math.round(value).toLocaleString('de-DE') + "€";
+  return Math.round(value).toLocaleString("de-DE") + "€";
 };
 
 // Formatiert Y-Achsen-Labels in gekürzter k-Angabe
@@ -140,7 +146,7 @@ const chartOptions = computed(() => {
     },
     colors: [themeColors.success, themeColors.error],
     fill: {
-      colors: [themeColors.success, themeColors.error]
+      colors: [themeColors.success, themeColors.error],
     },
     plotOptions: {
       bar: {
@@ -247,6 +253,35 @@ const chartOptions = computed(() => {
   };
 });
 
+const getSizedOptions = () => {
+  const bodyEl = cardBodyRef.value;
+  const defaultHeight = 160;
+  const defaultWidth = 300;
+
+  const totalH = bodyEl?.clientHeight ?? defaultHeight;
+  const totalW = bodyEl?.clientWidth ?? defaultWidth;
+
+  const headerH = headerRef.value?.offsetHeight ?? (props.showHeader ? 40 : 0);
+  const verticalPadding = 32; // p-4 top + bottom
+  const gapBelowHeader = 8; // mb-2 unter Header
+
+  const availableH = Math.max(
+    80,
+    totalH - headerH - verticalPadding - gapBelowHeader
+  );
+
+  const containerW = chartContainer.value?.clientWidth ?? totalW - 32; // p-4 left+right
+
+  return {
+    ...chartOptions.value,
+    chart: {
+      ...chartOptions.value.chart,
+      height: availableH,
+      width: Math.max(100, containerW),
+    },
+  };
+};
+
 // Chart erstellen
 const createChart = () => {
   if (!chartContainer.value) return;
@@ -255,14 +290,14 @@ const createChart = () => {
     chart.destroy();
   }
 
-  chart = new ApexCharts(chartContainer.value, chartOptions.value);
+  chart = new ApexCharts(chartContainer.value, getSizedOptions());
   chart.render();
 };
 
 // Chart aktualisieren
 const updateChart = () => {
   if (chart) {
-    chart.updateOptions(chartOptions.value, true, true);
+    chart.updateOptions(getSizedOptions(), true, true);
   }
 };
 
@@ -285,6 +320,18 @@ const setupThemeObserver = () => {
     attributes: true,
     attributeFilter: ["data-theme"],
   });
+};
+
+// ResizeObserver Setup
+const setupResizeObserver = () => {
+  const target = cardBodyRef.value ?? chartContainer.value;
+  if (target && "ResizeObserver" in window) {
+    resizeObserver = new ResizeObserver(() => {
+      // warte auf das nächste Repaint, dann exakt auf Containermaß anpassen
+      requestAnimationFrame(() => updateChart());
+    });
+    resizeObserver.observe(target);
+  }
 };
 
 // Watchers
@@ -315,6 +362,10 @@ onMounted(() => {
   window.addEventListener("resize", updateScreenSize);
   createChart();
   setupThemeObserver();
+  setupResizeObserver();
+  setTimeout(() => {
+    updateChart();
+  }, 0);
 });
 
 onUnmounted(() => {
@@ -326,17 +377,27 @@ onUnmounted(() => {
     themeObserver.disconnect();
     themeObserver = null;
   }
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+    resizeObserver = null;
+  }
   window.removeEventListener("resize", updateScreenSize);
 });
 </script>
 
 <template>
-  <div class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150">
-    <div class="card-body">
+  <div
+    class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+  >
+    <div
+      class="card-body h-[160px] p-4 flex flex-col overflow-hidden"
+      ref="cardBodyRef"
+    >
       <!-- Header -->
       <div
         v-if="showHeader"
-        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4"
+        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-2"
+        ref="headerRef"
       >
         <h3 class="card-title text-lg">Einnahmen vs. Ausgaben</h3>
 
@@ -350,15 +411,27 @@ onUnmounted(() => {
       </div>
 
       <!-- Titel wenn kein Header -->
-      <h3 v-else class="card-title text-lg mb-4">
+      <h3
+        v-else
+        class="card-title text-lg mb-2"
+      >
         Einnahmen vs. Ausgaben
       </h3>
 
       <!-- Chart -->
       <div
         ref="chartContainer"
-        class="w-full h-full"
+        class="w-full flex-1 min-h-0 overflow-hidden h-full eisc-container"
       ></div>
     </div>
   </div>
 </template>
+
+<style lang="postcss" scoped>
+/* Stelle sicher, dass ApexCharts niemals größer als der Container rendert */
+.eisc-container :deep(.apexcharts-canvas),
+.eisc-container :deep(svg) {
+  width: 100% !important;
+  height: 100% !important;
+}
+</style>
