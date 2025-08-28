@@ -468,7 +468,7 @@ onMounted(() => {
           class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
         >
           <div class="card-body">
-            <MonthlyTrendStats :months="6" />
+            <MonthlyTrendStats :months="3" />
           </div>
         </div>
       </div>

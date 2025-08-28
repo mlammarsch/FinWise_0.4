@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { ref, computed } from 'vue';
 import dayjs from 'dayjs';
 import { useRouter } from 'vue-router';
 import { TransactionService } from '../../../services/TransactionService';
@@ -8,15 +8,22 @@ import CurrencyDisplay from '../CurrencyDisplay.vue';
 
 const props = withDefaults(defineProps<{
   months?: number;
+  monthsOptions?: number[];
   showHeader?: boolean;
   showActions?: boolean;
 }>(), {
   months: 6,
+  monthsOptions: () => [1, 3, 6, 9, 12],
   showHeader: true,
   showActions: true,
 });
 
 const router = useRouter();
+
+const selectedMonths = ref<number>(props.months);
+const setMonths = (m: number) => {
+  selectedMonths.value = m;
+};
 
 type TrendRow = {
   key: string;
@@ -53,7 +60,7 @@ function getPrevComparableRange(start: string, end: string) {
 
 const rows = computed<TrendRow[]>(() => {
   const list: TrendRow[] = [];
-  for (let i = 0; i < props.months; i++) {
+  for (let i = 0; i < selectedMonths.value; i++) {
     const { start, end, iso } = monthRange(i);
     const current = TransactionService.getIncomeExpenseSummary(start, end);
     const prevRange = getPrevComparableRange(start, end);
@@ -92,6 +99,18 @@ function navigateToStatistics() {
   <div>
     <div class="flex justify-between items-center mb-4">
       <h3 v-if="showHeader" class="card-title text-lg">Monatlicher Trend</h3>
+
+      <div class="flex gap-2 mb-4">
+        <button
+          v-for="m in props.monthsOptions"
+          :key="m"
+          :class="selectedMonths === m ? 'btn btn-xs btn-primary' : 'btn btn-xs btn-outline'"
+          @click="setMonths(m)"
+        >
+          {{ m }}
+        </button>
+      </div>
+
       <button
         v-if="showActions"
         class="btn btn-sm btn-ghost"
