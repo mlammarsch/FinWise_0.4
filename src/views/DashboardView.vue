@@ -37,8 +37,8 @@ const startDate = ref(currentDate.subtract(30, "day").format("YYYY-MM-DD"));
 const endDate = ref(currentDate.format("YYYY-MM-DD"));
 
 // MTD (Month-to-Date) Zeitraum für Top Budgets
-const currentMonthStart = dayjs().startOf('month');
-const currentMonthEnd = dayjs().endOf('month');
+const currentMonthStart = dayjs().startOf("month");
+const currentMonthEnd = dayjs().endOf("month");
 
 // Anzahl der anzuzeigenden Transaktionen – in Komponente ausgelagert
 
@@ -52,8 +52,6 @@ const expensesLimit = ref(5);
 const savingsGoalsLimit = ref(5);
 
 const accounts = computed(() => accountStore.activeAccounts);
-
-
 
 // Letzte Transaktionen – Logik in Komponente ausgelagert
 // Berechnung der Einnahmen und Ausgaben über statisticsStore (korrekte Architektur)
@@ -70,104 +68,115 @@ const topExpensesWithBudget = computed(() => {
   const monthEnd = currentMonthEnd.toDate();
 
   // Hole alle Ausgaben-Kategorien (keine Einnahmen, keine Sparziele)
-  const expenseCategories = categoryStore.categories.filter(cat =>
-    cat.isActive &&
-    !cat.isIncomeCategory &&
-    !cat.isSavingsGoal && // Keine Sparzielkategorien
-    cat.name !== 'Verfügbare Mittel' &&
-    !cat.parentCategoryId // Nur Root-Kategorien
+  const expenseCategories = categoryStore.categories.filter(
+    (cat) =>
+      cat.isActive &&
+      !cat.isIncomeCategory &&
+      !cat.isSavingsGoal && // Keine Sparzielkategorien
+      cat.name !== "Verfügbare Mittel" &&
+      !cat.parentCategoryId // Nur Root-Kategorien
   );
 
-  const categoryData = expenseCategories.map(category => {
-    const budgetData = BudgetService.getAggregatedMonthlyBudgetData(
-      category.id,
-      monthStart,
-      monthEnd
-    );
+  const categoryData = expenseCategories
+    .map((category) => {
+      const budgetData = BudgetService.getAggregatedMonthlyBudgetData(
+        category.id,
+        monthStart,
+        monthEnd
+      );
 
-    const spent = Math.abs(budgetData.spent);
-    const budgeted = Math.abs(budgetData.budgeted);
-    const budgetPercentage = budgeted > 0 ? (spent / budgeted) * 100 : (spent > 0 ? 999 : 0);
+      const spent = Math.abs(budgetData.spent);
+      const budgeted = Math.abs(budgetData.budgeted);
+      const budgetPercentage =
+        budgeted > 0 ? (spent / budgeted) * 100 : spent > 0 ? 999 : 0;
 
-    return {
-      categoryId: category.id,
-      name: category.name,
-      spent: spent, // Positive Darstellung für Ausgaben (ohne Planbuchungen)
-      budgeted: budgeted, // Budget als positiver Wert
-      available: budgetData.saldo,
-      budgetPercentage: budgetPercentage, // Prozentsatz des verbrauchten Budgets
-      budgetData
-    };
-  })
-  .filter(item => item.budgeted > 0 && item.spent > 0) // Nur Kategorien mit Budget UND tatsächlichen Ausgaben
-  .sort((a, b) => b.budgetPercentage - a.budgetPercentage) // Nach prozentualem Budget-Verbrauch sortieren (absteigend)
-  .slice(0, 5); // Top 5
+      return {
+        categoryId: category.id,
+        name: category.name,
+        spent: spent, // Positive Darstellung für Ausgaben (ohne Planbuchungen)
+        budgeted: budgeted, // Budget als positiver Wert
+        available: budgetData.saldo,
+        budgetPercentage: budgetPercentage, // Prozentsatz des verbrauchten Budgets
+        budgetData,
+      };
+    })
+    .filter((item) => item.budgeted > 0 && item.spent > 0) // Nur Kategorien mit Budget UND tatsächlichen Ausgaben
+    .sort((a, b) => b.budgetPercentage - a.budgetPercentage) // Nach prozentualem Budget-Verbrauch sortieren (absteigend)
+    .slice(0, 5); // Top 5
 
   return categoryData;
 });
 
 // Sparziele mit Fortschrittsdaten
 const savingsGoalsWithProgress = computed(() => {
-  const savingsCategories = categoryStore.savingsGoals.filter(cat =>
-    cat.isActive && cat.isSavingsGoal && cat.targetAmount && cat.targetAmount > 0
+  const savingsCategories = categoryStore.savingsGoals.filter(
+    (cat) =>
+      cat.isActive &&
+      cat.isSavingsGoal &&
+      cat.targetAmount &&
+      cat.targetAmount > 0
   );
 
   const today = dayjs();
 
-  const goalsData = savingsCategories.map(category => {
-    // Verwende BalanceService für tagesgenauen Saldo
-    const currentAmount = Math.abs(BalanceService.getTodayBalance("category", category.id));
-    const targetAmount = category.targetAmount || 0;
-    const progress = targetAmount > 0 ? (currentAmount / targetAmount) * 100 : 0;
+  const goalsData = savingsCategories
+    .map((category) => {
+      // Verwende BalanceService für tagesgenauen Saldo
+      const currentAmount = Math.abs(
+        BalanceService.getTodayBalance("category", category.id)
+      );
+      const targetAmount = category.targetAmount || 0;
+      const progress =
+        targetAmount > 0 ? (currentAmount / targetAmount) * 100 : 0;
 
-    // Berechne Soll-Sparbetrag basierend auf Zieldatum
-    let shouldHaveSaved = 0;
-    let barColor = 'bg-warning'; // Standard: gelb
+      // Berechne Soll-Sparbetrag basierend auf Zieldatum
+      let shouldHaveSaved = 0;
+      let barColor = "bg-warning"; // Standard: gelb
 
-    if (category.goalDate) {
-      const goalDate = dayjs(category.goalDate);
-      const startDate = today.startOf('month'); // Annahme: Sparziel startet am Monatsanfang
+      if (category.goalDate) {
+        const goalDate = dayjs(category.goalDate);
+        const startDate = today.startOf("month"); // Annahme: Sparziel startet am Monatsanfang
 
-      // Berechne Gesamtdauer in Monaten
-      const totalMonths = goalDate.diff(startDate, 'month', true);
+        // Berechne Gesamtdauer in Monaten
+        const totalMonths = goalDate.diff(startDate, "month", true);
 
-      if (totalMonths > 0) {
-        // Monatsregelrate
-        const monthlyRate = targetAmount / totalMonths;
+        if (totalMonths > 0) {
+          // Monatsregelrate
+          const monthlyRate = targetAmount / totalMonths;
 
-        // Vergangene Zeit seit Start in Monaten
-        const elapsedMonths = today.diff(startDate, 'month', true);
+          // Vergangene Zeit seit Start in Monaten
+          const elapsedMonths = today.diff(startDate, "month", true);
 
-        // Soll-Sparbetrag bis heute
-        shouldHaveSaved = monthlyRate * elapsedMonths;
+          // Soll-Sparbetrag bis heute
+          shouldHaveSaved = monthlyRate * elapsedMonths;
 
-        // Bestimme Balkenfarbe basierend auf Soll-Ist-Vergleich
-        const tolerance = monthlyRate * 0.05; // 5% Toleranz für "gelb"
+          // Bestimme Balkenfarbe basierend auf Soll-Ist-Vergleich
+          const tolerance = monthlyRate * 0.05; // 5% Toleranz für "gelb"
 
-        if (currentAmount >= shouldHaveSaved + tolerance) {
-          barColor = 'bg-success'; // Grün: Überschritten
-        } else if (currentAmount >= shouldHaveSaved - tolerance) {
-          barColor = 'bg-warning'; // Gelb: Im Toleranzbereich
-        } else {
-          barColor = 'bg-error'; // Rot: Unterschritten
+          if (currentAmount >= shouldHaveSaved + tolerance) {
+            barColor = "bg-success"; // Grün: Überschritten
+          } else if (currentAmount >= shouldHaveSaved - tolerance) {
+            barColor = "bg-warning"; // Gelb: Im Toleranzbereich
+          } else {
+            barColor = "bg-error"; // Rot: Unterschritten
+          }
         }
       }
-    }
 
-    return {
-      categoryId: category.id,
-      name: category.name,
-      currentAmount,
-      targetAmount,
-      progress: Math.min(progress, 100), // Max 100%
-      goalDate: category.goalDate,
-      shouldHaveSaved,
-      barColor,
-      category
-    };
-  })
-  .sort((a, b) => b.progress - a.progress) // Nach Fortschritt sortieren
-  .slice(0, savingsGoalsLimit.value);
+      return {
+        categoryId: category.id,
+        name: category.name,
+        currentAmount,
+        targetAmount,
+        progress: Math.min(progress, 100), // Max 100%
+        goalDate: category.goalDate,
+        shouldHaveSaved,
+        barColor,
+        category,
+      };
+    })
+    .sort((a, b) => b.progress - a.progress) // Nach Fortschritt sortieren
+    .slice(0, savingsGoalsLimit.value);
 
   return goalsData;
 });
@@ -359,20 +368,20 @@ const setSavingsGoalsLimit = (limit: number) => {
 const getExpenseBarColor = (spent: number, budgeted: number): string => {
   if (budgeted === 0) {
     // Kein Budget definiert - verwende neutrale Farbe
-    return 'bg-base-content opacity-60';
+    return "bg-base-content opacity-60";
   }
 
   const percentage = (spent / budgeted) * 100;
 
   if (percentage <= 90) {
     // Grün bis 90% des Budgets
-    return 'bg-success';
+    return "bg-success";
   } else if (percentage <= 100) {
     // Warning zwischen 90% und 100%
-    return 'bg-warning';
+    return "bg-warning";
   } else {
     // Rot bei Budgetüberschreitung
-    return 'bg-error';
+    return "bg-error";
   }
 };
 
@@ -439,17 +448,22 @@ onMounted(() => {
         class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
       >
         <div class="card-body">
-          <AccountBalanceStats :show-header="true" :show-actions="true" />
+          <AccountBalanceStats
+            :show-header="true"
+            :show-actions="true"
+          />
         </div>
       </div>
       <div
-          class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
-        >
-          <div class="card-body">
-            <PlanningPaymentsGadget :show-header="true" :show-actions="true" />
-          </div>
+        class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+      >
+        <div class="card-body">
+          <PlanningPaymentsGadget
+            :show-header="true"
+            :show-actions="true"
+          />
         </div>
-
+      </div>
 
       <ExpenseIncomeSummaryChart
         :start-date="startDate"
@@ -460,7 +474,6 @@ onMounted(() => {
 
     <!-- Main Content -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
       <div class="lg:col-span-2 space-y-6">
         <RecentTransactions />
 
@@ -474,13 +487,14 @@ onMounted(() => {
       </div>
 
       <div class="space-y-6">
-
-
         <div
           class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
         >
           <div class="card-body">
-            <TopBudgetsStats :show-header="true" :show-actions="true" />
+            <TopBudgetsStats
+              :show-header="true"
+              :show-actions="true"
+            />
           </div>
         </div>
 
@@ -488,7 +502,10 @@ onMounted(() => {
           class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
         >
           <div class="card-body">
-            <SavingsGoalsStats :show-header="true" :show-actions="true" />
+            <SavingsGoalsStats
+              :show-header="true"
+              :show-actions="true"
+            />
           </div>
         </div>
       </div>
