@@ -295,10 +295,44 @@ const createChart = () => {
 };
 
 // Chart aktualisieren
-const updateChart = () => {
+const updateChart = (animate: boolean = true) => {
   if (chart) {
-    chart.updateOptions(getSizedOptions(), true, true);
+    // keine Pfad-Neuzeichnung, keine Animation -> weniger Reflows/Jank
+    chart.updateOptions(getSizedOptions(), false, animate);
   }
+};
+
+// rAF-Coalescing + optionales Debounce
+const DEBOUNCE_RESIZE_MS = 120;
+let rafId: number | null = null;
+let debounceId: number | null = null;
+let pendingAnimate = true;
+
+const scheduleUpdate = (opts?: { debounce?: number; animate?: boolean }) => {
+  const debounceMs = opts?.debounce ?? 0;
+  const animate = opts?.animate ?? true;
+
+  // Wenn irgendein Aufrufer Animationen deaktivieren möchte, gilt das für diesen Batch
+  pendingAnimate = pendingAnimate && animate;
+
+  const flush = () => {
+    rafId = null;
+    updateChart(pendingAnimate);
+    pendingAnimate = true;
+  };
+
+  if (debounceMs > 0) {
+    if (debounceId) window.clearTimeout(debounceId);
+    debounceId = window.setTimeout(() => {
+      debounceId = null;
+      if (rafId) return; // bereits geplant
+      rafId = requestAnimationFrame(flush);
+    }, debounceMs);
+    return;
+  }
+
+  if (rafId) return;
+  rafId = requestAnimationFrame(flush);
 };
 
 // Theme-Observer Setup
@@ -310,7 +344,7 @@ const setupThemeObserver = () => {
         mutation.attributeName === "data-theme"
       ) {
         setTimeout(() => {
-          updateChart();
+          scheduleUpdate();
         }, 50);
       }
     });
@@ -338,7 +372,7 @@ const setupResizeObserver = () => {
 watch(
   () => [props.startDate, props.endDate],
   () => {
-    updateChart();
+    scheduleUpdate();
   },
   { deep: true }
 );
@@ -347,13 +381,13 @@ watch(
   () => themeStore.isDarkMode,
   () => {
     setTimeout(() => {
-      updateChart();
+      scheduleUpdate();
     }, 50);
   }
 );
 
 watch(isSmallScreen, () => {
-  updateChart();
+  scheduleUpdate();
 });
 
 // Lifecycle
@@ -363,8 +397,9 @@ onMounted(() => {
   createChart();
   setupThemeObserver();
   setupResizeObserver();
+  // direkt nach Mount einmal ohne Animation an Containergröße anpassen
   setTimeout(() => {
-    updateChart();
+    scheduleUpdate({ animate: false });
   }, 0);
 });
 

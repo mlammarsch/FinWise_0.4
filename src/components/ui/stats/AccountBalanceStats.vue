@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAccountStore } from "../../../stores/accountStore";
 import { BalanceService } from "../../../services/BalanceService";
@@ -55,6 +55,42 @@ const accountGroupsWithBalances = computed(() => {
     .sort((a, b) => a.sortOrder - b.sortOrder);
 });
 
+//
+// Performance: Coalesced ViewModel (rAF + optional Debounce) zur Reduzierung von Re-Renders
+//
+const displayedTotalBalance = ref(totalBalance.value);
+const displayedGroups = ref(accountGroupsWithBalances.value);
+
+const DEBOUNCE_MS = 120;
+let rafId: number | null = null;
+let debounceId: number | null = null;
+
+const flushViewModel = () => {
+  displayedTotalBalance.value = totalBalance.value;
+  displayedGroups.value = accountGroupsWithBalances.value;
+};
+
+const scheduleUpdate = (debounce = true) => {
+  const run = () => {
+    rafId = null;
+    flushViewModel();
+  };
+  if (debounce) {
+    if (debounceId) window.clearTimeout(debounceId);
+    debounceId = window.setTimeout(() => {
+      debounceId = null;
+      if (rafId) return;
+      rafId = requestAnimationFrame(run);
+    }, DEBOUNCE_MS);
+    return;
+  }
+  if (rafId) return;
+  rafId = requestAnimationFrame(run);
+};
+
+// Rechenintensive Ableitungen (Saldo + Gruppierung) nur gebündelt updaten
+watch([totalBalance, accountGroupsWithBalances], () => scheduleUpdate(true));
+
 const GROUP_ROW_ESTIMATE = 52; // px, geschätzte Höhe pro Gruppe
 const GROUP_GAP = 8; // px, vertikaler Abstand zwischen Gruppen
 const MAX_GROUP_ROWS = 6; // max. sichtbare Gruppen-Zeilen bevor Scroll aktiviert wird
@@ -76,9 +112,11 @@ function navigateToAccounts() {
 
 <template>
   <div
-    class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+    class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition-colors duration-150"
   >
-    <div class="card-body">
+    <div
+      class="card-body h-[160px] p-4 flex flex-col overflow-hidden transform-gpu"
+    >
       <div class="flex justify-between items-center mb-4">
         <h3
           v-if="showHeader"
@@ -99,22 +137,19 @@ function navigateToAccounts() {
         </button>
       </div>
 
-      <div class="mb-4">
+      <div class="mb-2">
         <p class="text-2xl font-bold">
           <CurrencyDisplay
-            :amount="totalBalance"
+            :amount="displayedTotalBalance"
             :asInteger="true"
           />
         </p>
         <p class="text-sm opacity-60">Gesamtsaldo aller Konten</p>
       </div>
 
-      <div
-        class="space-y-2 mb-4 ag-list"
-        :style="groupsListStyle"
-      >
+      <div class="space-y-2 ag-list flex-1 min-h-0 overflow-auto">
         <div
-          v-for="group in accountGroupsWithBalances"
+          v-for="group in displayedGroups"
           :key="group.id"
           tabindex="0"
           class="collapse collapse-arrow bg-base-200 border-base-300 border"
@@ -155,6 +190,7 @@ function navigateToAccounts() {
 
 <style lang="postcss" scoped>
 .ag-list {
+  contain: paint;
   overflow-x: hidden;
   scrollbar-width: thin; /* Firefox */
 }
