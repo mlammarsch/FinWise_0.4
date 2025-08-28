@@ -21,6 +21,7 @@ import TransactionForm from "../components/transaction/TransactionForm.vue";
 import DateRangePicker from "../components/ui/DateRangePicker.vue";
 import SearchGroup from "../components/ui/SearchGroup.vue";
 import SearchableSelectLite from "../components/ui/SearchableSelectLite.vue";
+import SelectCategory from "../components/ui/SelectCategory.vue";
 import BulkActionDropdown from "../components/ui/BulkActionDropdown.vue";
 import BulkAssignAccountModal from "../components/ui/BulkAssignAccountModal.vue";
 import BulkChangeRecipientModal from "../components/ui/BulkChangeRecipientModal.vue";
@@ -87,6 +88,12 @@ const recipientStore = useRecipientStore();
 const searchStore = useSearchStore();
 const planningStore = usePlanningStore();
 const monthlyBalanceStore = useMonthlyBalanceStore();
+// Alphabetisch sortierte Kontoliste für Dropdowns
+const sortedActiveAccounts = computed(() => {
+  return [...accountStore.activeAccounts].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
+});
 
 // Modals ------------------------------------------------------------------
 const showTransactionFormModal = ref(false);
@@ -125,8 +132,8 @@ const planningSearchQuery = ref("");
 
 // Planning DateRange
 const planningDateRange = ref<{ start: string; end: string }>({
-  start: dayjs().subtract(1, "month").startOf("month").format("YYYY-MM-DD"),
-  end: dayjs().endOf("month").format("YYYY-MM-DD"),
+  start: dayjs().startOf("month").format("YYYY-MM-DD"),
+  end: dayjs().add(6, "month").endOf("month").format("YYYY-MM-DD"),
 });
 
 // Erweiterte Tab-Modi für Planning
@@ -1333,10 +1340,10 @@ watch(activeTab, (newTab) => {
   debugLog("[TransactionsView]", `Tab switched to: ${newTab}`);
 
   // Synchronisiere currentViewMode mit activeTab für die ersten beiden Tabs
-  if (newTab === 'account') {
-    currentViewMode.value = 'account';
-  } else if (newTab === 'category') {
-    currentViewMode.value = 'category';
+  if (newTab === "account") {
+    currentViewMode.value = "account";
+  } else if (newTab === "category") {
+    currentViewMode.value = "category";
   }
 
   // Refresh key um Vue-Komponenten zum Neurendern zu zwingen
@@ -1873,34 +1880,11 @@ watch(activeTab, (newTab) => {
             >
               <option value="">Alle Konten</option>
               <option
-                v-for="acc in accountStore.activeAccounts"
+                v-for="acc in sortedActiveAccounts"
                 :key="acc.id"
                 :value="acc.id"
               >
                 {{ acc.name }}
-              </option>
-            </select>
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
-              Kategorie
-            </legend>
-            <select
-              v-model="planningSelectedCategoryId"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                planningSelectedCategoryId
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle Kategorien</option>
-              <option
-                v-for="cat in categoryStore.activeCategories"
-                :key="cat.id"
-                :value="cat.id"
-              >
-                {{ cat.name }}
               </option>
             </select>
           </fieldset>
@@ -1923,8 +1907,9 @@ watch(activeTab, (newTab) => {
       <h3 class="text-xl font-bold mb-4">Kontenprognose</h3>
       <AccountForecastChart
         :key="`accounts-chart-${activeTab}`"
-        :start-date="planningDateRange.start"
+        :date-range="planningDateRange"
         :filtered-account-id="planningSelectedAccountId"
+        :hide-badges="true"
       />
     </div>
 
@@ -1972,49 +1957,29 @@ watch(activeTab, (newTab) => {
           </fieldset>
           <fieldset class="fieldset pt-0">
             <legend class="fieldset-legend text-center opacity-50">
-              Konto
-            </legend>
-            <select
-              v-model="planningSelectedAccountId"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                planningSelectedAccountId
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle Konten</option>
-              <option
-                v-for="acc in accountStore.activeAccounts"
-                :key="acc.id"
-                :value="acc.id"
-              >
-                {{ acc.name }}
-              </option>
-            </select>
-          </fieldset>
-          <fieldset class="fieldset pt-0">
-            <legend class="fieldset-legend text-center opacity-50">
               Kategorie
             </legend>
-            <select
-              v-model="planningSelectedCategoryId"
-              class="select select-sm select-bordered rounded-full"
-              :class="
-                planningSelectedCategoryId
-                  ? 'border-2 border-accent'
-                  : 'border border-base-300'
-              "
-            >
-              <option value="">Alle Kategorien</option>
-              <option
-                v-for="cat in categoryStore.activeCategories"
-                :key="cat.id"
-                :value="cat.id"
+            <div class="flex items-center gap-2">
+              <button
+                class="btn btn-sm btn-outline rounded-full"
+                :class="
+                  planningSelectedCategoryId
+                    ? 'border border-base-300'
+                    : 'border-2 border-accent'
+                "
+                @click="planningSelectedCategoryId = ''"
               >
-                {{ cat.name }}
-              </option>
-            </select>
+                Alle Kategorien
+              </button>
+              <div class="min-w-[120px]">
+                <SelectCategory
+                  v-model="planningSelectedCategoryId"
+                  :show-none-option="false"
+                  :rounded="true"
+                  class="font-normal text-xs"
+                />
+              </div>
+            </div>
           </fieldset>
         </div>
 
@@ -2035,7 +2000,7 @@ watch(activeTab, (newTab) => {
       <h3 class="text-xl font-bold mb-4">Kategorienprognose</h3>
       <CategoryForecastChart
         :key="`categories-chart-${activeTab}`"
-        :start-date="planningDateRange.start"
+        :date-range="planningDateRange"
         :filtered-category-id="planningSelectedCategoryId"
       />
     </div>

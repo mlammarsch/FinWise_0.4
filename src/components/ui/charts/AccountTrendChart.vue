@@ -17,19 +17,22 @@ dayjs.extend(isBetween);
 dayjs.locale("de");
 
 // Props
-const props = withDefaults(defineProps<{
-  accountId?: string;
-  days?: number;
-  accountGrouping?: string; // "all", "grouped", oder spezifische Account-ID
-  mode?: string; // "history" (default) oder "forecast"
-  showHeader?: boolean; // Zeigt Überschrift und Steuerungen an
-}>(), {
-  accountId: "all",
-  days: 30,
-  accountGrouping: "all",
-  mode: "history",
-  showHeader: true
-});
+const props = withDefaults(
+  defineProps<{
+    accountId?: string;
+    days?: number;
+    accountGrouping?: string; // "all", "grouped", oder spezifische Account-ID
+    mode?: string; // "history" (default) oder "forecast"
+    showHeader?: boolean; // Zeigt Überschrift und Steuerungen an
+  }>(),
+  {
+    accountId: "all",
+    days: 30,
+    accountGrouping: "all",
+    mode: "history",
+    showHeader: true,
+  }
+);
 
 // Stores
 const themeStore = useThemeStore();
@@ -58,13 +61,31 @@ const accounts = computed(() => {
   const accountTypes = [
     ...new Set(activeAccounts.map((acc) => acc.accountType)),
   ];
-  const groupsWithActiveAccounts = accountStore.accountGroups
-    .filter(g => activeAccounts.some(acc => acc.accountGroupId === g.id));
+  const groupsWithActiveAccounts = accountStore.accountGroups.filter((g) =>
+    activeAccounts.some((acc) => acc.accountGroupId === g.id)
+  );
+
+  // Alphabetische Sortierung je Abschnitt
+  const sortedAccounts = [...activeAccounts].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "de", {
+      sensitivity: "base",
+    })
+  );
+  const sortedTypes = [...accountTypes].sort((a, b) =>
+    String(a ?? "").localeCompare(String(b ?? ""), "de", {
+      sensitivity: "base",
+    })
+  );
+  const sortedGroups = [...groupsWithActiveAccounts].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || ""), "de", {
+      sensitivity: "base",
+    })
+  );
 
   return {
-    all: activeAccounts,
-    types: accountTypes,
-    groups: groupsWithActiveAccounts,
+    all: sortedAccounts,
+    types: sortedTypes,
+    groups: sortedGroups,
   };
 });
 
@@ -77,7 +98,7 @@ const getAccountFilterLabel = (accountId: string) => {
   }
   if (accountId.startsWith("group:")) {
     const groupId = accountId.substring("group:".length);
-    const group = accountStore.accountGroups.find(g => g.id === groupId);
+    const group = accountStore.accountGroups.find((g) => g.id === groupId);
     return group ? `Konto-Gruppe: ${group.name}` : "Konto-Gruppe";
   }
 
@@ -165,9 +186,13 @@ const getDateFormat = (days: number) => {
 // Daten berechnen
 const chartData = computed(() => {
   // Verwende interne State wenn showHeader=true, sonst Props
-  const currentAccountId = props.showHeader ? selectedAccountId.value : props.accountId;
+  const currentAccountId = props.showHeader
+    ? selectedAccountId.value
+    : props.accountId;
   const currentDays = props.showHeader ? accountTrendDays.value : props.days;
-  const currentMode = props.showHeader ? accountTrendMode.value : (props.mode || "history");
+  const currentMode = props.showHeader
+    ? accountTrendMode.value
+    : props.mode || "history";
 
   let startDate: Date, endDate: Date;
 
@@ -186,32 +211,37 @@ const chartData = computed(() => {
   const dateFormat = getDateFormat(currentDays);
 
   let series: Array<{
-      name: string;
-      data: Array<{ x: string | number; y: number }>;
-      id: string;
-    }> = [];
+    name: string;
+    data: Array<{ x: string | number; y: number }>;
+    id: string;
+  }> = [];
 
   // Hilfsfunktion: Aggregierte Serie über mehrere Konten (immer als verlaufender Gesamtsaldo)
-  const buildAggregatedSeries = (name: string, accountIds: string[], isForecast: boolean) => {
+  const buildAggregatedSeries = (
+    name: string,
+    accountIds: string[],
+    isForecast: boolean
+  ) => {
     // 1) Tagesachse aufbauen
     const start = dayjs(startDate);
     const end = dayjs(endDate);
     const dateKeys: string[] = [];
     let cursor = start.clone();
     while (cursor.isSameOrBefore(end)) {
-      dateKeys.push(cursor.format('YYYY-MM-DD'));
-      cursor = cursor.add(1, 'day');
+      dateKeys.push(cursor.format("YYYY-MM-DD"));
+      cursor = cursor.add(1, "day");
     }
 
     if (isForecast) {
       // 2) Prognose: pro Konto mit aktuellem Saldo starten und geplante Buchungen kumulativ addieren
       const running: Record<string, number> = {};
-      accountIds.forEach(accId => {
+      accountIds.forEach((accId) => {
         running[accId] = BalanceService.getTodayBalance("account", accId);
       });
 
       // Geplante Transaktionen für alle betroffenen Konten im Zeitraum vorgruppieren
-      const horizon = (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
+      const horizon =
+        (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
       const allPlanned = planningStore.getUpcomingTransactions(horizon + 30);
       const plansByDateByAcc: Record<string, Record<string, number>> = {};
 
@@ -220,16 +250,17 @@ const chartData = computed(() => {
         if (!accId || !accountIds.includes(accId)) return;
         const d = dayjs(tx.date);
         if (d.isBefore(start) || d.isAfter(end)) return;
-        const k = d.format('YYYY-MM-DD');
+        const k = d.format("YYYY-MM-DD");
         if (!plansByDateByAcc[k]) plansByDateByAcc[k] = {};
-        plansByDateByAcc[k][accId] = (plansByDateByAcc[k][accId] || 0) + (tx.transaction?.amount || 0);
+        plansByDateByAcc[k][accId] =
+          (plansByDateByAcc[k][accId] || 0) + (tx.transaction?.amount || 0);
       });
 
       const data: Array<{ x: number; y: number }> = [];
-      dateKeys.forEach(k => {
+      dateKeys.forEach((k) => {
         let total = 0;
         const dayPlans = plansByDateByAcc[k] || {};
-        accountIds.forEach(accId => {
+        accountIds.forEach((accId) => {
           const add = dayPlans[accId] || 0;
           running[accId] += add;
           total += Math.round(running[accId]);
@@ -237,11 +268,15 @@ const chartData = computed(() => {
         data.push({ x: dayjs(k).valueOf(), y: total });
       });
 
-      series.push({ name, data, id: `agg_${name.replace(/\s+/g, "_").toLowerCase()}_forecast` });
+      series.push({
+        name,
+        data,
+        id: `agg_${name.replace(/\s+/g, "_").toLowerCase()}_forecast`,
+      });
     } else {
       // 3) Vergangenheit: pro Konto die echten Tages-Laufsalden summieren
       const byAcc: Record<string, Record<string, number>> = {};
-      accountIds.forEach(accId => {
+      accountIds.forEach((accId) => {
         const balances = BalanceService.getRunningBalances(
           "account",
           accId,
@@ -249,21 +284,25 @@ const chartData = computed(() => {
           { includeProjection: false }
         );
         byAcc[accId] = {};
-        balances.forEach(b => {
+        balances.forEach((b) => {
           byAcc[accId][b.date] = Math.round(b.balance);
         });
       });
 
       const data: Array<{ x: number; y: number }> = [];
-      dateKeys.forEach(k => {
+      dateKeys.forEach((k) => {
         let total = 0;
-        accountIds.forEach(accId => {
+        accountIds.forEach((accId) => {
           total += byAcc[accId][k] ?? 0;
         });
         data.push({ x: dayjs(k).valueOf(), y: total });
       });
 
-      series.push({ name, data, id: `agg_${name.replace(/\s+/g, "_").toLowerCase()}` });
+      series.push({
+        name,
+        data,
+        id: `agg_${name.replace(/\s+/g, "_").toLowerCase()}`,
+      });
     }
   };
 
@@ -272,30 +311,51 @@ const chartData = computed(() => {
     const activeAccounts = accountStore.activeAccounts.filter(
       (acc) => !acc.isOfflineBudget && acc.isActive
     );
-    const ids = activeAccounts.map(a => a.id);
+    const ids = activeAccounts.map((a) => a.id);
     buildAggregatedSeries("Alle Konten", ids, currentMode === "forecast");
-  } else if (typeof currentAccountId === "string" && currentAccountId.startsWith("type:")) {
+  } else if (
+    typeof currentAccountId === "string" &&
+    currentAccountId.startsWith("type:")
+  ) {
     // Aggregation nach Konto-Typ
     const type = currentAccountId.substring("type:".length);
     const activeTypeAccounts = accountStore.activeAccounts.filter(
-      (acc) => !acc.isOfflineBudget && acc.isActive && String(acc.accountType) === type
+      (acc) =>
+        !acc.isOfflineBudget && acc.isActive && String(acc.accountType) === type
     );
-    buildAggregatedSeries(`Typ ${type}`, activeTypeAccounts.map(a => a.id), currentMode === "forecast");
-  } else if (typeof currentAccountId === "string" && currentAccountId.startsWith("group:")) {
+    buildAggregatedSeries(
+      `Typ ${type}`,
+      activeTypeAccounts.map((a) => a.id),
+      currentMode === "forecast"
+    );
+  } else if (
+    typeof currentAccountId === "string" &&
+    currentAccountId.startsWith("group:")
+  ) {
     // Aggregation nach Konto-Gruppe
     const groupId = currentAccountId.substring("group:".length);
     const groupAccounts = accountStore.activeAccounts.filter(
-      (acc) => !acc.isOfflineBudget && acc.isActive && acc.accountGroupId === groupId
+      (acc) =>
+        !acc.isOfflineBudget && acc.isActive && acc.accountGroupId === groupId
     );
-    const groupName = accountStore.accountGroups.find(g => g.id === groupId)?.name || "Konto-Gruppe";
-    buildAggregatedSeries(`${groupName}`, groupAccounts.map(a => a.id), currentMode === "forecast");
+    const groupName =
+      accountStore.accountGroups.find((g) => g.id === groupId)?.name ||
+      "Konto-Gruppe";
+    buildAggregatedSeries(
+      `${groupName}`,
+      groupAccounts.map((a) => a.id),
+      currentMode === "forecast"
+    );
   } else {
     // Einzelnes Konto
     const account = accountStore.getAccountById(currentAccountId);
     if (account) {
       if (currentMode === "forecast") {
         // Prognose: Berechne echte Prognose-Salden basierend auf aktuellem Saldo + geplante Transaktionen
-        const currentBalance = BalanceService.getTodayBalance("account", currentAccountId);
+        const currentBalance = BalanceService.getTodayBalance(
+          "account",
+          currentAccountId
+        );
         const data: Array<{ x: number; y: number }> = [];
 
         let runningBalance = currentBalance;
@@ -303,23 +363,29 @@ const chartData = computed(() => {
         const end = dayjs(endDate);
 
         // Hole alle geplanten Transaktionen für den Zeitraum aus planningStore
-        const allPlannedTransactions = planningStore.getUpcomingTransactions(currentDays + 30);
-        const accountPlannedTransactions = allPlannedTransactions.filter(tx => {
-          const txDate = dayjs(tx.date);
-          return tx.transaction?.accountId === currentAccountId &&
-                 txDate.isSameOrAfter(dayjs(startDate)) &&
-                 txDate.isSameOrBefore(dayjs(endDate));
-        });
+        const allPlannedTransactions = planningStore.getUpcomingTransactions(
+          currentDays + 30
+        );
+        const accountPlannedTransactions = allPlannedTransactions.filter(
+          (tx) => {
+            const txDate = dayjs(tx.date);
+            return (
+              tx.transaction?.accountId === currentAccountId &&
+              txDate.isSameOrAfter(dayjs(startDate)) &&
+              txDate.isSameOrBefore(dayjs(endDate))
+            );
+          }
+        );
 
         while (current.isSameOrBefore(end)) {
-          const currentDate = current.format('YYYY-MM-DD');
+          const currentDate = current.format("YYYY-MM-DD");
 
           // Addiere alle geplanten Transaktionen für diesen Tag
-          const dayTransactions = accountPlannedTransactions.filter(tx =>
-            dayjs(tx.date).format('YYYY-MM-DD') === currentDate
+          const dayTransactions = accountPlannedTransactions.filter(
+            (tx) => dayjs(tx.date).format("YYYY-MM-DD") === currentDate
           );
 
-          dayTransactions.forEach(tx => {
+          dayTransactions.forEach((tx) => {
             runningBalance += tx.transaction?.amount || 0;
           });
 
@@ -328,7 +394,7 @@ const chartData = computed(() => {
             y: Math.round(runningBalance),
           });
 
-          current = current.add(1, 'day');
+          current = current.add(1, "day");
         }
 
         if (data.length > 0) {
@@ -378,7 +444,8 @@ const chartOptions = computed(() => {
   }
 
   // Zeitraum bestimmen und Y-Achse für kurze Zeiträume stabilisieren
-  const daysVal = (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
+  const daysVal =
+    (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
   const isShortRange = daysVal < 90;
 
   let yAxisMin: number | undefined;
@@ -397,7 +464,8 @@ const chartOptions = computed(() => {
       const maxY = Math.max(...allY);
       const rawRange = maxY - minY;
       const base = Math.max(Math.abs(maxY), Math.abs(minY), 1);
-      const safeRange = rawRange === 0 ? Math.max(1, Math.round(base * 0.02)) : rawRange;
+      const safeRange =
+        rawRange === 0 ? Math.max(1, Math.round(base * 0.02)) : rawRange;
       const pad = Math.max(1, Math.round(safeRange * 0.1));
       const roughMin = Math.floor(minY - pad);
       const roughMax = Math.ceil(maxY + pad);
@@ -422,24 +490,36 @@ const chartOptions = computed(() => {
 
       // Für Währungsachsen auf "k" Raster normalisieren (1k,2k,5k,10k,...)
       if (tickSpacing >= 1000) {
-        const allowed = [1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000];
-        tickSpacing = allowed.reduce((prev, curr) =>
-          Math.abs(curr - tickSpacing) < Math.abs(prev - tickSpacing) ? curr : prev
-        , allowed[0]);
+        const allowed = [
+          1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000,
+        ];
+        tickSpacing = allowed.reduce(
+          (prev, curr) =>
+            Math.abs(curr - tickSpacing) < Math.abs(prev - tickSpacing)
+              ? curr
+              : prev,
+          allowed[0]
+        );
       }
 
       // Spezifische Korrektur: 30-Tage-Vergangenheit hatte unruhige Skala
       // Erzwinge ein sauberes 1-2-5-Raster im 100/200/500/1k Bereich und begrenze Tickanzahl
-      const isHistoryMode = (props.showHeader ? accountTrendMode.value : (props.mode || "history")) === "history";
-      const daysValLocal = (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
+      const isHistoryMode =
+        (props.showHeader
+          ? accountTrendMode.value
+          : props.mode || "history") === "history";
+      const daysValLocal =
+        (props.showHeader ? accountTrendDays.value : props.days) ?? 30;
       if (isHistoryMode && daysValLocal === 30) {
         const allowedSmall = [100, 200, 500, 1000, 2000, 5000];
-        const span = Math.max(1, (roughMax - roughMin));
+        const span = Math.max(1, roughMax - roughMin);
         // Wähle Schrittweite so, dass 4-8 Ticks entstehen
         const target = span / 6;
-        tickSpacing = allowedSmall.reduce((prev, curr) =>
-          Math.abs(curr - target) < Math.abs(prev - target) ? curr : prev
-        , allowedSmall[0]);
+        tickSpacing = allowedSmall.reduce(
+          (prev, curr) =>
+            Math.abs(curr - target) < Math.abs(prev - target) ? curr : prev,
+          allowedSmall[0]
+        );
       }
 
       const niceMin = Math.floor(roughMin / tickSpacing) * tickSpacing;
@@ -447,7 +527,10 @@ const chartOptions = computed(() => {
 
       yAxisMin = niceMin;
       yAxisMax = niceMax;
-      computedTickAmount = Math.max(2, Math.round((niceMax - niceMin) / tickSpacing) + 1);
+      computedTickAmount = Math.max(
+        2,
+        Math.round((niceMax - niceMin) / tickSpacing) + 1
+      );
       // Für 30 Tage Vergangenheit: 5–7 Ticks sind am lesbarsten
       if (isHistoryMode && daysValLocal === 30) {
         computedTickAmount = Math.min(7, Math.max(5, computedTickAmount));
@@ -496,11 +579,19 @@ const chartOptions = computed(() => {
     colors: colors,
     stroke: {
       width: data.series.map((s, index) =>
-        (s.id.includes("_projected") || s.id.includes("_forecast") || ((props.showHeader ? accountTrendMode.value : props.mode) === "forecast")) ? 2 : 3
+        s.id.includes("_projected") ||
+        s.id.includes("_forecast") ||
+        (props.showHeader ? accountTrendMode.value : props.mode) === "forecast"
+          ? 2
+          : 3
       ),
       curve: "smooth",
       dashArray: data.series.map((s, index) =>
-        (s.id.includes("_projected") || s.id.includes("_forecast") || ((props.showHeader ? accountTrendMode.value : props.mode) === "forecast")) ? 5 : 0
+        s.id.includes("_projected") ||
+        s.id.includes("_forecast") ||
+        (props.showHeader ? accountTrendMode.value : props.mode) === "forecast"
+          ? 5
+          : 0
       ),
     },
     markers: {
@@ -521,23 +612,36 @@ const chartOptions = computed(() => {
         },
         rotate: isSmallScreen.value ? -45 : 0,
         formatter: (value: string | number, timestamp?: number, opts?: any) => {
-          const date = dayjs(typeof value === 'number' ? value : parseInt(value));
+          const date = dayjs(
+            typeof value === "number" ? value : parseInt(value)
+          );
           if ((props.showHeader ? accountTrendDays.value : props.days) >= 90) {
             return date.format("MM/YYYY");
-          } else if ((props.showHeader ? accountTrendDays.value : props.days) <= 30) {
+          } else if (
+            (props.showHeader ? accountTrendDays.value : props.days) <= 30
+          ) {
             return date.format("DD.MM");
           } else {
             return date.format("DD.MM.YYYY");
           }
         },
         showDuplicates: false,
-        maxHeight: (props.showHeader ? accountTrendDays.value : props.days) >= 90 ? 60 : undefined,
+        maxHeight:
+          (props.showHeader ? accountTrendDays.value : props.days) >= 90
+            ? 60
+            : undefined,
         datetimeUTC: false,
         datetimeFormatter: {
-          year: 'yyyy',
-          month: (props.showHeader ? accountTrendDays.value : props.days) >= 90 ? 'MM/yyyy' : 'MMM',
-          day: (props.showHeader ? accountTrendDays.value : props.days) <= 30 ? 'dd.MM' : 'dd.MM.yyyy',
-          hour: 'HH:mm'
+          year: "yyyy",
+          month:
+            (props.showHeader ? accountTrendDays.value : props.days) >= 90
+              ? "MM/yyyy"
+              : "MMM",
+          day:
+            (props.showHeader ? accountTrendDays.value : props.days) <= 30
+              ? "dd.MM"
+              : "dd.MM.yyyy",
+          hour: "HH:mm",
         },
       },
       axisBorder: {
@@ -549,11 +653,24 @@ const chartOptions = computed(() => {
         color: themeColors.base300,
       },
       // Tick-Anzahl je nach Zeitraum
-      tickAmount: (props.showHeader ? accountTrendDays.value : props.days) >= 90
-        ? Math.min(Math.ceil((props.showHeader ? accountTrendDays.value : props.days) / 30), 12)
-        : (props.showHeader ? accountTrendDays.value : props.days) <= 7
-          ? (props.showHeader ? accountTrendDays.value : props.days)
-          : Math.min(Math.ceil((props.showHeader ? accountTrendDays.value : props.days) / 3), 15),
+      tickAmount:
+        (props.showHeader ? accountTrendDays.value : props.days) >= 90
+          ? Math.min(
+              Math.ceil(
+                (props.showHeader ? accountTrendDays.value : props.days) / 30
+              ),
+              12
+            )
+          : (props.showHeader ? accountTrendDays.value : props.days) <= 7
+          ? props.showHeader
+            ? accountTrendDays.value
+            : props.days
+          : Math.min(
+              Math.ceil(
+                (props.showHeader ? accountTrendDays.value : props.days) / 3
+              ),
+              15
+            ),
     },
     yaxis: {
       title: {
@@ -595,10 +712,12 @@ const chartOptions = computed(() => {
       // Eigene "Nice Scale" - Apex nicht erneut skalieren lassen
       forceNiceScale: false,
       floating: false,
-      ...(typeof yAxisMin === "number" && typeof yAxisMax === "number" ? {
-        min: yAxisMin,
-        max: yAxisMax,
-      } : {}),
+      ...(typeof yAxisMin === "number" && typeof yAxisMax === "number"
+        ? {
+            min: yAxisMin,
+            max: yAxisMax,
+          }
+        : {}),
       tickAmount: computedTickAmount,
       decimalsInFloat: 0,
     },
@@ -639,7 +758,8 @@ const chartOptions = computed(() => {
       intersect: false,
       y: {
         // Tooltip: immer exakter Integerwert in € (kein k/M-Kürzel)
-        formatter: (val: number) => `${Math.round(val).toLocaleString('de-DE')}€`,
+        formatter: (val: number) =>
+          `${Math.round(val).toLocaleString("de-DE")}€`,
       },
     },
     grid: {
@@ -655,17 +775,17 @@ const chartOptions = computed(() => {
           show: true,
         },
       },
-      position: 'back',
+      position: "back",
       ...(props.days >= 90 && {
         row: {
-          colors: ['transparent'],
-          opacity: 0.5
+          colors: ["transparent"],
+          opacity: 0.5,
         },
         column: {
-          colors: ['transparent'],
-          opacity: 0.1
-        }
-      })
+          colors: ["transparent"],
+          opacity: 0.1,
+        },
+      }),
     },
     responsive: [
       {
@@ -758,7 +878,11 @@ watch(
 
 // Watchers für interne State (wenn showHeader = true)
 watch(
-  () => [selectedAccountId.value, accountTrendDays.value, accountTrendMode.value],
+  () => [
+    selectedAccountId.value,
+    accountTrendDays.value,
+    accountTrendMode.value,
+  ],
   () => {
     if (props.showHeader) {
       updateChart();
@@ -808,9 +932,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="showHeader" class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150">
+  <div
+    v-if="showHeader"
+    class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+  >
     <div class="card-body">
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+      <div
+        class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4"
+      >
         <h3 class="card-title text-lg">Kontoentwicklung</h3>
 
         <div class="flex gap-1">
@@ -892,7 +1021,10 @@ onUnmounted(() => {
   </div>
 
   <!-- Fallback für showHeader = false -->
-  <div v-else class="w-full h-full">
+  <div
+    v-else
+    class="w-full h-full"
+  >
     <div
       v-if="!chartData.hasData"
       class="flex items-center justify-center h-full text-base-content/70"

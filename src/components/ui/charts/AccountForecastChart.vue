@@ -18,8 +18,9 @@ import ApexCharts from "apexcharts";
 dayjs.locale("de");
 
 const props = defineProps<{
-  startDate: string;
+  dateRange: { start: string; end: string };
   filteredAccountId?: string;
+  hideBadges?: boolean;
 }>();
 
 // Stores
@@ -29,7 +30,12 @@ const themeStore = useThemeStore();
 const monthlyBalanceStore = useMonthlyBalanceStore();
 
 // Chart-Konfiguration
-const forecastMonths = 6;
+const forecastMonths = computed(() => {
+  const start = dayjs(props.dateRange.start).startOf("month");
+  const end = dayjs(props.dateRange.end).endOf("month");
+  const diff = end.diff(start, "month") + 1;
+  return Math.min(12, Math.max(1, diff));
+});
 const chartContainer = ref<HTMLElement>();
 let chart: ApexCharts | null = null;
 
@@ -192,24 +198,24 @@ const sortedForecastData = computed(() => {
   });
 });
 
-// Bestimmt, ob ein Konto angezeigt werden soll
+// Bestimmt, ob ein Konto berücksichtigt wird
 const shouldShowAccount = computed(() => {
   return (accountId: string) => {
-    // Wenn ein Konto über Props gefiltert wird, nur dieses anzeigen
-    if (props.filteredAccountId && props.filteredAccountId !== accountId) {
-      return false;
+    if (props.filteredAccountId) {
+      return props.filteredAccountId === accountId;
     }
-    // Wenn ein Konto über Badge-Klick ausgewählt wurde, nur dieses anzeigen
-    if (activeAccountId.value && activeAccountId.value !== accountId) {
-      return false;
-    }
+    // Aggregierte Ansicht: alle Konten berücksichtigen
     return true;
   };
 });
 
 // Bestimmt, ob das Chart angezeigt werden soll
 const shouldShowChart = computed(() => {
-  return activeAccountId.value !== null;
+  // Ohne Badges oder mit gesetztem Filter immer anzeigen, sofern Daten vorhanden
+  if (!props.hideBadges && !props.filteredAccountId) {
+    return activeAccountId.value !== null && forecastData.value.length > 0;
+  }
+  return forecastData.value.length > 0;
 });
 
 // Chart-Daten berechnen
@@ -219,52 +225,57 @@ const chartData = computed(() => {
     [];
   const colorSpectrum = getColorSpectrum();
 
-  // Labels für die nächsten 6 Monate generieren
-  const startDate = dayjs(props.startDate);
-  for (let i = 0; i < forecastMonths; i++) {
+  // Labels gemäß DateRange (max. 12 Monate)
+  const startDate = dayjs(props.dateRange.start).startOf("month");
+  const months = forecastMonths.value;
+  for (let i = 0; i < months; i++) {
     const month = startDate.add(i, "month");
     labels.push(getGermanMonthName(month));
   }
 
-  // Daten für jedes Konto
-  forecastData.value.forEach((account, index) => {
-    if (!shouldShowAccount.value(account.accountId)) return;
+  const isSingleAccount = !!props.filteredAccountId;
 
-    const data = account.monthlyForecasts.map((f) =>
+  if (isSingleAccount) {
+    // Nur die ausgewählte Kontoserie mit Positiv/Negativ-Trennung
+    const account = forecastData.value.find(
+      (a) => a.accountId === props.filteredAccountId
+    );
+    const data = (account?.monthlyForecasts ?? []).map((f) =>
       Math.round(f.projectedBalance)
     );
 
-    // Bei einzelnem Konto: positive und negative Werte trennen
-    const isSelectedAccount = props.filteredAccountId === account.accountId || activeAccountId.value === account.accountId;
-    if (isSelectedAccount) {
-      const positiveData = data.map((val: number) => (val >= 0 ? val : null));
-      const negativeData = data.map((val: number) =>
-        val < 0 ? Math.abs(val) : null
-      );
+    const positiveData = data.map((val: number) => (val >= 0 ? val : null));
+    const negativeData = data.map((val: number) =>
+      val < 0 ? Math.abs(val) : null
+    );
 
-      if (positiveData.some((val) => val !== null)) {
-        series.push({
-          name: `${account.accountName} (Positiv)`,
-          data: positiveData,
-          accountId: account.accountId,
-        });
-      }
-
-      if (negativeData.some((val) => val !== null)) {
-        series.push({
-          name: `${account.accountName} (Negativ)`,
-          data: negativeData,
-          accountId: account.accountId,
-        });
-      }
-    } else {
+    if (positiveData.some((v) => v !== null)) {
       series.push({
-        name: account.accountName,
-        data,
-        accountId: account.accountId,
+        name: `${account?.accountName ?? "Konto"} (Positiv)`,
+        data: positiveData,
+        accountId: account?.accountId ?? "N/A",
       });
     }
-  });
+    if (negativeData.some((v) => v !== null)) {
+      series.push({
+        name: `${account?.accountName ?? "Konto"} (Negativ)`,
+        data: negativeData,
+        accountId: account?.accountId ?? "N/A",
+      });
+    }
+  } else {
+    // Aggregierte Summe über alle Konten je Monat
+    const aggregated: number[] = [];
+    for (let i = 0; i < months; i++) {
+      let sum = 0;
+      for (const acc of forecastData.value) {
+        const v = acc.monthlyForecasts[i]?.projectedBalance ?? 0;
+        sum += Math.round(v);
+      }
+      aggregated.push(sum);
+    }
+    series.push({ name: "Alle Konten", data: aggregated, accountId: "ALL" });
+  }
 
   return { labels, series, colorSpectrum };
 });
@@ -273,14 +284,14 @@ const chartData = computed(() => {
 const chartOptions = computed(() => {
   const data = chartData.value;
   const themeColors = getThemeColors();
-  const isSingleAccount = props.filteredAccountId !== undefined || activeAccountId.value !== null;
+  const isSingleAccount = !!props.filteredAccountId;
 
   // Farben bestimmen
   let colors: string[];
   if (isSingleAccount) {
     colors = [themeColors.success, themeColors.error]; // Grün für positiv, rot für negativ
   } else {
-    colors = data.colorSpectrum;
+    colors = [themeColors.primary];
   }
 
   return {
@@ -395,7 +406,8 @@ const chartOptions = computed(() => {
       },
     },
     legend: {
-      show: shouldShowChart.value && (!isSingleAccount || data.series.length > 1), // Legende nur wenn Chart angezeigt wird und bei mehreren Konten oder pos/neg Trennung
+      show:
+        shouldShowChart.value && (!isSingleAccount || data.series.length > 1), // Legende nur wenn Chart angezeigt wird und bei mehreren Konten oder pos/neg Trennung
       position: isSmallScreen.value ? "top" : "top",
       horizontalAlign: "center",
       floating: false,
@@ -454,7 +466,7 @@ const chartOptions = computed(() => {
 
 // Prognosedaten generieren
 async function generateForecastData() {
-  const startDate = new Date(props.startDate);
+  const startDate = new Date(props.dateRange.start);
   const data: typeof forecastData.value = [];
 
   // Sicherstellen, dass monthlyBalanceStore geladen ist
@@ -481,7 +493,7 @@ async function generateForecastData() {
       }[],
     };
 
-    for (let i = 0; i < forecastMonths; i++) {
+    for (let i = 0; i < forecastMonths.value; i++) {
       const forecastDate = new Date(startDate);
       forecastDate.setMonth(forecastDate.getMonth() + i);
 
@@ -495,15 +507,30 @@ async function generateForecastData() {
       const year = forecastDate.getFullYear();
       const month = forecastDate.getMonth();
 
-      let balance = monthlyBalanceStore.getAccountBalanceForDate(account.id, lastDay);
-      let projectedBalance = monthlyBalanceStore.getProjectedAccountBalanceForDate(account.id, lastDay);
+      let balance = monthlyBalanceStore.getAccountBalanceForDate(
+        account.id,
+        lastDay
+      );
+      let projectedBalance =
+        monthlyBalanceStore.getProjectedAccountBalanceForDate(
+          account.id,
+          lastDay
+        );
 
       // Fallback auf BalanceService wenn keine Daten im monthlyBalanceStore
       if (balance === null) {
-        balance = BalanceService.getTodayBalance("account", account.id, lastDay);
+        balance = BalanceService.getTodayBalance(
+          "account",
+          account.id,
+          lastDay
+        );
       }
       if (projectedBalance === null) {
-        projectedBalance = BalanceService.getProjectedBalance("account", account.id, lastDay);
+        projectedBalance = BalanceService.getProjectedBalance(
+          "account",
+          account.id,
+          lastDay
+        );
       }
 
       const monthStart = new Date(year, month, 1);
@@ -514,7 +541,7 @@ async function generateForecastData() {
       sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
 
       const transactions = planningStore
-        .getUpcomingTransactions(180) // 6 Monate ≈ 180 Tage
+        .getUpcomingTransactions(forecastMonths.value * 30)
         .filter((tx) => {
           const txDate = new Date(tx.date);
           return (
@@ -545,26 +572,12 @@ async function generateForecastData() {
 
   forecastData.value = data;
 
-  // Erstes Konto automatisch markieren wenn noch keines ausgewählt ist
-  if (data.length > 0 && !activeAccountId.value && !props.filteredAccountId) {
-    const sortedData = [...data].sort((a, b) => {
-      // Erst nach Kontogruppen-sortOrder sortieren
-      const groupSortA = a.accountGroupSortOrder ?? 999;
-      const groupSortB = b.accountGroupSortOrder ?? 999;
-      if (groupSortA !== groupSortB) {
-        return groupSortA - groupSortB;
-      }
-      // Dann nach Konto-sortOrder
-      const accountSortA = a.accountSortOrder ?? 999;
-      const accountSortB = b.accountSortOrder ?? 999;
-      return accountSortA - accountSortB;
-    });
-    activeAccountId.value = sortedData[0].accountId;
-  }
+  // Aktives Konto an Dropdown-Filter koppeln (oder aggregiert anzeigen)
+  activeAccountId.value = props.filteredAccountId || null;
 
   debugLog("[AccountForecastChart] generateForecastData", {
     accounts: data.length,
-    startDate: props.startDate,
+    dateRange: props.dateRange,
     autoSelectedAccount: activeAccountId.value,
     monthlyBalanceStoreLoaded: monthlyBalanceStore.isLoaded,
   });
@@ -617,15 +630,22 @@ function formatAmount(amount: number): string {
 }
 
 // Watchers
-watch([() => props.startDate, () => props.filteredAccountId], async () => {
-  await generateForecastData();
-  await nextTick();
-  if (!chart) {
-    setTimeout(() => {
-      createChart();
-    }, 100);
+watch(
+  [
+    () => props.dateRange.start,
+    () => props.dateRange.end,
+    () => props.filteredAccountId,
+  ],
+  async () => {
+    await generateForecastData();
+    await nextTick();
+    if (!chart) {
+      setTimeout(() => {
+        createChart();
+      }, 100);
+    }
   }
-});
+);
 
 watch(
   chartData,
@@ -646,22 +666,19 @@ watch(
 );
 
 // Watcher für activeAccountId um Chart zu erstellen/zerstören
-watch(
-  activeAccountId,
-  async () => {
-    if (shouldShowChart.value && !chart && forecastData.value.length > 0) {
-      await nextTick();
-      setTimeout(() => {
-        createChart();
-      }, 100);
-    } else if (!shouldShowChart.value && chart) {
-      chart.destroy();
-      chart = null;
-    } else if (chart && shouldShowChart.value) {
-      await updateChart();
-    }
+watch(activeAccountId, async () => {
+  if (shouldShowChart.value && !chart && forecastData.value.length > 0) {
+    await nextTick();
+    setTimeout(() => {
+      createChart();
+    }, 100);
+  } else if (!shouldShowChart.value && chart) {
+    chart.destroy();
+    chart = null;
+  } else if (chart && shouldShowChart.value) {
+    await updateChart();
   }
-);
+});
 
 watch(
   () => themeStore.isDarkMode,
@@ -733,7 +750,10 @@ onUnmounted(() => {
 <template>
   <div class="space-y-6">
     <!-- Kontoübersicht und Legende -->
-    <div class="flex flex-wrap gap-4">
+    <div
+      v-if="!hideBadges"
+      class="flex flex-wrap gap-4"
+    >
       <div
         v-for="account in sortedForecastData"
         :key="account.accountId"
