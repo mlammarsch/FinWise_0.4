@@ -1,22 +1,22 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue';
-import { Icon } from '@iconify/vue';
-import Muuri from 'muuri';
-import { CategoryService } from '../../services/CategoryService';
-import { useCategoryStore } from '../../stores/categoryStore';
-import { useTransactionStore } from '../../stores/transactionStore';
-import { usePlanningStore } from '../../stores/planningStore';
-import type { CategoryGroup, Category } from '../../types';
-import { debugLog, errorLog, infoLog } from '../../utils/logger';
-import CurrencyDisplay from '../ui/CurrencyDisplay.vue';
-import CalculatorInput from '../ui/CalculatorInput.vue';
-import { BudgetService } from '../../services/BudgetService';
-import { BalanceService } from '../../services/BalanceService';
-import { toDateOnlyString } from '../../utils/formatters';
-import CategoryTransferModal from './CategoryTransferModal.vue';
-import CategoryTransactionModal from './CategoryTransactionModal.vue';
-import CategoryPlanningModal from './CategoryPlanningModal.vue';
-import { TransactionService } from '../../services/TransactionService';
+import { onMounted, onUnmounted, ref, nextTick, computed, watch } from "vue";
+import { Icon } from "@iconify/vue";
+import Muuri from "muuri";
+import { CategoryService } from "../../services/CategoryService";
+import { useCategoryStore } from "../../stores/categoryStore";
+import { useTransactionStore } from "../../stores/transactionStore";
+import { usePlanningStore } from "../../stores/planningStore";
+import type { CategoryGroup, Category } from "../../types";
+import { debugLog, errorLog, infoLog } from "../../utils/logger";
+import CurrencyDisplay from "../ui/CurrencyDisplay.vue";
+import CalculatorInput from "../ui/CalculatorInput.vue";
+import { BudgetService } from "../../services/BudgetService";
+import { BalanceService } from "../../services/BalanceService";
+import { toDateOnlyString } from "../../utils/formatters";
+import CategoryTransferModal from "./CategoryTransferModal.vue";
+import CategoryTransactionModal from "./CategoryTransactionModal.vue";
+import CategoryPlanningModal from "./CategoryPlanningModal.vue";
+import { TransactionService } from "../../services/TransactionService";
 
 // Props für Monate
 interface Props {
@@ -29,12 +29,12 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  months: () => []
+  months: () => [],
 });
 
 // Emit für Loading-Status
 const emit = defineEmits<{
-  muuriReady: []
+  muuriReady: [];
 }>();
 
 // Interface für Budget-Daten
@@ -46,23 +46,33 @@ interface MonthlyBudgetData {
 }
 
 // Berechnungsfunktionen für echte Budget-Daten
-function getCategoryBudgetData(categoryId: string, month: { start: Date; end: Date }): MonthlyBudgetData {
+function getCategoryBudgetData(
+  categoryId: string,
+  month: { start: Date; end: Date }
+): MonthlyBudgetData {
   const normalizedStart = new Date(toDateOnlyString(month.start));
   const normalizedEnd = new Date(toDateOnlyString(month.end));
 
-  return BudgetService.getAggregatedMonthlyBudgetData(categoryId, normalizedStart, normalizedEnd);
+  return BudgetService.getAggregatedMonthlyBudgetData(
+    categoryId,
+    normalizedStart,
+    normalizedEnd
+  );
 }
 
-function calculateGroupSummary(groupId: string, month: { start: Date; end: Date }) {
+function calculateGroupSummary(
+  groupId: string,
+  month: { start: Date; end: Date }
+) {
   const categories = getCategoriesForGroup(groupId);
   const summary = {
     budgeted: 0,
     forecast: 0,
     spent: 0,
-    saldo: 0
+    saldo: 0,
   };
 
-  categories.forEach(category => {
+  categories.forEach((category) => {
     const data = getCategoryBudgetData(category.id, month);
     summary.budgeted += data.budgeted;
     summary.forecast += data.forecast;
@@ -87,8 +97,14 @@ const typeSummaryCache = computed(() => {
     categoryStore.categories.length,
     // Wichtig: Auch auf Transaktionsinhalte reagieren (für Budgettemplate-Anwendung)
     // Erstelle einen Hash aus allen relevanten Transaktionsdaten
-    transactionStore.transactions.map(t => `${t.id}-${t.amount}-${t.categoryId}-${t.type}-${t.valueDate}`).join('|'),
-    planningStore.planningTransactions.map(p => `${p.id}-${p.amount}-${p.categoryId}-${p.isActive}`).join('|')
+    transactionStore.transactions
+      .map(
+        (t) => `${t.id}-${t.amount}-${t.categoryId}-${t.type}-${t.valueDate}`
+      )
+      .join("|"),
+    planningStore.planningTransactions
+      .map((p) => `${p.id}-${p.amount}-${p.categoryId}-${p.isActive}`)
+      .join("|"),
   ];
 
   const cache = new Map<string, any>();
@@ -107,7 +123,7 @@ const typeSummaryCache = computed(() => {
       budgeted: expenseSummary.budgeted,
       forecast: expenseSummary.forecast,
       spent: expenseSummary.spentMiddle,
-      saldo: expenseSummary.saldoFull
+      saldo: expenseSummary.saldoFull,
     });
 
     // Cache für Income-Kategorien
@@ -120,21 +136,28 @@ const typeSummaryCache = computed(() => {
       budgeted: incomeSummary.budgeted,
       forecast: incomeSummary.forecast,
       spent: incomeSummary.spentMiddle,
-      saldo: incomeSummary.saldoFull
+      saldo: incomeSummary.saldoFull,
     });
   });
 
   return cache;
 });
 
-function calculateTypeSummary(isIncomeType: boolean, month: { key?: string; start: Date; end: Date }) {
-  const key = `${isIncomeType ? 'income' : 'expense'}-${month.key || toDateOnlyString(month.start)}`;
-  return typeSummaryCache.value.get(key) || {
-    budgeted: 0,
-    forecast: 0,
-    spent: 0,
-    saldo: 0
-  };
+function calculateTypeSummary(
+  isIncomeType: boolean,
+  month: { key?: string; start: Date; end: Date }
+) {
+  const key = `${isIncomeType ? "income" : "expense"}-${
+    month.key || toDateOnlyString(month.start)
+  }`;
+  return (
+    typeSummaryCache.value.get(key) || {
+      budgeted: 0,
+      forecast: 0,
+      spent: 0,
+      saldo: 0,
+    }
+  );
 }
 
 // Drag Container
@@ -172,7 +195,11 @@ const getCategoryBalance = (categoryId: string): number => {
 
 // Berechnet den Progress-Wert für Sparziele (Saldo / Sparziel * 100, max. 100)
 const getSavingsGoalProgress = (category: Category): number => {
-  if (!category.isSavingsGoal || !category.targetAmount || category.targetAmount <= 0) {
+  if (
+    !category.isSavingsGoal ||
+    !category.targetAmount ||
+    category.targetAmount <= 0
+  ) {
     return 0;
   }
 
@@ -227,12 +254,17 @@ const activeEditField = ref<string | null>(null); // Format: "categoryId-monthKe
 const processingBudgetUpdate = ref<Set<string>>(new Set()); // Verhindert doppelte Updates
 
 // Debounced Budget Update Queue
-const budgetUpdateQueue = ref<Map<string, {
-  categoryId: string;
-  monthKey: string;
-  newValue: number;
-  timestamp: number;
-}>>(new Map());
+const budgetUpdateQueue = ref<
+  Map<
+    string,
+    {
+      categoryId: string;
+      monthKey: string;
+      newValue: number;
+      timestamp: number;
+    }
+  >
+>(new Map());
 const budgetUpdateTimer = ref<NodeJS.Timeout | null>(null);
 const BUDGET_UPDATE_DEBOUNCE_DELAY = 500;
 
@@ -245,22 +277,22 @@ const SORT_ORDER_DEBOUNCE_DELAY = 500;
 
 // Getrennte Lebensbereiche nach Typ
 const expenseGroups = computed(() => {
-  const groups = categoryGroups.value.filter(g => !g.isIncomeGroup);
+  const groups = categoryGroups.value.filter((g) => !g.isIncomeGroup);
   return groups.sort((a, b) => a.sortOrder - b.sortOrder);
 });
 
 const incomeGroups = computed(() => {
-  const groups = categoryGroups.value.filter(g => g.isIncomeGroup);
+  const groups = categoryGroups.value.filter((g) => g.isIncomeGroup);
   return groups.sort((a, b) => a.sortOrder - b.sortOrder);
 });
 
 // Icon-Mapping für Lebensbereiche
 function getGroupIcon(group: CategoryGroup): string {
-  return 'mdi:folder-outline';
+  return "mdi:folder-outline";
 }
 
 function getGroupColor(group: CategoryGroup): string {
-  return 'text-base-content';
+  return "text-base-content";
 }
 
 // Kategorien für eine Gruppe (sortiert nach sortOrder)
@@ -277,7 +309,7 @@ function getVisibleCategoriesForGroup(groupId: string): Category[] {
   if (categoryStore.showHiddenCategories) {
     return categories; // Alle Kategorien anzeigen
   }
-  return categories.filter(category => !category.isHidden); // Versteckte Kategorien ausblenden
+  return categories.filter((category) => !category.isHidden); // Versteckte Kategorien ausblenden
 }
 
 // Editable Budget Functions
@@ -290,7 +322,10 @@ function isEditingBudget(categoryId: string, monthKey: string): boolean {
 async function processBudgetUpdateQueue() {
   if (budgetUpdateQueue.value.size === 0) return;
 
-  debugLog('BudgetCategoriesAndValues', `Verarbeite ${budgetUpdateQueue.value.size} Budget-Updates in Batch`);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    `Verarbeite ${budgetUpdateQueue.value.size} Budget-Updates in Batch`
+  );
 
   const updates = Array.from(budgetUpdateQueue.value.values());
   const transfers: Array<{
@@ -304,7 +339,10 @@ async function processBudgetUpdateQueue() {
   // Finde die "Verfügbare Mittel" Kategorie
   const availableFunds = availableFundsCategory.value;
   if (!availableFunds) {
-    errorLog('BudgetCategoriesAndValues', 'Kategorie "Verfügbare Mittel" nicht gefunden');
+    errorLog(
+      "BudgetCategoriesAndValues",
+      'Kategorie "Verfügbare Mittel" nicht gefunden'
+    );
     budgetUpdateQueue.value.clear();
     return;
   }
@@ -313,23 +351,32 @@ async function processBudgetUpdateQueue() {
   for (const update of updates) {
     try {
       // Finde den entsprechenden Monat
-      const targetMonth = props.months.find(month => month.key === update.monthKey);
+      const targetMonth = props.months.find(
+        (month) => month.key === update.monthKey
+      );
       if (!targetMonth) {
-        errorLog('BudgetCategoriesAndValues', `Monat mit Key ${update.monthKey} nicht gefunden`);
+        errorLog(
+          "BudgetCategoriesAndValues",
+          `Monat mit Key ${update.monthKey} nicht gefunden`
+        );
         continue;
       }
 
       // Berechne den aktuellen Budgetwert
-      const currentBudgetData = BudgetService.getSingleCategoryMonthlyBudgetData(
-        update.categoryId,
-        targetMonth.start,
-        targetMonth.end
-      );
+      const currentBudgetData =
+        BudgetService.getSingleCategoryMonthlyBudgetData(
+          update.categoryId,
+          targetMonth.start,
+          targetMonth.end
+        );
       const currentBudgetValue = currentBudgetData.budgeted;
       const difference = update.newValue - currentBudgetValue;
 
       if (Math.abs(difference) < 0.01) {
-        debugLog('BudgetCategoriesAndValues', `Keine Änderung erforderlich für ${update.categoryId}-${update.monthKey}`);
+        debugLog(
+          "BudgetCategoriesAndValues",
+          `Keine Änderung erforderlich für ${update.categoryId}-${update.monthKey}`
+        );
         continue;
       }
 
@@ -343,7 +390,7 @@ async function processBudgetUpdateQueue() {
           toCategoryId: availableFunds.id,
           amount: Math.abs(difference),
           date: transferDate,
-          note: transferNote
+          note: transferNote,
         });
       } else {
         // Transfer von "Verfügbare Mittel" zu Kategorie
@@ -352,27 +399,49 @@ async function processBudgetUpdateQueue() {
           toCategoryId: update.categoryId,
           amount: difference,
           date: transferDate,
-          note: transferNote
+          note: transferNote,
         });
       }
 
-      debugLog('BudgetCategoriesAndValues', `Transfer geplant: ${Math.abs(difference)}€ für ${update.categoryId}-${update.monthKey}`);
+      debugLog(
+        "BudgetCategoriesAndValues",
+        `Transfer geplant: ${Math.abs(difference)}€ für ${update.categoryId}-${
+          update.monthKey
+        }`
+      );
     } catch (error) {
-      errorLog('BudgetCategoriesAndValues', `Fehler bei Budget-Update für ${update.categoryId}-${update.monthKey}`, error);
+      errorLog(
+        "BudgetCategoriesAndValues",
+        `Fehler bei Budget-Update für ${update.categoryId}-${update.monthKey}`,
+        error
+      );
     }
   }
 
   // Bulk-Erstellung aller Transfers
   if (transfers.length > 0) {
     try {
-      debugLog('BudgetCategoriesAndValues', `Erstelle ${transfers.length} Budget-Transfers in Bulk-Operation`);
+      debugLog(
+        "BudgetCategoriesAndValues",
+        `Erstelle ${transfers.length} Budget-Transfers in Bulk-Operation`
+      );
       await TransactionService.addMultipleCategoryTransfers(transfers);
-      infoLog('BudgetCategoriesAndValues', `Batch Budget-Update abgeschlossen: ${transfers.length} Transfers erstellt`);
+      infoLog(
+        "BudgetCategoriesAndValues",
+        `Batch Budget-Update abgeschlossen: ${transfers.length} Transfers erstellt`
+      );
     } catch (error) {
-      errorLog('BudgetCategoriesAndValues', 'Fehler bei Bulk-Budget-Update', error);
+      errorLog(
+        "BudgetCategoriesAndValues",
+        "Fehler bei Bulk-Budget-Update",
+        error
+      );
 
       // Fallback: Einzelne Transfers
-      debugLog('BudgetCategoriesAndValues', 'Fallback auf einzelne Budget-Transfers');
+      debugLog(
+        "BudgetCategoriesAndValues",
+        "Fallback auf einzelne Budget-Transfers"
+      );
       for (const transfer of transfers) {
         try {
           await TransactionService.addCategoryTransfer(
@@ -383,7 +452,11 @@ async function processBudgetUpdateQueue() {
             transfer.note
           );
         } catch (singleError) {
-          errorLog('BudgetCategoriesAndValues', `Fehler beim einzelnen Budget-Transfer`, singleError);
+          errorLog(
+            "BudgetCategoriesAndValues",
+            `Fehler beim einzelnen Budget-Transfer`,
+            singleError
+          );
         }
       }
     }
@@ -394,16 +467,23 @@ async function processBudgetUpdateQueue() {
 }
 
 // Handler für CalculatorInput - sammelt Updates in Queue
-function handleBudgetUpdate(categoryId: string, monthKey: string, newValue: number) {
+function handleBudgetUpdate(
+  categoryId: string,
+  monthKey: string,
+  newValue: number
+) {
   const updateKey = `${categoryId}-${monthKey}`;
-  debugLog('BudgetCategoriesAndValues', `Budget update queued: ${updateKey} = ${newValue}`);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    `Budget update queued: ${updateKey} = ${newValue}`
+  );
 
   // Update in Queue einreihen (überschreibt vorherige Updates für dasselbe Feld)
   budgetUpdateQueue.value.set(updateKey, {
     categoryId,
     monthKey,
     newValue,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 
   // Debounced Timer zurücksetzen
@@ -424,60 +504,90 @@ function handleBudgetFinish(categoryId: string, monthKey: string) {
 }
 
 function handleBudgetClick(categoryId: string, monthKey: string) {
-  debugLog('BudgetCategoriesAndValues', `handleBudgetClick called for category ${categoryId}, month ${monthKey}`);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    `handleBudgetClick called for category ${categoryId}, month ${monthKey}`
+  );
 
   if (!isEditingBudget(categoryId, monthKey)) {
-    debugLog('BudgetCategoriesAndValues', 'Not currently editing, starting edit mode');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "Not currently editing, starting edit mode"
+    );
     activeEditField.value = `${categoryId}-${monthKey}`;
-    debugLog('BudgetCategoriesAndValues', `activeEditField set to: ${activeEditField.value}`);
+    debugLog(
+      "BudgetCategoriesAndValues",
+      `activeEditField set to: ${activeEditField.value}`
+    );
   } else {
-    debugLog('BudgetCategoriesAndValues', 'Already editing this field');
+    debugLog("BudgetCategoriesAndValues", "Already editing this field");
   }
 }
 
 function handleFocusNext(categoryId: string, monthKey: string) {
-  debugLog('BudgetCategoriesAndValues', `handleFocusNext called for category ${categoryId}, month ${monthKey}`);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    `handleFocusNext called for category ${categoryId}, month ${monthKey}`
+  );
 
   // Erst das Budget-Update durchführen (wird bereits durch CalculatorInput gemacht)
   // Dann zum nächsten Feld navigieren
   const nextField = findNextBudgetField(categoryId, monthKey);
   if (nextField) {
-    debugLog('BudgetCategoriesAndValues', `Focusing next field: ${nextField.categoryId}-${nextField.monthKey}`);
+    debugLog(
+      "BudgetCategoriesAndValues",
+      `Focusing next field: ${nextField.categoryId}-${nextField.monthKey}`
+    );
     activeEditField.value = `${nextField.categoryId}-${nextField.monthKey}`;
   } else {
-    debugLog('BudgetCategoriesAndValues', 'No next field found, removing focus');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "No next field found, removing focus"
+    );
     activeEditField.value = null;
   }
 }
 
 function handleFocusPrevious(categoryId: string, monthKey: string) {
-  debugLog('BudgetCategoriesAndValues', `handleFocusPrevious called for category ${categoryId}, month ${monthKey}`);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    `handleFocusPrevious called for category ${categoryId}, month ${monthKey}`
+  );
 
   // Erst das Budget-Update durchführen (wird bereits durch CalculatorInput gemacht)
   // Dann zum vorherigen Feld navigieren
   const previousField = findPreviousBudgetField(categoryId, monthKey);
   if (previousField) {
-    debugLog('BudgetCategoriesAndValues', `Focusing previous field: ${previousField.categoryId}-${previousField.monthKey}`);
+    debugLog(
+      "BudgetCategoriesAndValues",
+      `Focusing previous field: ${previousField.categoryId}-${previousField.monthKey}`
+    );
     activeEditField.value = `${previousField.categoryId}-${previousField.monthKey}`;
   } else {
-    debugLog('BudgetCategoriesAndValues', 'No previous field found, removing focus');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "No previous field found, removing focus"
+    );
     activeEditField.value = null;
   }
 }
 
 // Hilfsfunktionen für die Navigation zwischen Budget-Feldern
-function findNextBudgetField(currentCategoryId: string, currentMonthKey: string): { categoryId: string; monthKey: string } | null {
+function findNextBudgetField(
+  currentCategoryId: string,
+  currentMonthKey: string
+): { categoryId: string; monthKey: string } | null {
   // Erstelle eine Liste aller editierbaren Kategorien im gleichen Monat
   const editableCategories: string[] = [];
 
   // Durchlaufe alle Gruppen (Ausgaben zuerst, dann Einnahmen)
   const allGroups = [...expenseGroups.value, ...incomeGroups.value];
 
-  allGroups.forEach(group => {
+  allGroups.forEach((group) => {
     // Nur erweiterte Gruppen berücksichtigen
     if (categoryStore.expandedCategoryGroups.has(group.id)) {
       const categories = getCategoriesForGroup(group.id);
-      categories.forEach(category => {
+      categories.forEach((category) => {
         // Nur für Ausgaben-Kategorien sind Budget-Felder editierbar
         if (!category.isIncomeCategory) {
           editableCategories.push(category.id);
@@ -487,13 +597,15 @@ function findNextBudgetField(currentCategoryId: string, currentMonthKey: string)
   });
 
   // Finde den Index der aktuellen Kategorie
-  const currentIndex = editableCategories.findIndex(categoryId => categoryId === currentCategoryId);
+  const currentIndex = editableCategories.findIndex(
+    (categoryId) => categoryId === currentCategoryId
+  );
 
   // Wenn aktuelle Kategorie gefunden und es gibt eine nächste Kategorie
   if (currentIndex >= 0 && currentIndex < editableCategories.length - 1) {
     return {
       categoryId: editableCategories[currentIndex + 1],
-      monthKey: currentMonthKey // Bleibe im gleichen Monat
+      monthKey: currentMonthKey, // Bleibe im gleichen Monat
     };
   }
 
@@ -501,18 +613,21 @@ function findNextBudgetField(currentCategoryId: string, currentMonthKey: string)
   return null;
 }
 
-function findPreviousBudgetField(currentCategoryId: string, currentMonthKey: string): { categoryId: string; monthKey: string } | null {
+function findPreviousBudgetField(
+  currentCategoryId: string,
+  currentMonthKey: string
+): { categoryId: string; monthKey: string } | null {
   // Erstelle eine Liste aller editierbaren Kategorien im gleichen Monat
   const editableCategories: string[] = [];
 
   // Durchlaufe alle Gruppen (Ausgaben zuerst, dann Einnahmen)
   const allGroups = [...expenseGroups.value, ...incomeGroups.value];
 
-  allGroups.forEach(group => {
+  allGroups.forEach((group) => {
     // Nur erweiterte Gruppen berücksichtigen
     if (categoryStore.expandedCategoryGroups.has(group.id)) {
       const categories = getCategoriesForGroup(group.id);
-      categories.forEach(category => {
+      categories.forEach((category) => {
         // Nur für Ausgaben-Kategorien sind Budget-Felder editierbar
         if (!category.isIncomeCategory) {
           editableCategories.push(category.id);
@@ -522,13 +637,15 @@ function findPreviousBudgetField(currentCategoryId: string, currentMonthKey: str
   });
 
   // Finde den Index der aktuellen Kategorie
-  const currentIndex = editableCategories.findIndex(categoryId => categoryId === currentCategoryId);
+  const currentIndex = editableCategories.findIndex(
+    (categoryId) => categoryId === currentCategoryId
+  );
 
   // Wenn aktuelle Kategorie gefunden und es gibt eine vorherige Kategorie
   if (currentIndex > 0) {
     return {
       categoryId: editableCategories[currentIndex - 1],
-      monthKey: currentMonthKey // Bleibe im gleichen Monat
+      monthKey: currentMonthKey, // Bleibe im gleichen Monat
     };
   }
 
@@ -545,8 +662,11 @@ function handleOutsideClick(event: Event) {
 
 onMounted(async () => {
   // Add outside click listener
-  document.addEventListener('click', handleOutsideClick);
-  debugLog('BudgetCategoriesAndValues', 'Component mounted, starting initialization');
+  document.addEventListener("click", handleOutsideClick);
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Component mounted, starting initialization"
+  );
 
   // Kategorien sind bereits durch Store-Initialisierung geladen
   // Warte nur auf Reaktivität der categoryGroups
@@ -554,22 +674,31 @@ onMounted(async () => {
 
   // Batch-Expansion aller Gruppen über CategoryService
   const groupsToExpand = categoryGroups.value
-    .filter(group => !categoryStore.expandedCategoryGroups.has(group.id))
-    .map(group => group.id);
+    .filter((group) => !categoryStore.expandedCategoryGroups.has(group.id))
+    .map((group) => group.id);
 
   if (groupsToExpand.length > 0) {
-    debugLog('BudgetCategoriesAndValues', `Expanding ${groupsToExpand.length} category groups`);
+    debugLog(
+      "BudgetCategoriesAndValues",
+      `Expanding ${groupsToExpand.length} category groups`
+    );
     CategoryService.expandCategoryGroupsBatch(groupsToExpand);
   }
 
   await nextTick();
-  debugLog('BudgetCategoriesAndValues', 'Starting Muuri grid initialization');
+  debugLog("BudgetCategoriesAndValues", "Starting Muuri grid initialization");
 
   // Muuri-Initialisierung mit mehreren requestAnimationFrame für bessere Animation-Performance
   requestAnimationFrame(() => {
-    debugLog('BudgetCategoriesAndValues', 'First animation frame - allowing spinner to animate');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "First animation frame - allowing spinner to animate"
+    );
     requestAnimationFrame(() => {
-      debugLog('BudgetCategoriesAndValues', 'Second animation frame - calling initializeGrids');
+      debugLog(
+        "BudgetCategoriesAndValues",
+        "Second animation frame - calling initializeGrids"
+      );
       initializeGrids();
     });
   });
@@ -589,57 +718,79 @@ onUnmounted(() => {
     processBudgetUpdateQueue();
   }
   // Remove outside click listener
-  document.removeEventListener('click', handleOutsideClick);
+  document.removeEventListener("click", handleOutsideClick);
 });
 
 // Watcher für globale Expand/Collapse-Änderungen
-watch(() => categoryStore.expandedCategoryGroups, () => {
-  nextTick(() => {
-    updateLayoutAfterToggle();
-  });
-}, { deep: true });
+watch(
+  () => categoryStore.expandedCategoryGroups,
+  () => {
+    nextTick(() => {
+      updateLayoutAfterToggle();
+    });
+  },
+  { deep: true }
+);
 
 // Watcher für showHiddenCategories-Änderungen
-watch(() => categoryStore.showHiddenCategories, async () => {
-  debugLog('BudgetCategoriesAndValues', 'showHiddenCategories changed, destroying and recreating grids');
-
-  // Grids komplett zerstören
-  destroyGrids();
-
-  // Kurz warten für DOM-Updates
-  await nextTick();
-
-  // Grids komplett neu initialisieren
-  setTimeout(() => {
-    initializeGrids();
-  }, 100); // Kurze Verzögerung für DOM-Updates
-});
-
-// Watcher für Änderungen der months-Props (PagingYearComponent, Spaltenanzahl)
-watch(() => props.months, async (newMonths, oldMonths) => {
-  if (!newMonths || newMonths.length === 0) return;
-
-  // Prüfe ob sich die Monate tatsächlich geändert haben
-  const monthsChanged = !oldMonths ||
-    newMonths.length !== oldMonths.length ||
-    newMonths.some((month, index) =>
-      !oldMonths[index] || month.key !== oldMonths[index].key
+watch(
+  () => categoryStore.showHiddenCategories,
+  async () => {
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "showHiddenCategories changed, destroying and recreating grids"
     );
 
-  if (monthsChanged) {
-    debugLog('BudgetCategoriesAndValues', `Months changed, updating layout. New count: ${newMonths.length}`);
+    // Grids komplett zerstören
+    destroyGrids();
 
     // Kurz warten für DOM-Updates
     await nextTick();
 
-    // Layout aller Grids aktualisieren
-    updateLayoutAfterMonthsChange();
+    // Grids komplett neu initialisieren
+    setTimeout(() => {
+      initializeGrids();
+    }, 100); // Kurze Verzögerung für DOM-Updates
   }
-}, { deep: true });
+);
+
+// Watcher für Änderungen der months-Props (PagingYearComponent, Spaltenanzahl)
+watch(
+  () => props.months,
+  async (newMonths, oldMonths) => {
+    if (!newMonths || newMonths.length === 0) return;
+
+    // Prüfe ob sich die Monate tatsächlich geändert haben
+    const monthsChanged =
+      !oldMonths ||
+      newMonths.length !== oldMonths.length ||
+      newMonths.some(
+        (month, index) =>
+          !oldMonths[index] || month.key !== oldMonths[index].key
+      );
+
+    if (monthsChanged) {
+      debugLog(
+        "BudgetCategoriesAndValues",
+        `Months changed, updating layout. New count: ${newMonths.length}`
+      );
+
+      // Kurz warten für DOM-Updates
+      await nextTick();
+
+      // Layout aller Grids aktualisieren
+      updateLayoutAfterMonthsChange();
+    }
+  },
+  { deep: true }
+);
 
 // Optimierte Muuri-Grid-Initialisierung mit Chunking für bessere Performance
 async function initializeGrids() {
-  debugLog('BudgetCategoriesAndValues', 'initializeGrids() function called - starting chunked initialization');
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "initializeGrids() function called - starting chunked initialization"
+  );
 
   try {
     let completedLayouts = 0;
@@ -647,10 +798,16 @@ async function initializeGrids() {
 
     const checkAllLayoutsComplete = () => {
       completedLayouts++;
-      debugLog('BudgetCategoriesAndValues', `Layout completed: ${completedLayouts}/${totalGrids}`);
+      debugLog(
+        "BudgetCategoriesAndValues",
+        `Layout completed: ${completedLayouts}/${totalGrids}`
+      );
       if (completedLayouts >= totalGrids) {
-        debugLog('BudgetCategoriesAndValues', 'All Muuri grids layouts completed successfully - emitting muuriReady');
-        emit('muuriReady');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "All Muuri grids layouts completed successfully - emitting muuriReady"
+        );
+        emit("muuriReady");
       }
     };
 
@@ -659,79 +816,117 @@ async function initializeGrids() {
 
     // Schritt 2: Meta-Grids mit gestaffelten Delays
     await initializeMetaGridsSequentially(checkAllLayoutsComplete);
-
   } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'Failed to initialize grids with chunking', error);
+    errorLog(
+      "BudgetCategoriesAndValues",
+      "Failed to initialize grids with chunking",
+      error
+    );
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
-    emit('muuriReady');
+    emit("muuriReady");
   }
 }
 
 // Initialisiert Sub-Grids in kleineren Chunks für bessere Performance
 async function initializeSubGridsInChunks() {
-  debugLog('BudgetCategoriesAndValues', 'Starting chunked sub-grid initialization');
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Starting chunked sub-grid initialization"
+  );
 
   // Expense Sub-Grids in Chunks
-  const expenseSubGridElements = document.querySelectorAll('#expense-categories .categories-content') as NodeListOf<HTMLElement>;
-  await processElementsInChunks(Array.from(expenseSubGridElements), expenseSubGrids, 'expense');
+  const expenseSubGridElements = document.querySelectorAll(
+    "#expense-categories .categories-content"
+  ) as NodeListOf<HTMLElement>;
+  await processElementsInChunks(
+    Array.from(expenseSubGridElements),
+    expenseSubGrids,
+    "expense"
+  );
 
   // Kurze Pause zwischen Expense und Income
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   // Income Sub-Grids in Chunks
-  const incomeSubGridElements = document.querySelectorAll('#income-categories .categories-content') as NodeListOf<HTMLElement>;
-  await processElementsInChunks(Array.from(incomeSubGridElements), incomeSubGrids, 'income');
+  const incomeSubGridElements = document.querySelectorAll(
+    "#income-categories .categories-content"
+  ) as NodeListOf<HTMLElement>;
+  await processElementsInChunks(
+    Array.from(incomeSubGridElements),
+    incomeSubGrids,
+    "income"
+  );
 
-  debugLog('BudgetCategoriesAndValues', 'Chunked sub-grid initialization completed');
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Chunked sub-grid initialization completed"
+  );
 }
 
 // Verarbeitet Elemente in kleineren Chunks
-async function processElementsInChunks(elements: HTMLElement[], subGridsArray: typeof expenseSubGrids, type: string) {
-  const CHUNK_SIZE = 5; // Maximal 5 Grids pro Chunk
-
-  for (let i = 0; i < elements.length; i += CHUNK_SIZE) {
-    const chunk = elements.slice(i, i + CHUNK_SIZE);
-    debugLog('BudgetCategoriesAndValues', `Processing ${type} sub-grid chunk ${Math.floor(i/CHUNK_SIZE) + 1}: ${chunk.length} elements`);
-
-    // Verarbeite Chunk
-    chunk.forEach(el => {
-      try {
-        const grid = createSubGrid(el, subGridsArray);
-        subGridsArray.value.push(grid);
-      } catch (error) {
-        errorLog('BudgetCategoriesAndValues', `Failed to create ${type} sub-grid`, error);
-      }
-    });
-
-    // Kurze Pause zwischen Chunks für bessere UI-Responsivität
-    if (i + CHUNK_SIZE < elements.length) {
-      await new Promise(resolve => setTimeout(resolve, 25));
+async function processElementsInChunks(
+  elements: HTMLElement[],
+  subGridsArray: typeof expenseSubGrids,
+  type: string
+) {
+  // Frame-by-Frame Initialisierung: nach jedem Grid an den Browser yielden,
+  // damit der Spinner/Skeleton flüssig animieren kann.
+  for (let i = 0; i < elements.length; i++) {
+    const el = elements[i];
+    debugLog(
+      "BudgetCategoriesAndValues",
+      `Initializing ${type} sub-grid ${i + 1}/${elements.length}`
+    );
+    try {
+      const grid = createSubGrid(el, subGridsArray);
+      subGridsArray.value.push(grid);
+    } catch (error) {
+      errorLog(
+        "BudgetCategoriesAndValues",
+        `Failed to create ${type} sub-grid`,
+        error
+      );
     }
+    // Yield bis zum nächsten Animation-Frame (rAF), um den Main-Thread freizugeben
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve())
+    );
   }
 }
 
 // Initialisiert Meta-Grids sequenziell mit optimierten Delays
-async function initializeMetaGridsSequentially(checkAllLayoutsComplete: () => void) {
-  debugLog('BudgetCategoriesAndValues', 'Starting sequential meta-grid initialization');
+async function initializeMetaGridsSequentially(
+  checkAllLayoutsComplete: () => void
+) {
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Starting sequential meta-grid initialization"
+  );
 
   // Schritt 1: Expense Meta-Grid
   await new Promise<void>((resolve) => {
     setTimeout(() => {
       try {
-        debugLog('BudgetCategoriesAndValues', 'Initializing Expense Meta-Grid');
-        expenseMetaGrid.value = createMetaGrid('#expense-categories', false);
+        debugLog("BudgetCategoriesAndValues", "Initializing Expense Meta-Grid");
+        expenseMetaGrid.value = createMetaGrid("#expense-categories", false);
 
         if (expenseMetaGrid.value.getItems().length === 0) {
-          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
+          debugLog(
+            "BudgetCategoriesAndValues",
+            "Expense Meta-Grid has no items, layout complete immediately"
+          );
           checkAllLayoutsComplete();
           resolve();
         } else {
           let layoutCompleted = false;
 
-          expenseMetaGrid.value.on('layoutEnd', () => {
+          expenseMetaGrid.value.on("layoutEnd", () => {
             if (!layoutCompleted) {
               layoutCompleted = true;
-              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via event');
+              debugLog(
+                "BudgetCategoriesAndValues",
+                "Expense Meta-Grid layout completed via event"
+              );
               checkAllLayoutsComplete();
               resolve();
             }
@@ -741,14 +936,21 @@ async function initializeMetaGridsSequentially(checkAllLayoutsComplete: () => vo
           setTimeout(() => {
             if (!layoutCompleted) {
               layoutCompleted = true;
-              debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
+              debugLog(
+                "BudgetCategoriesAndValues",
+                "Expense Meta-Grid layout completed via timeout fallback"
+              );
               checkAllLayoutsComplete();
               resolve();
             }
           }, 300);
         }
       } catch (error) {
-        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Expense Meta-Grid', error);
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "Failed to initialize Expense Meta-Grid",
+          error
+        );
         checkAllLayoutsComplete(); // Trotzdem als abgeschlossen markieren
         resolve();
       }
@@ -759,20 +961,26 @@ async function initializeMetaGridsSequentially(checkAllLayoutsComplete: () => vo
   await new Promise<void>((resolve) => {
     setTimeout(() => {
       try {
-        debugLog('BudgetCategoriesAndValues', 'Initializing Income Meta-Grid');
-        incomeMetaGrid.value = createMetaGrid('#income-categories', true);
+        debugLog("BudgetCategoriesAndValues", "Initializing Income Meta-Grid");
+        incomeMetaGrid.value = createMetaGrid("#income-categories", true);
 
         if (incomeMetaGrid.value.getItems().length === 0) {
-          debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
+          debugLog(
+            "BudgetCategoriesAndValues",
+            "Income Meta-Grid has no items, layout complete immediately"
+          );
           checkAllLayoutsComplete();
           resolve();
         } else {
           let layoutCompleted = false;
 
-          incomeMetaGrid.value.on('layoutEnd', () => {
+          incomeMetaGrid.value.on("layoutEnd", () => {
             if (!layoutCompleted) {
               layoutCompleted = true;
-              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via event');
+              debugLog(
+                "BudgetCategoriesAndValues",
+                "Income Meta-Grid layout completed via event"
+              );
               checkAllLayoutsComplete();
               resolve();
             }
@@ -782,39 +990,52 @@ async function initializeMetaGridsSequentially(checkAllLayoutsComplete: () => vo
           setTimeout(() => {
             if (!layoutCompleted) {
               layoutCompleted = true;
-              debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
+              debugLog(
+                "BudgetCategoriesAndValues",
+                "Income Meta-Grid layout completed via timeout fallback"
+              );
               checkAllLayoutsComplete();
               resolve();
             }
           }, 300);
         }
       } catch (error) {
-        errorLog('BudgetCategoriesAndValues', 'Failed to initialize Income Meta-Grid', error);
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "Failed to initialize Income Meta-Grid",
+          error
+        );
         checkAllLayoutsComplete(); // Trotzdem als abgeschlossen markieren
         resolve();
       }
     }, 75); // Reduziert von 100ms auf 75ms
   });
 
-  debugLog('BudgetCategoriesAndValues', 'Sequential meta-grid initialization completed');
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Sequential meta-grid initialization completed"
+  );
 }
 
-function createSubGrid(element: HTMLElement, subGridsArray: typeof expenseSubGrids): Muuri {
+function createSubGrid(
+  element: HTMLElement,
+  subGridsArray: typeof expenseSubGrids
+): Muuri {
   return new Muuri(element, {
-    items: '.category-item-extended',
+    items: ".category-item-extended",
     dragEnabled: true,
-    dragHandle: '.category-drag-area',
+    dragHandle: ".category-drag-area",
     dragContainer: dragContainer.value,
     dragSort: function () {
       return [...expenseSubGrids.value, ...incomeSubGrids.value];
     },
     dragCssProps: {
-      touchAction: 'auto',
-      userSelect: 'none',
-      userDrag: 'none',
-      tapHighlightColor: 'rgba(0, 0, 0, 0)',
-      touchCallout: 'none',
-      contentZooming: 'none'
+      touchAction: "auto",
+      userSelect: "none",
+      userDrag: "none",
+      tapHighlightColor: "rgba(0, 0, 0, 0)",
+      touchCallout: "none",
+      contentZooming: "none",
     },
     dragAutoScroll: {
       targets: (item: any) => {
@@ -822,57 +1043,57 @@ function createSubGrid(element: HTMLElement, subGridsArray: typeof expenseSubGri
           { element: window, priority: 0 },
           { element: item.getGrid().getElement().parentNode, priority: 1 },
         ];
-      }
+      },
     },
   })
-  .on('dragInit', function (item: any) {
-    const element = item.getElement();
-    if (element) {
-      element.style.width = item.getWidth() + 'px';
-      element.style.height = item.getHeight() + 'px';
-    }
-  })
-  .on('dragReleaseEnd', function (item: any) {
-    const element = item.getElement();
-    const grid = item.getGrid();
-    if (element) {
-      element.style.width = '';
-      element.style.height = '';
-    }
-    if (grid) {
-      grid.refreshItems([item]);
-    }
-  })
-  .on('layoutStart', function () {
-    if (expenseMetaGrid.value) {
-      expenseMetaGrid.value.refreshItems().layout();
-    }
-    if (incomeMetaGrid.value) {
-      incomeMetaGrid.value.refreshItems().layout();
-    }
-  })
-  .on('dragStart', function (item: any) {
-    setupAutoExpand();
-  })
-  .on('dragEnd', function (item: any) {
-    clearAutoExpandTimer();
-    handleCategoryDragEnd(item);
-  });
+    .on("dragInit", function (item: any) {
+      const element = item.getElement();
+      if (element) {
+        element.style.width = item.getWidth() + "px";
+        element.style.height = item.getHeight() + "px";
+      }
+    })
+    .on("dragReleaseEnd", function (item: any) {
+      const element = item.getElement();
+      const grid = item.getGrid();
+      if (element) {
+        element.style.width = "";
+        element.style.height = "";
+      }
+      if (grid) {
+        grid.refreshItems([item]);
+      }
+    })
+    .on("layoutStart", function () {
+      if (expenseMetaGrid.value) {
+        expenseMetaGrid.value.refreshItems().layout();
+      }
+      if (incomeMetaGrid.value) {
+        incomeMetaGrid.value.refreshItems().layout();
+      }
+    })
+    .on("dragStart", function (item: any) {
+      setupAutoExpand();
+    })
+    .on("dragEnd", function (item: any) {
+      clearAutoExpandTimer();
+      handleCategoryDragEnd(item);
+    });
 }
 
 function createMetaGrid(selector: string, isIncomeGrid: boolean): Muuri {
   return new Muuri(selector, {
-    items: '.group-wrapper',
+    items: ".group-wrapper",
     dragEnabled: true,
-    dragHandle: '.group-drag-handle',
+    dragHandle: ".group-drag-handle",
     dragContainer: dragContainer.value,
     dragCssProps: {
-      touchAction: 'auto',
-      userSelect: 'none',
-      userDrag: 'none',
-      tapHighlightColor: 'rgba(0, 0, 0, 0)',
-      touchCallout: 'none',
-      contentZooming: 'none'
+      touchAction: "auto",
+      userSelect: "none",
+      userDrag: "none",
+      tapHighlightColor: "rgba(0, 0, 0, 0)",
+      touchCallout: "none",
+      contentZooming: "none",
     },
     dragAutoScroll: {
       targets: (item: any) => {
@@ -880,44 +1101,44 @@ function createMetaGrid(selector: string, isIncomeGrid: boolean): Muuri {
           { element: window, priority: 0 },
           { element: item.getGrid().getElement().parentNode, priority: 1 },
         ];
-      }
+      },
     },
     layout: {
       fillGaps: false,
       horizontal: false,
       alignRight: false,
-      alignBottom: false
+      alignBottom: false,
     },
     layoutDuration: 300,
-    layoutEasing: 'ease'
+    layoutEasing: "ease",
   })
-  .on('dragInit', function (item: any) {
-    const element = item.getElement();
-    if (element) {
-      element.style.width = item.getWidth() + 'px';
-      element.style.height = item.getHeight() + 'px';
-    }
-  })
-  .on('dragReleaseEnd', function (item: any) {
-    const element = item.getElement();
-    const grid = item.getGrid();
-    if (element) {
-      element.style.width = '';
-      element.style.height = '';
-    }
-    if (grid) {
-      grid.refreshItems([item]);
-    }
-  })
-  .on('dragEnd', function (item: any) {
-    handleCategoryGroupDragEnd(item, isIncomeGrid);
-  });
+    .on("dragInit", function (item: any) {
+      const element = item.getElement();
+      if (element) {
+        element.style.width = item.getWidth() + "px";
+        element.style.height = item.getHeight() + "px";
+      }
+    })
+    .on("dragReleaseEnd", function (item: any) {
+      const element = item.getElement();
+      const grid = item.getGrid();
+      if (element) {
+        element.style.width = "";
+        element.style.height = "";
+      }
+      if (grid) {
+        grid.refreshItems([item]);
+      }
+    })
+    .on("dragEnd", function (item: any) {
+      handleCategoryGroupDragEnd(item, isIncomeGrid);
+    });
 }
 
 function destroyGrids() {
   try {
     // Sub-Grids zerstören
-    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach(grid => {
+    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach((grid) => {
       if (grid) {
         grid.destroy();
       }
@@ -934,9 +1155,13 @@ function destroyGrids() {
       incomeMetaGrid.value.destroy();
       incomeMetaGrid.value = null;
     }
-    debugLog('BudgetCategoriesAndValues', 'Muuri grids destroyed');
+    debugLog("BudgetCategoriesAndValues", "Muuri grids destroyed");
   } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'Failed to destroy Muuri grids', error);
+    errorLog(
+      "BudgetCategoriesAndValues",
+      "Failed to destroy Muuri grids",
+      error
+    );
   }
 }
 
@@ -951,7 +1176,7 @@ function toggleGroup(groupId: string) {
 
 function updateLayoutAfterToggle() {
   // Alle Sub-Grids refreshen
-  [...expenseSubGrids.value, ...incomeSubGrids.value].forEach(grid => {
+  [...expenseSubGrids.value, ...incomeSubGrids.value].forEach((grid) => {
     if (grid) {
       grid.refreshItems();
       grid.layout(true);
@@ -970,7 +1195,10 @@ function updateLayoutAfterToggle() {
 }
 
 function updateLayoutAfterMonthsChange() {
-  debugLog('BudgetCategoriesAndValues', 'updateLayoutAfterMonthsChange() called');
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "updateLayoutAfterMonthsChange() called"
+  );
 
   try {
     let completedLayouts = 0;
@@ -978,15 +1206,21 @@ function updateLayoutAfterMonthsChange() {
 
     const checkAllLayoutsComplete = () => {
       completedLayouts++;
-      debugLog('BudgetCategoriesAndValues', `Layout update completed: ${completedLayouts}/${totalGrids}`);
+      debugLog(
+        "BudgetCategoriesAndValues",
+        `Layout update completed: ${completedLayouts}/${totalGrids}`
+      );
       if (completedLayouts >= totalGrids) {
-        debugLog('BudgetCategoriesAndValues', 'All layouts updated after months change - emitting muuriReady');
-        emit('muuriReady');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "All layouts updated after months change - emitting muuriReady"
+        );
+        emit("muuriReady");
       }
     };
 
     // Alle Sub-Grids refreshen
-    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach(grid => {
+    [...expenseSubGrids.value, ...incomeSubGrids.value].forEach((grid) => {
       if (grid) {
         grid.refreshItems();
         grid.layout(true);
@@ -999,23 +1233,32 @@ function updateLayoutAfterMonthsChange() {
 
       // Prüfe ob Items vorhanden sind
       if (expenseMetaGrid.value.getItems().length === 0) {
-        debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid has no items, layout complete immediately');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "Expense Meta-Grid has no items, layout complete immediately"
+        );
         checkAllLayoutsComplete();
       } else {
         // Einmaliger Event-Listener für layoutEnd
         const handleExpenseLayoutEnd = () => {
-          expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
-          debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout update completed');
+          expenseMetaGrid.value?.off("layoutEnd", handleExpenseLayoutEnd);
+          debugLog(
+            "BudgetCategoriesAndValues",
+            "Expense Meta-Grid layout update completed"
+          );
           checkAllLayoutsComplete();
         };
-        expenseMetaGrid.value.on('layoutEnd', handleExpenseLayoutEnd);
+        expenseMetaGrid.value.on("layoutEnd", handleExpenseLayoutEnd);
         expenseMetaGrid.value.layout(true);
 
         // Fallback nach 300ms
         setTimeout(() => {
           if (completedLayouts < 1) {
-            expenseMetaGrid.value?.off('layoutEnd', handleExpenseLayoutEnd);
-            debugLog('BudgetCategoriesAndValues', 'Expense Meta-Grid layout completed via timeout fallback');
+            expenseMetaGrid.value?.off("layoutEnd", handleExpenseLayoutEnd);
+            debugLog(
+              "BudgetCategoriesAndValues",
+              "Expense Meta-Grid layout completed via timeout fallback"
+            );
             checkAllLayoutsComplete();
           }
         }, 300);
@@ -1029,23 +1272,32 @@ function updateLayoutAfterMonthsChange() {
 
       // Prüfe ob Items vorhanden sind
       if (incomeMetaGrid.value.getItems().length === 0) {
-        debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid has no items, layout complete immediately');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "Income Meta-Grid has no items, layout complete immediately"
+        );
         checkAllLayoutsComplete();
       } else {
         // Einmaliger Event-Listener für layoutEnd
         const handleIncomeLayoutEnd = () => {
-          incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
-          debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout update completed');
+          incomeMetaGrid.value?.off("layoutEnd", handleIncomeLayoutEnd);
+          debugLog(
+            "BudgetCategoriesAndValues",
+            "Income Meta-Grid layout update completed"
+          );
           checkAllLayoutsComplete();
         };
-        incomeMetaGrid.value.on('layoutEnd', handleIncomeLayoutEnd);
+        incomeMetaGrid.value.on("layoutEnd", handleIncomeLayoutEnd);
         incomeMetaGrid.value.layout(true);
 
         // Fallback nach 300ms
         setTimeout(() => {
           if (completedLayouts < 2) {
-            incomeMetaGrid.value?.off('layoutEnd', handleIncomeLayoutEnd);
-            debugLog('BudgetCategoriesAndValues', 'Income Meta-Grid layout completed via timeout fallback');
+            incomeMetaGrid.value?.off("layoutEnd", handleIncomeLayoutEnd);
+            debugLog(
+              "BudgetCategoriesAndValues",
+              "Income Meta-Grid layout completed via timeout fallback"
+            );
             checkAllLayoutsComplete();
           }
         }, 300);
@@ -1053,26 +1305,29 @@ function updateLayoutAfterMonthsChange() {
     } else {
       checkAllLayoutsComplete();
     }
-
   } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'Failed to update layout after months change', error);
+    errorLog(
+      "BudgetCategoriesAndValues",
+      "Failed to update layout after months change",
+      error
+    );
     // Auch bei Fehlern das Event emittieren, damit Loading beendet wird
-    emit('muuriReady');
+    emit("muuriReady");
   }
 }
 
 // Auto-Expand bei Drag-Over
 function setupAutoExpand() {
-  document.addEventListener('dragover', handleDragOverGroup);
+  document.addEventListener("dragover", handleDragOverGroup);
 }
 
 function handleDragOverGroup(event: DragEvent) {
   const target = event.target as HTMLElement;
-  const groupHeader = target.closest('.group-header');
+  const groupHeader = target.closest(".group-header");
 
   if (groupHeader) {
-    const groupWrapper = groupHeader.closest('.group-wrapper');
-    const groupId = groupWrapper?.getAttribute('data-group-id');
+    const groupWrapper = groupHeader.closest(".group-wrapper");
+    const groupId = groupWrapper?.getAttribute("data-group-id");
 
     if (groupId && !categoryStore.expandedCategoryGroups.has(groupId)) {
       clearAutoExpandTimer();
@@ -1091,7 +1346,7 @@ function clearAutoExpandTimer() {
     clearTimeout(autoExpandTimer.value);
     autoExpandTimer.value = null;
   }
-  document.removeEventListener('dragover', handleDragOverGroup);
+  document.removeEventListener("dragover", handleDragOverGroup);
 }
 
 // Drag & Drop Persistierung für Kategorien
@@ -1103,31 +1358,45 @@ function handleCategoryDragEnd(item: any) {
   sortOrderUpdateTimer.value = setTimeout(async () => {
     try {
       const draggedElement = item.getElement();
-      const categoryId = draggedElement.getAttribute('data-category-id');
+      const categoryId = draggedElement.getAttribute("data-category-id");
 
       if (!categoryId) {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Category ID not found');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryDragEnd - Category ID not found"
+        );
         return;
       }
 
-      const container = draggedElement.closest('.categories-content');
-      const groupWrapper = container?.closest('.group-wrapper');
-      const actualGroupId = groupWrapper?.getAttribute('data-group-id');
+      const container = draggedElement.closest(".categories-content");
+      const groupWrapper = container?.closest(".group-wrapper");
+      const actualGroupId = groupWrapper?.getAttribute("data-group-id");
 
       if (!actualGroupId) {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Group ID not found');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryDragEnd - Group ID not found"
+        );
         return;
       }
 
       // Bestimme das richtige Sub-Grid
       const allSubGrids = [...expenseSubGrids.value, ...incomeSubGrids.value];
-      const targetGrid = allSubGrids.find(grid => {
+      const targetGrid = allSubGrids.find((grid) => {
         const gridElement = grid.getElement();
-        return gridElement.closest('.group-wrapper')?.getAttribute('data-group-id') === actualGroupId;
+        return (
+          gridElement
+            .closest(".group-wrapper")
+            ?.getAttribute("data-group-id") === actualGroupId
+        );
       });
 
       if (!targetGrid) {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Target grid not found', { actualGroupId });
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryDragEnd - Target grid not found",
+          { actualGroupId }
+        );
         return;
       }
 
@@ -1136,30 +1405,44 @@ function handleCategoryDragEnd(item: any) {
 
       items.forEach((item: any) => {
         const element = item.getElement();
-        const id = element.getAttribute('data-category-id');
+        const id = element.getAttribute("data-category-id");
         if (id) newOrder.push(id);
       });
 
-      debugLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd', {
+      debugLog("BudgetCategoriesAndValues", "handleCategoryDragEnd", {
         categoryId,
         actualGroupId,
         newOrder,
         itemsCount: items.length,
-        draggedItemPosition: newOrder.indexOf(categoryId)
+        draggedItemPosition: newOrder.indexOf(categoryId),
       });
 
-      const sortOrderUpdates = CategoryService.calculateCategorySortOrder(actualGroupId, newOrder);
-      const success = await CategoryService.updateCategoriesWithSortOrder(sortOrderUpdates);
+      const sortOrderUpdates = CategoryService.calculateCategorySortOrder(
+        actualGroupId,
+        newOrder
+      );
+      const success = await CategoryService.updateCategoriesWithSortOrder(
+        sortOrderUpdates
+      );
 
       if (success) {
-        debugLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Sort order updated successfully');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryDragEnd - Sort order updated successfully"
+        );
         await reinitializeMuuriGrids();
       } else {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Failed to update sort order');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryDragEnd - Failed to update sort order"
+        );
       }
-
     } catch (error) {
-      errorLog('BudgetCategoriesAndValues', 'handleCategoryDragEnd - Error updating sort order', error);
+      errorLog(
+        "BudgetCategoriesAndValues",
+        "handleCategoryDragEnd - Error updating sort order",
+        error
+      );
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
@@ -1173,16 +1456,24 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
   sortOrderUpdateTimer.value = setTimeout(async () => {
     try {
       const draggedElement = item.getElement();
-      const groupId = draggedElement.getAttribute('data-group-id');
+      const groupId = draggedElement.getAttribute("data-group-id");
 
       if (!groupId) {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Group ID not found');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryGroupDragEnd - Group ID not found"
+        );
         return;
       }
 
-      const metaGrid = isIncomeGrid ? incomeMetaGrid.value : expenseMetaGrid.value;
+      const metaGrid = isIncomeGrid
+        ? incomeMetaGrid.value
+        : expenseMetaGrid.value;
       if (!metaGrid) {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Meta grid not found');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryGroupDragEnd - Meta grid not found"
+        );
         return;
       }
 
@@ -1191,29 +1482,43 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
 
       items.forEach((item: any) => {
         const element = item.getElement();
-        const id = element.getAttribute('data-group-id');
+        const id = element.getAttribute("data-group-id");
         if (id) groupsInOrder.push(id);
       });
 
-      debugLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd', {
+      debugLog("BudgetCategoriesAndValues", "handleCategoryGroupDragEnd", {
         groupId,
         groupsInOrder,
         isIncomeGrid,
-        draggedGroupPosition: groupsInOrder.indexOf(groupId)
+        draggedGroupPosition: groupsInOrder.indexOf(groupId),
       });
 
-      const sortOrderUpdates = CategoryService.calculateCategoryGroupSortOrder(groupsInOrder, isIncomeGrid);
-      const success = await CategoryService.updateCategoryGroupsWithSortOrder(sortOrderUpdates);
+      const sortOrderUpdates = CategoryService.calculateCategoryGroupSortOrder(
+        groupsInOrder,
+        isIncomeGrid
+      );
+      const success = await CategoryService.updateCategoryGroupsWithSortOrder(
+        sortOrderUpdates
+      );
 
       if (success) {
-        debugLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Sort order updated successfully');
+        debugLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryGroupDragEnd - Sort order updated successfully"
+        );
         await reinitializeMuuriGrids();
       } else {
-        errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Failed to update sort order');
+        errorLog(
+          "BudgetCategoriesAndValues",
+          "handleCategoryGroupDragEnd - Failed to update sort order"
+        );
       }
-
     } catch (error) {
-      errorLog('BudgetCategoriesAndValues', 'handleCategoryGroupDragEnd - Error updating sort order', error);
+      errorLog(
+        "BudgetCategoriesAndValues",
+        "handleCategoryGroupDragEnd - Error updating sort order",
+        error
+      );
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 }
@@ -1221,20 +1526,34 @@ function handleCategoryGroupDragEnd(item: any, isIncomeGrid: boolean) {
 // UI-Refresh-Funktionen
 async function reinitializeMuuriGrids() {
   try {
-    debugLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Starting grid reinitialization');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "reinitializeMuuriGrids - Starting grid reinitialization"
+    );
 
     destroyGrids();
     await nextTick();
     initializeGrids();
 
-    debugLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Grid reinitialization completed');
+    debugLog(
+      "BudgetCategoriesAndValues",
+      "reinitializeMuuriGrids - Grid reinitialization completed"
+    );
   } catch (error) {
-    errorLog('BudgetCategoriesAndValues', 'reinitializeMuuriGrids - Error during grid reinitialization', error);
+    errorLog(
+      "BudgetCategoriesAndValues",
+      "reinitializeMuuriGrids - Error during grid reinitialization",
+      error
+    );
   }
 }
 
 // Context-Menu Funktionen
-function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; end: Date }) {
+function openDropdown(
+  event: MouseEvent,
+  cat: Category,
+  month: { start: Date; end: Date }
+) {
   event.preventDefault();
 
   const categoryData = getCategoryBudgetData(cat.id, month);
@@ -1278,7 +1597,12 @@ function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; en
   dropdownX.value = x;
   dropdownY.value = y;
 
-  modalData.value = { mode: "transfer", clickedCategory: cat, amount: 0, month };
+  modalData.value = {
+    mode: "transfer",
+    clickedCategory: cat,
+    amount: 0,
+    month,
+  };
   showDropdown.value = true;
   nextTick(() => dropdownRef.value?.focus());
   debugLog("BudgetCategoriesAndValues", "openDropdown", {
@@ -1287,7 +1611,7 @@ function openDropdown(event: MouseEvent, cat: Category, month: { start: Date; en
     hasAvailableAmount,
     saldo: categoryData.saldo,
     position: { x, y },
-    viewport: { width: viewportWidth, height: viewportHeight }
+    viewport: { width: viewportWidth, height: viewportHeight },
   });
 }
 
@@ -1316,13 +1640,18 @@ function optionTransfer() {
 
   // Alle Kategorien verwenden "transfer" Modus
   // Bei Einnahmen-Kategorien wird automatisch "Verfügbare Mittel" als Zielkategorie gesetzt
-  modalData.value = { mode: "transfer", clickedCategory: cat, amount: prefillAmount, month };
+  modalData.value = {
+    mode: "transfer",
+    clickedCategory: cat,
+    amount: prefillAmount,
+    month,
+  };
   debugLog("BudgetCategoriesAndValues", "optionTransfer", {
     category: cat,
     currentSaldo,
     prefillAmount,
     isIncomeCategory: cat.isIncomeCategory,
-    mode: "transfer"
+    mode: "transfer",
   });
 
   closeDropdown();
@@ -1336,7 +1665,10 @@ function optionFill() {
   const data = getCategoryBudgetData(cat.id, month);
   const amt = data.saldo < 0 ? Math.abs(data.saldo) : 0;
   modalData.value = { mode: "fill", clickedCategory: cat, amount: amt, month };
-  debugLog("BudgetCategoriesAndValues", "optionFill", { category: cat, amount: amt });
+  debugLog("BudgetCategoriesAndValues", "optionFill", {
+    category: cat,
+    amount: amt,
+  });
   closeDropdown();
   showTransferModal.value = true;
 }
@@ -1347,16 +1679,19 @@ function executeTransfer() {
 }
 
 // Transaction Modal Functions
-function openTransactionModal(category: Category, month: { key: string; label: string; start: Date; end: Date }) {
+function openTransactionModal(
+  category: Category,
+  month: { key: string; label: string; start: Date; end: Date }
+) {
   transactionModalData.value = {
     categoryId: category.id,
-    month: month
+    month: month,
   };
   showTransactionModal.value = true;
   debugLog("BudgetCategoriesAndValues", "Transaction modal opened", {
     categoryId: category.id,
     categoryName: category.name,
-    month: month.label
+    month: month.label,
   });
 }
 
@@ -1367,16 +1702,19 @@ function closeTransactionModal() {
 }
 
 // Planning Modal Functions
-function openPlanningModal(category: Category, month: { key: string; label: string; start: Date; end: Date }) {
+function openPlanningModal(
+  category: Category,
+  month: { key: string; label: string; start: Date; end: Date }
+) {
   planningModalData.value = {
     categoryId: category.id,
-    month
+    month,
   };
   showPlanningModal.value = true;
   debugLog("BudgetCategoriesAndValues", "Planning modal opened", {
     categoryId: category.id,
     categoryName: category.name,
-    month: month.label
+    month: month.label,
   });
 }
 
@@ -1388,24 +1726,46 @@ function closePlanningModal() {
 
 function handleTransactionUpdated() {
   // Refresh budget data after transaction changes
-  debugLog("BudgetCategoriesAndValues", "Transaction updated, refreshing budget data");
+  debugLog(
+    "BudgetCategoriesAndValues",
+    "Transaction updated, refreshing budget data"
+  );
   // The reactive computed properties will automatically update
 }
 </script>
 
 <template>
-  <div class="flex flex-col h-full">
+  <div
+    class="flex flex-col h-full transform-gpu"
+    style="will-change: transform; transform: translateZ(0)"
+  >
     <!-- Drag Container -->
-    <div ref="dragContainer" class="drag-container"></div>
+    <div
+      ref="dragContainer"
+      class="drag-container transform-gpu"
+      style="
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      "
+    ></div>
 
     <!-- Ausgaben-Sektion -->
-    <div v-if="expenseGroups.length > 0" class="flex-1">
-      <div class="sticky top-0 bg-base-200 px-0 py-2 border-b border-base-300 z-10">
+    <div
+      v-if="expenseGroups.length > 0"
+      class="flex-1"
+    >
+      <div
+        class="sticky top-0 bg-base-200 px-0 py-2 border-b border-base-300 z-10"
+      >
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
           <div class="type-part flex items-center pl-2">
-            <Icon icon="mdi:trending-down" class="w-4 h-4 mr-2 text-error" />
+            <Icon
+              icon="mdi:trending-down"
+              class="w-4 h-4 mr-2 text-error"
+            />
             <h3 class="font-semibold text-sm text-base-content">Ausgaben</h3>
           </div>
 
@@ -1416,7 +1776,9 @@ function handleTransactionUpdated() {
               :key="month.key"
               class="month-column flex-1 min-w-[120px] p-1 border-base-300"
             >
-              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
+              <div
+                class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]"
+              >
                 <div class="text-right">
                   <CurrencyDisplay
                     :amount="calculateTypeSummary(false, month).budgeted"
@@ -1438,7 +1800,11 @@ function handleTransactionUpdated() {
                     :amount="calculateTypeSummary(false, month).spent"
                     :as-integer="true"
                     :show-zero="false"
-                    :class="calculateTypeSummary(false, month).spent >= 0 ? 'text-base-content' : 'text-error'"
+                    :class="
+                      calculateTypeSummary(false, month).spent >= 0
+                        ? 'text-base-content'
+                        : 'text-error'
+                    "
                   />
                 </div>
                 <div class="text-right">
@@ -1454,7 +1820,15 @@ function handleTransactionUpdated() {
         </div>
       </div>
 
-      <div class="muuri-container bg-base-100 p-4" id="expense-categories">
+      <div
+        class="muuri-container bg-base-100 p-4 transform-gpu"
+        id="expense-categories"
+        style="
+          will-change: transform;
+          transform: translateZ(0);
+          backface-visibility: hidden;
+        "
+      >
         <div
           v-for="group in expenseGroups"
           :key="group.id"
@@ -1463,22 +1837,39 @@ function handleTransactionUpdated() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Lebensbereiche-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
+            <div
+              class="group-header-extended flex w-full bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer"
+            >
               <!-- Sticky Gruppen-Teil -->
-              <div class="group-part flex items-center border-r border-base-300 py-2">
+              <div
+                class="group-part flex items-center border-r border-base-300 py-2"
+              >
                 <!-- Drag Handle für Gruppe -->
-                <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                  <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+                <div
+                  class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100"
+                >
+                  <Icon
+                    icon="mdi:drag-vertical"
+                    class="w-4 h-4 text-base-content/60"
+                  />
                 </div>
 
                 <!-- Gruppen-Icon -->
                 <div class="flex-shrink-0 mr-2">
-                  <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
+                  <Icon
+                    :icon="getGroupIcon(group)"
+                    :class="`w-4 h-4 ${getGroupColor(group)}`"
+                  />
                 </div>
 
                 <!-- Gruppenname -->
-                <div class="flex-grow" @click.stop="toggleGroup(group.id)">
-                  <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
+                <div
+                  class="flex-grow"
+                  @click.stop="toggleGroup(group.id)"
+                >
+                  <h4 class="font-semibold text-sm text-base-content">
+                    {{ group.name }}
+                  </h4>
                 </div>
               </div>
 
@@ -1489,10 +1880,14 @@ function handleTransactionUpdated() {
                   :key="month.key"
                   class="month-column flex-1 min-w-[120px] py-2 px-1 border-r border-base-300"
                 >
-                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
+                  <div
+                    class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]"
+                  >
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month).budgeted"
+                        :amount="
+                          calculateGroupSummary(group.id, month).budgeted
+                        "
                         :as-integer="true"
                         :show-zero="false"
                         class="text-base-content"
@@ -1500,7 +1895,9 @@ function handleTransactionUpdated() {
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month).forecast"
+                        :amount="
+                          calculateGroupSummary(group.id, month).forecast
+                        "
                         :as-integer="true"
                         :show-zero="false"
                         class="text-base-content"
@@ -1511,7 +1908,11 @@ function handleTransactionUpdated() {
                         :amount="calculateGroupSummary(group.id, month).spent"
                         :as-integer="true"
                         :show-zero="false"
-                        :class="calculateGroupSummary(group.id, month).spent >= 0 ? 'text-base-content' : 'text-error'"
+                        :class="
+                          calculateGroupSummary(group.id, month).spent >= 0
+                            ? 'text-base-content'
+                            : 'text-error'
+                        "
                       />
                     </div>
                     <div class="text-right">
@@ -1530,7 +1931,9 @@ function handleTransactionUpdated() {
             <div
               v-show="categoryStore.expandedCategoryGroups.has(group.id)"
               class="categories-list"
-              :class="{ 'collapsed': !categoryStore.expandedCategoryGroups.has(group.id) }"
+              :class="{
+                collapsed: !categoryStore.expandedCategoryGroups.has(group.id),
+              }"
             >
               <div class="categories-content">
                 <div
@@ -1543,36 +1946,91 @@ function handleTransactionUpdated() {
                   <!-- Unified Muuri Item: Kategorie + Werte -->
                   <div class="flex w-full">
                     <!-- Sticky Kategorie-Teil -->
-                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer">
-                      <div class="category-drag-area flex items-center flex-grow">
-                        <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                          <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                    <div
+                      class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer"
+                    >
+                      <div
+                        class="category-drag-area flex items-center flex-grow"
+                      >
+                        <div
+                          class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100"
+                        >
+                          <Icon
+                            icon="mdi:drag-vertical"
+                            class="w-3 h-3 text-base-content/60"
+                          />
                         </div>
 
-                        <div v-if="category.icon" class="flex-shrink-0 mr-2">
-                          <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
+                        <div
+                          v-if="category.icon"
+                          class="flex-shrink-0 mr-2"
+                        >
+                          <Icon
+                            :icon="category.icon"
+                            class="w-3 h-3 text-base-content/70"
+                          />
                         </div>
 
                         <div class="flex-grow category-name-drag">
-                          <span class="text-xs text-base-content">{{ category.name }}</span>
+                          <span class="text-xs text-base-content">{{
+                            category.name
+                          }}</span>
                         </div>
                       </div>
 
                       <div class="flex-shrink-0 flex items-center space-x-2">
-                        <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="flex items-center space-x-2">
+                        <div
+                          v-if="
+                            category.isSavingsGoal &&
+                            category.targetAmount &&
+                            category.goalDate
+                          "
+                          class="flex items-center space-x-2"
+                        >
                           <div class="flex flex-col w-full mr-1 items-center">
-
-                            <div class="badge badge-xs badge-primary badge-soft text-xs w-full">
-                              <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-0" />
-                              - {{ new Date(category.goalDate).toLocaleDateString('de-DE', { month: '2-digit', year: '2-digit' }) }}
+                            <div
+                              class="badge badge-xs badge-primary badge-soft text-xs w-full"
+                            >
+                              <CurrencyDisplay
+                                :amount="category.targetAmount"
+                                :show-sign="false"
+                                :as-integer="true"
+                                class="mr-0"
+                              />
+                              -
+                              {{
+                                new Date(category.goalDate).toLocaleDateString(
+                                  "de-DE",
+                                  { month: "2-digit", year: "2-digit" }
+                                )
+                              }}
                             </div>
-                            <progress class="progress progress-primary w-28 mt-1" :value="getSavingsGoalProgress(category)" max="100"></progress>
+                            <progress
+                              class="progress progress-primary w-28 mt-1"
+                              :value="getSavingsGoalProgress(category)"
+                              max="100"
+                            ></progress>
                           </div>
                         </div>
-                        <div v-else class="flex items-center space-x-1">
-                          <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                          <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                          <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                        <div
+                          v-else
+                          class="flex items-center space-x-1"
+                        >
+                          <div
+                            v-if="category.isSavingsGoal"
+                            class="w-2 h-2 bg-info rounded-full"
+                            title="Sparziel"
+                          ></div>
+                          <div
+                            v-if="!category.isActive"
+                            class="w-2 h-2 bg-warning rounded-full"
+                            title="Inaktiv"
+                          ></div>
+                          <div
+                            v-if="category.isHidden"
+                            class="w-2 h-2 bg-base-content/30 rounded-full"
+                            title="Versteckt"
+                          ></div>
                         </div>
                       </div>
                     </div>
@@ -1584,34 +2042,62 @@ function handleTransactionUpdated() {
                         :key="month.key"
                         class="month-column flex-1 min-w-[120px] p-[3px] border-b border-r border-base-300"
                       >
-                        <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
+                        <div
+                          class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]"
+                        >
                           <div
                             class="text-right transition-all duration-200 rounded px-1 py-0.5 border"
                             :class="{
-                              'cursor-pointer border-transparent hover:border-primary': !isEditingBudget(category.id, month.key),
-                              'border-transparent': isEditingBudget(category.id, month.key)
+                              'cursor-pointer border-transparent hover:border-primary':
+                                !isEditingBudget(category.id, month.key),
+                              'border-transparent': isEditingBudget(
+                                category.id,
+                                month.key
+                              ),
                             }"
-                            @click.stop="handleBudgetClick(category.id, month.key)"
+                            @click.stop="
+                              handleBudgetClick(category.id, month.key)
+                            "
                           >
                             <!-- Edit-Modus: CalculatorInput -->
                             <CalculatorInput
                               v-if="isEditingBudget(category.id, month.key)"
-                              :model-value="getCategoryBudgetData(category.id, month).budgeted"
+                              :model-value="
+                                getCategoryBudgetData(category.id, month)
+                                  .budgeted
+                              "
                               :is-active="true"
                               :field-key="`${category.id}-${month.key}`"
-                              @update:model-value="handleBudgetUpdate(category.id, month.key, $event)"
-                              @finish="handleBudgetFinish(category.id, month.key)"
-                              @focus-next="handleFocusNext(category.id, month.key)"
-                              @focus-previous="handleFocusPrevious(category.id, month.key)"
+                              @update:model-value="
+                                handleBudgetUpdate(
+                                  category.id,
+                                  month.key,
+                                  $event
+                                )
+                              "
+                              @finish="
+                                handleBudgetFinish(category.id, month.key)
+                              "
+                              @focus-next="
+                                handleFocusNext(category.id, month.key)
+                              "
+                              @focus-previous="
+                                handleFocusPrevious(category.id, month.key)
+                              "
                             />
                             <!-- Anzeige-Modus: CurrencyDisplay -->
                             <CurrencyDisplay
                               v-else
-                              :amount="getCategoryBudgetData(category.id, month).budgeted"
+                              :amount="
+                                getCategoryBudgetData(category.id, month)
+                                  .budgeted
+                              "
                               :as-integer="true"
                               :show-zero="false"
                               class="text-base-content/80"
-                              @click.stop="handleBudgetClick(category.id, month.key)"
+                              @click.stop="
+                                handleBudgetClick(category.id, month.key)
+                              "
                             />
                           </div>
                           <div
@@ -1620,7 +2106,10 @@ function handleTransactionUpdated() {
                             title="Klicken um Planungen anzuzeigen"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).forecast"
+                              :amount="
+                                getCategoryBudgetData(category.id, month)
+                                  .forecast
+                              "
                               :as-integer="true"
                               :show-zero="false"
                               class="text-base-content/80"
@@ -1632,21 +2121,28 @@ function handleTransactionUpdated() {
                             title="Klicken um Transaktionen anzuzeigen"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).spent"
+                              :amount="
+                                getCategoryBudgetData(category.id, month).spent
+                              "
                               :as-integer="true"
                               :show-zero="false"
                               class="text-error"
                             />
                           </div>
                           <div
-                            class="text-right py-0.5 "
+                            class="text-right py-0.5"
                             :class="{
-                              'cursor-context-menu hover:bg-base-200': !category.isIncomeCategory || getCategoryBudgetData(category.id, month).saldo > 0
+                              'cursor-context-menu hover:bg-base-200':
+                                !category.isIncomeCategory ||
+                                getCategoryBudgetData(category.id, month)
+                                  .saldo > 0,
                             }"
                             @contextmenu="openDropdown($event, category, month)"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).saldo"
+                              :amount="
+                                getCategoryBudgetData(category.id, month).saldo
+                              "
                               :as-integer="true"
                               :show-zero="false"
                             />
@@ -1664,13 +2160,21 @@ function handleTransactionUpdated() {
     </div>
 
     <!-- Einnahmen-Sektion -->
-    <div v-if="incomeGroups.length > 0" class="flex-1 border-b border-t border-base-300 mt-3">
-      <div class="sticky top-0 bg-base-200 px-0 py-3 border-b border-r border-base-300 z-10">
+    <div
+      v-if="incomeGroups.length > 0"
+      class="flex-1 border-b border-t border-base-300 mt-3"
+    >
+      <div
+        class="sticky top-0 bg-base-200 px-0 py-3 border-b border-r border-base-300 z-10"
+      >
         <!-- Typ-Header mit Gesamtsummen -->
         <div class="type-header-extended flex w-full">
           <!-- Sticky Typ-Teil -->
           <div class="type-part flex items-center pl-2">
-            <Icon icon="mdi:trending-up" class="w-4 h-4 mr-2 text-success" />
+            <Icon
+              icon="mdi:trending-up"
+              class="w-4 h-4 mr-2 text-success"
+            />
             <h3 class="font-semibold text-sm text-base-content">Einnahmen</h3>
           </div>
 
@@ -1681,7 +2185,9 @@ function handleTransactionUpdated() {
               :key="month.key"
               class="month-column flex-1 min-w-[120px] p-0 px-1"
             >
-              <div class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]">
+              <div
+                class="type-summary-values grid grid-cols-4 gap-1 text-xs font-bold mr-[4%]"
+              >
                 <div class="text-right opacity-0">
                   <!-- Transparente Leerzelle für budgeted bei Einnahmen -->
                 </div>
@@ -1714,7 +2220,15 @@ function handleTransactionUpdated() {
         </div>
       </div>
 
-      <div class="muuri-container bg-base-100 p-4" id="income-categories">
+      <div
+        class="muuri-container bg-base-100 p-4 transform-gpu"
+        id="income-categories"
+        style="
+          will-change: transform;
+          transform: translateZ(0);
+          backface-visibility: hidden;
+        "
+      >
         <div
           v-for="group in incomeGroups"
           :key="group.id"
@@ -1723,22 +2237,39 @@ function handleTransactionUpdated() {
         >
           <div class="category-group-row border-b border-base-300">
             <!-- Lebensbereiche-Header mit Summenwerten -->
-            <div class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer">
+            <div
+              class="group-header-extended flex w-full py-0 bg-base-200 border-b border-t border-base-300 hover:bg-base-50 cursor-pointer"
+            >
               <!-- Sticky Gruppen-Teil -->
-              <div class="group-part flex items-center border-r border-base-300 py-2">
+              <div
+                class="group-part flex items-center border-r border-base-300 py-2"
+              >
                 <!-- Drag Handle für Gruppe -->
-                <div class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                  <Icon icon="mdi:drag-vertical" class="w-4 h-4 text-base-content/60" />
+                <div
+                  class="group-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100"
+                >
+                  <Icon
+                    icon="mdi:drag-vertical"
+                    class="w-4 h-4 text-base-content/60"
+                  />
                 </div>
 
                 <!-- Gruppen-Icon -->
                 <div class="flex-shrink-0 mr-2">
-                  <Icon :icon="getGroupIcon(group)" :class="`w-4 h-4 ${getGroupColor(group)}`" />
+                  <Icon
+                    :icon="getGroupIcon(group)"
+                    :class="`w-4 h-4 ${getGroupColor(group)}`"
+                  />
                 </div>
 
                 <!-- Gruppenname -->
-                <div class="flex-grow" @click.stop="toggleGroup(group.id)">
-                  <h4 class="font-semibold text-sm text-base-content">{{ group.name }}</h4>
+                <div
+                  class="flex-grow"
+                  @click.stop="toggleGroup(group.id)"
+                >
+                  <h4 class="font-semibold text-sm text-base-content">
+                    {{ group.name }}
+                  </h4>
                 </div>
               </div>
 
@@ -1749,13 +2280,17 @@ function handleTransactionUpdated() {
                   :key="month.key"
                   class="month-column flex-1 min-w-[120px] py-2 px-1 border-r border-base-300"
                 >
-                  <div class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]">
+                  <div
+                    class="group-summary-values grid grid-cols-4 gap-1 text-xs font-semibold mr-[4%]"
+                  >
                     <div class="text-right opacity-0">
                       <!-- Transparente Leerzelle für budgeted bei Einnahmen-Gruppen -->
                     </div>
                     <div class="text-right">
                       <CurrencyDisplay
-                        :amount="calculateGroupSummary(group.id, month).forecast"
+                        :amount="
+                          calculateGroupSummary(group.id, month).forecast
+                        "
                         :as-integer="true"
                         :show-zero="false"
                       />
@@ -1785,7 +2320,9 @@ function handleTransactionUpdated() {
             <div
               v-show="categoryStore.expandedCategoryGroups.has(group.id)"
               class="categories-list"
-              :class="{ 'collapsed': !categoryStore.expandedCategoryGroups.has(group.id) }"
+              :class="{
+                collapsed: !categoryStore.expandedCategoryGroups.has(group.id),
+              }"
             >
               <div class="categories-content">
                 <div
@@ -1798,33 +2335,87 @@ function handleTransactionUpdated() {
                   <!-- Unified Muuri Item: Kategorie + Werte -->
                   <div class="flex w-full">
                     <!-- Sticky Kategorie-Teil -->
-                    <div class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer">
-                      <div class="category-drag-area flex items-center flex-grow">
-                        <div class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100">
-                          <Icon icon="mdi:drag-vertical" class="w-3 h-3 text-base-content/60" />
+                    <div
+                      class="category-part flex items-center p-0 pl-8 bg-base-50 border-b border-r border-base-300 hover:bg-base-100 cursor-pointer"
+                    >
+                      <div
+                        class="category-drag-area flex items-center flex-grow"
+                      >
+                        <div
+                          class="category-drag-handle flex-shrink-0 mr-2 opacity-50 hover:opacity-100"
+                        >
+                          <Icon
+                            icon="mdi:drag-vertical"
+                            class="w-3 h-3 text-base-content/60"
+                          />
                         </div>
 
-                        <div v-if="category.icon" class="flex-shrink-0 mr-2">
-                          <Icon :icon="category.icon" class="w-3 h-3 text-base-content/70" />
+                        <div
+                          v-if="category.icon"
+                          class="flex-shrink-0 mr-2"
+                        >
+                          <Icon
+                            :icon="category.icon"
+                            class="w-3 h-3 text-base-content/70"
+                          />
                         </div>
 
                         <div class="flex-grow category-name-drag">
-                          <span class="text-xs text-base-content">{{ category.name }}</span>
+                          <span class="text-xs text-base-content">{{
+                            category.name
+                          }}</span>
                         </div>
                       </div>
 
                       <div class="flex-shrink-0 flex items-center space-x-2">
-                        <div v-if="category.isSavingsGoal && category.targetAmount && category.goalDate" class="flex items-center space-x-2">
+                        <div
+                          v-if="
+                            category.isSavingsGoal &&
+                            category.targetAmount &&
+                            category.goalDate
+                          "
+                          class="flex items-center space-x-2"
+                        >
                           <div class="badge badge-primary badge-soft text-xs">
-                            <CurrencyDisplay :amount="category.targetAmount" :show-sign="false" :as-integer="true" class="mr-1" />
-                            bis {{ new Date(category.goalDate).toLocaleDateString('de-DE', { month: '2-digit', year: '2-digit' }) }}
+                            <CurrencyDisplay
+                              :amount="category.targetAmount"
+                              :show-sign="false"
+                              :as-integer="true"
+                              class="mr-1"
+                            />
+                            bis
+                            {{
+                              new Date(category.goalDate).toLocaleDateString(
+                                "de-DE",
+                                { month: "2-digit", year: "2-digit" }
+                              )
+                            }}
                           </div>
-                          <progress class="progress progress-primary w-16" :value="getSavingsGoalProgress(category)" max="100"></progress>
+                          <progress
+                            class="progress progress-primary w-16"
+                            :value="getSavingsGoalProgress(category)"
+                            max="100"
+                          ></progress>
                         </div>
-                        <div v-else class="flex items-center space-x-1">
-                          <div v-if="category.isSavingsGoal" class="w-2 h-2 bg-info rounded-full" title="Sparziel"></div>
-                          <div v-if="!category.isActive" class="w-2 h-2 bg-warning rounded-full" title="Inaktiv"></div>
-                          <div v-if="category.isHidden" class="w-2 h-2 bg-base-content/30 rounded-full" title="Versteckt"></div>
+                        <div
+                          v-else
+                          class="flex items-center space-x-1"
+                        >
+                          <div
+                            v-if="category.isSavingsGoal"
+                            class="w-2 h-2 bg-info rounded-full"
+                            title="Sparziel"
+                          ></div>
+                          <div
+                            v-if="!category.isActive"
+                            class="w-2 h-2 bg-warning rounded-full"
+                            title="Inaktiv"
+                          ></div>
+                          <div
+                            v-if="category.isHidden"
+                            class="w-2 h-2 bg-base-content/30 rounded-full"
+                            title="Versteckt"
+                          ></div>
                         </div>
                       </div>
                     </div>
@@ -1836,7 +2427,9 @@ function handleTransactionUpdated() {
                         :key="month.key"
                         class="month-column flex-1 min-w-[120px] p-1 border-b border-r border-base-300"
                       >
-                        <div class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]">
+                        <div
+                          class="budget-values grid grid-cols-4 gap-1 text-xs mr-[4%]"
+                        >
                           <div class="text-right opacity-0">
                             <!-- Transparente Leerzelle für budgeted bei Einnahmen-Kategorien -->
                           </div>
@@ -1846,7 +2439,10 @@ function handleTransactionUpdated() {
                             title="Klicken um Planungen anzuzeigen"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).forecast"
+                              :amount="
+                                getCategoryBudgetData(category.id, month)
+                                  .forecast
+                              "
                               :as-integer="true"
                               :show-zero="false"
                             />
@@ -1857,21 +2453,27 @@ function handleTransactionUpdated() {
                             title="Klicken um Transaktionen anzuzeigen"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).spent"
+                              :amount="
+                                getCategoryBudgetData(category.id, month).spent
+                              "
                               :as-integer="true"
                               :show-zero="false"
                               class="text-base-content/80"
                             />
                           </div>
                           <div
-                            class="text-right py-0.5 "
+                            class="text-right py-0.5"
                             :class="{
-                              'cursor-context-menu hover:bg-base-200': getCategoryBudgetData(category.id, month).saldo > 0
+                              'cursor-context-menu hover:bg-base-200':
+                                getCategoryBudgetData(category.id, month)
+                                  .saldo > 0,
                             }"
                             @contextmenu="openDropdown($event, category, month)"
                           >
                             <CurrencyDisplay
-                              :amount="getCategoryBudgetData(category.id, month).saldo"
+                              :amount="
+                                getCategoryBudgetData(category.id, month).saldo
+                              "
                               :as-integer="true"
                               :show-zero="false"
                               class="text-base-content/80"
@@ -1890,9 +2492,15 @@ function handleTransactionUpdated() {
     </div>
 
     <!-- Fallback wenn keine Gruppen vorhanden -->
-    <div v-if="expenseGroups.length === 0 && incomeGroups.length === 0" class="flex-1 flex items-center justify-center p-8">
+    <div
+      v-if="expenseGroups.length === 0 && incomeGroups.length === 0"
+      class="flex-1 flex items-center justify-center p-8"
+    >
       <div class="text-center text-base-content/60">
-        <Icon icon="mdi:folder-outline" class="w-12 h-12 mx-auto mb-3" />
+        <Icon
+          icon="mdi:folder-outline"
+          class="w-12 h-12 mx-auto mb-3"
+        />
         <p class="text-sm font-medium">Keine Lebensbereiche</p>
         <p class="text-xs mt-1">Erstellen Sie zunächst Lebensbereiche</p>
       </div>
@@ -1987,6 +2595,9 @@ function handleTransactionUpdated() {
 .muuri-container {
   position: relative;
   min-height: 100px;
+  /* Isoliert Layout-/Paint-Berechnungen und erstellt eine eigene Compositor-Layer */
+  contain: layout paint;
+  will-change: transform;
 }
 
 .group-wrapper {
@@ -2256,7 +2867,11 @@ function handleTransactionUpdated() {
 
 /* Auto-Expand Highlight */
 .group-header.drag-over-expand {
-  background: linear-gradient(to right, hsl(var(--p) / 0.1), hsl(var(--p) / 0.2));
+  background: linear-gradient(
+    to right,
+    hsl(var(--p) / 0.1),
+    hsl(var(--p) / 0.2)
+  );
   border: 2px dashed hsl(var(--p));
 }
 

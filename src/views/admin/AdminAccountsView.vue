@@ -63,13 +63,39 @@ const getGroupBalance = (groupId: string) => {
   return balances[groupId] ?? 0;
 };
 
+// Liefert ein Tuple-Array [label, value] aus dem AccountType-Enum
+const accountTypeOptions = computed(() => {
+  return Object.entries(AccountType).map(([label, value]) => ({
+    label,
+    value,
+  }));
+});
+
+// Format für Anzeige, falls benötigt
 const formatAccountType = (type: AccountType): string => {
-  // Das Enum enthält jetzt direkt die lesbaren Namen als Keys.
-  // Wir müssen nur den Wert finden, der dem Key entspricht.
-  const key = Object.keys(AccountType).find(
-    (key) => AccountType[key as keyof typeof AccountType] === type
+  const entry = Object.entries(AccountType).find(
+    ([, value]) => value === type
   );
-  return key || "Unbekannt";
+  return entry ? entry[0] : "Unbekannt";
+};
+
+// Aktualisiert den Account-Typ bei Auswahlwechsel
+const updateAccountType = async (account: Account, newType: AccountType) => {
+  if (account.accountType === newType) return;
+  try {
+    await AccountService.updateAccount(account.id, { accountType: newType });
+    infoLog(
+      "AdminAccountsView",
+      `Account ${account.name} Typ geändert`,
+      { accountId: account.id, oldType: account.accountType, newType }
+    );
+  } catch (error) {
+    errorLog(
+      "AdminAccountsView",
+      `Fehler beim Ändern des Typs von Account ${account.name}`,
+      { accountId: account.id, error }
+    );
+  }
 };
 
 const editAccount = (account: Account) => {
@@ -184,7 +210,7 @@ const deleteAccountGroup = async (groupId: string) => {
  * Aktualisiert die Monatssalden aller Konten. Zentral für die Finanzübersicht.
  */
 const updateMonthlyBalances = () => {
-  BalanceService.calculateMonthlyBalances();
+  BalanceService.calculateAllMonthlyBalances();
 };
 
 /**
@@ -276,7 +302,7 @@ const toggleAccountStatus = async (account: Account) => {
               <tr>
                 <th>Name</th>
                 <th class="text-center">Gruppe</th>
-                <th>Typ</th>
+                <th class="text-center">Typ</th>
                 <th class="text-right">Kontostand</th>
                 <th class="text-center">Status</th>
                 <th class="text-right">Aktionen</th>
@@ -308,7 +334,26 @@ const toggleAccountStatus = async (account: Account) => {
                     </option>
                   </select>
                 </td>
-                <td>{{ formatAccountType(account.accountType) }}</td>
+                <td>
+                  <select
+                    class="select select-sm w-full rounded-full border border-base-300"
+                    :value="account.accountType"
+                    @change="
+                      updateAccountType(
+                        account,
+                        (($event.target as HTMLSelectElement).value as unknown) as AccountType
+                      )
+                    "
+                  >
+                    <option
+                      v-for="opt in accountTypeOptions"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </td>
                 <td class="text-right">
                   <CurrencyDisplay
                     class="text-right whitespace-nowrap"

@@ -24,7 +24,7 @@ import dayjs from "dayjs";
 import ApexCharts from "apexcharts";
 
 const props = defineProps<{
-  startDate: string;
+  dateRange: { start: string; end: string };
   filteredCategoryId?: string;
 }>();
 
@@ -34,7 +34,12 @@ const planningStore = usePlanningStore();
 const themeStore = useThemeStore();
 
 // Chart-Konfiguration
-const forecastMonths = 6;
+const forecastMonths = computed(() => {
+  const start = dayjs(props.dateRange.start).startOf("month");
+  const end = dayjs(props.dateRange.end).endOf("month");
+  const diff = end.diff(start, "month") + 1;
+  return Math.min(12, Math.max(1, diff));
+});
 
 // Anzeigemodus: 'expenses' oder 'income'
 const displayMode = ref<"expenses" | "income">("expenses");
@@ -187,7 +192,7 @@ function formatCurrency(value: number): string {
 
 // Generiert Prognosedaten für die Kategorien
 function generateForecastData(): void {
-  const startDate = new Date(props.startDate);
+  const startDate = new Date(props.dateRange.start);
   const expenseData: CategoryForecast[] = [];
   const incomeData: CategoryForecast[] = [];
 
@@ -197,12 +202,8 @@ function generateForecastData(): void {
       c.isActive && !c.parentCategoryId && c.name !== "Verfügbare Mittel"
   );
 
-  // Filtere nach spezifischer Kategorie, falls gesetzt
-  if (props.filteredCategoryId) {
-    rootCategories = rootCategories.filter(
-      (c: any) => c.id === props.filteredCategoryId
-    );
-  }
+  // Hinweis: Keine direkte Filterung hier, damit Aggregation über alle Kategorien möglich bleibt.
+  // Die Auswahl einer spezifischen Kategorie wird später in chartData berücksichtigt.
 
   // Generiere Daten für jede Kategorie
   rootCategories.forEach((category: any) => {
@@ -214,7 +215,7 @@ function generateForecastData(): void {
     };
 
     // Erstelle Prognose für jeden Monat
-    for (let i = 0; i < forecastMonths; i++) {
+    for (let i = 0; i < forecastMonths.value; i++) {
       const forecastDate = new Date(startDate);
       forecastDate.setMonth(forecastDate.getMonth() + i);
 
@@ -244,7 +245,7 @@ function generateForecastData(): void {
         1
       );
       const transactions = planningStore
-        .getUpcomingTransactions(35)
+        .getUpcomingTransactions(forecastMonths.value * 30)
         .filter((tx: any) => {
           const txDate = new Date(tx.date);
           return (
@@ -298,25 +299,44 @@ const chartData = computed(() => {
   }[] = [];
   const colorSpectrum = getColorSpectrum();
 
-  // Labels für die nächsten 6 Monate generieren
-  const startDate = dayjs(props.startDate);
-  for (let i = 0; i < forecastMonths; i++) {
+  // Labels gemäß DateRange (max. 12 Monate)
+  const startDate = dayjs(props.dateRange.start).startOf("month");
+  const months = forecastMonths.value;
+  for (let i = 0; i < months; i++) {
     const month = startDate.add(i, "month");
     labels.push(getGermanMonthName(month));
   }
 
-  // Daten für jede Kategorie
-  activeForecastData.value.forEach((category) => {
-    const data = category.monthlyForecasts.map((f: any) =>
+  if (props.filteredCategoryId) {
+    // Nur ausgewählte Kategorie anzeigen
+    const cat = activeForecastData.value.find(
+      (c) => c.categoryId === props.filteredCategoryId
+    );
+    const data = (cat?.monthlyForecasts ?? []).map((f: any) =>
       Math.round(f.projectedBalance)
     );
-
     series.push({
-      name: category.categoryName,
+      name: cat?.categoryName ?? "Kategorie",
       data,
-      categoryId: category.categoryId,
+      categoryId: cat?.categoryId ?? "N/A",
     });
-  });
+  } else {
+    // Aggregierte Summe über alle Kategorien je Monat
+    const aggregated: number[] = [];
+    for (let i = 0; i < months; i++) {
+      let sum = 0;
+      for (const cat of activeForecastData.value) {
+        const v = cat.monthlyForecasts[i]?.projectedBalance ?? 0;
+        sum += Math.round(v);
+      }
+      aggregated.push(sum);
+    }
+    series.push({
+      name: "Alle Kategorien",
+      data: aggregated,
+      categoryId: "ALL",
+    });
+  }
 
   return { labels, series, colorSpectrum };
 });
@@ -415,24 +435,7 @@ const chartOptions = computed(() => {
       },
     },
     legend: {
-      show: !isSmallScreen.value && data.series.length > 1,
-      position: "bottom" as const,
-      horizontalAlign: "center" as const,
-      fontSize: "12px",
-      fontFamily: themeColors.fontFamily,
-      labels: {
-        colors: themeColors.baseContent,
-        useSeriesColors: false,
-      },
-      markers: {
-        width: 12,
-        height: 12,
-        radius: 2,
-      },
-      itemMargin: {
-        horizontal: 8,
-        vertical: 4,
-      },
+      show: false,
     },
     tooltip: {
       theme: themeStore.isDarkMode ? "dark" : "light",
@@ -501,17 +504,23 @@ function setupThemeObserver(): void {
   });
 }
 
-
 // Watchers für Datenänderungen
-watch([() => props.startDate, () => props.filteredCategoryId], async () => {
-  generateForecastData();
-  await nextTick();
-  if (!chart) {
-    setTimeout(() => {
-      createChart();
-    }, 100);
+watch(
+  [
+    () => props.dateRange.start,
+    () => props.dateRange.end,
+    () => props.filteredCategoryId,
+  ],
+  async () => {
+    generateForecastData();
+    await nextTick();
+    if (!chart) {
+      setTimeout(() => {
+        createChart();
+      }, 100);
+    }
   }
-});
+);
 
 watch(
   chartData,
@@ -527,7 +536,6 @@ watch(
   },
   { deep: true }
 );
-
 
 watch(
   () => themeStore.isDarkMode,
@@ -572,7 +580,6 @@ onUnmounted(() => {
 
 <template>
   <div class="space-y-6">
-
     <!-- Keine Daten Hinweis -->
     <div
       v-if="activeForecastData.length === 0"

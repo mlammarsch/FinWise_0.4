@@ -15,8 +15,11 @@ const transactionStore = useTransactionStore();
 
 // Computed für den Expand/Collapse-Zustand aller Lebensbereiche
 const allGroupsExpanded = computed(() => {
-  const allGroupIds = categoryStore.categoryGroups.map(g => g.id);
-  return allGroupIds.length > 0 && allGroupIds.every(id => categoryStore.expandedCategoryGroups.has(id));
+  const allGroupIds = categoryStore.categoryGroups.map((g) => g.id);
+  return (
+    allGroupIds.length > 0 &&
+    allGroupIds.every((id) => categoryStore.expandedCategoryGroups.has(id))
+  );
 });
 
 // Funktion zum Ein-/Ausklappen aller Lebensbereiche
@@ -65,7 +68,7 @@ async function recalcStores() {
     // Loading wird jetzt über muuriReady Event gesteuert
     // isLoading.value = false; // ← Entfernt, wird über onMuuriReady gesetzt
   } catch (error) {
-    console.error('Error loading budget data:', error);
+    console.error("Error loading budget data:", error);
     isLoading.value = false;
   }
 }
@@ -121,7 +124,6 @@ const categories = computed(() => {
 
 const totalColumns = computed(() => months.value.length + 1);
 
-
 const availableByMonth = computed(() => {
   return months.value.map((month) => {
     const availableCat = categoryStore.categories.find(
@@ -158,17 +160,39 @@ const toBudgetByMonth = computed(() => {
 </script>
 
 <template>
-  <div class="h-[calc(100vh-189px)] flex flex-col overflow-hidden relative">
+  <div
+    class="h-[calc(100vh-189px)] flex flex-col overflow-hidden relative transform-gpu"
+    style="
+      will-change: transform;
+      transform: translateZ(0);
+      contain: layout paint;
+    "
+  >
     <!-- Loading Overlay - wird über den Inhalt gelegt -->
-    <div v-if="isLoading" class="absolute inset-0 z-50 flex items-center justify-center bg-base-100" style="will-change: transform;">
+    <div
+      v-if="isLoading"
+      class="fixed inset-0 z-[1000] flex items-center justify-center bg-base-100 transform-gpu"
+      style="
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      "
+    >
       <div class="flex flex-col items-center space-y-4">
         <!-- Loading Spinner mit Hardware-Beschleunigung -->
-        <div class="loading loading-spinner loading-lg text-primary" style="will-change: transform; transform: translateZ(0);"></div>
+        <div
+          class="loading loading-spinner loading-lg text-primary"
+          style="will-change: transform; transform: translateZ(0)"
+        ></div>
 
         <!-- Loading Text -->
         <div class="text-center">
-          <h3 class="text-lg font-semibold text-base-content mb-2">Budget wird geladen...</h3>
-          <p class="text-sm text-base-content/60">Kategorien und Daten werden berechnet</p>
+          <h3 class="text-lg font-semibold text-base-content mb-2">
+            Budget wird geladen...
+          </h3>
+          <p class="text-sm text-base-content/60">
+            Kategorien und Daten werden berechnet
+          </p>
         </div>
 
         <!-- Optional: Progress Skeleton -->
@@ -181,78 +205,96 @@ const toBudgetByMonth = computed(() => {
     </div>
 
     <!-- Main Content - wird immer gerendert, aber vom Loading-Overlay überdeckt -->
-      <!-- Header - Sticky positioniert -->
-      <div class="flex-shrink-0 sticky top-0 z-20 bg-base-100 border-b border-base-300">
-        <div class="p-4 flex flex-col">
-          <!-- Feste Header-Row mit drei Bereichen -->
-          <div class="mb-4 flex items-center justify-between w-full">
-            <!-- Links: Überschrift -->
-            <div class="flex-shrink-0">
-              <h1 class="text-2xl font-bold">Budget Verteilung</h1>
-            </div>
-
-            <!-- Mitte: Kalenderansicht -->
-            <div class="flex-grow flex justify-center">
-              <PagingYearComponent
-                :displayedMonths="numMonths"
-                :currentStartMonthOffset="monthOffset"
-                @updateStartOffset="onUpdateStartOffset"
-                @updateDisplayedMonths="onUpdateDisplayedMonths"
-              />
-            </div>
-
-            <!-- Rechts: Platzhalter für zukünftige Elemente -->
-            <div class="flex-shrink-0">
-              <!-- Hier können später weitere Elemente hinzugefügt werden -->
-            </div>
+    <!-- Header - Sticky positioniert -->
+    <div
+      class="flex-shrink-0 sticky top-0 z-20 bg-base-100 border-b border-base-300 transform-gpu"
+      style="will-change: transform; transform: translateZ(0)"
+    >
+      <div class="p-4 flex flex-col">
+        <!-- Feste Header-Row mit drei Bereichen -->
+        <div class="mb-4 flex items-center justify-between w-full">
+          <!-- Links: Überschrift -->
+          <div class="flex-shrink-0">
+            <h1 class="text-2xl font-bold">Budget Verteilung</h1>
           </div>
-        </div>
-        <!-- Tabellenkopf -->
-        <div class="flex overflow-x-auto">
-          <!-- Kategorien-Header (sticky) -->
-          <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
-            <div class="text-sm flex items-center cursor-pointer p-2" @click="toggleAllCategoryGroups">
-              <Icon
-                :icon="allGroupsExpanded ? 'mdi:chevron-up' : 'mdi:chevron-down'"
-                class="text-md mr-1"
-              />
-              <span>{{ allGroupsExpanded ? "alle einklappen" : "alle ausklappen" }}</span>
-            </div>
-            <div class="text-sm flex items-center p-2">
-              <input
-                type="checkbox"
-                :checked="categoryStore.showHiddenCategories"
-                @change="toggleShowHiddenCategories"
-                class="checkbox checkbox-sm mr-2"
-              />
-              <span>versteckte Kategorien anzeigen</span>
-            </div>
+
+          <!-- Mitte: Kalenderansicht -->
+          <div class="flex-grow flex justify-center">
+            <PagingYearComponent
+              :displayedMonths="numMonths"
+              :currentStartMonthOffset="monthOffset"
+              @updateStartOffset="onUpdateStartOffset"
+              @updateDisplayedMonths="onUpdateDisplayedMonths"
+            />
           </div>
-          <!-- Monats-Header (scrollbar) -->
-          <div class="flex flex-1 min-w-0 mr-3">
-            <div
-              v-for="(month, i) in months"
-              :key="month.key"
-              class="flex-1 min-w-[120px] flex flex-col "
-            >
-              <BudgetMonthHeaderCard
-                :label="month.label"
-                :month="month"
-                :available="availableByMonth[i]"
-                :budgeted="budgetedByMonth[i]"
-                :to-budget="toBudgetByMonth[i]"
-              />
-            </div>
+
+          <!-- Rechts: Platzhalter für zukünftige Elemente -->
+          <div class="flex-shrink-0">
+            <!-- Hier können später weitere Elemente hinzugefügt werden -->
           </div>
         </div>
       </div>
-      <!-- Scrollbarer Datenbereich -->
-      <div class="flex-grow overflow-auto">
-        <div class="w-full">
-          <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
-          <BudgetCategoriesAndValues :months="months" @muuriReady="onMuuriReady" />
+      <!-- Tabellenkopf -->
+      <div class="flex overflow-x-auto">
+        <!-- Kategorien-Header (sticky) -->
+        <div class="flex-shrink-0 w-[300px] flex flex-col justify-end">
+          <div
+            class="text-sm flex items-center cursor-pointer p-2"
+            @click="toggleAllCategoryGroups"
+          >
+            <Icon
+              :icon="allGroupsExpanded ? 'mdi:chevron-up' : 'mdi:chevron-down'"
+              class="text-md mr-1"
+            />
+            <span>{{
+              allGroupsExpanded ? "alle einklappen" : "alle ausklappen"
+            }}</span>
+          </div>
+          <div class="text-sm flex items-center p-2">
+            <input
+              type="checkbox"
+              :checked="categoryStore.showHiddenCategories"
+              @change="toggleShowHiddenCategories"
+              class="checkbox checkbox-sm mr-2"
+            />
+            <span>versteckte Kategorien anzeigen</span>
+          </div>
+        </div>
+        <!-- Monats-Header (scrollbar) -->
+        <div class="flex flex-1 min-w-0 mr-3">
+          <div
+            v-for="(month, i) in months"
+            :key="month.key"
+            class="flex-1 min-w-[120px] flex flex-col"
+          >
+            <BudgetMonthHeaderCard
+              :label="month.label"
+              :month="month"
+              :available="availableByMonth[i]"
+              :budgeted="budgetedByMonth[i]"
+              :to-budget="toBudgetByMonth[i]"
+            />
+          </div>
         </div>
       </div>
+    </div>
+    <!-- Scrollbarer Datenbereich -->
+    <div
+      class="flex-grow overflow-auto transform-gpu"
+      style="
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
+      "
+    >
+      <div class="w-full">
+        <!-- Erweiterte Kategorie-Spalte mit integrierten Werten -->
+        <BudgetCategoriesAndValues
+          :months="months"
+          @muuriReady="onMuuriReady"
+        />
+      </div>
+    </div>
   </div>
 </template>
 

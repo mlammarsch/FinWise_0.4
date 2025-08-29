@@ -23,6 +23,7 @@ const props = defineProps<{
   modelValue?: string;
   filterOutArray?: string[];
   showNoneOption?: boolean;
+  rounded?: boolean;
 }>();
 const emit = defineEmits(["update:modelValue", "select"]);
 
@@ -362,7 +363,10 @@ defineExpose({ focusInput });
       <input
         ref="inputRef"
         type="text"
-        class="input input-bordered w-full pr-8"
+        :class="[
+          'input input-bordered input-sm w-full pr-8',
+          props.rounded ? 'rounded-full' : '',
+        ]"
         v-model="searchTerm"
         @input="
           dropdownOpen = true;
@@ -395,7 +399,7 @@ defineExpose({ focusInput });
         >
           <div
             v-if="option.isHeader"
-            class="px-3 py-1.5 font-semibold text-sm text-primary select-none sticky top-0 bg-base-200 z-10"
+            class="px-3 py-1 text-sm text-primary select-none sticky top-0 bg-base-200 z-10"
             role="separator"
           >
             {{ option.headerText }}
@@ -403,7 +407,7 @@ defineExpose({ focusInput });
           <div
             v-else
             :id="'select-category-option-' + option.category!.id"
-            class="px-3 py-1.5 text-sm cursor-pointer hover:bg-base-200 flex justify-between items-center"
+            class="px-3 py-1 cursor-pointer hover:bg-base-200 flex justify-between items-center"
             :class="{
               'bg-base-300':
                 nonHeaderOptions.findIndex(
@@ -416,7 +420,7 @@ defineExpose({ focusInput });
             :aria-selected="option.category!.id === selected"
           >
             <span>{{ option.category!.name }}</span>
-            <span class="text-xs opacity-80">
+            <span class="opacity-80">
               <CurrencyDisplay
                 :amount="BalanceService.getTodayBalance('category', option.category!.id)"
                 :as-integer="true"
@@ -426,7 +430,7 @@ defineExpose({ focusInput });
         </template>
       </template>
       <div
-        class="px-3 py-1.5 text-sm text-base-content/60 italic"
+        class="px-3 py-1 text-xs text-base-content/60 italic"
         v-else
       >
         Keine Kategorien gefunden.

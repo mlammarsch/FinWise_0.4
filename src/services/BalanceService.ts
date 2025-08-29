@@ -37,7 +37,13 @@ class TransactionCache {
     const key = this.getMonthKey(year, month);
     let monthCache = this.cache.get(key);
 
-    if (!monthCache || (Date.now() - monthCache.lastUpdate) > this.CACHE_TTL) {
+    // Für den aktuellen Monat: Cache immer invalidieren für aktuelle Daten
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+
+    if (!monthCache ||
+      (Date.now() - monthCache.lastUpdate) > this.CACHE_TTL ||
+      isCurrentMonth) {
       monthCache = {
         accountTransactions: new Map(),
         categoryTransactions: new Map(),
@@ -115,6 +121,16 @@ class TransactionCache {
    */
   clear() {
     this.cache.clear();
+  }
+
+  /**
+   * Invalidiert den Cache für den aktuellen Monat
+   * Wird verwendet, um sicherzustellen, dass aktuelle Daten angezeigt werden
+   */
+  invalidateCurrentMonth() {
+    const now = new Date();
+    const currentMonthKey = this.getMonthKey(now.getFullYear(), now.getMonth());
+    this.cache.delete(currentMonthKey);
   }
 }
 
@@ -900,6 +916,15 @@ export const BalanceService = {
   },
 
   /**
+   * Invalidiert den Cache für den aktuellen Monat
+   * Wird verwendet, um sicherzustellen, dass aktuelle Daten angezeigt werden
+   */
+  invalidateCurrentMonthCache(): void {
+    transactionCache.invalidateCurrentMonth();
+    debugLog('BalanceService', 'Cache für aktuellen Monat invalidiert');
+  },
+
+  /**
    * Berechnet den Saldo einer Kategorie mit ihren Kindern
    */
   getCategoryWithChildrenBalance(categoryId: string, asOf: Date = new Date(), includeProjection: boolean = false): number {
@@ -1421,5 +1446,14 @@ export const BalanceService = {
   clearTransactionCache(): void {
     transactionCache.clear();
     debugLog('BalanceService', 'Transaction Cache vollständig geleert');
+  },
+
+  /**
+   * Invalidiert den Cache für den aktuellen Monat
+   * Stellt sicher, dass Charts immer aktuelle Daten anzeigen
+   */
+  invalidateCurrentMonthCache(): void {
+    transactionCache.invalidateCurrentMonth();
+    debugLog('BalanceService', 'Cache für aktuellen Monat invalidiert');
   }
 };

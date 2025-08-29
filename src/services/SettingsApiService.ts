@@ -2,7 +2,11 @@
 import { debugLog, infoLog, errorLog } from '@/utils/logger';
 
 const MODULE_NAME = 'SettingsApiService';
-const BASE_URL = 'http://localhost:8000/api/v1/user';
+const API_BASE = ((import.meta as any).env.VITE_API_BASE_URL as string)?.replace(/\/$/, '');
+if (!API_BASE) {
+  errorLog(MODULE_NAME, 'VITE_API_BASE_URL ist nicht definiert. Bitte in der .env des Frontends setzen.');
+}
+const BASE_URL = `${API_BASE}/api/v1/user`;
 
 export interface UserSettingsPayload {
   log_level: string;
@@ -118,7 +122,7 @@ export class SettingsApiService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 Sekunden Timeout
 
-      const response = await fetch('http://localhost:8000/ping', {
+      const response = await fetch(`${API_BASE}/ping`, {
         method: 'GET',
         signal: controller.signal
       });

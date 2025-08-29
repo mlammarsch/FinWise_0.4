@@ -7,10 +7,13 @@ import { formatChartCurrency } from "@/utils/chartFormatters";
 import ApexCharts from "apexcharts";
 
 // Props
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   startDate: string;
   endDate: string;
-}>();
+  showHeader?: boolean;
+}>(), {
+  showHeader: true
+});
 
 // Stores
 const themeStore = useThemeStore();
@@ -323,20 +326,35 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full h-full">
-    <div
-      v-if="!chartData.hasData"
-      class="flex items-center justify-center h-full text-base-content/70"
-    >
-      <div class="text-center">
-        <div class="text-lg mb-2">📊</div>
-        <div>Keine Ausgaben in diesem Zeitraum</div>
+  <div
+    class="card rounded-md border border-base-300 bg-base-100 shadow-md hover:bg-base-200 transition duration-150"
+  >
+    <div class="card-body">
+      <!-- Header -->
+      <h3
+        v-if="showHeader"
+        class="card-title text-lg mb-4"
+      >
+        Ausgaben nach Kategorien
+      </h3>
+
+      <!-- Chart Container -->
+      <div class="h-64">
+        <div
+          v-if="!chartData.hasData"
+          class="flex items-center justify-center h-full text-base-content/70"
+        >
+          <div class="text-center">
+            <div class="text-lg mb-2">📊</div>
+            <div>Keine Ausgaben in diesem Zeitraum</div>
+          </div>
+        </div>
+        <div
+          v-else
+          ref="chartContainer"
+          class="w-full h-full"
+        ></div>
       </div>
     </div>
-    <div
-      v-else
-      ref="chartContainer"
-      class="w-full h-full"
-    ></div>
   </div>
 </template>

@@ -649,24 +649,32 @@ function getTargetName(planning: PlanningTransaction): string {
   }
 }
 
-// Hilfsfunktion zur Prüfung, ob das Startdatum die erste Planbuchung einer Serie ist
-function isFirstOccurrenceOfSeries(planning: PlanningTransaction): boolean {
-  // Bei einmaligen Buchungen ist es immer die erste (und einzige)
-  if (planning.recurrencePattern === RecurrencePattern.ONCE) {
-    return true;
-  }
-
-  // Prüfen, ob das Startdatum heute oder in der Vergangenheit liegt
-  const today = dayjs().format("YYYY-MM-DD");
-  const startDate = dayjs(planning.startDate).format("YYYY-MM-DD");
-
-  // Wenn das Startdatum heute oder in der Vergangenheit liegt, ist es fällig
-  return dayjs(startDate).isSameOrBefore(dayjs(today));
+/**
+* Fälligkeitslogik:
+* - "Überfällig": Startdatum liegt mehr als 2 Tage vor heute und wurde noch nicht ausgeführt (Startdatum wurde noch nicht weitergeschoben).
+* - "Fällig": Startdatum ist heute oder in der Vergangenheit (max. 2 Tage alt).
+* - "geplant für": Startdatum liegt in der Zukunft.
+*/
+function isOverdueByDays(planning: PlanningTransaction, days = 2): boolean {
+ const today = dayjs().startOf("day");
+ const start = dayjs(planning.startDate).startOf("day");
+ return start.isBefore(today.subtract(days, "day"), "day");
 }
 
-// Funktion zur Anzeige des korrekten Labels für das Startdatum
+function isDue(planning: PlanningTransaction): boolean {
+ const today = dayjs().startOf("day");
+ const start = dayjs(planning.startDate).startOf("day");
+ return start.isSameOrBefore(today, "day");
+}
+
 function getStartDateLabel(planning: PlanningTransaction): string {
-  return isFirstOccurrenceOfSeries(planning) ? "Fällig" : "geplant für";
+ if (isOverdueByDays(planning, 2)) return "Überfällig";
+ return isDue(planning) ? "Fällig" : "geplant für";
+}
+
+function getStartDateClass(planning: PlanningTransaction): string {
+ if (isOverdueByDays(planning, 2)) return "text-error";
+ return isDue(planning) ? "text-warning" : "text-base-content/70";
 }
 
 // Hilfsfunktion für Wiederholungstyp-Icon
@@ -797,23 +805,19 @@ onUnmounted(() => {
                   />
                 </div>
               </td>
-              <td>
-                <div class="flex flex-col">
-                  <span
-                    class="text-xs font-medium"
-                    :class="
-                      isFirstOccurrenceOfSeries(planning)
-                        ? 'text-warning'
-                        : 'text-base-content/70'
-                    "
-                  >
-                    {{ getStartDateLabel(planning) }}
-                  </span>
-                  <span class="text-sm">{{
-                    formatDate(planning.startDate)
-                  }}</span>
-                </div>
-              </td>
+             <td>
+               <div class="flex flex-col">
+                 <span
+                   class="text-xs font-medium"
+                   :class="getStartDateClass(planning)"
+                 >
+                   {{ getStartDateLabel(planning) }}
+                 </span>
+                 <span class="text-sm">{{
+                   formatDate(planning.startDate)
+                 }}</span>
+               </div>
+             </td>
               <td class="text-right">
                 <CurrencyDisplay
                   :amount="planning.amount"
