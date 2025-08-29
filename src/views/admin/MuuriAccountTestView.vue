@@ -75,9 +75,16 @@ const initializeGroupsGrid = () => {
 
     groupsGrid.value.on("dragEnd", handleGroupDragEnd);
 
-    infoLog("MuuriAccountTestView", "Kontogruppen-Grid erfolgreich initialisiert");
+    infoLog(
+      "MuuriAccountTestView",
+      "Kontogruppen-Grid erfolgreich initialisiert"
+    );
   } catch (error) {
-    errorLog("MuuriAccountTestView", "Fehler bei Kontogruppen-Grid-Initialisierung", error);
+    errorLog(
+      "MuuriAccountTestView",
+      "Fehler bei Kontogruppen-Grid-Initialisierung",
+      error
+    );
   }
 };
 
@@ -109,18 +116,37 @@ const handleGroupDragEnd = async (item: any) => {
         }
       });
 
-      debugLog("MuuriAccountTestView", "Neue Kontogruppen-Reihenfolge", sortedGroupIds);
+      debugLog(
+        "MuuriAccountTestView",
+        "Neue Kontogruppen-Reihenfolge",
+        sortedGroupIds
+      );
 
-      const sortOrderUpdates = AccountService.calculateAccountGroupSortOrder(sortedGroupIds);
-      const success = await AccountService.updateAccountGroupsWithSortOrder(sortOrderUpdates);
+      // Erzeuge Sortier-Updates aus der neuen Reihenfolge und speichere sie
+      const sortOrderUpdates = sortedGroupIds.map((id, index) => ({
+        id,
+        sortOrder: index,
+      }));
+      await AccountService.updateAccountGroupOrder(sortOrderUpdates);
+      const success = true;
 
       if (success) {
-        infoLog("MuuriAccountTestView", "Kontogruppen-Sortierung erfolgreich aktualisiert");
+        infoLog(
+          "MuuriAccountTestView",
+          "Kontogruppen-Sortierung erfolgreich aktualisiert"
+        );
       } else {
-        errorLog("MuuriAccountTestView", "Fehler beim Aktualisieren der Kontogruppen-Sortierung");
+        errorLog(
+          "MuuriAccountTestView",
+          "Fehler beim Aktualisieren der Kontogruppen-Sortierung"
+        );
       }
     } catch (error) {
-      errorLog("MuuriAccountTestView", "Fehler beim Aktualisieren der Kontogruppen-Sortierung", error);
+      errorLog(
+        "MuuriAccountTestView",
+        "Fehler beim Aktualisieren der Kontogruppen-Sortierung",
+        error
+      );
     }
   }, SORT_ORDER_DEBOUNCE_DELAY);
 };
@@ -166,8 +192,13 @@ const startReconcile = (account: any) => {
         class="account-group-wrapper"
       >
         <!-- Drag Handle für Kontogruppen -->
-        <div class="group-drag-handle flex items-center justify-center w-full h-6 cursor-grab active:cursor-grabbing text-base-content/40 hover:text-base-content/60 transition-colors mb-2">
-          <Icon icon="mdi:drag-horizontal" class="text-lg" />
+        <div
+          class="group-drag-handle flex items-center justify-center w-full h-6 cursor-grab active:cursor-grabbing text-base-content/40 hover:text-base-content/60 transition-colors mb-2"
+        >
+          <Icon
+            icon="mdi:drag-horizontal"
+            class="text-lg"
+          />
           <span class="text-xs ml-2">Gruppe verschieben</span>
         </div>
 
@@ -187,10 +218,11 @@ const startReconcile = (account: any) => {
       <h3 class="text-lg font-semibold mb-2">Debug Info</h3>
       <div class="text-sm space-y-1">
         <div>Anzahl Kontogruppen: {{ accountGroups.length }}</div>
-        <div>Kontogruppen-Grid aktiv: {{ groupsGrid ? 'Ja' : 'Nein' }}</div>
+        <div>Kontogruppen-Grid aktiv: {{ groupsGrid ? "Ja" : "Nein" }}</div>
         <div>AccountGroupCard Refs: {{ accountGroupCardRefs.length }}</div>
         <div class="text-xs text-base-content/60 mt-2">
-          Kontogruppen haben eigenes Grid + AccountGroupCards verwalten Account-Drag
+          Kontogruppen haben eigenes Grid + AccountGroupCards verwalten
+          Account-Drag
         </div>
       </div>
     </div>

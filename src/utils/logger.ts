@@ -53,34 +53,40 @@ export const LogConfig = reactive({
 /**
  * Haupt-Logging-Funktion
  */
-export function log(level: LogLevel, category: string, message: string, ...args: any[]) {
+export function log(level: LogLevel, category: string, message?: any, ...args: any[]) {
     const settingsStore = useSettingsStore();
     const cleanCategory = category.replace(/\[|\]/g, '');
+    const msgStr =
+      typeof message === 'string'
+        ? message
+        : message == null
+          ? ''
+          : safeToString(message);
 
-    if (level >= settingsStore.logLevel ) { //settingsStore.enabledLogCategories.has(cleanCategory)
+    if (level >= settingsStore.logLevel ) {
         const levelPrefix = LogLevel[level].toString().padEnd(5);
-        console.log(`[${levelPrefix}][${cleanCategory}] ${message}`, ...args);
+        console.log(`[${levelPrefix}][${cleanCategory}] ${msgStr}`, ...args);
     }
 
     // History-Log immer unabhängig vom Level
-    if (shouldAddToHistory(message, args)) {
-        addToHistory(level, cleanCategory, message, args);
+    if (shouldAddToHistory(msgStr, args)) {
+        addToHistory(level, cleanCategory, msgStr, args);
     }
 }
 
 /**
  * Shortcuts für verschiedene Log-Typen
  */
-export const debugLog = (category: string, message: string, ...args: any[]) =>
+export const debugLog = (category: string, message?: any, ...args: any[]) =>
     log(LogLevel.DEBUG, category, message, ...args);
 
-export const infoLog = (category: string, message: string, ...args: any[]) =>
+export const infoLog = (category: string, message?: any, ...args: any[]) =>
     log(LogLevel.INFO, category, message, ...args);
 
-export const warnLog = (category: string, message: string, ...args: any[]) =>
+export const warnLog = (category: string, message?: any, ...args: any[]) =>
     log(LogLevel.WARN, category, message, ...args);
 
-export const errorLog = (category: string, message: string, ...args: any[]) =>
+export const errorLog = (category: string, message?: any, ...args: any[]) =>
     log(LogLevel.ERROR, category, message, ...args);
 
 /**
@@ -180,11 +186,18 @@ function extractDetails(data: any): any {
 /**
  * Fügt einen neuen Eintrag zur History hinzu
  */
-export function addToHistory(level: LogLevel, category: string, message: string, args: any[]) {
+export function addToHistory(level: LogLevel, category: string, message: any, args: any[]) {
+    const msgStr =
+      typeof message === 'string'
+        ? message
+        : message == null
+          ? ''
+          : safeToString(message);
+
     const entry: HistoryEntry = {
         timestamp: Date.now(),
         category,
-        message,
+        message: msgStr,
         details: args.length > 0 ? extractDetails(args[0]) : {}
     };
 
@@ -254,6 +267,23 @@ export function formatHistoryDetails(details: any): string {
     }
 
     return parts.join(' | ');
+}
+
+/**
+ * Sichere String-Konvertierung für beliebige Objekte
+ */
+function safeToString(val: any): string {
+    try {
+        if (typeof val === 'string') return val;
+        if (val instanceof Error) return val.stack || val.message || String(val);
+        return JSON.stringify(val);
+    } catch {
+        try {
+            return String(val);
+        } catch {
+            return '[Unserializable]';
+        }
+    }
 }
 
 /**

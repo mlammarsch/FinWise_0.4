@@ -21,7 +21,9 @@ import {
   RuleCondition,
   RuleAction,
   Transaction,
-} from "@/types";
+  TransactionType,
+  Tag,
+} from "../../types";
 import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import { useTagStore } from "@/stores/tagStore";
@@ -55,13 +57,24 @@ const planningStore = usePlanningStore();
 const transactionStore = useTransactionStore();
 const ruleStore = useRuleStore();
 
+// Lokaler Hilfstyp für UI-Erweiterung um 'source'
+type ConditionSource =
+  | "amount"
+  | "account"
+  | "category"
+  | "recipient"
+  | "date"
+  | "valueDate"
+  | "description";
+type CombinedCondition = RuleCondition & { source?: ConditionSource };
+
 const name = ref("");
 const description = ref("");
 const isActive = ref(true);
 const stage = ref<"PRE" | "DEFAULT" | "POST">("DEFAULT");
 const priority = ref(100);
 const conditionLogic = ref<"all" | "any">("all");
-const conditions = ref<RuleCondition[]>([]);
+const conditions = ref<CombinedCondition[]>([]);
 const actions = ref<RuleAction[]>([]);
 
 // Für Test-Ergebnisse
@@ -117,14 +130,14 @@ onMounted(() => {
   }
 
   // Kompatibilität für bestehende Bedingungen sicherstellen
-  conditions.value.forEach((condition) => {
+  conditions.value.forEach((condition: CombinedCondition) => {
     if (!condition.source) {
       switch (condition.type) {
         case RuleConditionType.ACCOUNT_IS:
           condition.source = "account";
           break;
-        case RuleConditionType.PAYEE_EQUALS:
-        case RuleConditionType.PAYEE_CONTAINS:
+        case RuleConditionType.RECIPIENT_EQUALS:
+        case RuleConditionType.RECIPIENT_CONTAINS:
           condition.source = "recipient";
           break;
         case RuleConditionType.AMOUNT_EQUALS:
@@ -157,7 +170,7 @@ const actionTypeOptions = [
 
 // Tags für Dropdown
 const tags = computed(() =>
-  tagStore.tags.map((t) => ({
+  tagStore.tags.map((t: Tag) => ({
     id: t.id,
     name: t.name,
     color: t.color,
@@ -175,12 +188,13 @@ const dynamicConditionText = computed(() => {
 });
 
 function addCondition() {
-  conditions.value.push({
-    type: RuleConditionType.PAYEE_CONTAINS,
+  const c: CombinedCondition = {
+    type: RuleConditionType.RECIPIENT_CONTAINS,
     operator: "contains",
     value: "",
     source: "recipient",
-  });
+  };
+  conditions.value.push(c);
 }
 
 function removeCondition(index: number) {
@@ -204,11 +218,19 @@ function removeAction(index: number) {
 }
 
 function saveRule() {
+  const normalizedConditions: RuleCondition[] = conditions.value.map(
+    (c: CombinedCondition) => ({
+      type: c.type,
+      operator: c.operator,
+      value: c.value,
+    })
+  );
+
   const ruleData: Omit<AutomationRule, "id"> = {
     name: name.value,
     description: description.value,
     stage: stage.value,
-    conditions: conditions.value,
+    conditions: normalizedConditions,
     actions: actions.value,
     priority: priority.value,
     isActive: isActive.value,
@@ -220,12 +242,20 @@ function saveRule() {
 }
 
 function applyRuleToExistingTransactions() {
+  const normalizedConditions: RuleCondition[] = conditions.value.map(
+    (c: CombinedCondition) => ({
+      type: c.type,
+      operator: c.operator,
+      value: c.value,
+    })
+  );
+
   const ruleData: AutomationRule = {
     id: props.rule?.id || uuidv4(),
     name: name.value,
     description: description.value,
     stage: stage.value,
-    conditions: conditions.value,
+    conditions: normalizedConditions,
     actions: actions.value,
     priority: priority.value,
     isActive: isActive.value,
@@ -239,12 +269,21 @@ function applyRuleToExistingTransactions() {
 
   // Virtuelle Regelprüfung - nur die letzten 250 EXPENSE/INCOME Transaktionen testen
   // Rules greifen nicht bei CATEGORYTRANSFER und ACCOUNTTRANSFER
-  const allTransactions = [...transactionStore.transactions]
-    .filter((tx) => tx.type === "EXPENSE" || tx.type === "INCOME")
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  const allTransactions = (
+    [...transactionStore.transactions] as unknown as Transaction[]
+  )
+    .filter(
+      (tx: Transaction) =>
+        tx.type === TransactionType.EXPENSE ||
+        tx.type === TransactionType.INCOME
+    )
+    .sort(
+      (a: Transaction, b: Transaction) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    )
     .slice(0, 250); // Begrenzt auf 250 Transaktionen
 
-  const matchingTransactions = [];
+  const matchingTransactions: Transaction[] = [];
 
   for (const transaction of allTransactions) {
     if (ruleStore.checkConditions(ruleData.conditions, transaction, ruleData)) {
@@ -277,11 +316,11 @@ async function handleCreateRecipient(recipientData: { name: string }) {
     // Suche die erste SET_RECIPIENT Aktion ohne Wert, oder falls alle einen Wert haben, die erste
     const currentAction =
       actions.value.find(
-        (action) =>
+        (action: RuleAction) =>
           action.type === RuleActionType.SET_RECIPIENT && !action.value
       ) ||
       actions.value.find(
-        (action) => action.type === RuleActionType.SET_RECIPIENT
+        (action: RuleAction) => action.type === RuleActionType.SET_RECIPIENT
       );
 
     if (currentAction && newRecipient) {
@@ -311,7 +350,7 @@ async function handleCreateTag(tagData: { name: string; color?: string }) {
     if (currentAction && newTag) {
       // Konvertiere den aktuellen Wert zu einem Array, füge den neuen Tag hinzu
       const currentTags = currentAction.value
-        ? currentAction.value.split(",")
+        ? String(currentAction.value).split(",")
         : [];
       if (!currentTags.includes(newTag.id)) {
         currentTags.push(newTag.id);
@@ -507,7 +546,7 @@ um später neue Regeln dazwischen einfügen zu können."
           :index="index"
           :can-remove="conditions.length > 1"
           @update:condition="
-            (updatedCondition: RuleCondition) => (conditions[index] = updatedCondition)
+            (updatedCondition) => { conditions[index] = updatedCondition as any; }
           "
           @remove="removeCondition(index)"
         />
@@ -563,7 +602,9 @@ um später neue Regeln dazwischen einfügen zu können."
               <TagSearchableDropdown
                 v-if="action.type === RuleActionType.ADD_TAG"
                 :model-value="
-                  action.value ? action.value.split(',').filter(Boolean) : []
+                  String(action.value ?? '')
+                    .split(',')
+                    .filter(Boolean)
                 "
                 @update:model-value="(val: string[]) => action.value = val.join(',')"
                 :options="tags"
@@ -574,21 +615,24 @@ um später neue Regeln dazwischen einfügen zu können."
               <!-- Kategorie-Auswahl -->
               <SelectCategory
                 v-else-if="action.type === RuleActionType.SET_CATEGORY"
-                v-model="action.value"
+                :model-value="String(action.value ?? '')"
+                @update:model-value="(v: string) => (action.value = v)"
                 class="w-full"
               />
 
               <!-- Konto-Auswahl -->
               <SelectAccount
                 v-else-if="action.type === RuleActionType.SET_ACCOUNT"
-                v-model="action.value"
+                :model-value="String(action.value ?? '')"
+                @update:model-value="(v: string) => (action.value = v)"
                 class="w-full"
               />
 
               <!-- Empfänger-Auswahl -->
               <SelectRecipient
                 v-else-if="action.type === RuleActionType.SET_RECIPIENT"
-                v-model="action.value"
+                :model-value="String(action.value ?? '')"
+                @update:model-value="(v: string) => (action.value = v)"
                 class="w-full"
                 @create="handleCreateRecipient"
               />
@@ -596,7 +640,8 @@ um später neue Regeln dazwischen einfügen zu können."
               <!-- Planungsauswahl -->
               <select
                 v-else-if="action.type === RuleActionType.LINK_SCHEDULE"
-                v-model="action.value"
+                :value="String(action.value ?? '')"
+                @change="(e: Event) => (action.value = String((e.target as HTMLSelectElement).value))"
                 class="select select-bordered w-full"
               >
                 <option
@@ -618,7 +663,8 @@ um später neue Regeln dazwischen einfügen zu können."
               <input
                 v-else
                 type="text"
-                v-model="action.value"
+                :value="String(action.value ?? '')"
+                @input="(e: Event) => (action.value = String((e.target as HTMLInputElement).value))"
                 class="input input-bordered w-full"
                 placeholder="Wert eingeben"
               />
@@ -757,7 +803,10 @@ um später neue Regeln dazwischen einfügen zu können."
                 <td>{{ tx.payee || "-" }}</td>
                 <td>
                   {{
-                    categoryStore.getCategoryById(tx.categoryId)?.name || "-"
+                    tx.categoryId
+                      ? categoryStore.getCategoryById(tx.categoryId)?.name ||
+                        "-"
+                      : "-"
                   }}
                 </td>
                 <td><CurrencyDisplay :amount="tx.amount" /></td>

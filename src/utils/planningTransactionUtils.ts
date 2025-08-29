@@ -7,7 +7,7 @@ import {
   WeekendHandlingType,
   RuleConditionType,
   RuleActionType
-} from '@/types';
+} from '../types';
 import { debugLog } from '@/utils/logger';
 
 /**
@@ -136,7 +136,7 @@ export function getInitialRuleValues(params: {
         value: accountId,
       },
       {
-        type: RuleConditionType.PAYEE_CONTAINS,
+        type: RuleConditionType.RECIPIENT_CONTAINS,
         operator: "contains",
         value: recipientName,
       },

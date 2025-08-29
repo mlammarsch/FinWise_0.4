@@ -59,12 +59,14 @@ const transactionTags = ref<{ [key: number]: string[] }>({});
 
 // Duplikat-Management
 const showDuplicateModal = ref<boolean>(false);
-const potentialDuplicates = ref<Array<{
-  csvRow: any;
-  existingTransaction: any;
-  duplicateType: 'exact' | 'similar' | 'account_transfer';
-  confidence: number;
-}>>([]);
+const potentialDuplicates = ref<
+  Array<{
+    csvRow: any;
+    existingTransaction: any;
+    duplicateType: "exact" | "similar" | "account_transfer";
+    confidence: number;
+  }>
+>([]);
 const ignoredDuplicateIndexes = ref<Set<number>>(new Set());
 
 // Berechnete Eigenschaften
@@ -123,8 +125,10 @@ function handleFileUpload(event: Event) {
  */
 function openDuplicateModal() {
   // Temporäre Lösung: Prüfe ob die Funktion verfügbar ist
-  if (typeof csvImportService.findPotentialDuplicates === 'function') {
-    potentialDuplicates.value = csvImportService.findPotentialDuplicates(props.accountId);
+  if (typeof csvImportService.findPotentialDuplicates === "function") {
+    potentialDuplicates.value = csvImportService.findPotentialDuplicates(
+      props.accountId
+    );
   } else {
     // Fallback: Erstelle eine einfache Duplikatsprüfung
     potentialDuplicates.value = findPotentialDuplicatesLocal();
@@ -139,7 +143,7 @@ function findPotentialDuplicatesLocal() {
   const duplicates: Array<{
     csvRow: any;
     existingTransaction: any;
-    duplicateType: 'exact' | 'similar' | 'account_transfer';
+    duplicateType: "exact" | "similar" | "account_transfer";
     confidence: number;
   }> = [];
 
@@ -149,14 +153,18 @@ function findPotentialDuplicatesLocal() {
 
     if (!row._selected) continue;
 
-    const date = csvImportService.parseDate(row[csvImportService.mappedColumns.date]);
+    const date = csvImportService.parseDate(
+      row[csvImportService.mappedColumns.date]
+    );
     const amount = parseAmount(row[csvImportService.mappedColumns.amount]);
 
     if (!date || amount === null) continue;
 
     // Suche nach ähnlichen Transaktionen (vereinfacht)
     // Diese Implementierung kann später entfernt werden, wenn der Service-Cache aktualisiert wird
-    console.log('Fallback-Duplikatsprüfung wird verwendet - Service-Cache muss aktualisiert werden');
+    console.log(
+      "Fallback-Duplikatsprüfung wird verwendet - Service-Cache muss aktualisiert werden"
+    );
   }
 
   return duplicates;
@@ -174,26 +182,33 @@ function closeDuplicateModal() {
  */
 function handleIgnoreDuplicates(duplicateIndexes: number[]) {
   // Füge die Indizes zu den ignorierten Duplikaten hinzu
-  duplicateIndexes.forEach(index => {
+  duplicateIndexes.forEach((index) => {
     ignoredDuplicateIndexes.value.add(index);
   });
 
   // Markiere entsprechende CSV-Zeilen als ignoriert
-  duplicateIndexes.forEach(index => {
+  duplicateIndexes.forEach((index) => {
     const duplicate = potentialDuplicates.value[index];
     if (duplicate && duplicate.csvRow._originalIndex !== undefined) {
       const csvRowIndex = duplicate.csvRow._originalIndex;
-      if (csvRowIndex >= 0 && csvRowIndex < csvImportService.allParsedData.length) {
+      if (
+        csvRowIndex >= 0 &&
+        csvRowIndex < csvImportService.allParsedData.length
+      ) {
         csvImportService.allParsedData[csvRowIndex]._selected = false;
         csvImportService.allParsedData[csvRowIndex]._ignoredDuplicate = true;
       }
     }
   });
 
-  debugLog("TransactionImportModal", `${duplicateIndexes.length} Duplikate ignoriert`, {
-    ignoredIndexes: duplicateIndexes,
-    totalIgnored: ignoredDuplicateIndexes.value.size
-  });
+  debugLog(
+    "TransactionImportModal",
+    `${duplicateIndexes.length} Duplikate ignoriert`,
+    {
+      ignoredIndexes: duplicateIndexes,
+      totalIgnored: ignoredDuplicateIndexes.value.size,
+    }
+  );
 }
 
 /**
@@ -270,14 +285,26 @@ function createRecipient(data: { name: string }) {
  * Erstellt eine neue Kategorie
  */
 function createCategory(data: { name: string }) {
+  // Erforderliche Felder gemäß Category-Typ auffüllen
   const newCategory = categoryStore.addCategory({
-    ...data,
-    color:
-      "#" +
-      Math.floor(Math.random() * 16777215)
-        .toString(16)
-        .padStart(6, "0"),
+    name: data.name,
+    icon: undefined,
+    budgeted: 0,
+    activity: 0,
+    available: 0,
     isIncomeCategory: false,
+    isHidden: false,
+    isActive: true,
+    sortOrder: 0,
+    categoryGroupId: undefined,
+    parentCategoryId: undefined,
+    isSavingsGoal: false,
+    goalDate: undefined,
+    targetAmount: undefined,
+    priority: undefined,
+    proportion: undefined,
+    monthlyAmount: undefined,
+    note: undefined,
   });
   debugLog(
     "TransactionImportModal",
@@ -330,7 +357,11 @@ async function startImport() {
     });
 
     // Starte den Import
-    debugLog("TransactionImportModal", "Starte Import mit folgenden Daten:", csvImportService.allParsedData.filter((row: any) => row._selected));
+    debugLog(
+      "TransactionImportModal",
+      "Starte Import mit folgenden Daten:",
+      csvImportService.allParsedData.filter((row: any) => row._selected)
+    );
     const importedCount = await csvImportService.startImport(props.accountId);
     emit("imported", importedCount);
   } catch (error) {
@@ -881,11 +912,20 @@ watch(
                 class="btn btn-xs btn-warning btn-outline"
                 @click="openDuplicateModal"
               >
-                <Icon icon="mdi:eye" class="w-3 h-3" />
+                <Icon
+                  icon="mdi:eye"
+                  class="w-3 h-3"
+                />
                 Überprüfen Sie diese Einträge
               </button>
-              <span v-else class="text-success">
-                <Icon icon="mdi:check" class="w-3 h-3" />
+              <span
+                v-else
+                class="text-success"
+              >
+                <Icon
+                  icon="mdi:check"
+                  class="w-3 h-3"
+                />
                 Keine Duplikate gefunden
               </span>
             </div>

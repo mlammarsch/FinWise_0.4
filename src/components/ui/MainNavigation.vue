@@ -13,7 +13,6 @@ import { useStatisticsStore } from "../../stores/statisticsStore";
 import { useThemeStore } from "../../stores/themeStore";
 import { useUserStore } from "../../stores/userStore";
 import { useSessionStore } from "../../stores/sessionStore";
-import { seedData, clearData } from "../../mock/seed_kaputt";
 
 const emit = defineEmits(["closeMenu"]);
 
@@ -95,33 +94,50 @@ function handleItemClick() {
   emit("closeMenu");
 }
 
-function clearAndReseedData() {
-  if (confirm("Möchtest Du wirklich alle Daten löschen und neu laden?")) {
-    const sessionStore = useSessionStore();
+async function clearAndReseedData() {
+  if (!confirm("Möchtest Du wirklich alle Daten löschen und neu laden?"))
+    return;
 
-    const stores = [
-      useAccountStore(),
-      useCategoryStore(),
-      useRecipientStore(),
-      useTagStore(),
-      useTransactionStore(),
-      usePlanningStore(),
-      useRuleStore(),
-      useStatisticsStore(),
-      useThemeStore(),
-    ];
-    stores.forEach((store) => {
-      if (typeof store.reset === "function") store.reset();
-    });
-    clearData();
+  const sessionStore = useSessionStore();
 
-    // Get current user and tenant IDs
-    const userId = sessionStore.currentUser?.id || 'demo-user';
-    const tenantId = sessionStore.currentTenantId || 'demo-tenant';
+  const stores = [
+    useAccountStore(),
+    useCategoryStore(),
+    useRecipientStore(),
+    useTagStore(),
+    useTransactionStore(),
+    usePlanningStore(),
+    useRuleStore(),
+    useStatisticsStore(),
+    useThemeStore(),
+  ];
+  stores.forEach((store) => {
+    if (typeof (store as any).reset === "function") (store as any).reset();
+  });
 
-    seedData(userId, tenantId);
-    router.push("/");
+  // Dev-only dynamic import to avoid tsconfig include issues
+  try {
+    const isDev = (import.meta as any)?.env?.DEV === true;
+    if (isDev) {
+      // Use variable + vite-ignore to avoid static inclusion in TS project graph
+      const mockPath = "../../mock/seed_kaputt";
+      // @ts-ignore - path is dev-only and excluded from tsconfig
+      const mod = await import(/* @vite-ignore */ mockPath as string);
+      if (typeof (mod as any).clearData === "function")
+        (mod as any).clearData();
+
+      const userId = sessionStore.currentUser?.id || "demo-user";
+      const tenantId = sessionStore.currentTenantId || "demo-tenant";
+
+      if (typeof (mod as any).seedData === "function") {
+        await (mod as any).seedData(userId, tenantId);
+      }
+    }
+  } catch {
+    // ignore in production build if mock not present
   }
+
+  router.push("/");
 }
 </script>
 

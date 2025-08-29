@@ -367,6 +367,14 @@ export const BalanceService = {
   },
 
   /**
+   * Backward-Compat Wrapper: viele Stellen rufen noch calculateMonthlyBalances() auf.
+   * Delegiert auf calculateAllMonthlyBalances().
+   */
+  async calculateMonthlyBalances(): Promise<void> {
+    await this.calculateAllMonthlyBalances();
+  },
+
+  /**
    * Stößt die Neuberechnung der Monatsbilanzen über die Queue an.
    */
   triggerMonthlyBalanceUpdate(updates: { accountIds?: string[]; categoryIds?: string[]; fromDate: string }): void {
@@ -915,14 +923,6 @@ export const BalanceService = {
       }, 0);
   },
 
-  /**
-   * Invalidiert den Cache für den aktuellen Monat
-   * Wird verwendet, um sicherzustellen, dass aktuelle Daten angezeigt werden
-   */
-  invalidateCurrentMonthCache(): void {
-    transactionCache.invalidateCurrentMonth();
-    debugLog('BalanceService', 'Cache für aktuellen Monat invalidiert');
-  },
 
   /**
    * Berechnet den Saldo einer Kategorie mit ihren Kindern

@@ -1758,9 +1758,9 @@ export const useRecipientStore = defineStore('recipient', () => {
       // Validierung durch alle Services mit Enhanced Error-Handling
       debugLog('recipientStore', 'Starte umfassende Enhanced Validierung für alle Recipients');
 
-      let transactionValidation: any[] = [];
-      let planningValidation: any[] = [];
-      let ruleValidation: any[] = [];
+      let transactionValidation: any = null;
+      let planningValidation: any = null;
+      let ruleValidation: any = null;
 
       try {
         // Import der Services dynamisch, um zirkuläre Abhängigkeiten zu vermeiden
@@ -1779,9 +1779,9 @@ export const useRecipientStore = defineStore('recipient', () => {
 
         debugLog('recipientStore', 'Enhanced Validierungsergebnisse erhalten', {
           operationId,
-          transactionResults: transactionValidation.length,
-          planningResults: planningValidation.length,
-          ruleResults: ruleValidation.length
+          transactionResults: Array.isArray(transactionValidation) ? transactionValidation.length : 0,
+          planningResults: Array.isArray(planningValidation) ? planningValidation.length : 0,
+          ruleResults: Array.isArray(ruleValidation) ? ruleValidation.length : 0
         });
 
       } catch (validationError) {

@@ -103,7 +103,10 @@ const chartData = computed(() => {
     labels: monthlyTrend.map((item) => item.month.split(" ")[0]), // Nur Monat ohne Jahr
     incomeData: monthlyTrend.map((item) => Math.round(item.income)),
     expenseData: monthlyTrend.map((item) => Math.round(item.expense)),
-    balanceData: monthlyTrend.map((item) => Math.round(item.balance)),
+    // Balance nicht vorhanden: aus income - expense ableiten
+    balanceData: monthlyTrend.map((item) =>
+      Math.round(item.income - item.expense)
+    ),
     hasData: monthlyTrend.length > 0,
   };
 });

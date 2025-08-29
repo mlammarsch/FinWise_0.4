@@ -102,7 +102,11 @@ watch(
         props.account
       );
       reconciliationService.startReconciliation(props.account);
-      nextTick(() => dateInputRef.value?.focusInput());
+      nextTick(() => {
+        const comp = dateInputRef.value as any;
+        if (comp?.focus) comp.focus();
+        else if (comp?.focusInput) comp.focusInput();
+      });
     }
   }
 );
@@ -143,14 +147,9 @@ async function performReconciliation() {
 }
 
 function closeModal() {
-  // Nur cancelReconciliation aufrufen, wenn nicht bereits ein erfolgreicher Abgleich stattgefunden hat
-  // und der Store zurückgesetzt wurde. Der Reset im Store ist ausreichend.
-  if (!isProcessing.value && !emit.reconciled) {
-    // emit.reconciled ist keine Standard-Vue-Funktion, hier Annahme, dass es ein Flag sein könnte
-    // Besser: Prüfen, ob ein Abgleich erfolgreich war, bevor man cancelt.
-    // Da wir aber reset() nach Erfolg aufrufen, ist cancelReconciliation() hier evtl. redundant oder setzt zu viel zurück.
-    // Fürs Erste belassen wir es, aber es könnte eine Vereinfachung geben.
-    reconciliationService.cancelReconciliation(); // Dies ruft store.reset() auf
+  // Abbrechen nur, wenn keine Verarbeitung läuft
+  if (!isProcessing.value) {
+    reconciliationService.cancelReconciliation(); // ruft intern store.reset() auf
   }
   emit("close");
 }

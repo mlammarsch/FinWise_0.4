@@ -1,0 +1,169 @@
+// src/services/SessionService.ts
+/**
+ * SessionService – stellt Router-Guards & Initial-Bootstrapping bereit.
+ */
+import { useSessionStore } from '@/stores/sessionStore';
+import { TenantService } from './TenantService';
+import { useSettingsStore } from '@/stores/settingsStore';
+import { useAccountStore } from '@/stores/accountStore';
+import { ImageService } from './ImageService';
+import { infoLog, debugLog, errorLog } from '@/utils/logger';
+export const SessionService = {
+    /**
+     * Richtet die globalen Router Guards ein.
+     */
+    setupGuards(router) {
+        router.beforeEach(async (to, _from, next) => {
+            const session = useSessionStore();
+            debugLog('SessionService', 'setupGuards: Start', { currentUserId: session.currentUserId, currentTenantId: session.currentTenantId });
+            if (!session.currentUserId) {
+                debugLog('SessionService', 'setupGuards: currentUserId nicht vorhanden, lade Session...');
+                await session.loadSession();
+                debugLog('SessionService', 'setupGuards: Session geladen', { currentUserId: session.currentUserId, currentTenantId: session.currentTenantId });
+            }
+            else {
+                debugLog('SessionService', 'setupGuards: currentUserId vorhanden, initialisiere Benutzereinstellungen...');
+            }
+            // Initialisiere Settings für angemeldeten Benutzer (nach dem Laden der Session)
+            if (session.currentUserId) {
+                debugLog('SessionService', 'setupGuards: Initialisiere Benutzereinstellungen nach Session-Laden...');
+                await this.initializeUserSettings();
+            }
+            const isAuthRoute = ['/login', '/register'].includes(to.path);
+            const isTenantRoute = to.path === '/tenant-select';
+            if (!session.currentUserId) {
+                if (isAuthRoute)
+                    return next();
+                debugLog('SessionService', 'redirect → /login', { target: to.path });
+                return next({ path: '/login' });
+            }
+            if (!session.currentTenantId) {
+                debugLog('SessionService', 'setupGuards: currentTenantId nicht vorhanden, prüfe Tenant-Auswahl...');
+                const ok = TenantService.ensureTenantSelected();
+                if (!ok) {
+                    if (!isTenantRoute) {
+                        debugLog('SessionService', 'redirect → /tenant-select', { target: to.path });
+                        return next({ path: '/tenant-select' });
+                    }
+                }
+                else {
+                    debugLog('SessionService', 'setupGuards: Tenant ausgewählt, aber currentTenantId noch nicht gesetzt. Dies sollte nicht passieren.');
+                }
+            }
+            if (isAuthRoute) {
+                if (session.currentTenantId) {
+                    debugLog('SessionService', 'redirect (Auth) → /');
+                    return next({ path: '/' });
+                }
+                debugLog('SessionService', 'redirect (Auth) → /tenant-select');
+                return next({ path: '/tenant-select' });
+            }
+            if (isTenantRoute && session.currentTenantId) {
+                debugLog('SessionService', 'redirect (Tenant chosen) → /');
+                return next({ path: '/' });
+            }
+            return next();
+        });
+        setTimeout(() => {
+            infoLog('SessionService', 'Router-Guards aktiviert');
+        }, 0);
+    },
+    logoutAndRedirect(router) {
+        useSessionStore().logout();
+        router.push('/login');
+    },
+    /**
+     * Vollständiger Logout mit IndexedDB-Bereinigung und Redirect
+     * Wird bei Mandanten-Löschung verwendet
+     */
+    async logoutWithCleanupAndRedirect(router) {
+        try {
+            const sessionStore = useSessionStore();
+            // Logout durchführen
+            sessionStore.logout();
+            // Redirect zu Login
+            router.push('/login');
+            infoLog('SessionService', 'Vollständiger Logout mit Cleanup durchgeführt.');
+        }
+        catch (error) {
+            errorLog('SessionService', 'Fehler beim Logout mit Cleanup', { error });
+            // Fallback: Normaler Logout
+            this.logoutAndRedirect(router);
+        }
+    },
+    /**
+     * Initialisiert Settings für den angemeldeten Benutzer
+     * Lädt auch Logo-Cache wenn ein Mandant aktiv ist
+     */
+    async initializeUserSettings() {
+        try {
+            debugLog('SessionService', 'initializeUserSettings: Start');
+            const settingsStore = useSettingsStore();
+            await settingsStore.initializeForUser();
+            debugLog('SessionService', 'initializeUserSettings: Settings für Benutzer initialisiert');
+            // Logo-Cache laden wenn Mandant bereits ausgewählt ist
+            // WICHTIG: Warten bis accountStore.reset() abgeschlossen ist
+            const sessionStore = useSessionStore();
+            debugLog('SessionService', 'initializeUserSettings: Prüfe auf currentTenantId für Logo-Preloading', { currentTenantId: sessionStore.currentTenantId });
+            if (sessionStore.currentTenantId) {
+                // Warte kurz, damit DataService.reloadTenantData() die Stores laden kann
+                debugLog('SessionService', 'initializeUserSettings: Warte 100ms für DataService.reloadTenantData()...');
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await this.preloadLogosForTenant();
+            }
+            debugLog('SessionService', 'initializeUserSettings: Ende');
+        }
+        catch (error) {
+            errorLog('SessionService', 'Fehler beim Initialisieren der Settings', error);
+            debugLog('SessionService', 'initializeUserSettings: Fehlerende');
+            // Graceful degradation - App funktioniert weiter mit Default-Settings
+        }
+    },
+    /**
+     * Sammelt alle logoPath-Pfade und lädt die Bilder vom Backend in den logoCache
+     * Wird beim Login und Mandantenwechsel aufgerufen
+     */
+    async preloadLogosForTenant() {
+        try {
+            debugLog('SessionService', 'Starte Logo-Preloading für aktuellen Mandanten');
+            const accountStore = useAccountStore();
+            const logoPaths = new Set();
+            // Sammle alle logo_path-Pfade von Accounts
+            for (const account of accountStore.accounts) {
+                if (account.logo_path) {
+                    logoPaths.add(account.logo_path);
+                }
+            }
+            // Sammle alle logo_path-Pfade von AccountGroups
+            for (const accountGroup of accountStore.accountGroups) {
+                if (accountGroup.logo_path) {
+                    logoPaths.add(accountGroup.logo_path);
+                }
+            }
+            debugLog('SessionService', `Gefundene Logo-Pfade für Preloading: ${logoPaths.size}`, {
+                logoPaths: Array.from(logoPaths)
+            });
+            // Lade alle Logos parallel und cache sie
+            const logoPromises = Array.from(logoPaths).map(async (logoPath) => {
+                try {
+                    const cachedLogo = await ImageService.fetchAndCacheLogo(logoPath);
+                    if (cachedLogo) {
+                        debugLog('SessionService', `Logo erfolgreich gecacht: ${logoPath}`);
+                    }
+                    else {
+                        debugLog('SessionService', `Logo konnte nicht gecacht werden: ${logoPath}`);
+                    }
+                }
+                catch (error) {
+                    errorLog('SessionService', `Fehler beim Cachen des Logos: ${logoPath}`, error);
+                }
+            });
+            await Promise.allSettled(logoPromises);
+            infoLog('SessionService', `Logo-Preloading abgeschlossen. ${logoPaths.size} Logos verarbeitet.`);
+        }
+        catch (error) {
+            errorLog('SessionService', 'Fehler beim Logo-Preloading', error);
+            // Graceful degradation - App funktioniert weiter ohne Logo-Cache
+        }
+    },
+};

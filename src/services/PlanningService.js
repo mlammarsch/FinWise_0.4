@@ -1,0 +1,963 @@
+import { usePlanningStore } from "@/stores/planningStore";
+import { RecurrencePattern, TransactionType, WeekendHandlingType, RecurrenceEndType, } from "@/types";
+import dayjs from "dayjs";
+import { debugLog, infoLog, warnLog, errorLog } from "@/utils/logger";
+import { TransactionService } from "@/services/TransactionService";
+import { useRuleStore } from "@/stores/ruleStore";
+import { toDateOnlyString } from "@/utils/formatters";
+import { BalanceService } from "./BalanceService";
+import { useAccountStore } from "@/stores/accountStore";
+import { useCategoryStore } from "@/stores/categoryStore";
+import { useRecipientStore } from "@/stores/recipientStore";
+/**
+ * Erstellt eine Gegenbuchung für eine Transfer-Planungstransaktion
+ */
+function createCounterPlanning(planning) {
+    if (planning.transactionType !== TransactionType.ACCOUNTTRANSFER &&
+        planning.transactionType !== TransactionType.CATEGORYTRANSFER) {
+        throw new Error("Nur für Transfers möglich");
+    }
+    const counterPlanning = {
+        transactionType: planning.transactionType,
+        name: `${planning.name} (Gegenbuchung)`,
+        note: planning.note,
+        startDate: planning.startDate,
+        valueDate: planning.valueDate,
+        endDate: planning.endDate,
+        recurrencePattern: planning.recurrencePattern,
+        recurrenceEndType: planning.recurrenceEndType,
+        recurrenceCount: planning.recurrenceCount,
+        executionDay: planning.executionDay,
+        weekendHandling: planning.weekendHandling,
+        isActive: planning.isActive,
+        forecastOnly: planning.forecastOnly,
+        amountType: planning.amountType,
+        approximateAmount: planning.approximateAmount,
+        minAmount: planning.minAmount,
+        maxAmount: planning.maxAmount,
+        tagIds: planning.tagIds || [],
+        counterPlanningTransactionId: planning.id,
+        amount: -planning.amount,
+    };
+    if (planning.transactionType === TransactionType.ACCOUNTTRANSFER) {
+        counterPlanning.accountId = planning.transferToAccountId || "";
+        counterPlanning.transferToAccountId = planning.accountId;
+        counterPlanning.categoryId = undefined;
+        counterPlanning.transferToCategoryId = undefined;
+        counterPlanning.recipientId = undefined;
+    }
+    else if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
+        counterPlanning.categoryId = planning.transferToCategoryId;
+        counterPlanning.transferToCategoryId = planning.categoryId;
+        counterPlanning.accountId = undefined;
+        counterPlanning.transferToAccountId = undefined;
+        counterPlanning.recipientId = undefined;
+    }
+    return counterPlanning;
+}
+export const PlanningService = {
+    /**
+     * Fügt eine Planungstransaktion hinzu (CRUD).
+     */
+    async addPlanningTransaction(planning) {
+        const planningStore = usePlanningStore();
+        const accountStore = useAccountStore();
+        const categoryStore = useCategoryStore();
+        // Sicherstellen, dass Transaktionstyp korrekt gesetzt wird
+        if (planning.transferToCategoryId && !planning.transactionType) {
+            planning.transactionType = TransactionType.CATEGORYTRANSFER;
+        }
+        else if (planning.transferToAccountId && !planning.transactionType) {
+            planning.transactionType = TransactionType.ACCOUNTTRANSFER;
+        }
+        else if (planning.amount !== undefined && !planning.transactionType) {
+            planning.transactionType =
+                planning.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
+        }
+        // Bei Transfers den Betrag ggf. anpassen
+        if ((planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
+            planning.transactionType === TransactionType.CATEGORYTRANSFER) &&
+            planning.amount !== undefined) {
+            planning.amount = -Math.abs(planning.amount);
+        }
+        // Namen für Transfers automatisch setzen, falls nicht angegeben
+        if (planning.transactionType === TransactionType.ACCOUNTTRANSFER &&
+            planning.transferToAccountId &&
+            !planning.name) {
+            const toName = accountStore.getAccountById(planning.transferToAccountId)?.name || "";
+            planning.name = `Transfer zu ${toName}`;
+        }
+        else if (planning.transactionType === TransactionType.CATEGORYTRANSFER &&
+            planning.transferToCategoryId &&
+            !planning.name) {
+            const toName = categoryStore.getCategoryById(planning.transferToCategoryId)?.name || "";
+            planning.name = `Transfer zu ${toName}`;
+        }
+        debugLog("PlanningService", "addPlanningTransaction - Übergebene Daten:", {
+            name: planning.name,
+            transactionType: planning.transactionType,
+            transferToAccountId: planning.transferToAccountId,
+            transferToCategoryId: planning.transferToCategoryId,
+        });
+        // Hauptbuchung speichern
+        const newPlanning = await planningStore.addPlanningTransaction(planning);
+        debugLog("PlanningService", "addPlanningTransaction - Hauptbuchung erstellt:", newPlanning);
+        // Bei Transfers: Gegenbuchung
+        if ((planning.transactionType === TransactionType.ACCOUNTTRANSFER &&
+            planning.transferToAccountId) ||
+            (planning.transactionType === TransactionType.CATEGORYTRANSFER &&
+                planning.transferToCategoryId)) {
+            const counterPlanning = createCounterPlanning(newPlanning);
+            const counterTransaction = await planningStore.addPlanningTransaction(counterPlanning);
+            await planningStore.updatePlanningTransaction(newPlanning.id, {
+                counterPlanningTransactionId: counterTransaction.id,
+            });
+            debugLog("PlanningService", "addPlanningTransaction - Gegenbuchung erstellt:", {
+                id: counterTransaction.id,
+                name: counterTransaction.name,
+                amount: counterTransaction.amount,
+            });
+        }
+        BalanceService.calculateAllMonthlyBalances();
+        return newPlanning;
+    },
+    /**
+   * Berechnet zukünftige Ausführungstermine einer Planungstransaktion.
+   */
+    calculateNextOccurrences(planTx, startDate, endDate) {
+        if (!planTx.isActive)
+            return [];
+        const repeatsEnabled = planTx.recurrencePattern !== RecurrencePattern.ONCE;
+        const occurrences = [];
+        const start = dayjs(startDate);
+        const end = dayjs(endDate);
+        const txStart = dayjs(toDateOnlyString(planTx.startDate));
+        if (txStart.isAfter(end))
+            return [];
+        if (planTx.endDate && dayjs(toDateOnlyString(planTx.endDate)).isBefore(start))
+            return [];
+        let currentDate = txStart;
+        // Zähler beginnt bei 1, damit die erste Instanz bereits mitgezählt wird
+        let count = 1;
+        const maxIterations = 1000;
+        // Einmalige Buchung
+        if (!repeatsEnabled || planTx.recurrencePattern === RecurrencePattern.ONCE) {
+            let adjustedDate = PlanningService.applyWeekendHandling(currentDate, planTx.weekendHandling);
+            if (adjustedDate.isSameOrAfter(start) &&
+                adjustedDate.isSameOrBefore(end)) {
+                occurrences.push(toDateOnlyString(adjustedDate.toDate()));
+            }
+            return occurrences;
+        }
+        debugLog("PlanningService", "calculateNextOccurrences - Parameter", {
+            planId: planTx.id,
+            name: planTx.name,
+            recurrenceEndType: planTx.recurrenceEndType,
+            recurrenceCount: planTx.recurrenceCount,
+            startDate,
+            endDate
+        });
+        while (currentDate.isSameOrBefore(end) && count < maxIterations) {
+            let adjustedDate = PlanningService.applyWeekendHandling(currentDate, planTx.weekendHandling);
+            if (adjustedDate.isSameOrAfter(start) &&
+                adjustedDate.isSameOrBefore(end)) {
+                occurrences.push(toDateOnlyString(adjustedDate.toDate()));
+                debugLog("PlanningService", "calculateNextOccurrences - Occurrence added", {
+                    date: toDateOnlyString(adjustedDate.toDate()),
+                    currentCount: count,
+                    recurrenceEndType: planTx.recurrenceEndType,
+                    recurrenceCount: planTx.recurrenceCount
+                });
+            }
+            if (planTx.recurrenceEndType === RecurrenceEndType.NEVER) {
+                const maxEndDate = dayjs(start).add(24, "months");
+                if (adjustedDate.isAfter(maxEndDate))
+                    break;
+            }
+            // Geänderte Break-Bedingung: Wir brechen ab, wenn wir die gewünschte Anzahl erreicht haben
+            if (planTx.recurrenceEndType === RecurrenceEndType.COUNT &&
+                planTx.recurrenceCount !== null &&
+                planTx.recurrenceCount !== undefined &&
+                count >= planTx.recurrenceCount) {
+                debugLog("PlanningService", "calculateNextOccurrences - Breaking after count limit", {
+                    currentCount: count,
+                    maxCount: planTx.recurrenceCount
+                });
+                break;
+            }
+            count++;
+            switch (planTx.recurrencePattern) {
+                case RecurrencePattern.DAILY:
+                    currentDate = currentDate.add(1, "day");
+                    break;
+                case RecurrencePattern.WEEKLY:
+                    currentDate = currentDate.add(1, "week");
+                    break;
+                case RecurrencePattern.BIWEEKLY:
+                    currentDate = currentDate.add(2, "weeks");
+                    break;
+                case RecurrencePattern.MONTHLY:
+                    if (planTx.executionDay &&
+                        planTx.executionDay > 0 &&
+                        planTx.executionDay <= 31) {
+                        const nextMonth = currentDate.add(1, "month");
+                        const year = nextMonth.year();
+                        const month = nextMonth.month() + 1;
+                        const maxDay = new Date(year, month, 0).getDate();
+                        const day = Math.min(planTx.executionDay, maxDay);
+                        currentDate = dayjs(new Date(year, month - 1, day));
+                    }
+                    else {
+                        currentDate = currentDate.add(1, "month");
+                    }
+                    break;
+                case RecurrencePattern.QUARTERLY:
+                    currentDate = currentDate.add(3, "months");
+                    break;
+                case RecurrencePattern.YEARLY:
+                    currentDate = currentDate.add(1, "year");
+                    break;
+                default:
+                    return occurrences;
+            }
+            if (planTx.recurrenceEndType === RecurrenceEndType.DATE &&
+                planTx.endDate &&
+                currentDate.isAfter(dayjs(toDateOnlyString(planTx.endDate))))
+                break;
+        }
+        debugLog("PlanningService", "calculateNextOccurrences - Result", {
+            planId: planTx.id,
+            name: planTx.name,
+            totalOccurrences: occurrences.length,
+            dates: occurrences
+        });
+        return occurrences;
+    },
+    /**
+     * Verschiebt das Datum, falls es auf ein Wochenende fällt.
+     */
+    applyWeekendHandling(date, handling) {
+        const day = date.day();
+        if ((day !== 0 && day !== 6) || handling === WeekendHandlingType.NONE)
+            return date;
+        const isSaturday = day === 6;
+        switch (handling) {
+            case WeekendHandlingType.BEFORE:
+                return isSaturday ? date.subtract(1, 'day') : date.subtract(2, 'day');
+            case WeekendHandlingType.AFTER:
+                return isSaturday ? date.add(2, 'day') : date.add(1, 'day');
+            default:
+                return date;
+        }
+    },
+    /**
+     * Führt eine geplante Transaktion aus.
+     * Verarbeitet Haupttransaktionen und deren Gegenbuchungen zusammen.
+     * Löscht ONCE‑Planungen bzw. die letzte Wiederholung automatisch aus dem Store.
+     */
+    async executePlanningTransaction(planningId, executionDate) {
+        const planningStore = usePlanningStore();
+        const planning = planningStore.getPlanningTransactionById(planningId);
+        if (!planning) {
+            debugLog('PlanningService', 'executePlanningTransaction - Planning not found', { planningId });
+            return false;
+        }
+        // Prüfen, ob es sich um eine Transferbuchung handelt und ob die Gegenbuchung existiert
+        const isTransfer = planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
+            planning.transactionType === TransactionType.CATEGORYTRANSFER;
+        const counterPlanningId = planning.counterPlanningTransactionId;
+        const counterPlanning = counterPlanningId
+            ? planningStore.getPlanningTransactionById(counterPlanningId)
+            : null;
+        let transactionsCreated = false;
+        // Wenn kein Forecast-Only, dann echte Transaktion erstellen
+        if (!planning.forecastOnly) {
+            // --- Validierung ---
+            if (planning.amount === 0)
+                throw new Error("Betrag 0 ist nicht zulässig.");
+            if (planning.transactionType !== TransactionType.CATEGORYTRANSFER &&
+                !planning.accountId) {
+                throw new Error("Quellkonto fehlt.");
+            }
+            if (planning.transactionType !== TransactionType.ACCOUNTTRANSFER &&
+                planning.transactionType !== TransactionType.CATEGORYTRANSFER &&
+                !planning.categoryId) {
+                throw new Error("Kategorie muss gesetzt sein.");
+            }
+            // Je nach Transaktionstyp unterschiedliche Logik
+            if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
+                // Kategorietransfer ausführen
+                const fromCategoryId = planning.categoryId;
+                const toCategoryId = planning.transferToCategoryId;
+                if (!fromCategoryId || !toCategoryId) {
+                    throw new Error("Für Kategorietransfer werden Quell- und Zielkategorie benötigt");
+                }
+                debugLog('PlanningService', 'executePlanningTransaction - Führe Kategorietransfer aus', {
+                    fromCategoryId,
+                    toCategoryId,
+                    amount: Math.abs(planning.amount),
+                    date: executionDate
+                });
+                // Kategorietransfer über TransactionService ausführen
+                await TransactionService.addCategoryTransfer(fromCategoryId, toCategoryId, Math.abs(planning.amount), executionDate, planning.note || '', planning.recipientId || undefined // recipientId hinzufügen (null zu undefined konvertieren)
+                );
+                transactionsCreated = true;
+            }
+            else if (planning.transactionType === TransactionType.ACCOUNTTRANSFER) {
+                // Kontotransfer ausführen
+                const fromAccountId = planning.accountId;
+                const toAccountId = planning.transferToAccountId;
+                if (!fromAccountId || !toAccountId) {
+                    throw new Error("Für Kontotransfer werden Quell- und Zielkonto benötigt");
+                }
+                debugLog('PlanningService', 'executePlanningTransaction - Führe Kontotransfer aus', {
+                    fromAccountId,
+                    toAccountId,
+                    amount: Math.abs(planning.amount),
+                    date: executionDate
+                });
+                await TransactionService.addAccountTransfer(fromAccountId, toAccountId, Math.abs(planning.amount), executionDate, planning.valueDate || executionDate, planning.note || '', planning.id, planning.recipientId || undefined // recipientId hinzufügen (null zu undefined konvertieren)
+                );
+                transactionsCreated = true;
+            }
+            else {
+                // Standard Einnahme/Ausgabe
+                const txType = planning.amount < 0 ? TransactionType.EXPENSE : TransactionType.INCOME;
+                const recipientStore = useRecipientStore();
+                const payee = planning.recipientId ? recipientStore.getRecipientById(planning.recipientId)?.name || '' : '';
+                debugLog('PlanningService', 'executePlanningTransaction - Führe normale Transaktion aus', {
+                    type: txType,
+                    accountId: planning.accountId,
+                    categoryId: planning.categoryId,
+                    amount: planning.amount,
+                    date: executionDate,
+                    payee
+                });
+                await TransactionService.addTransaction({
+                    date: executionDate,
+                    valueDate: planning.valueDate || executionDate,
+                    amount: planning.amount,
+                    type: txType,
+                    description: planning.name || '',
+                    note: planning.note || '',
+                    accountId: planning.accountId,
+                    categoryId: planning.categoryId || undefined,
+                    tagIds: planning.tagIds || [],
+                    payee: payee,
+                    planningTransactionId: planning.id,
+                    recipientId: planning.recipientId || undefined, // recipientId hinzufügen (null zu undefined konvertieren)
+                });
+                transactionsCreated = true;
+            }
+            // Regeln anwenden
+            if (transactionsCreated) {
+                const ruleStore = useRuleStore();
+                const allTxs = await TransactionService.getAllTransactions();
+                const latestTx = allTxs.slice(-1)[0];
+                if (latestTx)
+                    await ruleStore.applyRulesToTransaction(latestTx);
+            }
+        }
+        // Prüfen, ob die Planung gelöscht oder aktualisiert werden soll
+        const shouldDelete = planning.recurrencePattern === RecurrencePattern.ONCE ||
+            (planning.recurrenceEndType === RecurrenceEndType.DATE &&
+                planning.endDate &&
+                dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
+            (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
+                planning.recurrenceCount !== null &&
+                planning.recurrenceCount !== undefined &&
+                PlanningService.calculateNextOccurrences(planning, dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'), dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')).length === 0);
+        // Update der Planung und eventuell Gegenbuchung durchführen
+        if (shouldDelete) {
+            // Planung und eventuell Gegenbuchung löschen
+            await this.deletePlanningTransaction(planning.id);
+            debugLog('PlanningService', 'executePlanningTransaction - Planung gelöscht (einmalig oder letzte Wiederholung)', {
+                planningId: planning.id,
+                isTransfer
+            });
+        }
+        else {
+            // Nächstes Datum berechnen
+            const nextOcc = PlanningService.calculateNextOccurrences(planning, dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'), dayjs(executionDate).add(3, 'years').format('YYYY-MM-DD'));
+            if (nextOcc.length > 0) {
+                // Nächstes Datum setzen
+                const nextDate = nextOcc[0];
+                await planningStore.updatePlanningTransaction(planning.id, { startDate: nextDate });
+                // Auch bei Gegenbuchung Datum aktualisieren
+                if (counterPlanning && counterPlanningId) {
+                    await planningStore.updatePlanningTransaction(counterPlanningId, { startDate: nextDate });
+                    debugLog('PlanningService', 'executePlanningTransaction - Gegenbuchungsdatum aktualisiert', {
+                        counterPlanningId,
+                        nextDate
+                    });
+                }
+            }
+        }
+        // Bilanzen aktualisieren
+        await BalanceService.calculateAllMonthlyBalances();
+        debugLog('PlanningService', 'executePlanningTransaction - Abgeschlossen', {
+            planningId: planning.id,
+            executionDate,
+            deleted: shouldDelete,
+            transactionsCreated
+        });
+        return true;
+    },
+    /**
+     * Überspringt eine geplante Transaktion ohne echte Transaktion zu erstellen.
+     * Markiert die Planung als erledigt und berechnet das nächste Datum oder löscht sie.
+     */
+    async skipPlanningTransaction(planningId, executionDate) {
+        const planningStore = usePlanningStore();
+        const planning = planningStore.getPlanningTransactionById(planningId);
+        if (!planning) {
+            debugLog('PlanningService', 'skipPlanningTransaction - Planning not found', { planningId });
+            return false;
+        }
+        debugLog('PlanningService', 'skipPlanningTransaction - Überspringe Planung', {
+            planningId: planning.id,
+            name: planning.name,
+            executionDate,
+            transactionType: planning.transactionType
+        });
+        // Prüfen, ob es sich um eine Transferbuchung handelt
+        const counterPlanningId = planning.counterPlanningTransactionId;
+        // Prüfen, ob die Planung gelöscht oder aktualisiert werden soll
+        const shouldDelete = planning.recurrencePattern === RecurrencePattern.ONCE ||
+            (planning.recurrenceEndType === RecurrenceEndType.DATE &&
+                planning.endDate &&
+                dayjs(executionDate).isSame(dayjs(planning.endDate))) ||
+            (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
+                planning.recurrenceCount !== null &&
+                planning.recurrenceCount !== undefined &&
+                PlanningService.calculateNextOccurrences(planning, dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'), dayjs(executionDate).add(10, 'year').format('YYYY-MM-DD')).length === 0);
+        // Update der Planung und eventuell Gegenbuchung durchführen
+        if (shouldDelete) {
+            // Planung und eventuell Gegenbuchung löschen
+            await this.deletePlanningTransaction(planning.id);
+            debugLog('PlanningService', 'skipPlanningTransaction - Planung gelöscht (einmalig oder letzte Wiederholung)', {
+                planningId: planning.id,
+                isTransfer: !!counterPlanningId
+            });
+        }
+        else {
+            // Nächstes Datum berechnen
+            const nextOcc = PlanningService.calculateNextOccurrences(planning, dayjs(executionDate).add(1, 'day').format('YYYY-MM-DD'), dayjs(executionDate).add(3, 'years').format('YYYY-MM-DD'));
+            if (nextOcc.length > 0) {
+                const nextDate = nextOcc[0];
+                const updates = {
+                    startDate: nextDate,
+                };
+                // Wenn die Wiederholung auf einer Anzahl basiert, diese um 1 reduzieren
+                if (planning.recurrenceEndType === RecurrenceEndType.COUNT &&
+                    planning.recurrenceCount &&
+                    planning.recurrenceCount > 0) {
+                    updates.recurrenceCount = planning.recurrenceCount - 1;
+                }
+                // Wertstellungsdatum mitführen, falls vorhanden
+                if (planning.valueDate) {
+                    const originalStartDate = dayjs(planning.startDate);
+                    const originalValueDate = dayjs(planning.valueDate);
+                    const diff = originalValueDate.diff(originalStartDate, 'day');
+                    updates.valueDate = dayjs(nextDate)
+                        .add(diff, 'day')
+                        .format('YYYY-MM-DD');
+                }
+                // Hauptbuchung aktualisieren
+                await planningStore.updatePlanningTransaction(planning.id, updates);
+                // Auch bei Gegenbuchung Datum aktualisieren
+                if (counterPlanningId) {
+                    const counterPlanning = planningStore.getPlanningTransactionById(counterPlanningId);
+                    if (counterPlanning) {
+                        await planningStore.updatePlanningTransaction(counterPlanningId, updates);
+                        debugLog('PlanningService', 'skipPlanningTransaction - Gegenbuchung aktualisiert', {
+                            counterPlanningId,
+                            updates
+                        });
+                    }
+                }
+                debugLog('PlanningService', 'skipPlanningTransaction - Nächstes Vorkommnis gesetzt', {
+                    planningId: planning.id,
+                    updates
+                });
+            }
+        }
+        // Bilanzen aktualisieren
+        await BalanceService.calculateAllMonthlyBalances();
+        debugLog('PlanningService', 'skipPlanningTransaction - Abgeschlossen', {
+            planningId: planning.id,
+            executionDate,
+            deleted: shouldDelete
+        });
+        return true;
+    },
+    /**
+     * Löscht eine Planungstransaktion (CRUD).
+     */
+    async deletePlanningTransaction(id) {
+        const planningStore = usePlanningStore();
+        const planning = planningStore.getPlanningTransactionById(id);
+        if (!planning) {
+            debugLog("PlanningService", "deletePlanningTransaction - Planung nicht gefunden", { id });
+            return false;
+        }
+        // Gegenbuchung finden und löschen, wenn vorhanden und noch nicht bearbeitet
+        if (planning.counterPlanningTransactionId) {
+            const counterPlanning = planningStore.getPlanningTransactionById(planning.counterPlanningTransactionId);
+            // Prüfen, ob wir nicht schon in der Gegenbuchungslöschung sind (Rekursionsschutz)
+            if (counterPlanning && counterPlanning.counterPlanningTransactionId === id) {
+                await planningStore.deletePlanningTransaction(planning.counterPlanningTransactionId);
+                debugLog("PlanningService", "deletePlanningTransaction - Gegenbuchung gelöscht", { id: planning.counterPlanningTransactionId });
+            }
+        }
+        // Hauptbuchung löschen
+        await planningStore.deletePlanningTransaction(id);
+        debugLog("PlanningService", "deletePlanningTransaction - Hauptbuchung gelöscht", { id });
+        await BalanceService.calculateAllMonthlyBalances();
+        return true;
+    },
+    /**
+     * Führt alle fälligen Planungstransaktionen aus.
+     */
+    async executeAllDuePlanningTransactions() {
+        const planningStore = usePlanningStore();
+        const today = dayjs().startOf('day');
+        let executedCount = 0;
+        // Set für bereits verarbeitete Planungspaare
+        const processedPlanningIds = new Set();
+        // Kopie erstellen, da Original-Array beim Löschen verändert wird
+        const planningsToProcess = [...planningStore.planningTransactions];
+        debugLog('PlanningService', 'executeAllDuePlanningTransactions - Starte Prüfung fälliger Buchungen', {
+            today: today.format('YYYY-MM-DD'),
+            totalPlannings: planningsToProcess.length
+        });
+        // Alle Planungen durchgehen
+        for (const planning of planningsToProcess) {
+            // Bereits verarbeitete Planungen überspringen
+            if (processedPlanningIds.has(planning.id)) {
+                continue;
+            }
+            // Nur aktive Planungen berücksichtigen
+            if (!planning.isActive) {
+                continue;
+            }
+            // Bei Transfers: Überprüfen, ob wir eine Gegenbuchung sind
+            // Gegenbuchungen erkennt man am Namen mit "(Gegenbuchung)" oder daran, dass sie eine counterPlanningTransactionId haben
+            // und die referenzierte Hauptbuchung ebenfalls auf diese Gegenbuchung verweist
+            const isCounterBooking = planning.name && planning.name.includes("(Gegenbuchung)");
+            // Gegenbuchungen überspringen - werden mit Hauptbuchung verarbeitet
+            if (isCounterBooking) {
+                debugLog('PlanningService', 'executeAllDuePlanningTransactions - Überspringe Gegenbuchung', {
+                    planningId: planning.id,
+                    name: planning.name,
+                    counterPlanningId: planning.counterPlanningTransactionId
+                });
+                continue;
+            }
+            // Fällige Termine ermitteln
+            const overdueOccurrences = PlanningService.calculateNextOccurrences(planning, planning.startDate, today.format('YYYY-MM-DD'));
+            // Wenn fällige Termine vorhanden, diese ausführen
+            if (overdueOccurrences.length > 0) {
+                debugLog('PlanningService', 'executeAllDuePlanningTransactions - Fällige Termine gefunden', {
+                    planningId: planning.id,
+                    name: planning.name,
+                    type: planning.transactionType,
+                    occurrences: overdueOccurrences,
+                    isTransfer: planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
+                        planning.transactionType === TransactionType.CATEGORYTRANSFER
+                });
+                // Für jeden fälligen Termin ausführen
+                for (const dateStr of overdueOccurrences) {
+                    if (dayjs(dateStr).isSameOrBefore(today)) {
+                        const success = await PlanningService.executePlanningTransaction(planning.id, dateStr);
+                        if (success) {
+                            executedCount++;
+                            // Bei Transfers: Gegenbuchung als verarbeitet markieren
+                            if ((planning.transactionType === TransactionType.ACCOUNTTRANSFER ||
+                                planning.transactionType === TransactionType.CATEGORYTRANSFER) &&
+                                planning.counterPlanningTransactionId) {
+                                processedPlanningIds.add(planning.counterPlanningTransactionId);
+                            }
+                        }
+                        // Diese Planung als verarbeitet markieren
+                        processedPlanningIds.add(planning.id);
+                    }
+                }
+            }
+        }
+        debugLog('PlanningService', 'executeAllDuePlanningTransactions - Abgeschlossen', {
+            executedCount,
+            processedCount: processedPlanningIds.size
+        });
+        return executedCount;
+    },
+    /**
+     * Aktualisiert die Prognosen, indem die Monatsbilanzen neu berechnet werden.
+     */
+    async updateForecasts() {
+        await BalanceService.calculateAllMonthlyBalances();
+        localStorage.setItem('finwise_last_forecast_update', Date.now().toString());
+        debugLog("PlanningService", "updateForecasts - Monatsbilanzen aktualisiert");
+        return true;
+    },
+    /**
+     * Überprüft und ergänzt Prognosebuchungen für aktive Planungstransaktionen bis 24 Monate in die Zukunft
+     */
+    async refreshForecastsForFuturePeriod() {
+        const planningStore = usePlanningStore();
+        const today = dayjs();
+        const endDate = today.add(24, 'months').format('YYYY-MM-DD');
+        let updatedForecastsCount = 0;
+        infoLog("PlanningService", "Überprüfe Prognosebuchungen für die nächsten 24 Monate");
+        for (const plan of planningStore.planningTransactions) {
+            if (!plan.isActive || plan.recurrencePattern === RecurrencePattern.ONCE)
+                continue;
+            // Bei Gegenbuchungen: Überprüfung überspringen, wird mit Hauptbuchung behandelt
+            if (plan.counterPlanningTransactionId &&
+                (plan.transactionType === TransactionType.ACCOUNTTRANSFER ||
+                    plan.transactionType === TransactionType.CATEGORYTRANSFER)) {
+                continue;
+            }
+            // Nur Planungen prüfen, die nicht enden oder deren Enddatum in der Zukunft liegt
+            if (plan.recurrenceEndType === RecurrenceEndType.DATE &&
+                plan.endDate &&
+                dayjs(plan.endDate).isBefore(today)) {
+                continue;
+            }
+            // Alle zukünftigen Ausführungsdaten berechnen
+            const occurrences = this.calculateNextOccurrences(plan, today.format('YYYY-MM-DD'), endDate);
+            // Wenn Termine vorhanden: Startdatum aktualisieren falls nötig
+            if (occurrences.length > 0) {
+                const firstOccurrence = occurrences[0];
+                // Wenn das nächste berechnete Datum nach dem aktuellen Startdatum liegt
+                if (dayjs(firstOccurrence).isAfter(dayjs(plan.startDate))) {
+                    debugLog("PlanningService", "refreshForecastsForFuturePeriod - Aktualisiere Startdatum", {
+                        planId: plan.id,
+                        name: plan.name,
+                        oldStartDate: plan.startDate,
+                        newStartDate: firstOccurrence,
+                        occurrencesCount: occurrences.length
+                    });
+                    // Startdatum aktualisieren
+                    await planningStore.updatePlanningTransaction(plan.id, { startDate: firstOccurrence });
+                    updatedForecastsCount++;
+                    // Auch Gegenbuchung aktualisieren, wenn vorhanden
+                    if (plan.counterPlanningTransactionId) {
+                        await planningStore.updatePlanningTransaction(plan.counterPlanningTransactionId, {
+                            startDate: firstOccurrence
+                        });
+                    }
+                }
+            }
+        }
+        // Monatsbilanzen neu berechnen, wenn Änderungen vorgenommen wurden
+        if (updatedForecastsCount > 0) {
+            await BalanceService.calculateAllMonthlyBalances();
+            infoLog("PlanningService", `${updatedForecastsCount} Prognosebuchungen für zukünftige Perioden aktualisiert`);
+        }
+        else {
+            infoLog("PlanningService", "Keine Aktualisierung der Prognosebuchungen erforderlich");
+        }
+        return updatedForecastsCount;
+    },
+    /**
+     * Aktualisiert eine bestehende Planungstransaktion
+     */
+    async updatePlanningTransaction(planningId, updatedPlanning) {
+        const planningStore = usePlanningStore();
+        debugLog("PlanningService", `updatePlanningTransaction - Aktualisiere Planung ${planningId}`, {
+            planningId,
+            updatedPlanning
+        });
+        // Planungstransaktion im Store aktualisieren
+        const result = await planningStore.updatePlanningTransaction(planningId, updatedPlanning);
+        debugLog("PlanningService", "updatePlanningTransaction - Aktualisiert", { result });
+        // Balance neu berechnen
+        await BalanceService.calculateAllMonthlyBalances();
+        return result;
+    },
+    /**
+     * Berechnet geplante Einnahmen und Ausgaben für einen bestimmten Zeitraum
+     */
+    calculatePlannedIncomeExpense(startDate, endDate) {
+        const planningStore = usePlanningStore();
+        let totalIncome = 0;
+        let totalExpense = 0;
+        // Alle aktiven Planungstransaktionen durchgehen
+        for (const planning of planningStore.planningTransactions) {
+            if (!planning.isActive)
+                continue;
+            // Berechne Ausführungstermine für den Zeitraum
+            const occurrences = this.calculateNextOccurrences(planning, startDate, endDate);
+            // Für jeden Ausführungstermin den Betrag addieren
+            for (const occurrence of occurrences) {
+                const occurrenceDate = dayjs(occurrence);
+                const start = dayjs(startDate);
+                const end = dayjs(endDate);
+                // Nur Termine im gewünschten Zeitraum berücksichtigen
+                if (occurrenceDate.isSameOrAfter(start) && occurrenceDate.isSameOrBefore(end)) {
+                    // Bei Transfers nur die Hauptbuchung berücksichtigen (nicht die Gegenbuchung)
+                    const isCounterBooking = planning.counterPlanningTransactionId &&
+                        planningStore.planningTransactions.some(p => p.id === planning.counterPlanningTransactionId &&
+                            p.counterPlanningTransactionId === planning.id);
+                    if (!isCounterBooking) {
+                        if (planning.amount > 0) {
+                            totalIncome += planning.amount;
+                        }
+                        else {
+                            totalExpense += Math.abs(planning.amount);
+                        }
+                    }
+                }
+            }
+        }
+        return {
+            income: totalIncome,
+            expense: totalExpense
+        };
+    },
+    /**
+     * Aktualisiert Recipient-Referenzen in allen betroffenen PlanningTransactions
+     * Wird vom recipientStore bei Merge-Operationen aufgerufen
+     */
+    async updateRecipientReferences(oldRecipientIds, newRecipientId) {
+        try {
+            debugLog('[PlanningService]', 'updateRecipientReferences gestartet', {
+                oldRecipientIds,
+                newRecipientId,
+                count: oldRecipientIds.length
+            });
+            // Dynamischer Import des planningStore
+            const { usePlanningStore } = await import('@/stores/planningStore');
+            const planningStore = usePlanningStore();
+            // Finde alle PlanningTransactions mit den alten Recipient-IDs
+            const affectedPlanningTransactions = planningStore.planningTransactions.filter(planningTransaction => planningTransaction.recipientId && oldRecipientIds.includes(planningTransaction.recipientId));
+            if (affectedPlanningTransactions.length === 0) {
+                infoLog('[PlanningService]', 'updateRecipientReferences: Keine betroffenen PlanningTransactions gefunden', {
+                    oldRecipientIds
+                });
+                return;
+            }
+            infoLog('[PlanningService]', `updateRecipientReferences: ${affectedPlanningTransactions.length} PlanningTransactions gefunden für Update`, {
+                planningTransactionIds: affectedPlanningTransactions.map(pt => pt.id),
+                oldRecipientIds,
+                newRecipientId
+            });
+            // Batch-Verarbeitung für Performance
+            let successCount = 0;
+            let errorCount = 0;
+            const errors = [];
+            for (const planningTransaction of affectedPlanningTransactions) {
+                try {
+                    const oldRecipientId = planningTransaction.recipientId;
+                    // Aktualisiere die PlanningTransaction über den Store für konsistente Sync-Integration
+                    const updateData = {
+                        recipientId: newRecipientId,
+                        updated_at: new Date().toISOString()
+                    };
+                    const success = await planningStore.updatePlanningTransaction(planningTransaction.id, updateData);
+                    if (success) {
+                        successCount++;
+                        debugLog('[PlanningService]', `PlanningTransaction ${planningTransaction.id} erfolgreich aktualisiert`, {
+                            planningTransactionId: planningTransaction.id,
+                            oldRecipientId,
+                            newRecipientId,
+                            name: planningTransaction.name
+                        });
+                    }
+                    else {
+                        errorCount++;
+                        warnLog('[PlanningService]', `PlanningTransaction ${planningTransaction.id} konnte nicht aktualisiert werden`, {
+                            planningTransactionId: planningTransaction.id,
+                            oldRecipientId,
+                            newRecipientId
+                        });
+                    }
+                }
+                catch (error) {
+                    errorCount++;
+                    errors.push({ planningTransactionId: planningTransaction.id, error });
+                    errorLog('[PlanningService]', `Fehler beim Aktualisieren von PlanningTransaction ${planningTransaction.id}`, {
+                        planningTransactionId: planningTransaction.id,
+                        error,
+                        oldRecipientId: planningTransaction.recipientId,
+                        newRecipientId
+                    });
+                }
+            }
+            // Zusammenfassung der Batch-Operation
+            if (successCount > 0) {
+                infoLog('[PlanningService]', `updateRecipientReferences erfolgreich abgeschlossen`, {
+                    totalPlanningTransactions: affectedPlanningTransactions.length,
+                    successCount,
+                    errorCount,
+                    oldRecipientIds,
+                    newRecipientId
+                });
+            }
+            if (errorCount > 0) {
+                warnLog('[PlanningService]', `updateRecipientReferences mit Fehlern abgeschlossen`, {
+                    totalPlanningTransactions: affectedPlanningTransactions.length,
+                    successCount,
+                    errorCount,
+                    errors: errors.map(e => ({ planningTransactionId: e.planningTransactionId, error: e.error?.message || 'Unknown error' }))
+                });
+            }
+            // Bei kritischen Fehlern (alle PlanningTransactions fehlgeschlagen) werfen wir einen Fehler
+            if (errorCount === affectedPlanningTransactions.length && affectedPlanningTransactions.length > 0) {
+                throw new Error(`Alle ${affectedPlanningTransactions.length} PlanningTransaction-Updates fehlgeschlagen`);
+            }
+        }
+        catch (error) {
+            errorLog('[PlanningService]', 'Kritischer Fehler in updateRecipientReferences', {
+                oldRecipientIds,
+                newRecipientId,
+                error
+            });
+            throw error;
+        }
+    },
+    /* -------------------- Recipient-Validierungsmethoden -------------------- */
+    /**
+     * Findet alle PlanningTransactions die einen bestimmten Recipient referenzieren
+     * Sucht in recipientId-Feld der PlanningTransactions
+     * @param recipientId Die zu suchende Recipient-ID
+     * @returns Promise<PlanningTransaction[]> Array der gefundenen PlanningTransactions
+     */
+    async getPlanningTransactionsWithRecipient(recipientId) {
+        try {
+            debugLog('[PlanningService]', 'getPlanningTransactionsWithRecipient gestartet', { recipientId });
+            const planningStore = usePlanningStore();
+            const recipientStore = useRecipientStore();
+            // Hole Recipient-Name für Logging
+            const recipient = recipientStore.getRecipientById(recipientId);
+            const recipientName = recipient?.name;
+            const matchingPlanningTransactions = planningStore.planningTransactions.filter(planningTransaction => {
+                // Direkte Recipient-ID-Referenz
+                if (planningTransaction.recipientId === recipientId) {
+                    return true;
+                }
+                return false;
+            });
+            debugLog('[PlanningService]', `getPlanningTransactionsWithRecipient gefunden: ${matchingPlanningTransactions.length} PlanningTransactions`, {
+                recipientId,
+                recipientName,
+                planningTransactionIds: matchingPlanningTransactions.map(pt => pt.id),
+                directMatches: matchingPlanningTransactions.filter(pt => pt.recipientId === recipientId).length
+            });
+            return matchingPlanningTransactions;
+        }
+        catch (error) {
+            errorLog('[PlanningService]', 'Fehler bei getPlanningTransactionsWithRecipient', {
+                recipientId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
+        }
+    },
+    /**
+     * Zählt die Anzahl der PlanningTransactions die einen bestimmten Recipient referenzieren
+     * Optimierte Version von getPlanningTransactionsWithRecipient für reine Zählung
+     * @param recipientId Die zu suchende Recipient-ID
+     * @returns Promise<number> Anzahl der gefundenen PlanningTransactions
+     */
+    async countPlanningTransactionsWithRecipient(recipientId) {
+        try {
+            debugLog('[PlanningService]', 'countPlanningTransactionsWithRecipient gestartet', { recipientId });
+            const planningStore = usePlanningStore();
+            const recipientStore = useRecipientStore();
+            // Hole Recipient-Name für Logging
+            const recipient = recipientStore.getRecipientById(recipientId);
+            const recipientName = recipient?.name;
+            let count = 0;
+            let directMatches = 0;
+            for (const planningTransaction of planningStore.planningTransactions) {
+                let isMatch = false;
+                // Direkte Recipient-ID-Referenz
+                if (planningTransaction.recipientId === recipientId) {
+                    directMatches++;
+                    isMatch = true;
+                }
+                if (isMatch) {
+                    count++;
+                }
+            }
+            debugLog('[PlanningService]', `countPlanningTransactionsWithRecipient Ergebnis: ${count} PlanningTransactions`, {
+                recipientId,
+                recipientName,
+                totalCount: count,
+                directMatches,
+                totalPlanningTransactions: planningStore.planningTransactions.length
+            });
+            return count;
+        }
+        catch (error) {
+            errorLog('[PlanningService]', 'Fehler bei countPlanningTransactionsWithRecipient', {
+                recipientId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
+        }
+    },
+    /**
+     * Validiert die Löschung von Recipients durch Prüfung auf aktive Referenzen in PlanningTransactions
+     * @param recipientIds Array der zu validierenden Recipient-IDs
+     * @returns Promise<RecipientValidationResult[]> Validierungsergebnisse pro Recipient
+     */
+    async validateRecipientDeletion(recipientIds) {
+        try {
+            debugLog('[PlanningService]', 'validateRecipientDeletion gestartet', {
+                recipientIds,
+                count: recipientIds.length
+            });
+            const recipientStore = useRecipientStore();
+            const results = [];
+            for (const recipientId of recipientIds) {
+                const recipient = recipientStore.getRecipientById(recipientId);
+                const recipientName = recipient?.name || `Unbekannter Empfänger (${recipientId})`;
+                // Zähle PlanningTransactions mit diesem Recipient
+                const planningTransactionCount = await this.countPlanningTransactionsWithRecipient(recipientId);
+                // Bestimme ob Löschung möglich ist
+                const hasActiveReferences = planningTransactionCount > 0;
+                const canDelete = !hasActiveReferences; // Aktuell: Keine Löschung wenn Referenzen vorhanden
+                // Erstelle Warnungen basierend auf gefundenen Referenzen
+                const warnings = [];
+                if (planningTransactionCount > 0) {
+                    warnings.push(`${planningTransactionCount} Planungstransaktion${planningTransactionCount === 1 ? '' : 'en'} verwenden diesen Empfänger`);
+                }
+                const validationResult = {
+                    recipientId,
+                    recipientName,
+                    hasActiveReferences,
+                    transactionCount: 0, // Wird vom TransactionService gesetzt
+                    planningTransactionCount,
+                    automationRuleCount: 0, // Wird in späteren Subtasks implementiert
+                    canDelete,
+                    warnings
+                };
+                results.push(validationResult);
+                debugLog('[PlanningService]', `Recipient ${recipientId} validiert`, {
+                    recipientName,
+                    planningTransactionCount,
+                    hasActiveReferences,
+                    canDelete,
+                    warnings
+                });
+            }
+            infoLog('[PlanningService]', `validateRecipientDeletion abgeschlossen für ${recipientIds.length} Recipients`, {
+                totalRecipients: results.length,
+                canDeleteCount: results.filter(r => r.canDelete).length,
+                hasReferencesCount: results.filter(r => r.hasActiveReferences).length,
+                totalPlanningTransactionReferences: results.reduce((sum, r) => sum + r.planningTransactionCount, 0)
+            });
+            return results;
+        }
+        catch (error) {
+            errorLog('[PlanningService]', 'Fehler bei validateRecipientDeletion', {
+                recipientIds,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            throw error;
+        }
+    }
+};

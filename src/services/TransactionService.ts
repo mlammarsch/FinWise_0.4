@@ -738,6 +738,86 @@ export const TransactionService = {
 
     debugLog('[TransactionService]', `POST-stage rules applied to ${transactionIds.length} transactions`);
   },
+
+  /**
+   * Bulk: ändere das Datum mehrerer Transaktionen (inkl. valueDate).
+   */
+  async bulkChangeDate(transactionIds: string[], newDate: string): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    let updatedCount = 0;
+    const errors: string[] = [];
+    for (const id of transactionIds) {
+      try {
+        await txStore.updateTransaction(id, { date: newDate, valueDate: newDate });
+        updatedCount++;
+      } catch (e) {
+        errors.push(id);
+        errorLog('[TransactionService]', `bulkChangeDate failed for ${id}`, e);
+      }
+    }
+    BalanceService.triggerMonthlyBalanceUpdate({ fromDate: newDate });
+    return { success: errors.length === 0, updatedCount, errors };
+  },
+
+  /**
+   * Bulk: mehrere Transaktionen als abgeglichen markieren.
+   */
+  async bulkSetReconciled(transactionIds: string[]): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    let updatedCount = 0;
+    const errors: string[] = [];
+    for (const id of transactionIds) {
+      try {
+        await txStore.updateTransaction(id, { reconciled: true });
+        updatedCount++;
+      } catch (e) {
+        errors.push(id);
+        errorLog('[TransactionService]', `bulkSetReconciled failed for ${id}`, e);
+      }
+    }
+    return { success: errors.length === 0, updatedCount, errors };
+  },
+
+  /**
+   * Bulk: Abgleich-Status entfernen.
+   */
+  async bulkRemoveReconciled(transactionIds: string[]): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const txStore = useTransactionStore();
+    let updatedCount = 0;
+    const errors: string[] = [];
+    for (const id of transactionIds) {
+      try {
+        await txStore.updateTransaction(id, { reconciled: false });
+        updatedCount++;
+      } catch (e) {
+        errors.push(id);
+        errorLog('[TransactionService]', `bulkRemoveReconciled failed for ${id}`, e);
+      }
+    }
+    return { success: errors.length === 0, updatedCount, errors };
+  },
+
+  /**
+   * Aktualisiert recipientId in allen Transaktionen mit gegebenen Quellen-IDs auf die neue Empfänger-ID.
+   */
+  async updateRecipientReferences(sourceRecipientIds: string[], newRecipientId: string): Promise<void> {
+    const txStore = useTransactionStore();
+    const all = txStore.transactions;
+    const affected = all.filter(t => t.recipientId && sourceRecipientIds.includes(t.recipientId));
+    debugLog('[TransactionService]', `updateRecipientReferences affected=${affected.length}`, { from: sourceRecipientIds, to: newRecipientId });
+    for (const t of affected) {
+      await txStore.updateTransaction(t.id, { recipientId: newRecipientId });
+    }
+  },
+
+  /**
+   * Prüft, ob Empfänger gelöscht werden können. Liefert einfache Metriken für UI.
+   */
+  async validateRecipientDeletion(recipientIds: string[]): Promise<{ canDelete: boolean; blockingTransactions: number }> {
+    const txStore = useTransactionStore();
+    const blocking = txStore.transactions.filter(t => t.recipientId && recipientIds.includes(t.recipientId)).length;
+    return { canDelete: blocking === 0, blockingTransactions: blocking };
+  },
 };
 
 interface RecipientValidationResult {

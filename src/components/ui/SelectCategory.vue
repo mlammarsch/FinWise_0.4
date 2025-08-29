@@ -18,6 +18,7 @@ import CurrencyDisplay from "./CurrencyDisplay.vue";
 import { debugLog } from "@/utils/logger";
 import { Icon } from "@iconify/vue";
 import { BalanceService } from "@/services/BalanceService";
+import type { Category } from "../../types";
 
 const props = defineProps<{
   modelValue?: string;
@@ -45,7 +46,9 @@ onMounted(() => {
     if (selected.value === "NO_CATEGORY") {
       searchTerm.value = "Keine Kategorie";
     } else {
-      const cat = categoryStore.categories.find((c) => c.id === selected.value);
+      const cat = (categoryStore.categories as Category[]).find(
+        (c: Category) => c.id === selected.value
+      );
       if (cat) {
         searchTerm.value = cat.name;
         debugLog("[SelectCategory] onMounted → set searchTerm", {
@@ -67,7 +70,9 @@ watch(
     if (newVal === "NO_CATEGORY") {
       searchTerm.value = "Keine Kategorie";
     } else {
-      const cat = categoryStore.categories.find((c) => c.id === newVal);
+      const cat = (categoryStore.categories as Category[]).find(
+        (c: Category) => c.id === newVal
+      );
       if (cat && searchTerm.value !== cat.name) {
         searchTerm.value = cat.name;
         debugLog("[SelectCategory] watch:modelValue → set searchTerm", {
@@ -111,36 +116,42 @@ const availableCategory = computed(() =>
  * Filtert Kategorien basierend auf filterOutArray und Suchbegriff.
  */
 const filteredCategories = computed(() => {
-  let cats = categoryStore.categories;
+  let cats: Category[] = categoryStore.categories as Category[];
   if (props.filterOutArray?.length) {
-    cats = cats.filter((cat) => !props.filterOutArray!.includes(cat.id));
+    cats = cats.filter(
+      (cat: Category) => !props.filterOutArray!.includes(cat.id)
+    );
   }
   if (availableCategory.value) {
-    cats = cats.filter((cat) => cat.id !== availableCategory.value.id);
+    cats = cats.filter(
+      (cat: Category) => cat.id !== availableCategory.value?.id
+    );
   }
   if (searchTerm.value.trim()) {
     const term = searchTerm.value.toLowerCase();
-    cats = cats.filter((cat) => cat.name.toLowerCase().includes(term));
+    cats = cats.filter((cat: Category) =>
+      cat.name.toLowerCase().includes(term)
+    );
   }
   return cats;
 });
 
-const expenseCategories = computed(() =>
-  filteredCategories.value
-    .filter((cat) => !cat.isIncomeCategory)
-    .sort((a, b) => a.name.localeCompare(b.name))
+const expenseCategories = computed<Category[]>(() =>
+  (filteredCategories.value as Category[])
+    .filter((cat: Category) => !cat.isIncomeCategory)
+    .sort((a: Category, b: Category) => a.name.localeCompare(b.name))
 );
 
-const incomeCategories = computed(() =>
-  filteredCategories.value
-    .filter((cat) => cat.isIncomeCategory)
-    .sort((a, b) => a.name.localeCompare(b.name))
+const incomeCategories = computed<Category[]>(() =>
+  (filteredCategories.value as Category[])
+    .filter((cat: Category) => cat.isIncomeCategory)
+    .sort((a: Category, b: Category) => a.name.localeCompare(b.name))
 );
 
 interface Option {
   isHeader: boolean;
   headerText?: string;
-  category?: (typeof categoryStore.categories)[0];
+  category?: Category;
 }
 
 /**
@@ -188,8 +199,8 @@ const options = computed<Option[]>(() => {
     ) {
       opts.push({ isHeader: true, headerText: "Ausgaben" });
     }
-    expenseCategories.value.forEach((cat) =>
-      opts.push({ isHeader: false, category: cat })
+    (expenseCategories.value as Category[]).forEach((cat: Category) =>
+      opts.push({ isHeader: false, category: cat as Category })
     );
   }
   if (incomeCategories.value.length) {
@@ -200,8 +211,8 @@ const options = computed<Option[]>(() => {
     ) {
       opts.push({ isHeader: true, headerText: "Einnahmen" });
     }
-    incomeCategories.value.forEach((cat) =>
-      opts.push({ isHeader: false, category: cat })
+    (incomeCategories.value as Category[]).forEach((cat: Category) =>
+      opts.push({ isHeader: false, category: cat as Category })
     );
   }
   return opts;
@@ -301,7 +312,9 @@ function closeDropdown() {
   if (selected.value === "NO_CATEGORY") {
     searchTerm.value = "Keine Kategorie";
   } else {
-    const cat = categoryStore.categories.find((c) => c.id === selected.value);
+    const cat = (categoryStore.categories as Category[]).find(
+      (c: Category) => c.id === selected.value
+    );
     if (cat) searchTerm.value = cat.name;
   }
 }

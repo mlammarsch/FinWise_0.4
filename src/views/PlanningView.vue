@@ -20,7 +20,8 @@ import PlanningTransactionForm from "@/components/planning/PlanningTransactionFo
 import ForecastChart from "@/components/ui/charts/ForecastChart.vue";
 import DetailedForecastChart from "@/components/ui/charts/DetailedForecastChart.vue";
 
-import { PlanningTransaction, TransactionType } from "@/types";
+import { TransactionType } from "../types";
+import type { PlanningTransaction } from "../types";
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
 import DateRangePicker from "@/components/ui/DateRangePicker.vue";
@@ -178,7 +179,8 @@ const filteredTransactions = computed(() => {
         t.transactionType === TransactionType.CATEGORYTRANSFER)
     ) {
       const counterPlanning = planningStore.planningTransactions.find(
-        (counter) => counter.id === t.counterPlanningTransactionId
+        (counter: PlanningTransaction) =>
+          counter.id === t.counterPlanningTransactionId
       );
       if (counterPlanning && t.amount > 0 && counterPlanning.amount < 0) {
         return false; // Gegenbuchung ausblenden
@@ -204,7 +206,7 @@ const filteredTransactions = computed(() => {
           .includes(term) ??
           false) ||
         (categoryStore
-          .getCategoryById(t.categoryId)
+          .getCategoryById(t.categoryId || "")
           ?.name.toLowerCase()
           .includes(term) ??
           false) ||
@@ -236,7 +238,10 @@ function savePlanning(data: any) {
   (async () => {
     try {
       if (selectedPlanning.value) {
-        await PlanningService.updatePlanningTransaction(selectedPlanning.value.id, data);
+        await PlanningService.updatePlanningTransaction(
+          selectedPlanning.value.id,
+          data
+        );
       } else {
         await PlanningService.addPlanningTransaction(data);
       }
@@ -310,7 +315,9 @@ function getTransactionTypeLabel(type: TransactionType): string {
 // Hilfsfunktion zur korrekten Anzeige von Quelle und Ziel je nach Transaktionstyp
 function getSourceName(planning: PlanningTransaction): string {
   if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
-    return categoryStore.getCategoryById(planning.categoryId)?.name || "-";
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
   } else {
     return accountStore.getAccountById(planning.accountId)?.name || "-";
   }
@@ -328,7 +335,9 @@ function getTargetName(planning: PlanningTransaction): string {
       "-"
     );
   } else {
-    return categoryStore.getCategoryById(planning.categoryId)?.name || "-";
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
   }
 }
 
@@ -1005,15 +1014,21 @@ onUnmounted(() => {
                 <div
                   class="tooltip tooltip-primary"
                   :data-tip="
-                    getTransactionTypeLabel(e.transaction.transactionType)
+                    getTransactionTypeLabel(
+                      e.transaction.transactionType || TransactionType.EXPENSE
+                    )
                   "
                 >
                   <Icon
                     :icon="
-                      getTransactionTypeIcon(e.transaction.transactionType)
+                      getTransactionTypeIcon(
+                        e.transaction.transactionType || TransactionType.EXPENSE
+                      )
                     "
                     :class="
-                      getTransactionTypeClass(e.transaction.transactionType)
+                      getTransactionTypeClass(
+                        e.transaction.transactionType || TransactionType.EXPENSE
+                      )
                     "
                     class="text-2xl"
                   />

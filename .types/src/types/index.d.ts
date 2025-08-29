@@ -1,0 +1,453 @@
+export interface Account {
+    id: string;
+    name: string;
+    description?: string;
+    note?: string;
+    accountType: AccountType;
+    isActive: boolean;
+    isOfflineBudget: boolean;
+    accountGroupId: string;
+    sortOrder: number;
+    iban?: string;
+    balance: number;
+    creditLimit?: number;
+    offset: number;
+    logo_path: string | null;
+    updatedAt?: string;
+}
+export interface AccountGroup {
+    id: string;
+    name: string;
+    sortOrder: number;
+    logo_path: string | null;
+    updatedAt?: string;
+}
+export interface Category {
+    id: string;
+    name: string;
+    icon?: string;
+    budgeted: number;
+    activity: number;
+    available: number;
+    isIncomeCategory: boolean;
+    isHidden: boolean;
+    isActive: boolean;
+    sortOrder: number;
+    categoryGroupId?: string;
+    parentCategoryId?: string;
+    isSavingsGoal?: boolean;
+    goalDate?: string;
+    targetAmount?: number;
+    priority?: number;
+    proportion?: number;
+    monthlyAmount?: number;
+    note?: string;
+    updatedAt?: string;
+}
+export interface CategoryGroup {
+    id: string;
+    name: string;
+    sortOrder: number;
+    isIncomeGroup: boolean;
+    updatedAt?: string;
+}
+export interface Tag {
+    id: string;
+    name: string;
+    parentTagId?: string | null;
+    color?: string;
+    icon?: string;
+    updatedAt?: string;
+}
+export interface Recipient {
+    id: string;
+    name: string;
+    defaultCategoryId?: string | null;
+    note?: string;
+    updatedAt?: string;
+}
+export interface Transaction {
+    id: string;
+    accountId: string;
+    categoryId?: string;
+    recipientId?: string;
+    date: string;
+    valueDate: string;
+    amount: number;
+    description: string;
+    note?: string;
+    tagIds: string[];
+    type: TransactionType;
+    runningBalance: number;
+    counterTransactionId?: string | null;
+    planningTransactionId?: string | null;
+    isReconciliation?: boolean;
+    isCategoryTransfer?: boolean;
+    transferToAccountId?: string | null;
+    reconciled?: boolean;
+    toCategoryId?: string;
+    payee?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}
+export interface CSVTransactionData extends Transaction {
+    payee: string;
+    originalCategory?: string;
+    originalRecipientName?: string;
+    _skipAutoRecipientMatching?: boolean;
+    _skipAutoCategoryMatching?: boolean;
+}
+export interface PlanningTransaction {
+    id: string;
+    name: string;
+    accountId: string;
+    categoryId: string | null;
+    tagIds: string[];
+    recipientId?: string | null;
+    amount: number;
+    amountType: AmountType;
+    approximateAmount?: number;
+    minAmount?: number;
+    maxAmount?: number;
+    note?: string;
+    startDate: string;
+    valueDate?: string | null;
+    endDate?: string | null;
+    recurrencePattern: RecurrencePattern;
+    recurrenceCount?: number | null;
+    recurrenceEndType: RecurrenceEndType;
+    executionDay?: number | null;
+    weekendHandling: WeekendHandlingType;
+    transactionType?: TransactionType;
+    counterPlanningTransactionId?: string | null;
+    transferToAccountId?: string | null;
+    transferToCategoryId?: string | null;
+    isActive: boolean;
+    forecastOnly: boolean;
+    autoExecute?: boolean;
+    updatedAt?: string;
+}
+export declare enum RuleConditionType {
+    ACCOUNT_IS = "ACCOUNT_IS",
+    RECIPIENT_EQUALS = "RECIPIENT_EQUALS",
+    RECIPIENT_CONTAINS = "RECIPIENT_CONTAINS",
+    AMOUNT_EQUALS = "AMOUNT_EQUALS",
+    AMOUNT_GREATER = "AMOUNT_GREATER",
+    AMOUNT_LESS = "AMOUNT_LESS",
+    DATE_IS = "DATE_IS",
+    DATE_APPROX = "DATE_APPROX",
+    DESCRIPTION_CONTAINS = "DESCRIPTION_CONTAINS"
+}
+export declare enum RuleActionType {
+    SET_CATEGORY = "SET_CATEGORY",
+    ADD_TAG = "ADD_TAG",
+    SET_NOTE = "SET_NOTE",
+    LINK_SCHEDULE = "LINK_SCHEDULE",
+    SET_ACCOUNT = "SET_ACCOUNT",
+    SET_RECIPIENT = "SET_RECIPIENT"
+}
+export type RuleOperator = 'equals' | 'not_equals' | 'contains' | 'not_contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_empty' | 'is_not_empty' | 'one_of' | 'starts_with' | 'ends_with';
+export interface RuleCondition {
+    type: RuleConditionType;
+    operator: string;
+    value: string | number | string[];
+}
+export interface RuleAction {
+    type: RuleActionType;
+    field?: string;
+    value: string | string[] | number;
+}
+export interface AutomationRule {
+    id: string;
+    name: string;
+    description?: string;
+    stage: 'PRE' | 'DEFAULT' | 'POST';
+    conditions: RuleCondition[];
+    actions: RuleAction[];
+    priority: number;
+    isActive: boolean;
+    conditionLogic?: 'all' | 'any';
+    updatedAt?: string;
+}
+export interface PlanningItem {
+    id: string;
+    categoryId: string;
+    year: number;
+    month: number;
+    plannedAmount: number;
+}
+export interface StatisticItem {
+    year: number;
+    month: number;
+    categoryId: string;
+    amount: number;
+}
+export interface BalanceInfo {
+    balance: number;
+    date: Date;
+}
+export interface Reconciliation {
+    id: string;
+    accountId: string;
+    date: string;
+    balance: number;
+    note: string;
+    transactionIds: string[];
+}
+export declare enum AccountType {
+    Girokonto = "giro",
+    Tagesgeldkonto = "tagesgeld",
+    Festgeldkonto = "festgeld",
+    Sparkonto = "spar",
+    Kreditkarte = "kreditkarte",
+    Depot = "depot",
+    Bausparvertrag = "bauspar",
+    Darlehenskonto = "darlehen",
+    Geschäftskonto = "geschaeft",
+    Gemeinschaftskonto = "gemeinschaft",
+    Fremdwährungskonto = "fremdwaehrung",
+    Virtuell = "virtuell",
+    Bargeld = "bar",
+    Sonstiges = "sonstiges"
+}
+export declare enum TransactionType {
+    EXPENSE = "EXPENSE",
+    INCOME = "INCOME",
+    ACCOUNTTRANSFER = "ACCOUNTTRANSFER",
+    CATEGORYTRANSFER = "CATEGORYTRANSFER",
+    RECONCILE = "RECONCILE"
+}
+export declare enum AmountType {
+    EXACT = "EXACT",
+    APPROXIMATE = "APPROXIMATE",
+    RANGE = "RANGE"
+}
+export declare enum RecurrencePattern {
+    ONCE = "ONCE",
+    DAILY = "DAILY",
+    WEEKLY = "WEEKLY",
+    BIWEEKLY = "BIWEEKLY",
+    MONTHLY = "MONTHLY",
+    QUARTERLY = "QUARTERLY",
+    YEARLY = "YEARLY"
+}
+export declare enum RecurrenceEndType {
+    NEVER = "NEVER",
+    COUNT = "COUNT",
+    DATE = "DATE"
+}
+export declare enum WeekendHandlingType {
+    NONE = "NONE",
+    BEFORE = "BEFORE",
+    AFTER = "AFTER"
+}
+export interface Entity {
+    id: string;
+    isActive: boolean;
+}
+export declare enum BackendStatus {
+    ONLINE = "online",
+    OFFLINE = "offline",
+    MAINTENANCE = "maintenance",
+    ERROR = "error"
+}
+export interface WebSocketMessageBase {
+    type: string;
+}
+export interface StatusMessage extends WebSocketMessageBase {
+    type: 'status';
+    status: BackendStatus;
+    message?: string;
+}
+export declare enum EntityTypeEnum {
+    ACCOUNT = "Account",
+    ACCOUNT_GROUP = "AccountGroup",
+    CATEGORY = "Category",
+    CATEGORY_GROUP = "CategoryGroup",
+    TRANSACTION = "Transaction",
+    PLANNING_TRANSACTION = "PlanningTransaction",
+    RECIPIENT = "Recipient",
+    TAG = "Tag",
+    RULE = "AutomationRule"
+}
+export interface DeletePayload {
+    id: string;
+}
+export interface NotificationDataPayload {
+    accounts?: Account[] | null;
+    account_groups?: AccountGroup[] | null;
+    categories?: Category[] | null;
+    category_groups?: CategoryGroup[] | null;
+    recipients?: Recipient[] | null;
+    tags?: Tag[] | null;
+    automation_rules?: AutomationRule[] | null;
+    planning_transactions?: PlanningTransaction[] | null;
+    transactions?: Transaction[] | null;
+    single_entity?: Account | AccountGroup | Category | CategoryGroup | Recipient | Tag | AutomationRule | PlanningTransaction | Transaction | DeletePayload;
+}
+export interface DataUpdateNotificationMessage extends WebSocketMessageBase {
+    type: 'data_update';
+    event_type: 'data_update';
+    tenant_id: string;
+    entity_type: EntityTypeEnum;
+    operation_type: SyncOperationType;
+    data: NotificationDataPayload;
+}
+export interface RequestInitialDataMessage extends WebSocketMessageBase {
+    type: 'request_initial_data';
+    tenant_id: string;
+}
+export interface InitialDataPayload {
+    accounts: Account[];
+    account_groups: AccountGroup[];
+    categories: Category[];
+    category_groups: CategoryGroup[];
+    recipients?: Recipient[];
+    tags?: Tag[];
+    automation_rules?: AutomationRule[];
+    planning_transactions?: PlanningTransaction[];
+    transactions?: Transaction[];
+}
+export interface InitialDataLoadMessage extends WebSocketMessageBase {
+    type: 'initial_data_load';
+    event_type: 'initial_data_load';
+    tenant_id: string;
+    payload: InitialDataPayload;
+}
+export interface SyncAckMessage extends WebSocketMessageBase {
+    type: 'sync_ack';
+    id: string;
+    status: 'processed';
+    entityId: string;
+    entityType: EntityTypeEnum;
+    operationType: SyncOperationType;
+}
+export interface SyncNackMessage extends WebSocketMessageBase {
+    type: 'sync_nack';
+    id: string;
+    status: 'failed';
+    entityId: string;
+    entityType: EntityTypeEnum;
+    operationType: SyncOperationType;
+    reason: string;
+    detail?: string;
+}
+export interface PongMessage extends WebSocketMessageBase {
+    type: 'pong';
+    timestamp?: number;
+}
+export interface ConnectionStatusResponseMessage extends WebSocketMessageBase {
+    type: 'connection_status_response';
+    tenant_id: string;
+    backend_status: string;
+    connection_healthy: boolean;
+    stats: Record<string, any>;
+}
+export interface SystemNotificationMessage extends WebSocketMessageBase {
+    type: 'system_notification';
+    notification_type: string;
+    message: string;
+    timestamp: number;
+}
+export interface MaintenanceNotificationMessage extends WebSocketMessageBase {
+    type: 'maintenance_notification';
+    maintenance_enabled: boolean;
+    message: string;
+    timestamp: number;
+}
+export interface TenantDisconnectMessage {
+    type: 'tenant_disconnect';
+    tenant_id: string;
+    reason?: string;
+}
+export interface TenantDisconnectAckMessage extends WebSocketMessageBase {
+    type: 'tenant_disconnect_ack';
+    tenant_id: string;
+    status: 'success' | 'error';
+    message?: string;
+}
+export type ServerWebSocketMessage = StatusMessage | DataUpdateNotificationMessage | InitialDataLoadMessage | SyncAckMessage | SyncNackMessage | DataStatusResponseMessage | PongMessage | ConnectionStatusResponseMessage | SystemNotificationMessage | MaintenanceNotificationMessage | TenantDisconnectAckMessage;
+export declare enum SyncOperationType {
+    CREATE = "create",
+    UPDATE = "update",
+    DELETE = "delete",
+    INITIAL_LOAD = "initial_load"
+}
+export declare enum SyncStatus {
+    PENDING = "pending",
+    PROCESSING = "processing",
+    SYNCED = "synced",
+    FAILED = "failed"
+}
+export interface SyncQueueEntry {
+    id: string;
+    tenantId: string;
+    entityType: EntityTypeEnum;
+    entityId: string;
+    operationType: SyncOperationType;
+    payload: Account | AccountGroup | Category | CategoryGroup | Transaction | Recipient | Tag | {
+        id: string;
+    } | null;
+    timestamp: number;
+    status: SyncStatus;
+    attempts?: number;
+    lastAttempt?: number;
+    error?: string;
+}
+export interface QueueStatistics {
+    pendingCount: number;
+    processingCount: number;
+    failedCount: number;
+    lastSyncTime: number | null;
+    oldestPendingTime: number | null;
+    totalSyncedToday: number;
+    averageSyncDuration: number;
+    lastErrorMessage: string | null;
+}
+export interface SyncState {
+    isAutoSyncEnabled: boolean;
+    lastAutoSyncTime: number | null;
+    nextAutoSyncTime: number | null;
+    queueStatistics: QueueStatistics | null;
+    syncInProgress: boolean;
+    syncAnimationEndTime: number | null;
+    periodicSyncInterval: number;
+}
+export interface ConflictReport {
+    conflicts: Array<{
+        entityType: string;
+        entityId: string;
+        localChecksum: string;
+        serverChecksum: string;
+        lastModified: {
+            local: number;
+            server: number;
+        };
+    }>;
+    localOnly: Array<{
+        entityType: string;
+        entityId: string;
+    }>;
+    serverOnly: Array<{
+        entityType: string;
+        entityId: string;
+    }>;
+}
+export interface DataStatusResponseMessage extends WebSocketMessageBase {
+    type: 'data_status_response';
+    tenant_id: string;
+    entity_checksums: Record<string, Record<string, any>>;
+    last_sync_time: number;
+}
+export interface SyncMetrics {
+    id: string;
+    tenantId: string;
+    timestamp: number;
+    duration: number;
+    success: boolean;
+    error?: string;
+    entitiesProcessed: number;
+}
+export declare function isMultiValueCondition(condition: RuleCondition): condition is RuleCondition & {
+    value: string[];
+};

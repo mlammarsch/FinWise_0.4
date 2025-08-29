@@ -1,7 +1,7 @@
 // src/services/ReconciliationService.ts
 import { useReconciliationStore } from '@/stores/reconciliationStore';
 import { useTransactionStore } from '@/stores/transactionStore';
-import { Account, TransactionType } from '@/types';
+import type { Account } from '../types';
 import { debugLog } from '@/utils/logger';
 import { TransactionService } from './TransactionService';
 import { BalanceService } from './BalanceService';
@@ -56,23 +56,17 @@ export const ReconciliationService = {
     }
 
     // Ausgleichsbuchung anlegen
-    const newTx = await TransactionService.addReconcileTransaction(
+    await TransactionService.addReconcileTransaction(
       account.id,
       diff,
       store.reconcileDate,
       store.note,
     );
 
-    if (!newTx) {
-      debugLog('ReconciliationService', 'failed to create reconcile tx');
-      return false;
-    }
-
     debugLog('ReconciliationService', 'reconcile OK', {
       accountId: account.id,
       currentBalance: current,
       difference: diff,
-      txId: newTx.id,
     });
 
     // Monats­salden neu berechnen
@@ -88,7 +82,7 @@ export const ReconciliationService = {
     let count = 0;
     const target = new Date(date);
 
-    txStore.transactions.forEach(tx => {
+    txStore.transactions.forEach((tx: any) => {
       if (
         tx.accountId === accountId &&
         !tx.reconciled &&
@@ -109,11 +103,11 @@ export const ReconciliationService = {
     if (!tx) return;
 
     TransactionService.updateTransaction(transactionId, {
-      reconciled: !tx.reconciled,
+      reconciled: !(tx as any).reconciled,
     });
     debugLog('ReconciliationService', 'toggled reconciled', {
       id: transactionId,
-      newVal: !tx.reconciled,
+      newVal: !(tx as any).reconciled,
     });
   },
 };

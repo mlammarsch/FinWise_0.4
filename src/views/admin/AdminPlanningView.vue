@@ -14,7 +14,7 @@ import {
   PlanningTransaction,
   RecurrencePattern,
   TransactionType,
-} from "@/types";
+} from "../../types";
 import CurrencyDisplay from "@/components/ui/CurrencyDisplay.vue";
 import SearchGroup from "@/components/ui/SearchGroup.vue";
 import PlanningTransactionForm from "@/components/planning/PlanningTransactionForm.vue";
@@ -61,7 +61,7 @@ const filteredPlannings = computed(() => {
 
   // Filter nach Konto anwenden
   if (selectedAccountId.value !== "all") {
-    plannings = plannings.filter((p) => {
+    plannings = plannings.filter((p: PlanningTransaction) => {
       // Hauptbuchung mit dem gewählten Konto
       if (p.accountId === selectedAccountId.value) {
         return true;
@@ -80,7 +80,8 @@ const filteredPlannings = computed(() => {
         p.name.includes("(Gegenbuchung)")
       ) {
         const mainPlanning = planningStore.planningTransactions.find(
-          (main) => main.id === p.counterPlanningTransactionId
+          (main: PlanningTransaction) =>
+            main.id === p.counterPlanningTransactionId
         );
         if (
           mainPlanning &&
@@ -96,7 +97,7 @@ const filteredPlannings = computed(() => {
 
   // Filter nach Kategorie anwenden
   if (selectedCategoryId.value !== "all") {
-    plannings = plannings.filter((p) => {
+    plannings = plannings.filter((p: PlanningTransaction) => {
       // Hauptbuchung mit der gewählten Kategorie
       if (p.categoryId === selectedCategoryId.value) {
         return true;
@@ -115,7 +116,8 @@ const filteredPlannings = computed(() => {
         p.name.includes("(Gegenbuchung)")
       ) {
         const mainPlanning = planningStore.planningTransactions.find(
-          (main) => main.id === p.counterPlanningTransactionId
+          (main: PlanningTransaction) =>
+            main.id === p.counterPlanningTransactionId
         );
         if (
           mainPlanning &&
@@ -130,53 +132,58 @@ const filteredPlannings = computed(() => {
   }
 
   // Gegenbuchungen herausfiltern (außer wenn durch Filter explizit gewünscht)
-  const planningsWithoutCounterBookings = plannings.filter((p) => {
-    // Wenn ein Filter aktiv ist, wurden die relevanten Gegenbuchungen bereits oben eingeschlossen
-    if (
-      selectedAccountId.value !== "all" ||
-      selectedCategoryId.value !== "all"
-    ) {
-      return true; // Alle bereits gefilterten Planungen beibehalten
-    }
-
-    // Ohne aktive Filter: Gegenbuchungen ausblenden
-    if (p.name && p.name.includes("(Gegenbuchung)")) {
-      return false;
-    }
-
-    // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
-    // ist die Gegenbuchung diejenige mit positivem Betrag
-    if (
-      p.counterPlanningTransactionId &&
-      (p.transactionType === TransactionType.ACCOUNTTRANSFER ||
-        p.transactionType === TransactionType.CATEGORYTRANSFER)
-    ) {
-      const counterPlanning = planningStore.planningTransactions.find(
-        (counter) => counter.id === p.counterPlanningTransactionId
-      );
-
-      if (counterPlanning && p.amount > 0 && counterPlanning.amount < 0) {
-        return false; // Gegenbuchung ausblenden
+  const planningsWithoutCounterBookings = plannings.filter(
+    (p: PlanningTransaction) => {
+      // Wenn ein Filter aktiv ist, wurden die relevanten Gegenbuchungen bereits oben eingeschlossen
+      if (
+        selectedAccountId.value !== "all" ||
+        selectedCategoryId.value !== "all"
+      ) {
+        return true; // Alle bereits gefilterten Planungen beibehalten
       }
-    }
 
-    return true;
-  });
+      // Ohne aktive Filter: Gegenbuchungen ausblenden
+      if (p.name && p.name.includes("(Gegenbuchung)")) {
+        return false;
+      }
+
+      // Zusätzliche Prüfung: Bei Transfers mit counterPlanningTransactionId
+      // ist die Gegenbuchung diejenige mit positivem Betrag
+      if (
+        p.counterPlanningTransactionId &&
+        (p.transactionType === TransactionType.ACCOUNTTRANSFER ||
+          p.transactionType === TransactionType.CATEGORYTRANSFER)
+      ) {
+        const counterPlanning = planningStore.planningTransactions.find(
+          (counter: PlanningTransaction) =>
+            counter.id === p.counterPlanningTransactionId
+        );
+
+        if (counterPlanning && p.amount > 0 && counterPlanning.amount < 0) {
+          return false; // Gegenbuchung ausblenden
+        }
+      }
+
+      return true;
+    }
+  );
 
   // Nach Fälligkeitsdatum aufsteigend sortieren (älteste zuerst)
-  const sortedPlannings = planningsWithoutCounterBookings.sort((a, b) => {
-    return dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
-  });
+  const sortedPlannings = planningsWithoutCounterBookings.sort(
+    (a: PlanningTransaction, b: PlanningTransaction) => {
+      return dayjs(a.startDate).valueOf() - dayjs(b.startDate).valueOf();
+    }
+  );
 
   // Suchfilter anwenden
   const term = searchQuery.value.trim().toLowerCase();
   if (!term) return sortedPlannings;
 
-  return sortedPlannings.filter((p) => {
+  return sortedPlannings.filter((p: PlanningTransaction) => {
     const payee =
       recipientStore.getRecipientById(p.recipientId || "")?.name || "";
     const acc = accountStore.getAccountById(p.accountId)?.name || "";
-    const cat = categoryStore.getCategoryById(p.categoryId)?.name || "";
+    const cat = categoryStore.getCategoryById(p.categoryId || "")?.name || "";
     return (
       p.name.toLowerCase().includes(term) ||
       payee.toLowerCase().includes(term) ||
@@ -553,7 +560,7 @@ function getConfirmationMessage(): string {
 }
 
 // Button: Play pro Planung - nur fällige ausführen!
-function executeDueForPlanning(planning: PlanningTransaction) {
+async function executeDueForPlanning(planning: PlanningTransaction) {
   const today = dayjs().format("YYYY-MM-DD");
   const due = PlanningService.calculateNextOccurrences(
     planning,
@@ -561,9 +568,10 @@ function executeDueForPlanning(planning: PlanningTransaction) {
     today
   );
   let executed = 0;
-  due.forEach((d) => {
-    if (PlanningService.executePlanningTransaction(planning.id, d)) executed++;
-  });
+  for (const d of due) {
+    const ok = await PlanningService.executePlanningTransaction(planning.id, d);
+    if (ok) executed++;
+  }
   alert(`${executed} Buchungen für "${planning.name}" ausgeführt.`);
 }
 
@@ -627,7 +635,9 @@ function getTransactionTypeLabel(type: TransactionType): string {
 // Hilfsfunktion zur korrekten Anzeige von Quelle und Ziel je nach Transaktionstyp
 function getSourceName(planning: PlanningTransaction): string {
   if (planning.transactionType === TransactionType.CATEGORYTRANSFER) {
-    return categoryStore.getCategoryById(planning.categoryId)?.name || "-";
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
   } else {
     return accountStore.getAccountById(planning.accountId)?.name || "-";
   }
@@ -645,36 +655,38 @@ function getTargetName(planning: PlanningTransaction): string {
       "-"
     );
   } else {
-    return categoryStore.getCategoryById(planning.categoryId)?.name || "-";
+    return (
+      categoryStore.getCategoryById(planning.categoryId || "")?.name || "-"
+    );
   }
 }
 
 /**
-* Fälligkeitslogik:
-* - "Überfällig": Startdatum liegt mehr als 2 Tage vor heute und wurde noch nicht ausgeführt (Startdatum wurde noch nicht weitergeschoben).
-* - "Fällig": Startdatum ist heute oder in der Vergangenheit (max. 2 Tage alt).
-* - "geplant für": Startdatum liegt in der Zukunft.
-*/
+ * Fälligkeitslogik:
+ * - "Überfällig": Startdatum liegt mehr als 2 Tage vor heute und wurde noch nicht ausgeführt (Startdatum wurde noch nicht weitergeschoben).
+ * - "Fällig": Startdatum ist heute oder in der Vergangenheit (max. 2 Tage alt).
+ * - "geplant für": Startdatum liegt in der Zukunft.
+ */
 function isOverdueByDays(planning: PlanningTransaction, days = 2): boolean {
- const today = dayjs().startOf("day");
- const start = dayjs(planning.startDate).startOf("day");
- return start.isBefore(today.subtract(days, "day"), "day");
+  const today = dayjs().startOf("day");
+  const start = dayjs(planning.startDate).startOf("day");
+  return start.isBefore(today.subtract(days, "day"), "day");
 }
 
 function isDue(planning: PlanningTransaction): boolean {
- const today = dayjs().startOf("day");
- const start = dayjs(planning.startDate).startOf("day");
- return start.isSameOrBefore(today, "day");
+  const today = dayjs().startOf("day");
+  const start = dayjs(planning.startDate).startOf("day");
+  return start.isSameOrBefore(today, "day");
 }
 
 function getStartDateLabel(planning: PlanningTransaction): string {
- if (isOverdueByDays(planning, 2)) return "Überfällig";
- return isDue(planning) ? "Fällig" : "geplant für";
+  if (isOverdueByDays(planning, 2)) return "Überfällig";
+  return isDue(planning) ? "Fällig" : "geplant für";
 }
 
 function getStartDateClass(planning: PlanningTransaction): string {
- if (isOverdueByDays(planning, 2)) return "text-error";
- return isDue(planning) ? "text-warning" : "text-base-content/70";
+  if (isOverdueByDays(planning, 2)) return "text-error";
+  return isDue(planning) ? "text-warning" : "text-base-content/70";
 }
 
 // Hilfsfunktion für Wiederholungstyp-Icon
@@ -731,7 +743,9 @@ onUnmounted(() => {
   <div
     class="flex w-full justify-between items-center mb-6 flex-wrap md:flex-nowrap"
   >
-    <h2 class="text-xl font-bold flex-shrink-0">Planungsverwaltung und Regelbuchungen</h2>
+    <h2 class="text-xl font-bold flex-shrink-0">
+      Planungsverwaltung und Regelbuchungen
+    </h2>
     <SearchGroup
       btnMiddle="Alle fälligen ausführen"
       btnMiddleIcon="mdi:play-circle"
@@ -776,11 +790,23 @@ onUnmounted(() => {
               <td class="text-center">
                 <div
                   class="tooltip"
-                  :data-tip="getTransactionTypeLabel(planning.transactionType)"
+                  :data-tip="
+                    getTransactionTypeLabel(
+                      planning.transactionType || TransactionType.EXPENSE
+                    )
+                  "
                 >
                   <Icon
-                    :icon="getTransactionTypeIcon(planning.transactionType)"
-                    :class="getTransactionTypeClass(planning.transactionType)"
+                    :icon="
+                      getTransactionTypeIcon(
+                        planning.transactionType || TransactionType.EXPENSE
+                      )
+                    "
+                    :class="
+                      getTransactionTypeClass(
+                        planning.transactionType || TransactionType.EXPENSE
+                      )
+                    "
                     class="text-2xl"
                   />
                 </div>
@@ -805,19 +831,19 @@ onUnmounted(() => {
                   />
                 </div>
               </td>
-             <td>
-               <div class="flex flex-col">
-                 <span
-                   class="text-xs font-medium"
-                   :class="getStartDateClass(planning)"
-                 >
-                   {{ getStartDateLabel(planning) }}
-                 </span>
-                 <span class="text-sm">{{
-                   formatDate(planning.startDate)
-                 }}</span>
-               </div>
-             </td>
+              <td>
+                <div class="flex flex-col">
+                  <span
+                    class="text-xs font-medium"
+                    :class="getStartDateClass(planning)"
+                  >
+                    {{ getStartDateLabel(planning) }}
+                  </span>
+                  <span class="text-sm">{{
+                    formatDate(planning.startDate)
+                  }}</span>
+                </div>
+              </td>
               <td class="text-right">
                 <CurrencyDisplay
                   :amount="planning.amount"

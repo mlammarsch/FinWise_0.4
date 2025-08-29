@@ -5,7 +5,6 @@ import router from './router';
 import { createPinia } from 'pinia';
 import './style.css';
 import './daisyui.css';
-import { seedData } from './mock/seed_kaputt';
 import { Icon } from '@iconify/vue';
 import ApexCharts from 'apexcharts';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -14,7 +13,7 @@ import { SessionService } from '@/services/SessionService';
 import { PlanningService } from '@/services/PlanningService';
 import { WebSocketService } from '@/services/WebSocketService';
 import { useWebSocketStore, WebSocketConnectionStatus } from '@/stores/webSocketStore';
-import { BackendStatus } from '@/types';
+import { BackendStatus } from './types';
 import '@/utils/syncDebugger'; // Import für globale Debug-Funktionen
 
 const pinia = createPinia();
@@ -27,7 +26,8 @@ SessionService.setupGuards(router);
 
 app.component('Icon', Icon);
 
-window.ApexCharts = ApexCharts;
+// Ensure global assignment without TS error
+(window as any).ApexCharts = ApexCharts;
 
 const settingsStore = useSettingsStore();
 // Settings werden async geladen, um Backend-Sync zu ermöglichen

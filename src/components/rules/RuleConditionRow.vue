@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { RuleCondition, isMultiValueCondition } from "@/types";
+import type { RuleCondition } from "@/types";
 import { useAccountStore } from "@/stores/accountStore";
 import { useCategoryStore } from "@/stores/categoryStore";
 import SelectAccount from "@/components/ui/SelectAccount.vue";
@@ -78,13 +78,25 @@ function getOperatorOptions(source: string) {
 
 // Computed für die aktuelle Bedingung
 const currentCondition = computed({
-  get: () => props.condition,
-  set: (value: RuleCondition) => emit("update:condition", value),
+  get: () => props.condition as any,
+  set: (value: any) => emit("update:condition", value),
+});
+
+// UI-Hilfsfeld für Quelle (nicht Teil des Domain-Typs)
+const sourceField = computed<string>({
+  get: () => {
+    const c: any = currentCondition.value as any;
+    return (c?.source ?? "description") as string;
+  },
+  set: (val: string) => {
+    const next: any = { ...(currentCondition.value as any), source: val };
+    emit("update:condition", next);
+  },
 });
 
 // Funktion zum Zurücksetzen des Bedingungswerts bei Operator-Änderung
 function resetConditionValue() {
-  const newCondition = { ...currentCondition.value };
+  const newCondition: any = { ...(currentCondition.value as any) };
 
   // Wenn der neue Operator 'one_of' ist, initialisiere als Array
   if (newCondition.operator === "one_of") {
@@ -100,32 +112,30 @@ function resetConditionValue() {
 // Computed für Multi-Value-Eingabe
 const multiValueCondition = computed({
   get: () => {
-    if (isMultiValueCondition(currentCondition.value)) {
-      return currentCondition.value.value;
+    const c: any = currentCondition.value as any;
+    if (Array.isArray(c?.value)) {
+      return c.value as string[];
     }
-    return [];
+    return [] as string[];
   },
   set: (value: string[]) => {
-    currentCondition.value = {
-      ...currentCondition.value,
-      value: value,
-    };
+    const next: any = { ...(currentCondition.value as any), value };
+    currentCondition.value = next;
   },
 });
 
 // Computed für Single-Value-Eingabe
 const singleValueCondition = computed({
   get: () => {
-    if (!isMultiValueCondition(currentCondition.value)) {
-      return currentCondition.value.value as string;
+    const c: any = currentCondition.value as any;
+    if (!Array.isArray(c?.value)) {
+      return (c?.value ?? "") as string;
     }
     return "";
   },
   set: (value: string) => {
-    currentCondition.value = {
-      ...currentCondition.value,
-      value: value,
-    };
+    const next: any = { ...(currentCondition.value as any), value };
+    currentCondition.value = next;
   },
 });
 </script>
@@ -135,7 +145,7 @@ const singleValueCondition = computed({
     <!-- Linker Operand: Quelle auswählen -->
     <div class="col-span-3">
       <select
-        v-model="currentCondition.source"
+        v-model="sourceField"
         class="select select-bordered select-sm w-full"
         @change="resetConditionValue"
       >
@@ -157,9 +167,7 @@ const singleValueCondition = computed({
         @change="resetConditionValue"
       >
         <option
-          v-for="option in getOperatorOptions(
-            currentCondition.source || 'description'
-          )"
+          v-for="option in getOperatorOptions(sourceField || 'description')"
           :key="option.value"
           :value="option.value"
         >
@@ -175,9 +183,9 @@ const singleValueCondition = computed({
         v-if="currentCondition.operator === 'one_of'"
         v-model="multiValueCondition"
         :placeholder="
-          currentCondition.source === 'recipient'
+          sourceField === 'recipient'
             ? 'Empfänger-Namen eingeben...'
-            : currentCondition.source === 'amount'
+            : sourceField === 'amount'
             ? 'Beträge eingeben...'
             : 'Werte eingeben...'
         "
@@ -187,10 +195,7 @@ const singleValueCondition = computed({
       <template v-else>
         <!-- Konto-Auswahl -->
         <SelectAccount
-          v-if="
-            currentCondition.source === 'account' &&
-            currentCondition.operator === 'is'
-          "
+          v-if="sourceField === 'account' && currentCondition.operator === 'is'"
           v-model="singleValueCondition"
           class="w-full"
         />
@@ -198,8 +203,7 @@ const singleValueCondition = computed({
         <!-- Kategorie-Auswahl -->
         <SelectCategory
           v-else-if="
-            currentCondition.source === 'category' &&
-            currentCondition.operator === 'is'
+            sourceField === 'category' && currentCondition.operator === 'is'
           "
           v-model="singleValueCondition"
           class="w-full"
@@ -208,7 +212,7 @@ const singleValueCondition = computed({
 
         <!-- Empfänger-Freitextfeld für alle recipient-Operationen -->
         <input
-          v-else-if="currentCondition.source === 'recipient'"
+          v-else-if="sourceField === 'recipient'"
           type="text"
           v-model="singleValueCondition"
           class="input input-bordered input-sm w-full"
@@ -217,7 +221,7 @@ const singleValueCondition = computed({
 
         <!-- Zahleneingabe für Beträge -->
         <input
-          v-else-if="currentCondition.source === 'amount'"
+          v-else-if="sourceField === 'amount'"
           type="number"
           step="0.01"
           v-model="singleValueCondition"
@@ -227,10 +231,7 @@ const singleValueCondition = computed({
 
         <!-- Datumseingabe -->
         <input
-          v-else-if="
-            currentCondition.source === 'date' ||
-            currentCondition.source === 'valueDate'
-          "
+          v-else-if="sourceField === 'date' || sourceField === 'valueDate'"
           type="date"
           v-model="singleValueCondition"
           class="input input-bordered input-sm w-full"

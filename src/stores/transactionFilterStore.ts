@@ -1,7 +1,7 @@
 // src/stores/transactionFilterStore.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { TransactionType } from '@/types'
+import { TransactionType } from '../types'
 import { useTransactionStore } from './transactionStore'
 import { useAccountStore } from './accountStore'
 import { useCategoryStore } from './categoryStore'
@@ -82,7 +82,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
   // Filtere nach Kontotransaktionen
   const filteredTransactions = computed(() => {
-    let txs = transactionStore.transactions;
+    let txs = [...transactionStore.transactions];
 
     // Filtern nach Transaktionstyp
     if (selectedTransactionType.value) {
@@ -137,19 +137,19 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
     return txs.filter((tx) => {
       const categoryName = tx.categoryId
-        ? categoryStore.getCategoryById(tx.categoryId)?.name?.toLowerCase() || ""
+        ? categoryStore.getCategoryById(tx.categoryId || "")?.name?.toLowerCase() || ""
         : "";
       const recipientName = tx.recipientId
         ? recipientStore.getRecipientById(tx.recipientId)?.name?.toLowerCase() || ""
         : "";
       const tags = Array.isArray(tx.tagIds)
         ? tx.tagIds
-            .map((id) => tagStore.getTagById(id)?.name?.toLowerCase() || "")
+            .map((id: string) => tagStore.getTagById(id)?.name?.toLowerCase() || "")
             .join(" ")
         : "";
       const accountName = accountStore.getAccountById(tx.accountId)?.name.toLowerCase() || "";
       const toAccountName = tx.type === TransactionType.ACCOUNTTRANSFER
-        ? accountStore.getAccountById(tx.transferToAccountId)?.name?.toLowerCase() || ""
+        ? accountStore.getAccountById(tx.transferToAccountId || "")?.name?.toLowerCase() || ""
         : "";
       const payee = tx.payee?.toLowerCase() || "";
       const formattedAmount = String(tx.amount).replace(/\./g, "").replace(/,/g, ".");
@@ -170,7 +170,7 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
   // Filtere nach Kategorietransaktionen
   const filteredCategoryTransactions = computed(() => {
-    let txs = transactionStore.transactions;
+    let txs = [...transactionStore.transactions];
 
     // Filtern nach Kategorie
     if (selectedCategoryId.value) {
@@ -193,10 +193,10 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
     return txs.filter((tx) => {
       const categoryName = tx.categoryId
-        ? categoryStore.getCategoryById(tx.categoryId)?.name?.toLowerCase() || ""
+        ? categoryStore.getCategoryById(tx.categoryId || "")?.name?.toLowerCase() || ""
         : "";
       const toCategoryName = tx.toCategoryId
-        ? categoryStore.getCategoryById(tx.toCategoryId)?.name?.toLowerCase() || ""
+        ? categoryStore.getCategoryById(tx.toCategoryId || "")?.name?.toLowerCase() || ""
         : "";
       const accountName = accountStore.getAccountById(tx.accountId)?.name.toLowerCase() || "";
       const date = tx.date;
@@ -231,15 +231,15 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
           break;
         case "recipientId":
           aVal = a.type === TransactionType.ACCOUNTTRANSFER
-            ? accountStore.getAccountById(a.transferToAccountId)?.name || ""
-            : recipientStore.getRecipientById(a.recipientId)?.name || "";
+            ? accountStore.getAccountById(a.transferToAccountId || "")?.name || ""
+            : recipientStore.getRecipientById(a.recipientId || "")?.name || "";
           bVal = b.type === TransactionType.ACCOUNTTRANSFER
-            ? accountStore.getAccountById(b.transferToAccountId)?.name || ""
-            : recipientStore.getRecipientById(b.recipientId)?.name || "";
+            ? accountStore.getAccountById(b.transferToAccountId || "")?.name || ""
+            : recipientStore.getRecipientById(b.recipientId || "")?.name || "";
           break;
         case "categoryId":
-          aVal = categoryStore.getCategoryById(a.categoryId)?.name || "";
-          bVal = categoryStore.getCategoryById(b.categoryId)?.name || "";
+          aVal = categoryStore.getCategoryById(a.categoryId || "")?.name || "";
+          bVal = categoryStore.getCategoryById(b.categoryId || "")?.name || "";
           break;
         case "reconciled":
           aVal = a.reconciled ? 1 : 0;
@@ -298,14 +298,14 @@ export const useTransactionFilterStore = defineStore('transactionFilter', () => 
 
       switch (sortKey.value) {
         case "categoryId":
-          aVal = categoryStore.getCategoryById(a.categoryId)?.name || "";
-          bVal = categoryStore.getCategoryById(b.categoryId)?.name || "";
+          aVal = categoryStore.getCategoryById(a.categoryId || "")?.name || "";
+          bVal = categoryStore.getCategoryById(b.categoryId || "")?.name || "";
           break;
         case "accountId":
           if (a.type === TransactionType.CATEGORYTRANSFER &&
               b.type === TransactionType.CATEGORYTRANSFER) {
-            aVal = categoryStore.getCategoryById(a.toCategoryId)?.name || "";
-            bVal = categoryStore.getCategoryById(b.toCategoryId)?.name || "";
+            aVal = categoryStore.getCategoryById(a.toCategoryId || "")?.name || "";
+            bVal = categoryStore.getCategoryById(b.toCategoryId || "")?.name || "";
           } else {
             aVal = accountStore.getAccountById(a.accountId)?.name || "";
             bVal = accountStore.getAccountById(b.accountId)?.name || "";

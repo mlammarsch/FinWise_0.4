@@ -43,6 +43,11 @@ const clearQueueTargetId = ref<string | null>(null);
 const currentPage = ref(1);
 const itemsPerPage = ref<number | string>(25);
 
+// Typisierte Handler-Funktion für SearchGroup (verhindert implicit any)
+function handleSearchInput(q: string) {
+  searchQuery.value = q;
+}
+
 // Backend-Status beim Mount prüfen
 onMounted(() => {
   BackendAvailabilityService.startPeriodicChecks();
@@ -254,7 +259,7 @@ function lokalDate(iso: string) {
       <SearchGroup
         btnRight="Neu"
         btnRightIcon="mdi:plus"
-        @search="(q) => (searchQuery = q)"
+        @search="handleSearchInput"
         @btn-right-click="openCreate"
       />
     </div>
@@ -314,7 +319,7 @@ function lokalDate(iso: string) {
                           : debugLog(
                               '[AdminTenantsView] DB-Reset disabled - Backend offline',
                               {
-                                tenantId: t.id,
+                                tenantId: t.uuid,
                                 isBackendAvailable: isBackendAvailable,
                               }
                             )
@@ -376,7 +381,7 @@ function lokalDate(iso: string) {
                           debugLog(
                             '[AdminTenantsView] Trash-Button disabled - Backend offline',
                             {
-                              tenantId: t.id,
+                              tenantId: t.uuid,
                               isBackendAvailable: isBackendAvailable,
                               connectionStatus: webSocketStore.connectionStatus,
                               backendStatus: webSocketStore.backendStatus,

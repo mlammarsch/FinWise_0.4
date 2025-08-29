@@ -1,0 +1,76 @@
+// src/services/ReconciliationService.ts
+import { useReconciliationStore } from '@/stores/reconciliationStore';
+import { useTransactionStore } from '@/stores/transactionStore';
+import { debugLog } from '@/utils/logger';
+import { TransactionService } from './TransactionService';
+import { BalanceService } from './BalanceService';
+import { toDateOnlyString } from '@/utils/formatters';
+function calcDifference(accountId, reconcileDate, actual) {
+    const current = BalanceService.getTodayBalance('account', accountId, new Date(reconcileDate));
+    const diff = Math.round((actual - current) * 100) / 100;
+    return { current, diff };
+}
+export const ReconciliationService = {
+    /* ----------------------------- UI‑Flow API ---------------------------- */
+    startReconciliation(account) {
+        const store = useReconciliationStore();
+        store.startReconciliation(account);
+    },
+    cancelReconciliation() {
+        useReconciliationStore().cancelReconciliation();
+    },
+    /* ------------------------- Haupt‑Durchführung ------------------------- */
+    async reconcileAccount(account) {
+        const store = useReconciliationStore();
+        if (!account) {
+            debugLog('ReconciliationService', 'no account provided – abort');
+            return false;
+        }
+        const { current, diff } = calcDifference(account.id, store.reconcileDate, store.actualBalance);
+        if (diff === 0) {
+            debugLog('ReconciliationService', 'difference 0 – nothing to do');
+            // store.reset(); // Reset erfolgt im Modal oder wenn nötig
+            return true;
+        }
+        // Ausgleichsbuchung anlegen
+        await TransactionService.addReconcileTransaction(account.id, diff, store.reconcileDate, store.note);
+        debugLog('ReconciliationService', 'reconcile OK', {
+            accountId: account.id,
+            currentBalance: current,
+            difference: diff,
+        });
+        // Monats­salden neu berechnen
+        BalanceService.calculateAllMonthlyBalances();
+        // store.reset(); // Reset erfolgt im Modal oder wenn nötig
+        return true;
+    },
+    /* -------------- Batch‑Reconciliation (bestehend) bleibt -------------- */
+    reconcileAllTransactionsUntilDate(accountId, date) {
+        const txStore = useTransactionStore();
+        let count = 0;
+        const target = new Date(date);
+        txStore.transactions.forEach((tx) => {
+            if (tx.accountId === accountId &&
+                !tx.reconciled &&
+                new Date(toDateOnlyString(tx.date)) <= target) {
+                TransactionService.updateTransaction(tx.id, { reconciled: true });
+                count++;
+            }
+        });
+        debugLog('ReconciliationService', 'reconciled historic txs', { count });
+        return count;
+    },
+    toggleTransactionReconciled(transactionId) {
+        const txStore = useTransactionStore();
+        const tx = txStore.getTransactionById(transactionId);
+        if (!tx)
+            return;
+        TransactionService.updateTransaction(transactionId, {
+            reconciled: !tx.reconciled,
+        });
+        debugLog('ReconciliationService', 'toggled reconciled', {
+            id: transactionId,
+            newVal: !tx.reconciled,
+        });
+    },
+};

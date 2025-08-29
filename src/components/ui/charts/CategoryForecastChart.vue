@@ -285,7 +285,7 @@ function generateForecastData(): void {
   debugLog("[CategoryForecastChart] generateForecastData", {
     expenses: expenseData.length,
     incomes: incomeData.length,
-    startDate: props.startDate,
+    startDate: props.dateRange.start,
   });
 }
 

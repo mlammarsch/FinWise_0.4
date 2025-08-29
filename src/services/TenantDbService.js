@@ -1,0 +1,2150 @@
+import { useTenantStore } from '@/stores/tenantStore';
+import { SyncStatus, EntityTypeEnum, SyncOperationType } from '@/types';
+import { errorLog, warnLog, debugLog, infoLog } from '@/utils/logger';
+import { v4 as uuidv4 } from 'uuid';
+import { mapSyncPayloadToBackendFormat } from '@/utils/fieldMapping';
+export class TenantDbService {
+    get db() {
+        const tenantStore = useTenantStore();
+        return tenantStore.activeTenantDB;
+    }
+    async addAccount(account) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addAccount: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const plainAccount = this.toPlainObject(account);
+            await this.db.accounts.put(plainAccount);
+            debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen des Kontos "${account.name}"`, { account, error: err });
+            throw err;
+        }
+    }
+    async updateAccount(account) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateAccount: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            debugLog('TenantDbService', 'updateAccount', 'Putting account into DB', account);
+            const plainAccount = this.toPlainObject(account);
+            await this.db.accounts.put(plainAccount);
+            debugLog('TenantDbService', `Konto "${account.name}" (ID: ${account.id}) aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren des Kontos "${account.name}"`, { account, error: err });
+            throw err;
+        }
+    }
+    async deleteAccount(accountId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteAccount: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.accounts.delete(accountId);
+            debugLog('TenantDbService', `Konto mit ID "${accountId}" gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen des Kontos mit ID "${accountId}"`, { accountId, error: err });
+            throw err;
+        }
+    }
+    async getAccountById(accountId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAccountById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const account = await this.db.accounts.get(accountId);
+            debugLog('TenantDbService', `Konto mit ID "${accountId}" abgerufen.`, { account });
+            return account;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen des Kontos mit ID "${accountId}"`, { accountId, error: err });
+            return undefined;
+        }
+    }
+    async getAllAccounts() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllAccounts: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const accounts = await this.db.accounts.toArray();
+            debugLog('TenantDbService', 'Alle Konten abgerufen.', { count: accounts.length });
+            return accounts;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Konten', { error: err });
+            return [];
+        }
+    }
+    async addAccountGroup(accountGroup) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addAccountGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.accountGroups.put(accountGroup);
+            debugLog('TenantDbService', `Kontogruppe "${accountGroup.name}" (ID: ${accountGroup.id}) hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen der Kontogruppe "${accountGroup.name}"`, { accountGroup, error: err });
+            throw err;
+        }
+    }
+    async updateAccountGroup(accountGroup) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateAccountGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.accountGroups.put(accountGroup);
+            debugLog('TenantDbService', `Kontogruppe "${accountGroup.name}" (ID: ${accountGroup.id}) aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Kontogruppe "${accountGroup.name}"`, { accountGroup, error: err });
+            throw err;
+        }
+    }
+    async deleteAccountGroup(accountGroupId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteAccountGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.accountGroups.delete(accountGroupId);
+            debugLog('TenantDbService', `Kontogruppe mit ID "${accountGroupId}" gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Kontogruppe mit ID "${accountGroupId}"`, { accountGroupId, error: err });
+            throw err;
+        }
+    }
+    async getAccountGroupById(accountGroupId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAccountGroupById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const accountGroup = await this.db.accountGroups.get(accountGroupId);
+            debugLog('TenantDbService', `Kontogruppe mit ID "${accountGroupId}" abgerufen.`, { accountGroup });
+            return accountGroup;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Kontogruppe mit ID "${accountGroupId}"`, { accountGroupId, error: err });
+            return undefined;
+        }
+    }
+    async getAllAccountGroups() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllAccountGroups: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const accountGroups = await this.db.accountGroups.toArray();
+            debugLog('TenantDbService', 'Alle Kontogruppen abgerufen.', { count: accountGroups.length });
+            return accountGroups;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Kontogruppen', { error: err });
+            return [];
+        }
+    }
+    async addCategory(category) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addCategory: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const plainCategory = this.toPlainObject(category);
+            await this.db.categories.put(plainCategory);
+            debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen der Kategorie "${category.name}"`, { category, error: err });
+            throw err;
+        }
+    }
+    async updateCategory(category) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateCategory: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const plainCategory = this.toPlainObject(category);
+            await this.db.categories.put(plainCategory);
+            debugLog('TenantDbService', `Kategorie "${category.name}" (ID: ${category.id}) aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Kategorie "${category.name}"`, { category, error: err });
+            throw err;
+        }
+    }
+    async deleteCategory(categoryId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteCategory: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.categories.delete(categoryId);
+            debugLog('TenantDbService', `Kategorie mit ID "${categoryId}" gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Kategorie mit ID "${categoryId}"`, { categoryId, error: err });
+            throw err;
+        }
+    }
+    async getCategoryById(categoryId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getCategoryById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const category = await this.db.categories.get(categoryId);
+            debugLog('TenantDbService', `Kategorie mit ID "${categoryId}" abgerufen.`, { category });
+            return category;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Kategorie mit ID "${categoryId}"`, { categoryId, error: err });
+            return undefined;
+        }
+    }
+    async getAllCategories() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllCategories: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const categories = await this.db.categories.toArray();
+            debugLog('TenantDbService', 'Alle Kategorien abgerufen.', { count: categories.length });
+            return categories;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Kategorien', { error: err });
+            return [];
+        }
+    }
+    async addCategoryGroup(categoryGroup) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.categoryGroups.put(categoryGroup);
+            debugLog('TenantDbService', `Kategoriegruppe "${categoryGroup.name}" (ID: ${categoryGroup.id}) hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen der Kategoriegruppe "${categoryGroup.name}"`, { categoryGroup, error: err });
+            throw err;
+        }
+    }
+    async updateCategoryGroup(categoryGroup) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.categoryGroups.put(categoryGroup);
+            debugLog('TenantDbService', `Kategoriegruppe "${categoryGroup.name}" (ID: ${categoryGroup.id}) aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Kategoriegruppe "${categoryGroup.name}"`, { categoryGroup, error: err });
+            throw err;
+        }
+    }
+    async deleteCategoryGroup(categoryGroupId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteCategoryGroup: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.categoryGroups.delete(categoryGroupId);
+            debugLog('TenantDbService', `Kategoriegruppe mit ID "${categoryGroupId}" gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Kategoriegruppe mit ID "${categoryGroupId}"`, { categoryGroupId, error: err });
+            throw err;
+        }
+    }
+    async getCategoryGroupById(categoryGroupId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getCategoryGroupById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const categoryGroup = await this.db.categoryGroups.get(categoryGroupId);
+            debugLog('TenantDbService', `Kategoriegruppe mit ID "${categoryGroupId}" abgerufen.`, { categoryGroup });
+            return categoryGroup;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Kategoriegruppe mit ID "${categoryGroupId}"`, { categoryGroupId, error: err });
+            return undefined;
+        }
+    }
+    async getAllCategoryGroups() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllCategoryGroups: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const categoryGroups = await this.db.categoryGroups.toArray();
+            debugLog('TenantDbService', 'Alle Lebensbereiche abgerufen.', { count: categoryGroups.length });
+            return categoryGroups;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Lebensbereiche', { error: err });
+            return [];
+        }
+    }
+    /**
+     * Batch-Import für Kategorien - deutlich performanter als einzelne Operationen
+     */
+    async addCategoriesBatch(categories) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addCategoriesBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (categories.length === 0) {
+            debugLog('TenantDbService', 'addCategoriesBatch: Keine Kategorien zum Hinzufügen.');
+            return;
+        }
+        try {
+            // Konvertiere alle Kategorien zu plain objects
+            const plainCategories = categories.map(cat => this.toPlainObject(cat));
+            // Direkte bulkPut-Operation
+            await this.db.categories.bulkPut(plainCategories);
+            infoLog('TenantDbService', `${categories.length} Kategorien erfolgreich als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${categories.length} Kategorien`, { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Intelligente Bulk-Operation für Kategorien - nur neue/geänderte werden geschrieben
+     */
+    async addCategoriesBatchIntelligent(categories) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addCategoriesBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (categories.length === 0) {
+            debugLog('TenantDbService', 'addCategoriesBatchIntelligent: Keine Kategorien zum Verarbeiten.');
+            return { updated: 0, skipped: 0 };
+        }
+        try {
+            let updated = 0;
+            let skipped = 0;
+            const categoriesToUpdate = [];
+            // Hole alle existierenden Kategorien in einem Batch
+            const existingIds = categories.map(cat => cat.id);
+            const existingCategories = await this.db.categories.where('id').anyOf(existingIds).toArray();
+            const existingMap = new Map(existingCategories.map(cat => [cat.id, cat]));
+            // Prüfe jede Kategorie auf Änderungen
+            for (const category of categories) {
+                const existing = existingMap.get(category.id);
+                if (!existing) {
+                    // Neue Kategorie - hinzufügen
+                    categoriesToUpdate.push(category);
+                    updated++;
+                }
+                else if (category.updatedAt && existing.updatedAt) {
+                    // Prüfe LWW-Regel
+                    if (new Date(category.updatedAt) > new Date(existing.updatedAt)) {
+                        categoriesToUpdate.push(category);
+                        updated++;
+                    }
+                    else {
+                        skipped++;
+                    }
+                }
+                else {
+                    // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+                    categoriesToUpdate.push(category);
+                    updated++;
+                }
+            }
+            // Bulk-Update nur für tatsächlich zu aktualisierende Kategorien
+            if (categoriesToUpdate.length > 0) {
+                const plainCategories = categoriesToUpdate.map(cat => this.toPlainObject(cat));
+                await this.db.categories.bulkPut(plainCategories);
+            }
+            infoLog('TenantDbService', `Intelligente Kategorien-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${categories.length} Kategorien.`);
+            return { updated, skipped };
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler bei intelligenter Kategorien-Batch-Operation für ${categories.length} Kategorien`, { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Batch-Import für Kategoriegruppen - deutlich performanter als einzelne Operationen
+     */
+    async addCategoryGroupsBatch(categoryGroups) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addCategoryGroupsBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (categoryGroups.length === 0) {
+            debugLog('TenantDbService', 'addCategoryGroupsBatch: Keine Kategoriegruppen zum Hinzufügen.');
+            return;
+        }
+        try {
+            // Direkte bulkPut-Operation
+            await this.db.categoryGroups.bulkPut(categoryGroups);
+            infoLog('TenantDbService', `${categoryGroups.length} Kategoriegruppen erfolgreich als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${categoryGroups.length} Kategoriegruppen`, { error: err });
+            throw err;
+        }
+    }
+    async addSyncQueueEntry(entryData) {
+        const tenantStore = useTenantStore();
+        if (!this.db || !tenantStore.activeTenantId) {
+            warnLog('TenantDbService', 'addSyncQueueEntry: Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB oder activeTenantId verfügbar.');
+        }
+        // Konvertiere das Payload zu einem plain object und mappe Felder für Backend
+        const plainPayload = mapSyncPayloadToBackendFormat(this.toPlainObject(entryData.payload));
+        const newEntry = {
+            ...entryData,
+            payload: plainPayload, // Verwende das bereinigte Payload
+            id: uuidv4(),
+            tenantId: tenantStore.activeTenantId,
+            timestamp: Date.now(),
+            status: SyncStatus.PENDING,
+            attempts: 0,
+        };
+        try {
+            // Das gesamte newEntry-Objekt muss nicht mehr bereinigt werden, da das Payload bereits bereinigt ist
+            await this.db.syncQueue.add(newEntry);
+            debugLog('TenantDbService', `SyncQueue-Eintrag für Entity ${newEntry.entityType} (ID: ${newEntry.entityId}, Op: ${newEntry.operationType}) hinzugefügt.`, newEntry);
+            return newEntry;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen des SyncQueue-Eintrags für Entity ${newEntry.entityType} (ID: ${newEntry.entityId})`, { entry: newEntry, error: err });
+            throw err;
+        }
+    }
+    async getPendingSyncEntries(tenantId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getPendingSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const entries = await this.db.syncQueue
+                .where({ tenantId: tenantId, status: SyncStatus.PENDING })
+                .sortBy('timestamp');
+            debugLog('TenantDbService', `Ausstehende Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+            return entries;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen ausstehender Sync-Einträge für Mandant ${tenantId}`, { error: err });
+            return [];
+        }
+    }
+    async updateSyncQueueEntryStatus(entryId, newStatus, error, transaction // Optionaler Parameter
+    ) {
+        if (!this.db && !transaction) { // Wenn keine DB und keine Transaktion, dann geht nichts
+            warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Keine aktive Mandanten-DB oder Transaktion verfügbar.');
+            return false;
+        }
+        const updateData = { status: newStatus };
+        // Die Logik für attempts und lastAttempt muss innerhalb der Transaktion erfolgen,
+        // um Konsistenz zu gewährleisten, besonders wenn die Funktion mit einer bestehenden Transaktion aufgerufen wird.
+        // Da wir hier potenziell eine bestehende Transaktion verwenden, können wir nicht einfach this.db.syncQueue.get(entryId) außerhalb aufrufen.
+        // Diese Logik wird in die 'operation' verlagert.
+        if (newStatus === SyncStatus.FAILED && error) {
+            updateData.error = error;
+        }
+        if (newStatus === SyncStatus.SYNCED) {
+            updateData.error = undefined; // Fehler zurücksetzen bei erfolgreicher Synchronisation
+        }
+        const operation = async (tx) => {
+            const syncQueueTable = tx.table('syncQueue');
+            if (newStatus === SyncStatus.PROCESSING) {
+                // Wichtig: Lese den aktuellen Eintrag *innerhalb* der Transaktion, um Race Conditions zu vermeiden
+                const currentEntry = await syncQueueTable.get(entryId);
+                updateData.attempts = (currentEntry?.attempts ?? 0) + 1;
+                updateData.lastAttempt = Date.now();
+            }
+            return await syncQueueTable.update(entryId, updateData);
+        };
+        try {
+            let updatedCount = 0;
+            if (transaction) {
+                updatedCount = await operation(transaction);
+            }
+            else if (this.db) {
+                // Stellen Sie sicher, dass this.db.syncQueue hier korrekt referenziert wird,
+                // oder übergeben Sie die Tabellennamen explizit, wenn Dexie das erfordert.
+                updatedCount = await this.db.transaction('rw', this.db.syncQueue, async (tx) => {
+                    return await operation(tx);
+                });
+            }
+            else {
+                // Sollte durch die Prüfung am Anfang nicht erreicht werden, aber als Sicherheitsnetz
+                warnLog('TenantDbService', 'updateSyncQueueEntryStatus: Weder Transaktion noch DB verfügbar für Operation.');
+                return false;
+            }
+            if (updatedCount > 0) {
+                debugLog('TenantDbService', `Status für SyncQueue-Eintrag ${entryId} auf ${newStatus} aktualisiert.`);
+                return true;
+            }
+            else {
+                // Wenn der Eintrag nicht gefunden wurde, könnte das ein Fehler sein oder erwartet (z.B. schon gelöscht)
+                // Das Logging hier beibehalten, aber die aufrufende Stelle muss ggf. Kontext haben.
+                warnLog('TenantDbService', `Konnte SyncQueue-Eintrag ${entryId} für Status-Update nicht finden (innerhalb der Transaktion).`);
+                return false;
+            }
+        }
+        catch (dbError) {
+            errorLog('TenantDbService', `Dexie-Fehler beim Aktualisieren des SyncQueue-Eintrags ${entryId} auf Status ${newStatus}.`, { error: dbError });
+            return false;
+        }
+    }
+    async removeSyncQueueEntry(entryId, transaction // Optionaler Parameter
+    ) {
+        if (!this.db && !transaction) {
+            warnLog('TenantDbService', 'removeSyncQueueEntry: Keine aktive Mandanten-DB oder Transaktion verfügbar.');
+            return false;
+        }
+        const operation = async (tx) => {
+            const syncQueueTable = tx.table('syncQueue');
+            const existingEntry = await syncQueueTable.get(entryId);
+            if (!existingEntry) {
+                warnLog('TenantDbService', `removeSyncQueueEntry: Eintrag ${entryId} nicht gefunden (innerhalb der Transaktion), möglicherweise bereits entfernt.`);
+                // Betrachte es als Erfolg, wenn das Ziel "Eintrag ist weg" ist.
+                // Die aufrufende Stelle (WebSocketService) loggt bereits, wenn sie einen Eintrag nicht entfernen konnte,
+                // weil er "möglicherweise bereits entfernt" wurde. Dieses Logging hier ist also konsistent.
+                return true;
+            }
+            await syncQueueTable.delete(entryId);
+            debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} erfolgreich entfernt (innerhalb der Transaktion).`);
+            return true;
+        };
+        try {
+            if (transaction) {
+                return await operation(transaction);
+            }
+            else if (this.db) {
+                // Stellen Sie sicher, dass this.db.syncQueue hier korrekt referenziert wird.
+                return await this.db.transaction('rw', this.db.syncQueue, async (tx) => {
+                    return await operation(tx);
+                });
+            }
+            else {
+                warnLog('TenantDbService', 'removeSyncQueueEntry: Weder Transaktion noch DB verfügbar für Operation.');
+                return false;
+            }
+        }
+        catch (dbError) {
+            errorLog('TenantDbService', `Dexie-Fehler beim Entfernen des SyncQueue-Eintrags ${entryId}.`, { error: dbError });
+            return false;
+        }
+    }
+    async getSyncQueueEntry(entryId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getSyncQueueEntry: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const entry = await this.db.transaction('r', this.db.syncQueue, async () => {
+                return await this.db.syncQueue.get(entryId);
+            });
+            if (entry) {
+                debugLog('TenantDbService', `SyncQueue-Eintrag ${entryId} abgerufen.`);
+            }
+            return entry;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen des SyncQueue-Eintrags ${entryId}`, { error: err });
+            return undefined;
+        }
+    }
+    async getFailedSyncEntries(tenantId, maxRetries = 3) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getFailedSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const entries = await this.db.syncQueue
+                .where({ tenantId: tenantId, status: SyncStatus.FAILED })
+                .filter(entry => (entry.attempts ?? 0) < maxRetries)
+                .sortBy('timestamp');
+            debugLog('TenantDbService', `Fehlgeschlagene Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+            return entries;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen fehlgeschlagener Sync-Einträge für Mandant ${tenantId}`, { error: err });
+            return [];
+        }
+    }
+    async getProcessingSyncEntries(tenantId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getProcessingSyncEntries: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const entries = await this.db.syncQueue
+                .where({ tenantId: tenantId, status: SyncStatus.PROCESSING })
+                .sortBy('timestamp');
+            debugLog('TenantDbService', `Verarbeitende Sync-Einträge für Mandant ${tenantId} abgerufen.`, { count: entries.length });
+            return entries;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen verarbeitender Sync-Einträge für Mandant ${tenantId}`, { error: err });
+            return [];
+        }
+    }
+    async resetStuckProcessingEntries(tenantId, timeoutMs = 30000) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'resetStuckProcessingEntries: Keine aktive Mandanten-DB verfügbar.');
+            return 0;
+        }
+        try {
+            const cutoffTime = Date.now() - timeoutMs;
+            const stuckEntries = await this.db.syncQueue
+                .where({ tenantId: tenantId, status: SyncStatus.PROCESSING })
+                .filter(entry => (entry.lastAttempt ?? 0) < cutoffTime)
+                .toArray();
+            let resetCount = 0;
+            for (const entry of stuckEntries) {
+                const success = await this.updateSyncQueueEntryStatus(entry.id, SyncStatus.PENDING, 'Reset from stuck PROCESSING state');
+                if (success) {
+                    resetCount++;
+                }
+            }
+            if (resetCount > 0) {
+                debugLog('TenantDbService', `${resetCount} hängende PROCESSING-Einträge für Mandant ${tenantId} zurückgesetzt.`);
+            }
+            return resetCount;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Zurücksetzen hängender PROCESSING-Einträge für Mandant ${tenantId}`, { error: err });
+            return 0;
+        }
+    }
+    async getQueueStatistics(tenantId) {
+        if (!this.db) {
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const [pendingEntries, processingEntries, failedEntries] = await Promise.all([
+                this.db.syncQueue.where({ tenantId, status: SyncStatus.PENDING }).toArray(),
+                this.db.syncQueue.where({ tenantId, status: SyncStatus.PROCESSING }).toArray(),
+                this.db.syncQueue.where({ tenantId, status: SyncStatus.FAILED }).toArray()
+            ]);
+            const oldestPending = pendingEntries.length > 0
+                ? Math.min(...pendingEntries.map(e => e.timestamp))
+                : null;
+            const lastError = failedEntries.length > 0
+                ? failedEntries.sort((a, b) => (b.lastAttempt || 0) - (a.lastAttempt || 0))[0].error
+                : null;
+            return {
+                pendingCount: pendingEntries.length,
+                processingCount: processingEntries.length,
+                failedCount: failedEntries.length,
+                lastSyncTime: null, // Wird später implementiert
+                oldestPendingTime: oldestPending,
+                totalSyncedToday: 0, // Wird später implementiert
+                averageSyncDuration: 0, // Wird später implementiert
+                lastErrorMessage: lastError || null
+            };
+        }
+        catch (error) {
+            errorLog('TenantDbService', 'Error getting queue statistics', { error, tenantId });
+            throw error;
+        }
+    }
+    async getPendingDeleteOperations(tenantId) {
+        /**
+         * Holt alle pending DELETE-Operationen aus der Sync-Queue.
+         * Wird verwendet um zu vermeiden, dass gelöschte Entitäten durch initial data load wieder hinzugefügt werden.
+         */
+        if (!this.db) {
+            warnLog('TenantDbService', 'getPendingDeleteOperations: Keine aktive Mandanten-DB verfügbar.');
+            return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
+        }
+        try {
+            // Hole alle pending UND processing DELETE-Operationen
+            // PROCESSING ist wichtig, da DELETE-Einträge während der Verarbeitung noch aktiv sind
+            const pendingDeletes = await this.db.syncQueue
+                .where({ tenantId, operationType: 'delete' })
+                .and(entry => entry.status === SyncStatus.PENDING || entry.status === SyncStatus.PROCESSING)
+                .toArray();
+            const accounts = [];
+            const accountGroups = [];
+            const categories = [];
+            const categoryGroups = [];
+            const recipients = [];
+            const tags = [];
+            for (const entry of pendingDeletes) {
+                if (entry.entityType === 'Account') {
+                    accounts.push(entry.entityId);
+                }
+                else if (entry.entityType === 'AccountGroup') {
+                    accountGroups.push(entry.entityId);
+                }
+                else if (entry.entityType === 'Category') {
+                    categories.push(entry.entityId);
+                }
+                else if (entry.entityType === 'CategoryGroup') {
+                    categoryGroups.push(entry.entityId);
+                }
+                else if (entry.entityType === 'Recipient') {
+                    recipients.push(entry.entityId);
+                }
+                else if (entry.entityType === 'Tag') {
+                    tags.push(entry.entityId);
+                }
+            }
+            debugLog('TenantDbService', `Found ${accounts.length} pending account deletes, ${accountGroups.length} pending account group deletes, ${categories.length} pending category deletes, ${categoryGroups.length} pending category group deletes, ${recipients.length} pending recipient deletes and ${tags.length} pending tag deletes for tenant ${tenantId}`);
+            return { accounts, accountGroups, categories, categoryGroups, recipients, tags };
+        }
+        catch (error) {
+            errorLog('TenantDbService', 'Error getting pending DELETE operations', { error, tenantId });
+            return { accounts: [], accountGroups: [], categories: [], categoryGroups: [], recipients: [], tags: [] };
+        }
+    }
+    /**
+     * Löscht die komplette IndexedDB für den aktuellen Mandanten
+     */
+    async deleteTenantDatabase() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteTenantDatabase: Keine aktive Mandanten-DB verfügbar.');
+            return;
+        }
+        try {
+            const tenantStore = useTenantStore();
+            const currentTenantId = tenantStore.activeTenantId;
+            if (!currentTenantId) {
+                throw new Error('Kein aktiver Mandant verfügbar.');
+            }
+            // Schließe die Datenbank-Verbindung
+            this.db.close();
+            // Lösche die komplette Datenbank
+            await this.db.delete();
+            // Setze die DB-Referenz im TenantStore zurück
+            tenantStore.activeTenantDB = null;
+            debugLog('TenantDbService', `IndexedDB für Mandant ${currentTenantId} vollständig gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Löschen der Mandanten-Datenbank', { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Setzt die IndexedDB für den aktuellen Mandanten zurück und initialisiert sie neu
+     */
+    async resetTenantDatabase() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'resetTenantDatabase: Keine aktive Mandanten-DB verfügbar.');
+            return;
+        }
+        try {
+            const tenantStore = useTenantStore();
+            const currentTenantId = tenantStore.activeTenantId;
+            if (!currentTenantId) {
+                throw new Error('Kein aktiver Mandant verfügbar.');
+            }
+            // Lösche alle Daten aus allen Tabellen
+            await this.db.transaction('rw', [
+                this.db.accounts,
+                this.db.accountGroups,
+                this.db.categories,
+                this.db.categoryGroups,
+                this.db.transactions,
+                this.db.planningTransactions,
+                this.db.tags,
+                this.db.recipients,
+                this.db.rules,
+                this.db.syncQueue
+            ], async () => {
+                await Promise.all([
+                    this.db.accounts.clear(),
+                    this.db.accountGroups.clear(),
+                    this.db.categories.clear(),
+                    this.db.categoryGroups.clear(),
+                    this.db.transactions.clear(),
+                    this.db.planningTransactions.clear(),
+                    this.db.tags.clear(),
+                    this.db.recipients.clear(),
+                    this.db.rules.clear(),
+                    this.db.syncQueue.clear()
+                ]);
+            });
+            debugLog('TenantDbService', `IndexedDB für Mandant ${currentTenantId} zurückgesetzt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Zurücksetzen der Mandanten-Datenbank', { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Löscht alle SyncQueue-Einträge für den aktuellen Mandanten
+     */
+    async clearSyncQueue() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'clearSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+            return;
+        }
+        try {
+            const tenantStore = useTenantStore();
+            const currentTenantId = tenantStore.activeTenantId;
+            if (!currentTenantId) {
+                throw new Error('Kein aktiver Mandant verfügbar.');
+            }
+            // Einfache Lösung: Lösche alle SyncQueue-Einträge (nicht nur für aktuellen Mandanten)
+            // Da jede Mandanten-DB separate IndexedDB ist, sind sowieso nur Einträge des aktuellen Mandanten drin
+            const deletedCount = await this.db.syncQueue.clear();
+            debugLog('TenantDbService', `${deletedCount} SyncQueue-Einträge für Mandant ${currentTenantId} gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Löschen der SyncQueue-Einträge', { error: err });
+            throw err;
+        }
+    }
+    async addTransaction(transaction, skipIfOlder = false) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTransaction: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            // Wenn skipIfOlder aktiviert ist, prüfe ob lokale Transaktion neuer ist
+            if (skipIfOlder && transaction.updated_at) {
+                const existingTransaction = await this.db.transactions.get(transaction.id);
+                if (existingTransaction && existingTransaction.updated_at &&
+                    new Date(existingTransaction.updated_at) >= new Date(transaction.updated_at)) {
+                    // Lokale Transaktion ist neuer oder gleich - keine DB-Operation nötig
+                    return false;
+                }
+            }
+            // Konvertiere transaction zu plain object
+            const plainTransaction = this.toPlainObject(transaction);
+            await this.db.transactions.put(plainTransaction);
+            debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) hinzugefügt/aktualisiert.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen der Transaktion "${transaction.description}"`, { transaction, error: err });
+            throw err;
+        }
+    }
+    async updateTransaction(transaction) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateTransaction: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            // Konvertiere transaction zu plain object
+            const plainTransaction = this.toPlainObject(transaction);
+            await this.db.transactions.put(plainTransaction);
+            debugLog('TenantDbService', `Transaktion "${transaction.description}" (ID: ${transaction.id}) aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Transaktion "${transaction.description}"`, { transaction, error: err });
+            throw err;
+        }
+    }
+    async deleteTransaction(transactionId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteTransaction: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            await this.db.transactions.delete(transactionId);
+            debugLog('TenantDbService', `Transaktion mit ID "${transactionId}" gelöscht.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Transaktion mit ID "${transactionId}"`, { transactionId, error: err });
+            throw err;
+        }
+    }
+    async getTransactionById(transactionId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getTransactionById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const transaction = await this.db.transactions.get(transactionId);
+            debugLog('TenantDbService', `Transaktion mit ID "${transactionId}" abgerufen.`, { transaction });
+            return transaction;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Transaktion mit ID "${transactionId}"`, { transactionId, error: err });
+            return undefined;
+        }
+    }
+    async getAllTransactions() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllTransactions: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const transactions = await this.db.transactions.toArray();
+            debugLog('TenantDbService', 'Alle Transaktionen abgerufen.', { count: transactions.length });
+            return transactions;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Transaktionen', { error: err });
+            return [];
+        }
+    }
+    // ============================================================================
+    // BATCH OPERATIONS FOR CSV IMPORT PERFORMANCE
+    // ============================================================================
+    /**
+     * Batch-Import für Transaktionen - deutlich performanter als einzelne Operationen
+     */
+    async addTransactionsBatch(transactions) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTransactionsBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (transactions.length === 0) {
+            debugLog('TenantDbService', 'addTransactionsBatch: Keine Transaktionen zum Hinzufügen.');
+            return;
+        }
+        try {
+            // Konvertiere alle Transaktionen zu plain objects
+            const plainTransactions = transactions.map(tx => this.toPlainObject(tx));
+            // Direkte bulkPut-Operation ohne explizite Transaktion (Dexie verwaltet das intern)
+            await this.db.transactions.bulkPut(plainTransactions);
+            infoLog('TenantDbService', `${transactions.length} Transaktionen erfolgreich als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${transactions.length} Transaktionen`, { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Intelligente Bulk-Operation für Transaktionen - nur neue/geänderte werden geschrieben
+     * Optimiert für Initial Data Load Performance
+     */
+    async addTransactionsBatchIntelligent(transactions) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTransactionsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (transactions.length === 0) {
+            debugLog('TenantDbService', 'addTransactionsBatchIntelligent: Keine Transaktionen zum Verarbeiten.');
+            return { updated: 0, skipped: 0 };
+        }
+        try {
+            let updated = 0;
+            let skipped = 0;
+            const transactionsToUpdate = [];
+            // Hole alle existierenden Transaktionen in einem Batch
+            const existingIds = transactions.map(tx => tx.id);
+            const existingTransactions = await this.db.transactions.where('id').anyOf(existingIds).toArray();
+            const existingMap = new Map(existingTransactions.map(tx => [tx.id, tx]));
+            // Prüfe jede Transaktion auf Änderungen
+            for (const transaction of transactions) {
+                const existing = existingMap.get(transaction.id);
+                if (!existing) {
+                    // Neue Transaktion - hinzufügen
+                    transactionsToUpdate.push(transaction);
+                    updated++;
+                }
+                else if (transaction.updated_at && existing.updated_at) {
+                    // Prüfe LWW-Regel
+                    if (new Date(transaction.updated_at) > new Date(existing.updated_at)) {
+                        transactionsToUpdate.push(transaction);
+                        updated++;
+                    }
+                    else {
+                        skipped++;
+                    }
+                }
+                else {
+                    // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+                    transactionsToUpdate.push(transaction);
+                    updated++;
+                }
+            }
+            // Bulk-Update nur für tatsächlich zu aktualisierende Transaktionen
+            if (transactionsToUpdate.length > 0) {
+                const plainTransactions = transactionsToUpdate.map(tx => this.toPlainObject(tx));
+                await this.db.transactions.bulkPut(plainTransactions);
+            }
+            infoLog('TenantDbService', `Intelligente Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${transactions.length} Transaktionen.`);
+            return { updated, skipped };
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler bei intelligenter Batch-Operation für ${transactions.length} Transaktionen`, { error: err });
+            throw err;
+        }
+    }
+    async createRecipient(recipient) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'createRecipient: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const recipientWithTimestamp = {
+                ...recipient,
+                updated_at: new Date().toISOString()
+            };
+            await this.db.recipients.put(recipientWithTimestamp);
+            debugLog('TenantDbService', `Empfänger "${recipient.name}" (ID: ${recipient.id}) erstellt.`);
+            return recipientWithTimestamp;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Erstellen des Empfängers "${recipient.name}"`, { recipient, error: err });
+            throw err;
+        }
+    }
+    /**
+     * Erstellt mehrere Empfänger in einem Batch-Vorgang (Performance-Optimierung für CSV-Import)
+     */
+    async addRecipientsBatch(recipients) {
+        if (!this.db) {
+            throw new Error('Datenbank nicht initialisiert');
+        }
+        try {
+            const recipientsWithTimestamp = recipients.map(recipient => ({
+                ...recipient,
+                updated_at: new Date().toISOString()
+            }));
+            await this.db.transaction('rw', this.db.recipients, async () => {
+                await this.db.recipients.bulkPut(recipientsWithTimestamp);
+            });
+            infoLog('TenantDbService', `${recipients.length} Empfänger in Batch-Vorgang erstellt.`);
+            return recipientsWithTimestamp;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Erstellen von ${recipients.length} Empfängern`, { recipients, error: err });
+            throw err;
+        }
+    }
+    /**
+     * Intelligente Bulk-Operation für Empfänger - nur neue/geänderte werden geschrieben
+     * Optimiert für Initial Data Load Performance
+     */
+    async addRecipientsBatchIntelligent(recipients) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addRecipientsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (recipients.length === 0) {
+            debugLog('TenantDbService', 'addRecipientsBatchIntelligent: Keine Empfänger zum Verarbeiten.');
+            return { updated: 0, skipped: 0 };
+        }
+        try {
+            let updated = 0;
+            let skipped = 0;
+            const recipientsToUpdate = [];
+            // Hole alle existierenden Empfänger in einem Batch
+            const existingIds = recipients.map(r => r.id);
+            const existingRecipients = await this.db.recipients.where('id').anyOf(existingIds).toArray();
+            const existingMap = new Map(existingRecipients.map(r => [r.id, r]));
+            // Prüfe jeden Empfänger auf Änderungen
+            for (const recipient of recipients) {
+                const existing = existingMap.get(recipient.id);
+                if (!existing) {
+                    // Neuer Empfänger - hinzufügen
+                    recipientsToUpdate.push({
+                        ...recipient,
+                        updatedAt: recipient.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+                else if (recipient.updatedAt && existing.updatedAt) {
+                    // Prüfe LWW-Regel
+                    if (new Date(recipient.updatedAt) > new Date(existing.updatedAt)) {
+                        recipientsToUpdate.push({
+                            ...recipient,
+                            updatedAt: recipient.updatedAt || new Date().toISOString()
+                        });
+                        updated++;
+                    }
+                    else {
+                        skipped++;
+                    }
+                }
+                else {
+                    // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+                    recipientsToUpdate.push({
+                        ...recipient,
+                        updatedAt: recipient.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+            }
+            // Bulk-Update nur für tatsächlich zu aktualisierende Empfänger
+            if (recipientsToUpdate.length > 0) {
+                await this.db.recipients.bulkPut(recipientsToUpdate);
+            }
+            infoLog('TenantDbService', `Intelligente Empfänger-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${recipients.length} Empfängern.`);
+            return { updated, skipped };
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler bei intelligenter Empfänger-Batch-Operation für ${recipients.length} Empfänger`, { error: err });
+            throw err;
+        }
+    }
+    async getRecipients() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getRecipients: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const recipients = await this.db.recipients.toArray();
+            debugLog('TenantDbService', 'Alle Empfänger abgerufen.', { count: recipients.length });
+            return recipients;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Empfänger', { error: err });
+            return [];
+        }
+    }
+    async getRecipientById(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getRecipientById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const recipient = await this.db.recipients.get(id);
+            debugLog('TenantDbService', `Empfänger mit ID "${id}" abgerufen.`, { recipient });
+            return recipient;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen des Empfängers mit ID "${id}"`, { id, error: err });
+            return undefined;
+        }
+    }
+    async updateRecipient(id, updates) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateRecipient: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existing = await this.db.recipients.get(id);
+            if (!existing) {
+                warnLog('TenantDbService', `Empfänger mit ID "${id}" für Update nicht gefunden.`);
+                return false;
+            }
+            const updatedRecipient = {
+                ...existing,
+                ...updates,
+                id, // ID darf nicht überschrieben werden
+                updated_at: new Date().toISOString()
+            };
+            await this.db.recipients.put(updatedRecipient);
+            debugLog('TenantDbService', `Empfänger "${updatedRecipient.name}" (ID: ${id}) aktualisiert.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren des Empfängers mit ID "${id}"`, { id, updates, error: err });
+            return false;
+        }
+    }
+    async deleteRecipient(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteRecipient: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existing = await this.db.recipients.get(id);
+            if (!existing) {
+                warnLog('TenantDbService', `Empfänger mit ID "${id}" für Löschung nicht gefunden.`);
+                return false;
+            }
+            await this.db.recipients.delete(id);
+            debugLog('TenantDbService', `Empfänger mit ID "${id}" gelöscht.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen des Empfängers mit ID "${id}"`, { id, error: err });
+            return false;
+        }
+    }
+    async createTag(tag) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'createTag: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const tagWithTimestamp = {
+                ...tag,
+                updated_at: new Date().toISOString()
+            };
+            await this.db.tags.put(tagWithTimestamp);
+            debugLog('TenantDbService', `Tag "${tag.name}" (ID: ${tag.id}) erstellt.`);
+            return tagWithTimestamp;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Erstellen des Tags "${tag.name}"`, { tag, error: err });
+            throw err;
+        }
+    }
+    /**
+     * Batch-Import für Tags - deutlich performanter als einzelne Operationen
+     */
+    async addTagsBatch(tags) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTagsBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (tags.length === 0) {
+            debugLog('TenantDbService', 'addTagsBatch: Keine Tags zum Hinzufügen.');
+            return;
+        }
+        try {
+            // Tags mit Timestamp versehen
+            const tagsWithTimestamp = tags.map(tag => ({
+                ...tag,
+                updatedAt: tag.updatedAt || new Date().toISOString()
+            }));
+            // Direkte bulkPut-Operation
+            await this.db.tags.bulkPut(tagsWithTimestamp);
+            infoLog('TenantDbService', `${tags.length} Tags erfolgreich als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${tags.length} Tags`, { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Intelligente Bulk-Operation für Tags - nur neue/geänderte werden geschrieben
+     */
+    async addTagsBatchIntelligent(tags) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTagsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (tags.length === 0) {
+            debugLog('TenantDbService', 'addTagsBatchIntelligent: Keine Tags zum Verarbeiten.');
+            return { updated: 0, skipped: 0 };
+        }
+        try {
+            let updated = 0;
+            let skipped = 0;
+            const tagsToUpdate = [];
+            // Hole alle existierenden Tags in einem Batch
+            const existingIds = tags.map(tag => tag.id);
+            const existingTags = await this.db.tags.where('id').anyOf(existingIds).toArray();
+            const existingMap = new Map(existingTags.map(tag => [tag.id, tag]));
+            // Prüfe jeden Tag auf Änderungen
+            for (const tag of tags) {
+                const existing = existingMap.get(tag.id);
+                if (!existing) {
+                    // Neuer Tag - hinzufügen
+                    tagsToUpdate.push({
+                        ...tag,
+                        updatedAt: tag.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+                else if (tag.updatedAt && existing.updatedAt) {
+                    // Prüfe LWW-Regel
+                    if (new Date(tag.updatedAt) > new Date(existing.updatedAt)) {
+                        tagsToUpdate.push({
+                            ...tag,
+                            updatedAt: tag.updatedAt || new Date().toISOString()
+                        });
+                        updated++;
+                    }
+                    else {
+                        skipped++;
+                    }
+                }
+                else {
+                    // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+                    tagsToUpdate.push({
+                        ...tag,
+                        updatedAt: tag.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+            }
+            // Bulk-Update nur für tatsächlich zu aktualisierende Tags
+            if (tagsToUpdate.length > 0) {
+                await this.db.tags.bulkPut(tagsToUpdate);
+            }
+            infoLog('TenantDbService', `Intelligente Tags-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${tags.length} Tags.`);
+            return { updated, skipped };
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler bei intelligenter Tags-Batch-Operation für ${tags.length} Tags`, { error: err });
+            throw err;
+        }
+    }
+    async getTags() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getTags: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const tags = await this.db.tags.toArray();
+            debugLog('TenantDbService', 'Alle Tags abgerufen.', { count: tags.length });
+            return tags;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Tags', { error: err });
+            return [];
+        }
+    }
+    async getTagById(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getTagById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const tag = await this.db.tags.get(id);
+            debugLog('TenantDbService', `Tag mit ID "${id}" abgerufen.`, { tag });
+            return tag;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen des Tags mit ID "${id}"`, { id, error: err });
+            return undefined;
+        }
+    }
+    async updateTag(id, updates) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateTag: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingTag = await this.db.tags.get(id);
+            if (!existingTag) {
+                warnLog('TenantDbService', `Tag mit ID "${id}" für Update nicht gefunden.`);
+                return false;
+            }
+            const updatedTag = {
+                ...existingTag,
+                ...updates,
+                id, // ID darf nicht überschrieben werden
+                updated_at: new Date().toISOString()
+            };
+            await this.db.tags.put(updatedTag);
+            debugLog('TenantDbService', `Tag "${updatedTag.name}" (ID: ${id}) aktualisiert.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren des Tags mit ID "${id}"`, { id, updates, error: err });
+            return false;
+        }
+    }
+    async deleteTag(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteTag: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingTag = await this.db.tags.get(id);
+            if (!existingTag) {
+                warnLog('TenantDbService', `Tag mit ID "${id}" für Löschung nicht gefunden.`);
+                return false;
+            }
+            await this.db.tags.delete(id);
+            debugLog('TenantDbService', `Tag "${existingTag.name}" (ID: ${id}) gelöscht.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen des Tags mit ID "${id}"`, { id, error: err });
+            return false;
+        }
+    }
+    // ============================================================================
+    // AUTOMATION RULES CRUD OPERATIONS
+    // ============================================================================
+    // Hilfsfunktion: Konvertiert Vue Reactive Proxies zu plain JavaScript-Objekten
+    toPlainObject(obj) {
+        if (obj === null || obj === undefined)
+            return obj;
+        if (typeof obj !== 'object')
+            return obj;
+        if (Array.isArray(obj)) {
+            return obj.map(item => this.toPlainObject(item));
+        }
+        // Erstelle plain object ohne reactive properties
+        const plain = {};
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key) && !key.startsWith('__v_')) {
+                plain[key] = this.toPlainObject(obj[key]);
+            }
+        }
+        return plain;
+    }
+    async createRule(rule) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'createRule: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            // Konvertiere rule zu plain object
+            const plainRule = this.toPlainObject(rule);
+            const ruleWithTimestamp = {
+                ...plainRule,
+                updated_at: new Date().toISOString()
+            };
+            debugLog('TenantDbService', 'createRule - Vue Reactive Proxies konvertiert', {
+                ruleName: rule.name,
+                ruleId: rule.id,
+                conditionsCount: ruleWithTimestamp.conditions?.length || 0,
+                actionsCount: ruleWithTimestamp.actions?.length || 0
+            });
+            await this.db.rules.put(ruleWithTimestamp);
+            debugLog('TenantDbService', `Regel "${rule.name}" (ID: ${rule.id}) erstellt.`);
+            return ruleWithTimestamp;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Erstellen der Regel "${rule.name}"`, { rule, error: err });
+            throw err;
+        }
+    }
+    async getRules() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getRules: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const rules = await this.db.rules.orderBy('priority').toArray();
+            debugLog('TenantDbService', `${rules.length} Regeln abgerufen.`);
+            return rules;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen der Regeln', { error: err });
+            return [];
+        }
+    }
+    async getRuleById(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getRuleById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const rule = await this.db.rules.get(id);
+            if (rule) {
+                debugLog('TenantDbService', `Regel "${rule.name}" (ID: ${id}) abgerufen.`);
+            }
+            return rule;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Regel mit ID "${id}"`, { id, error: err });
+            return undefined;
+        }
+    }
+    async updateRule(id, updates) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updateRule: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingRule = await this.db.rules.get(id);
+            if (!existingRule) {
+                warnLog('TenantDbService', `Regel mit ID "${id}" für Update nicht gefunden.`);
+                return false;
+            }
+            // Konvertiere updates zu plain object
+            const plainUpdates = this.toPlainObject(updates);
+            const updatedRule = {
+                ...existingRule,
+                ...plainUpdates,
+                id, // ID darf nicht überschrieben werden
+                updated_at: new Date().toISOString()
+            };
+            await this.db.rules.put(updatedRule);
+            debugLog('TenantDbService', `Regel "${updatedRule.name}" (ID: ${id}) aktualisiert.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Regel mit ID "${id}"`, { id, updates, error: err });
+            return false;
+        }
+    }
+    async deleteRule(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteRule: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingRule = await this.db.rules.get(id);
+            if (!existingRule) {
+                warnLog('TenantDbService', `Regel mit ID "${id}" für Löschung nicht gefunden.`);
+                return false;
+            }
+            await this.db.rules.delete(id);
+            debugLog('TenantDbService', `Regel "${existingRule.name}" (ID: ${id}) gelöscht.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Regel mit ID "${id}"`, { id, error: err });
+            return false;
+        }
+    }
+    // PlanningTransaction CRUD-Methoden
+    async createPlanningTransaction(planningTransaction) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'createPlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const planningTransactionWithTimestamp = {
+                ...planningTransaction,
+                updated_at: new Date().toISOString()
+            };
+            const plainPlanningTransaction = this.toPlainObject(planningTransactionWithTimestamp);
+            await this.db.planningTransactions.put(plainPlanningTransaction);
+            debugLog('TenantDbService', `Planungstransaktion "${planningTransaction.name}" (ID: ${planningTransaction.id}) erstellt.`);
+            return planningTransactionWithTimestamp;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Erstellen der Planungstransaktion "${planningTransaction.name}"`, { planningTransaction, error: err });
+            throw err;
+        }
+    }
+    /**
+     * Batch-Import für Planungstransaktionen - deutlich performanter als einzelne Operationen
+     */
+    async addPlanningTransactionsBatch(planningTransactions) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addPlanningTransactionsBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (planningTransactions.length === 0) {
+            debugLog('TenantDbService', 'addPlanningTransactionsBatch: Keine Planungstransaktionen zum Hinzufügen.');
+            return;
+        }
+        try {
+            // Planungstransaktionen mit Timestamp versehen und zu plain objects konvertieren
+            const planningTransactionsWithTimestamp = planningTransactions.map(ptx => ({
+                ...ptx,
+                updatedAt: ptx.updatedAt || new Date().toISOString()
+            }));
+            const plainPlanningTransactions = planningTransactionsWithTimestamp.map(ptx => this.toPlainObject(ptx));
+            // Direkte bulkPut-Operation
+            await this.db.planningTransactions.bulkPut(plainPlanningTransactions);
+            infoLog('TenantDbService', `${planningTransactions.length} Planungstransaktionen erfolgreich als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${planningTransactions.length} Planungstransaktionen`, { error: err });
+            throw err;
+        }
+    }
+    /**
+     * Intelligente Bulk-Operation für Planungstransaktionen - nur neue/geänderte werden geschrieben
+     */
+    async addPlanningTransactionsBatchIntelligent(planningTransactions) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addPlanningTransactionsBatchIntelligent: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (planningTransactions.length === 0) {
+            debugLog('TenantDbService', 'addPlanningTransactionsBatchIntelligent: Keine Planungstransaktionen zum Verarbeiten.');
+            return { updated: 0, skipped: 0 };
+        }
+        try {
+            let updated = 0;
+            let skipped = 0;
+            const planningTransactionsToUpdate = [];
+            // Hole alle existierenden Planungstransaktionen in einem Batch
+            const existingIds = planningTransactions.map(ptx => ptx.id);
+            const existingPlanningTransactions = await this.db.planningTransactions.where('id').anyOf(existingIds).toArray();
+            const existingMap = new Map(existingPlanningTransactions.map(ptx => [ptx.id, ptx]));
+            // Prüfe jede Planungstransaktion auf Änderungen
+            for (const planningTransaction of planningTransactions) {
+                const existing = existingMap.get(planningTransaction.id);
+                if (!existing) {
+                    // Neue Planungstransaktion - hinzufügen
+                    planningTransactionsToUpdate.push({
+                        ...planningTransaction,
+                        updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+                else if (planningTransaction.updatedAt && existing.updatedAt) {
+                    // Prüfe LWW-Regel
+                    if (new Date(planningTransaction.updatedAt) > new Date(existing.updatedAt)) {
+                        planningTransactionsToUpdate.push({
+                            ...planningTransaction,
+                            updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+                        });
+                        updated++;
+                    }
+                    else {
+                        skipped++;
+                    }
+                }
+                else {
+                    // Fallback: Aktualisiere wenn kein Timestamp vorhanden
+                    planningTransactionsToUpdate.push({
+                        ...planningTransaction,
+                        updatedAt: planningTransaction.updatedAt || new Date().toISOString()
+                    });
+                    updated++;
+                }
+            }
+            // Bulk-Update nur für tatsächlich zu aktualisierende Planungstransaktionen
+            if (planningTransactionsToUpdate.length > 0) {
+                const plainPlanningTransactions = planningTransactionsToUpdate.map(ptx => this.toPlainObject(ptx));
+                await this.db.planningTransactions.bulkPut(plainPlanningTransactions);
+            }
+            infoLog('TenantDbService', `Intelligente Planungstransaktionen-Batch-Operation abgeschlossen: ${updated} aktualisiert, ${skipped} übersprungen von ${planningTransactions.length} Planungstransaktionen.`);
+            return { updated, skipped };
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler bei intelligenter Planungstransaktionen-Batch-Operation für ${planningTransactions.length} Planungstransaktionen`, { error: err });
+            throw err;
+        }
+    }
+    async getPlanningTransactions() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getPlanningTransactions: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const planningTransactions = await this.db.planningTransactions.toArray();
+            debugLog('TenantDbService', 'Alle Planungstransaktionen abgerufen.', { count: planningTransactions.length });
+            return planningTransactions;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Planungstransaktionen', { error: err });
+            return [];
+        }
+    }
+    async getPlanningTransactionById(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getPlanningTransactionById: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const planningTransaction = await this.db.planningTransactions.get(id);
+            if (planningTransaction) {
+                debugLog('TenantDbService', `Planungstransaktion mit ID "${id}" abgerufen.`);
+            }
+            return planningTransaction;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der Planungstransaktion mit ID "${id}"`, { id, error: err });
+            return undefined;
+        }
+    }
+    async updatePlanningTransaction(id, updates) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'updatePlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingPlanningTransaction = await this.db.planningTransactions.get(id);
+            if (!existingPlanningTransaction) {
+                warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Update nicht gefunden.`);
+                return false;
+            }
+            const updatedPlanningTransaction = {
+                ...existingPlanningTransaction,
+                ...updates,
+                id, // ID darf nicht überschrieben werden
+                updated_at: new Date().toISOString()
+            };
+            const plainUpdatedPlanningTransaction = this.toPlainObject(updatedPlanningTransaction);
+            await this.db.planningTransactions.put(plainUpdatedPlanningTransaction);
+            debugLog('TenantDbService', `Planungstransaktion "${updatedPlanningTransaction.name}" (ID: ${id}) aktualisiert.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Aktualisieren der Planungstransaktion mit ID "${id}"`, { id, updates, error: err });
+            return false;
+        }
+    }
+    async deletePlanningTransaction(id) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deletePlanningTransaction: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const existingPlanningTransaction = await this.db.planningTransactions.get(id);
+            if (!existingPlanningTransaction) {
+                warnLog('TenantDbService', `Planungstransaktion mit ID "${id}" für Löschung nicht gefunden.`);
+                return false;
+            }
+            await this.db.planningTransactions.delete(id);
+            debugLog('TenantDbService', `Planungstransaktion "${existingPlanningTransaction.name}" (ID: ${id}) gelöscht.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der Planungstransaktion mit ID "${id}"`, { id, error: err });
+            return false;
+        }
+    }
+    // ============================================================================
+    // MONTHLY BALANCE CRUD OPERATIONS
+    // ============================================================================
+    /**
+     * Batch-Import für MonthlyBalances - deutlich performanter als einzelne Operationen
+     */
+    async saveMonthlyBalancesBatch(monthlyBalances) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'saveMonthlyBalancesBatch: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (monthlyBalances.length === 0) {
+            debugLog('TenantDbService', 'saveMonthlyBalancesBatch: Keine MonthlyBalances zum Speichern.');
+            return;
+        }
+        try {
+            // Konvertiere alle MonthlyBalances zu plain objects
+            const plainMonthlyBalances = monthlyBalances.map(mb => this.toPlainObject(mb));
+            // Direkte bulkPut-Operation
+            await this.db.monthlyBalances.bulkPut(plainMonthlyBalances);
+            infoLog('TenantDbService', `${monthlyBalances.length} MonthlyBalances erfolgreich als Batch gespeichert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Speichern von ${monthlyBalances.length} MonthlyBalances`, { error: err });
+            throw err;
+        }
+    }
+    async getAllMonthlyBalances() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllMonthlyBalances: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const monthlyBalances = await this.db.monthlyBalances.orderBy('[year+month]').toArray();
+            // debugLog('TenantDbService', 'Alle MonthlyBalances abgerufen.', { count: monthlyBalances.length });
+            return monthlyBalances;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller MonthlyBalances', { error: err });
+            return [];
+        }
+    }
+    async saveMonthlyBalance(monthlyBalance) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'saveMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const plainMonthlyBalance = this.toPlainObject(monthlyBalance);
+            await this.db.monthlyBalances.put(plainMonthlyBalance);
+            // debugLog('TenantDbService', `MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1} gespeichert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Speichern der MonthlyBalance für ${monthlyBalance.year}/${monthlyBalance.month + 1}`, { monthlyBalance, error: err });
+            throw err;
+        }
+    }
+    async getMonthlyBalancesByYear(year) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getMonthlyBalancesByYear: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            const monthlyBalances = await this.db.monthlyBalances
+                .where('year')
+                .equals(year)
+                .sortBy('month');
+            // debugLog('TenantDbService', `MonthlyBalances für Jahr ${year} abgerufen.`, { count: monthlyBalances.length });
+            return monthlyBalances;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalances für Jahr ${year}`, { year, error: err });
+            return [];
+        }
+    }
+    async getMonthlyBalance(year, month) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+            return undefined;
+        }
+        try {
+            const monthlyBalance = await this.db.monthlyBalances.get([year, month]);
+            // debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} abgerufen.`, { found: !!monthlyBalance });
+            return monthlyBalance;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
+            return undefined;
+        }
+    }
+    async deleteMonthlyBalance(year, month) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'deleteMonthlyBalance: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            await this.db.monthlyBalances.delete([year, month]);
+            // debugLog('TenantDbService', `MonthlyBalance für ${year}/${month + 1} gelöscht.`);
+            return true;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Löschen der MonthlyBalance für ${year}/${month + 1}`, { year, month, error: err });
+            return false;
+        }
+    }
+    // Logo Cache Management
+    // Annahme: Das Schema in tenantStore.ts wurde um 'logoCache: "&logoPath, dataUrl, lastFetched"' erweitert.
+    // und der Typ FinwiseTenantSpecificDB wurde entsprechend angepasst:
+    // logoCache: Dexie.Table<LogoCacheEntry, string>;
+    //
+    // interface LogoCacheEntry {
+    //   logoPath: string; // Primärschlüssel, z.B. tenant_id/uuid.ext
+    //   dataUrl: string;  // Base64 Data URL
+    //   lastFetched: number; // Timestamp
+    // }
+    async getCachedLogo(path) {
+        if (!this.db || !this.db.logoCache) {
+            warnLog('TenantDbService', 'getCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+            return null;
+        }
+        try {
+            const cachedLogo = await this.db.logoCache.get(path);
+            if (cachedLogo) {
+                debugLog('TenantDbService', `Logo für Pfad "${path}" aus Cache abgerufen.`);
+                return cachedLogo;
+            }
+            debugLog('TenantDbService', `Logo für Pfad "${path}" nicht im Cache gefunden.`);
+            return null;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Abrufen des Logos für Pfad "${path}" aus dem Cache`, { path, error: err });
+            return null;
+        }
+    }
+    async cacheLogo(path, data) {
+        if (!this.db || !this.db.logoCache) {
+            warnLog('TenantDbService', 'cacheLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+        }
+        try {
+            const entry = {
+                path,
+                data
+            };
+            await this.db.logoCache.put(entry);
+            debugLog('TenantDbService', `Logo für Pfad "${path}" im Cache gespeichert/aktualisiert.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Speichern/Aktualisieren des Logos für Pfad "${path}" im Cache`, { path, error: err });
+            throw err;
+        }
+    }
+    async removeCachedLogo(path) {
+        if (!this.db || !this.db.logoCache) {
+            warnLog('TenantDbService', 'removeCachedLogo: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+        }
+        try {
+            await this.db.logoCache.delete(path);
+            debugLog('TenantDbService', `Logo für Pfad "${path}" aus Cache entfernt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Entfernen des Logos für Pfad "${path}" aus dem Cache`, { path, error: err });
+            throw err;
+        }
+    }
+    async clearAllLogoCache() {
+        if (!this.db || !this.db.logoCache) {
+            warnLog('TenantDbService', 'clearAllLogoCache: Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB oder logoCache Tabelle verfügbar.');
+        }
+        try {
+            await this.db.logoCache.clear();
+            debugLog('TenantDbService', 'Gesamter Logo-Cache geleert.');
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Leeren des gesamten Logo-Caches', { error: err });
+            throw err;
+        }
+    }
+    async getAllCachedLogoKeys() {
+        if (!this.db) {
+            warnLog('TenantDbService', 'getAllCachedLogoKeys: Keine aktive Mandanten-DB verfügbar.');
+            return [];
+        }
+        try {
+            // Sicherstellen, dass logoCache in der DB-Definition existiert.
+            // In FinwiseTenantSpecificDB ist logoCache definiert.
+            if (!this.db.logoCache) {
+                warnLog('TenantDbService', 'getAllCachedLogoKeys: logoCache Tabelle nicht in DB-Instanz gefunden. Möglicherweise nicht initialisiert.');
+                return [];
+            }
+            const allLogos = await this.db.logoCache.toArray();
+            const keys = allLogos.map(logo => logo.path);
+            debugLog('TenantDbService', 'Alle Logo-Cache-Schlüssel abgerufen.', { count: keys.length });
+            return keys;
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Abrufen aller Logo-Cache-Schlüssel', { error: err });
+            return [];
+        }
+    }
+    // Sync-Queue-Methoden
+    async addToSyncQueue(tableName, operation, entity) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addToSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        try {
+            const tenantStore = useTenantStore();
+            const syncEntry = {
+                id: uuidv4(),
+                tenantId: tenantStore.activeTenantId || '',
+                entityType: this.getEntityTypeFromTableName(tableName),
+                entityId: entity.id,
+                operationType: this.getSyncOperationType(operation),
+                payload: entity,
+                timestamp: Date.now(),
+                status: SyncStatus.PENDING,
+                attempts: 0
+            };
+            const plainSyncEntry = this.toPlainObject(syncEntry);
+            await this.db.syncQueue.add(plainSyncEntry);
+            debugLog('TenantDbService', `Sync-Queue-Eintrag für ${tableName} ${operation} hinzugefügt`, { entityId: entity.id });
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Hinzufügen zur Sync-Queue für ${tableName} ${operation}`, { entity, error: err });
+            throw err;
+        }
+    }
+    /**
+     * Batch-Erstellung von Sync-Queue-Einträgen für bessere Performance bei CSV-Import
+     * Wird nach der Running Balance Neuberechnung aufgerufen
+     */
+    async addTransactionsBatchToSyncQueue(transactions) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'addTransactionsBatchToSyncQueue: Keine aktive Mandanten-DB verfügbar.');
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (transactions.length === 0) {
+            debugLog('TenantDbService', 'addTransactionsBatchToSyncQueue: Keine Transaktionen für Sync-Queue.');
+            return;
+        }
+        try {
+            const tenantStore = useTenantStore();
+            const tenantId = tenantStore.activeTenantId || '';
+            // Erstelle Sync-Queue-Einträge für alle Transaktionen
+            const syncEntries = transactions.map(tx => ({
+                id: uuidv4(),
+                tenantId: tenantId,
+                entityType: EntityTypeEnum.TRANSACTION,
+                entityId: tx.id,
+                operationType: SyncOperationType.CREATE,
+                payload: this.toPlainObject(tx), // Verwende die aktualisierte Transaktion mit korrekter Running Balance
+                timestamp: Date.now(),
+                status: SyncStatus.PENDING,
+                attempts: 0
+            }));
+            // Batch-Insert aller Sync-Queue-Einträge
+            await this.db.syncQueue.bulkAdd(syncEntries);
+            infoLog('TenantDbService', `${syncEntries.length} Sync-Queue-Einträge für Transaktionen als Batch hinzugefügt.`);
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Batch-Hinzufügen von ${transactions.length} Sync-Queue-Einträgen`, { error: err });
+            throw err;
+        }
+    }
+    getEntityTypeFromTableName(tableName) {
+        const mapping = {
+            'accounts': EntityTypeEnum.ACCOUNT,
+            'accountGroups': EntityTypeEnum.ACCOUNT_GROUP,
+            'categories': EntityTypeEnum.CATEGORY,
+            'categoryGroups': EntityTypeEnum.CATEGORY_GROUP,
+            'recipients': EntityTypeEnum.RECIPIENT,
+            'tags': EntityTypeEnum.TAG,
+            'automationRules': EntityTypeEnum.RULE,
+            'planningTransactions': EntityTypeEnum.PLANNING_TRANSACTION,
+            'transactions': EntityTypeEnum.TRANSACTION
+        };
+        return mapping[tableName] || EntityTypeEnum.ACCOUNT;
+    }
+    getSyncOperationType(operation) {
+        const mapping = {
+            'create': SyncOperationType.CREATE,
+            'update': SyncOperationType.UPDATE,
+            'delete': SyncOperationType.DELETE
+        };
+        return mapping[operation];
+    }
+    /**
+     * Prüft, ob Transaktionen existieren, die auf eine bestimmte Kategorie verweisen
+     */
+    async hasTransactionsForCategory(categoryId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'hasTransactionsForCategory: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const count = await this.db.transactions.where('categoryId').equals(categoryId).count();
+            return count > 0;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Kategorie ${categoryId}`, { error: err });
+            return false;
+        }
+    }
+    /**
+     * Prüft, ob Transaktionen existieren, die auf einen bestimmten Empfänger verweisen
+     */
+    async hasTransactionsForRecipient(recipientId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'hasTransactionsForRecipient: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            const count = await this.db.transactions.where('recipientId').equals(recipientId).count();
+            return count > 0;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Empfänger ${recipientId}`, { error: err });
+            return false;
+        }
+    }
+    /**
+     * Prüft, ob Transaktionen existieren, die einen bestimmten Tag verwenden
+     */
+    async hasTransactionsForTag(tagId) {
+        if (!this.db) {
+            warnLog('TenantDbService', 'hasTransactionsForTag: Keine aktive Mandanten-DB verfügbar.');
+            return false;
+        }
+        try {
+            // Tags sind als Array in transactions.tagIds gespeichert
+            const transactions = await this.db.transactions.toArray();
+            const hasTag = transactions.some(tx => tx.tagIds && tx.tagIds.includes(tagId));
+            return hasTag;
+        }
+        catch (err) {
+            errorLog('TenantDbService', `Fehler beim Prüfen von Transaktionen für Tag ${tagId}`, { error: err });
+            return false;
+        }
+    }
+    /**
+     * Löscht alle Kategorien und Kategoriengruppen (nur wenn keine Transaktionen existieren)
+     */
+    async clearAllCategories() {
+        if (!this.db) {
+            return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+        }
+        try {
+            // Prüfe, ob Transaktionen existieren, die Kategorien verwenden
+            const categories = await this.db.categories.toArray();
+            for (const category of categories) {
+                const hasTransactions = await this.hasTransactionsForCategory(category.id);
+                if (hasTransactions) {
+                    return {
+                        success: false,
+                        message: `Kategorie "${category.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+                    };
+                }
+            }
+            // Alle Kategorien und Kategoriengruppen löschen
+            await this.db.categories.clear();
+            await this.db.categoryGroups.clear();
+            infoLog('TenantDbService', 'Alle Kategorien und Kategoriengruppen erfolgreich gelöscht');
+            return { success: true, message: 'Alle Kategorien erfolgreich gelöscht.' };
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Löschen aller Kategorien', { error: err });
+            return { success: false, message: 'Fehler beim Löschen der Kategorien.' };
+        }
+    }
+    /**
+     * Löscht alle Empfänger (nur wenn keine Transaktionen existieren)
+     */
+    async clearAllRecipients() {
+        if (!this.db) {
+            return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+        }
+        try {
+            // Prüfe, ob Transaktionen existieren, die Empfänger verwenden
+            const recipients = await this.db.recipients.toArray();
+            for (const recipient of recipients) {
+                const hasTransactions = await this.hasTransactionsForRecipient(recipient.id);
+                if (hasTransactions) {
+                    return {
+                        success: false,
+                        message: `Empfänger "${recipient.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+                    };
+                }
+            }
+            // Alle Empfänger löschen
+            await this.db.recipients.clear();
+            infoLog('TenantDbService', 'Alle Empfänger erfolgreich gelöscht');
+            return { success: true, message: 'Alle Empfänger erfolgreich gelöscht.' };
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Löschen aller Empfänger', { error: err });
+            return { success: false, message: 'Fehler beim Löschen der Empfänger.' };
+        }
+    }
+    /**
+     * Löscht alle Tags (nur wenn keine Transaktionen existieren)
+     */
+    async clearAllTags() {
+        if (!this.db) {
+            return { success: false, message: 'Keine aktive Mandanten-DB verfügbar.' };
+        }
+        try {
+            // Prüfe, ob Transaktionen existieren, die Tags verwenden
+            const tags = await this.db.tags.toArray();
+            for (const tag of tags) {
+                const hasTransactions = await this.hasTransactionsForTag(tag.id);
+                if (hasTransactions) {
+                    return {
+                        success: false,
+                        message: `Tag "${tag.name}" kann nicht gelöscht werden - wird von Transaktionen verwendet.`
+                    };
+                }
+            }
+            // Alle Tags löschen
+            await this.db.tags.clear();
+            infoLog('TenantDbService', 'Alle Tags erfolgreich gelöscht');
+            return { success: true, message: 'Alle Tags erfolgreich gelöscht.' };
+        }
+        catch (err) {
+            errorLog('TenantDbService', 'Fehler beim Löschen aller Tags', { error: err });
+            return { success: false, message: 'Fehler beim Löschen der Tags.' };
+        }
+    }
+    // ===== BULK-OPERATIONEN FÜR RUNNING BALANCE OPTIMIERUNG =====
+    /**
+     * Holt mehrere Transaktionen anhand ihrer IDs (Bulk-Read)
+     */
+    async getTransactionsByIds(ids) {
+        if (!this.db) {
+            return [];
+        }
+        try {
+            if (ids.length === 0)
+                return [];
+            // Bulk-Read mit Dexie's bulkGet für optimale Performance
+            const transactions = await this.db.transactions.bulkGet(ids);
+            return transactions.filter(Boolean); // Filtere undefined-Werte
+        }
+        catch (err) {
+            debugLog('TenantDbService', 'Fehler beim Bulk-Read von Transaktionen', err);
+            return [];
+        }
+    }
+    /**
+     * Bulk-Update für Transaktionen (optimiert für Running Balance Updates)
+     */
+    async bulkUpdateTransactions(transactions) {
+        if (!this.db) {
+            throw new Error('Keine aktive Mandanten-DB verfügbar.');
+        }
+        if (transactions.length === 0) {
+            return;
+        }
+        try {
+            // Konvertiere zu Plain Objects für Dexie
+            const plainTransactions = transactions.map(tx => this.toPlainObject(tx));
+            // Bulk-Update in einer einzigen IndexedDB-Transaktion
+            await this.db.transactions.bulkPut(plainTransactions);
+            debugLog('TenantDbService', `Bulk-Update von ${transactions.length} Transaktionen abgeschlossen`);
+        }
+        catch (err) {
+            debugLog('TenantDbService', 'Fehler beim Bulk-Update von Transaktionen', err);
+            throw err;
+        }
+    }
+}

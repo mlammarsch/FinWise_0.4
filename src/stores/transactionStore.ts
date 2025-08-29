@@ -209,8 +209,8 @@ export const useTransactionStore = defineStore('transaction', () => {
   /**
    * Fügt mehrere Transaktionen in einem Batch hinzu - optimiert für große Datenmengen
    */
-  async function addMultipleTransactions(transactions: ExtendedTransaction[], fromSync = false): Promise<ExtendedTransaction[]> {
-    if (transactions.length === 0) {
+  async function addMultipleTransactions(txs: ExtendedTransaction[], fromSync = false): Promise<ExtendedTransaction[]> {
+    if (txs.length === 0) {
       debugLog('transactionStore', 'addMultipleTransactions: Keine Transaktionen zum Hinzufügen');
       return [];
     }
@@ -219,7 +219,7 @@ export const useTransactionStore = defineStore('transaction', () => {
 
     try {
       // Bereite alle Transaktionen vor
-      const transactionsWithTimestamp = transactions.map(tx => {
+      const transactionsWithTimestamp = txs.map(tx => {
         const resolvedPayee = resolvePayeeFromRecipient(tx.recipientId, tx.payee);
         const now = new Date().toISOString();
 
@@ -282,7 +282,7 @@ export const useTransactionStore = defineStore('transaction', () => {
       return processedTransactions;
 
     } catch (error) {
-      errorLog('transactionStore', `Fehler beim Batch-Hinzufügen von ${transactions.length} Transaktionen`, error);
+      errorLog('transactionStore', `Fehler beim Batch-Hinzufügen von ${txs.length} Transaktionen`, error);
       throw error;
     }
   }

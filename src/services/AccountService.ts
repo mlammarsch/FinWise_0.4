@@ -215,7 +215,7 @@ export const AccountService = {
           const updatedGroup: AccountGroup = {
             ...existingGroup,
             sortOrder: update.sortOrder,
-            updated_at: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           };
 
           await accountStore.updateAccountGroup(updatedGroup);
@@ -265,7 +265,7 @@ export const AccountService = {
         const updatedAccount: Account = {
           ...update.account,
           sortOrder: update.newSortOrder,
-          updated_at: new Date().toISOString()
+          updatedAt: new Date().toISOString()
         };
         await accountStore.updateAccount(updatedAccount);
       }
@@ -301,7 +301,7 @@ export const AccountService = {
       ...accountToMove,
       accountGroupId: newGroupId,
       sortOrder: newIndex,
-      updated_at: new Date().toISOString()
+      updatedAt: new Date().toISOString()
     };
 
     await accountStore.updateAccount(updatedAccount);
@@ -323,7 +323,7 @@ export const AccountService = {
         const updatedSourceAccount: Account = {
           ...account,
           sortOrder: i,
-          updated_at: new Date().toISOString()
+          updatedAt: new Date().toISOString()
         };
         await accountStore.updateAccount(updatedSourceAccount);
       }
@@ -339,7 +339,7 @@ export const AccountService = {
         const updatedTargetAccount: Account = {
           ...account,
           sortOrder: i,
-          updated_at: new Date().toISOString()
+          updatedAt: new Date().toISOString()
         };
         await accountStore.updateAccount(updatedTargetAccount);
       }

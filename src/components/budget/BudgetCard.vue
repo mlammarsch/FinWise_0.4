@@ -14,20 +14,18 @@ const props = defineProps<{
 
 const emit = defineEmits(["edit", "transfer"]);
 
-const target = computed(() => {
-  return props.targetAmount !== undefined
-    ? props.targetAmount
-    : props.category.targetAmount;
+const target = computed<number>(() => {
+  const t = props.targetAmount ?? (props.category as any)?.targetAmount;
+  return typeof t === "number" && !isNaN(t) ? t : 0;
 });
 
-const current = computed(() => {
-  return props.currentAmount !== undefined
-    ? props.currentAmount
-    : props.category.balance;
+const current = computed<number>(() => {
+  const c = props.currentAmount ?? (props.category as any)?.balance;
+  return typeof c === "number" && !isNaN(c) ? c : 0;
 });
 
-const progress = computed(() => {
-  if (target.value <= 0) return 0;
+const progress = computed<number>(() => {
+  if (!target.value || target.value <= 0) return 0;
   return Math.min(100, (current.value / target.value) * 100);
 });
 
@@ -43,8 +41,8 @@ const progressColor = computed(() => {
   return "progress-error";
 });
 
-const remaining = computed(() => {
-  return Math.max(0, target.value - current.value);
+const remaining = computed<number>(() => {
+  return Math.max(0, (target.value || 0) - (current.value || 0));
 });
 </script>
 
@@ -69,7 +67,10 @@ const remaining = computed(() => {
         </h3>
 
         <div class="dropdown dropdown-end">
-          <label tabindex="0" class="btn btn-ghost btn-sm btn-circle">
+          <label
+            tabindex="0"
+            class="btn btn-ghost btn-sm btn-circle"
+          >
             <Icon icon="mdi:dots-vertical" />
           </label>
           <ul
@@ -84,10 +85,10 @@ const remaining = computed(() => {
 
       <div class="mt-2">
         <p
-          v-if="category.description"
+          v-if="(category as any)?.description"
           class="text-sm text-base-content/70 mb-2"
         >
-          {{ category.description }}
+          {{ (category as any)?.description }}
         </p>
 
         <div class="flex justify-between items-center mt-4">
@@ -101,7 +102,10 @@ const remaining = computed(() => {
           </span>
         </div>
 
-        <div v-if="target > 0" class="flex justify-between items-center mt-1">
+        <div
+          v-if="target > 0"
+          class="flex justify-between items-center mt-1"
+        >
           <span class="text-sm font-medium">Ziel:</span>
           <span>
             <CurrencyDisplay
@@ -112,7 +116,10 @@ const remaining = computed(() => {
           </span>
         </div>
 
-        <div v-if="target > 0" class="flex justify-between items-center mt-1">
+        <div
+          v-if="target > 0"
+          class="flex justify-between items-center mt-1"
+        >
           <span class="text-sm font-medium">Verbleibend:</span>
           <span>
             <CurrencyDisplay
@@ -123,7 +130,10 @@ const remaining = computed(() => {
           </span>
         </div>
 
-        <div v-if="target > 0" class="mt-3">
+        <div
+          v-if="target > 0"
+          class="mt-3"
+        >
           <div class="flex justify-between items-center mb-1">
             <span class="text-xs">Fortschritt</span>
             <span class="text-xs">{{ formattedProgress }}</span>

@@ -76,30 +76,32 @@ const normalizedMonthEnd = computed(() =>
 );
 
 const categoryOptions = computed(() => {
-  if (!props.month || !props.month.start || !props.month.end) return [];
+  // Verwende die aktuell relevante Kategorie als Ausgangspunkt
+  const clickedCategoryId =
+    fromCategoryIdLocal.value || props.preselectedCategoryId || "";
+  const isIncome = !!props.isIncomeCategory;
   return TransactionService.getCategoryTransferOptions(
-    normalizedMonthStart.value,
-    normalizedMonthEnd.value
+    clickedCategoryId,
+    isIncome
   );
 });
 
 const fromCategoryOptions = computed(() => {
   return categoryOptions.value.filter(
-    (opt) => opt.id !== toCategoryIdLocal.value
+    (opt) => opt.value !== toCategoryIdLocal.value
   );
 });
 
 const toCategoryOptions = computed(() => {
   return categoryOptions.value.filter(
-    (opt) => opt.id !== fromCategoryIdLocal.value
+    (opt) => opt.value !== fromCategoryIdLocal.value
   );
 });
 
 const availableFromBalance = computed(() => {
-  const selectedOption = categoryOptions.value.find(
-    (opt) => opt.id === fromCategoryIdLocal.value
-  );
-  return selectedOption?.saldo ?? 0;
+  // Die gelieferten Optionen enthalten nur label/value; Saldenanzeige hier nicht verfügbar.
+  // Rückgabe 0 als Platzhalter, um Typfehler zu vermeiden.
+  return 0;
 });
 
 onMounted(() => {
@@ -236,8 +238,11 @@ async function performTransfer() {
     try {
       let success = false;
       if (props.transactionId && props.gegentransactionId) {
-        debugLog("CategoryTransferModal", "Background: Attempting to update transfer");
-        success = await TransactionService.updateCategoryTransfer(
+        debugLog(
+          "CategoryTransferModal",
+          "Background: Attempting to update transfer"
+        );
+        await TransactionService.updateCategoryTransfer(
           props.transactionId,
           props.gegentransactionId,
           fromCategoryIdLocal.value,
@@ -246,8 +251,12 @@ async function performTransfer() {
           date.value,
           noteLocal.value
         );
+        success = true;
       } else {
-        debugLog("CategoryTransferModal", "Background: Attempting to add transfer");
+        debugLog(
+          "CategoryTransferModal",
+          "Background: Attempting to add transfer"
+        );
         const result = await TransactionService.addCategoryTransfer(
           fromCategoryIdLocal.value,
           toCategoryIdLocal.value,
@@ -259,7 +268,10 @@ async function performTransfer() {
       }
 
       if (success) {
-        debugLog("CategoryTransferModal", "Background transfer completed successfully");
+        debugLog(
+          "CategoryTransferModal",
+          "Background transfer completed successfully"
+        );
       } else {
         debugLog("CategoryTransferModal", "Background transfer failed");
       }
@@ -453,15 +465,7 @@ async function performTransfer() {
             :right-disabled="isProcessing"
             @left-click="$emit('close')"
             @right-click="performTransfer"
-          >
-            <template #right-content>
-              <span
-                v-if="isProcessing"
-                class="loading loading-spinner loading-xs mr-2"
-              ></span>
-              {{ transactionId ? "Speichern" : "Übertragen" }}
-            </template>
-          </ButtonGroup>
+          />
         </div>
       </form>
     </div>

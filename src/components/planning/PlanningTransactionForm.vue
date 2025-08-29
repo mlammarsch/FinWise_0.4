@@ -85,6 +85,27 @@ const recipientId = ref<string | null>(null);
 const transactionType = ref<TransactionType>(TransactionType.EXPENSE);
 const toAccountId = ref("");
 
+// Normalisierte Computed-Modelle für v-model Bindings (vermeiden null vs. undefined Typkonflikte)
+const recipientIdModel = computed<string | undefined>({
+  get: () => (recipientId.value ?? undefined) as string | undefined,
+  set: (v) => {
+    recipientId.value = (v ?? null) as string | null;
+  },
+});
+
+const categoryIdModel = computed<string | undefined>({
+  get: () => (categoryId.value ?? undefined) as string | undefined,
+  set: (v) => {
+    categoryId.value = (v ?? null) as string | null;
+  },
+});
+
+const fromCategoryIdModel = computed<string | undefined>({
+  get: () => (fromCategoryId.value ?? undefined) as string | undefined,
+  set: (v) => {
+    fromCategoryId.value = (v ?? null) as string | null;
+  },
+});
 // Validierungsstatus
 const formAttempted = ref(false);
 const validationErrors = ref<string[]>([]);
@@ -283,7 +304,10 @@ watch(transactionType, (newType, oldType) => {
     amount.value = Math.abs(effectiveAmount);
   }
   debugLog(`Amount after type change: ${amount.value}`);
-  if (formAttempted.value) nextTick(isAmountValid.value);
+  if (formAttempted.value)
+    nextTick(() => {
+      void isAmountValid.value;
+    });
 });
 watch(amount, (newAmt) => {
   if (!isAccountTransfer.value && !isCategoryTransfer.value) {
@@ -562,7 +586,9 @@ function savePlanningTransaction() {
     return;
   }
 
-  debugLog("[PlanningTransactionForm] Form validation passed, proceeding with save");
+  debugLog(
+    "[PlanningTransactionForm] Form validation passed, proceeding with save"
+  );
 
   const weekendHandlingValue = moveScheduleEnabled.value
     ? weekendHandlingDirection.value === "before"
@@ -1006,7 +1032,7 @@ function saveRuleAndCloseModal(ruleData: any) {
             >
               <legend class="fieldset-legend">Empfänger/Auftraggeber</legend>
               <SelectRecipient
-                v-model="recipientId"
+                v-model="recipientIdModel"
                 @create="onCreateRecipient"
                 placeholder="Optional: Empfänger/Auftraggeber auswählen..."
               />
@@ -1044,7 +1070,7 @@ function saveRuleAndCloseModal(ruleData: any) {
               </legend>
               <div class="form-control">
                 <SelectCategory
-                  v-model="categoryId"
+                  v-model="categoryIdModel"
                   :class="{
                     'input-error': formAttempted && !isCategoryIdValid,
                   }"
@@ -1138,7 +1164,7 @@ function saveRuleAndCloseModal(ruleData: any) {
               </legend>
               <div class="form-control">
                 <SelectCategory
-                  v-model="fromCategoryId"
+                  v-model="fromCategoryIdModel"
                   :class="{
                     'input-error': formAttempted && !isFromCategoryIdValid,
                   }"
@@ -1160,7 +1186,7 @@ function saveRuleAndCloseModal(ruleData: any) {
               </legend>
               <div class="form-control">
                 <SelectCategory
-                  v-model="categoryId"
+                  v-model="categoryIdModel"
                   :options="filteredCategories"
                   :class="{
                     'input-error': formAttempted && !isTargetCategoryIdValid,

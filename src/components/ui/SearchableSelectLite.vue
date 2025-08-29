@@ -36,16 +36,18 @@ onMounted(() => {
   );
 });
 
+const listOptions = computed(() => props.options as Array<Record<string, unknown>>);
+
 const filteredOptions = computed(() => {
-  let arr = [...props.options].sort((a, b) => {
-    const A = String(a[props.itemText]).toLowerCase();
-    const B = String(b[props.itemText]).toLowerCase();
+  let arr = [...listOptions.value].sort((a, b) => {
+    const A = String((a as Record<string, unknown>)[props.itemText] ?? "").toLowerCase();
+    const B = String((b as Record<string, unknown>)[props.itemText] ?? "").toLowerCase();
     return A.localeCompare(B);
   });
   if (searchTerm.value.trim()) {
     const term = searchTerm.value.toLowerCase();
     arr = arr.filter((opt) =>
-      String(opt[props.itemText]).toLowerCase().includes(term)
+      String((opt as Record<string, unknown>)[props.itemText] ?? "").toLowerCase().includes(term)
     );
   }
   return arr;
@@ -53,10 +55,10 @@ const filteredOptions = computed(() => {
 
 const selectedLabel = computed(() => {
   if (!props.modelValue) return "";
-  const found = props.options.find(
-    (o) => String(o[props.itemValue]) === String(props.modelValue)
-  );
-  return found ? found[props.itemText] : "";
+  const found = listOptions.value.find(
+    (o) => String((o as Record<string, unknown>)[props.itemValue] ?? "") === String(props.modelValue)
+  ) as Record<string, unknown> | undefined;
+  return found ? (found[props.itemText] as string) ?? "" : "";
 });
 
 function toggleDropdown() {
@@ -120,11 +122,11 @@ function selectOption(value: string) {
         <!-- Alphabetisch sortierte Items -->
         <li
           v-for="opt in filteredOptions"
-          :key="opt[props.itemValue]"
+          :key="String((opt as Record<string, unknown>)[props.itemValue] ?? '')"
           class="p-1 hover:bg-base-200 rounded cursor-pointer"
-          @click="selectOption(opt[props.itemValue])"
+          @click="selectOption(String((opt as Record<string, unknown>)[props.itemValue] ?? ''))"
         >
-          {{ opt[props.itemText] }}
+          {{ String((opt as Record<string, unknown>)[props.itemText] ?? '') }}
         </li>
       </ul>
     </div>

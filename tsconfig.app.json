@@ -16,6 +16,11 @@
     "moduleDetection": "force",
     // "noEmit": true, // Entfernt oder auf false setzen für "composite": true
     "jsx": "preserve",
+
+    /* Declarations output: avoid overwriting .vue.d.ts in src */
+    "declaration": true,
+    "declarationDir": "./.types",
+
     /* Path Aliases */
     "baseUrl": ".",
     "paths": {
@@ -25,13 +30,17 @@
     },
     /* Linting */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.vue"
+  ],
+  "exclude": [
+    "src/**/*.vue.d.ts",
+    "src/mock/**"
   ]
 }

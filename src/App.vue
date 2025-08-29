@@ -26,7 +26,7 @@ onMounted(() => {
           <component
             v-if="Component"
             :is="Component"
-            :key="`${route.name}-${session.currentTenantId}`"
+            :key="`${String(route.name ?? '')}-${session.currentTenantId}`"
           />
         </router-view>
       </template>
